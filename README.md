@@ -98,7 +98,10 @@ To submit your own implementation to 1BRC, follow these steps:
 * Create a pull request against the upstream repository, clearly stating
   * The name of your implementation class.
   * The JDK build to use (of not specified, the latest OpenJDK 21 upstream build will be used).
-* I will run the program and determine its performance as described in the next section, and enter the result to the scoreboard. Note that I reserve the right to not evaluate specific submissions if I feel doubtful about the implementation (I.e. I won't run your BitCoin miner ;).
+  * The execution time of the program on your system and specs of the same (CPU, number of cores, RAM). This is for informative purposes only, the official runtime will be determined as described below.
+* I will run the program and determine its performance as described in the next section, and enter the result to the scoreboard.
+
+**Note:** I reserve the right to not evaluate specific submissions if I feel doubtful about the implementation (I.e. I won't run your BitCoin miner ;).
 
 If you'd like to discuss any potential ideas for implementing 1BRC with the community,
 you can use the [GitHub Discussions](https://github.com/gunnarmorling/onebrc/discussions) of this repository.
