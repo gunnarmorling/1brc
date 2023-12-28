@@ -26,11 +26,13 @@ The task is to write a Java program which reads the file, calculates the average
 {auckland=5.3, concordia=-45.5, hamburg=6.4, hammerfest=-10.4, lima=6.6}
 ```
 
+Submit your implementation by Jan 31 2024 and become part of the leaderboard!
+
 ## Results
 
 | # | Result (sec) | Implementation     | Submitter     |
 |---|--------------|--------------------|---------------|
-| 1.|          tbd.| [CalculateAverage.java](https://github.com/gunnarmorling/onebrc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage.java) (baseline)| Gunnar Morling|
+| 1.|       119.468| [CalculateAverage.java](https://github.com/gunnarmorling/onebrc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage.java) (baseline)| Gunnar Morling|
 
 See [below](#entering-the-challenge) for instructions how to enter the challenge with your own implementation.
 
@@ -68,7 +70,7 @@ Execute the following steps to run the challenge:
     ./calculate_average.sh
     ```
 
-    The provided naive example implementation uses the Java streams API for processing the file and completes the task in ~3 min on an Apple Mac Mini M1.
+    The provided naive example implementation uses the Java streams API for processing the file and completes the task in ~2 min on environment used for [result evaluation](#evaluating-results).
     It serves as the base line for comparing your own implementation.
 
 4. Optimize the heck out of it:
