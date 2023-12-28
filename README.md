@@ -8,22 +8,22 @@ Each row is one measurement in the format `<string: station id>;<double: measure
 The following shows ten rows as an example:
 
 ```
-hamburg;11.0
-hammerfest;-12.7
-auckland;5.3
-lima;6.6
-concordia;-42.5
-hammerfest;-6.7
-hamburg;9.0
-hammerfest;-11.9
-hamburg;-0.7
-concordia;-48.5
+Hamburg;12.0
+Bulawayo;8.9
+Palembang;38.8
+St. John's;15.2
+Cracow;12.6
+Bridgetown;26.9
+Istanbul;6.2
+Roseau;34.4
+Conakry;31.2
+Istanbul;23.0
 ```
 
 The task is to write a Java program which reads the file, calculates the average temperature value per weather station, and emits the result on stdout like this:
 
 ```
-{auckland=5.3, concordia=-45.5, hamburg=6.4, hammerfest=-10.4, lima=6.6}
+{Abha=18.0, Abidjan=26.0, Abéché=29.4, Accra=26.4, Addis Ababa=16.0, Adelaide=17.3, ...}
 ```
 
 Submit your implementation by Jan 31 2024 and become part of the leaderboard!
