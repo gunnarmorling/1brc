@@ -103,6 +103,12 @@ To submit your own implementation to 1BRC, follow these steps:
 The challenge runs until Jan 31 2024.
 Any submissions (i.e. pull requests) created after Jan 31 2024 23:59 UTC will not be considered.
 
+## Discussions
+
+If you'd like to discuss any potential ideas for implementing 1BRC with the community,
+you can use the [GitHub Discussions](https://github.com/gunnarmorling/onebrc/discussions) of this repository.
+Please keep it friendly and civil.
+
 ## Evaluating Results
 
 Results are determined by running the program on a [Hetzner Cloud CCX33 instance](https://www.hetzner.com/cloud) (8 dedicated vCPU, 32 GB RAM).
@@ -132,3 +138,8 @@ A: It's the abbreviation of the project name: **One** **B**illion **R**ow **C**h
 ## License
 
 This code base is available under the Apache License, version 2.
+
+## Code of Conduct
+
+Be excellent to each other!
+More than winning, the purpose of this challenge is to have fun and learn something new.
