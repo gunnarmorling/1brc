@@ -31,7 +31,6 @@ public class CalculateAverage {
 
     public static void main(String[] args) throws IOException {
         Map<String, Double> measurements = Files.lines(Paths.get(FILE))
-                .limit(10_000_000)
                 .map(l -> l.split(";"))
                 .collect(groupingBy(m -> m[0], averagingDouble(m -> Double.parseDouble(m[1]))));
 
