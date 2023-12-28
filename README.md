@@ -98,9 +98,8 @@ To submit your own implementation to 1BRC, follow these steps:
   * The JDK build to use (of not specified, the latest OpenJDK 21 upstream build will be used).
 * I will run the program and determine its performance as described in the next section, and enter the result to the scoreboard.
 
-There is no pre-defined end date or maximum number of results for this challenge at this point,
-but I may do a cut-off at some point.
-To keep overhead low, please refrain from submitting entries if they wouldn't make it to the top half of the score board.
+The challenge runs until Jan 31 2024.
+Any submissions (i.e. pull requests) created after Jan 31 2024 23:59 UTC will not be considered.
 
 ## Evaluating Results
 
@@ -115,7 +114,7 @@ Note this will incur cost you are responsible for, I am not going to pay your cl
 
 ## Price
 
-If you enter this challenge, you may learn something new, get to inspire others, and see your name listed in the scoreboard above.
+If you enter this challenge, you may learn something new, get to inspire others, and take pride in seeing your name listed in the scoreboard above.
 
 ## FAQ
 
