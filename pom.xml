@@ -169,6 +169,7 @@
               <excludes>
                 <exclude>LICENSE.txt</exclude>
                 <exclude>**/.dontdelete</exclude>
+                <exclude>measurements*.txt</exclude>
               </excludes>
             </configuration>
             <executions>
