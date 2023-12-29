@@ -52,6 +52,7 @@ public class CreateMeasurements {
             System.exit(1);
         }
 
+        // @formatter:off
         // data from https://en.wikipedia.org/wiki/List_of_cities_by_average_temperature;
         // converted using https://wikitable2csv.ggor.de/
         // brought to form using DuckDB:
@@ -74,6 +75,7 @@ public class CreateMeasurements {
         //         from read_csv_auto('List_of_cities_by_average_temperature_5.csv', header = true)
         //         )
         // ) TO 'output.csv' (HEADER, DELIMITER ',');
+        // @formatter:on
         List<WeatherStation> stations = Arrays.asList(
                 new WeatherStation("Adelaide", 17.3),
                 new WeatherStation("Melbourne", 15.1),
