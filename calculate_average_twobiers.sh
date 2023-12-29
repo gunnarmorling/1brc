@@ -15,6 +15,6 @@
 #  limitations under the License.
 #
 
-
-JAVA_OPTS="-XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -Xmx12g -XX:+UseStringDeduplication -XX:+UseLargePages"
+# TODO: Adjust heap size and GC
+JAVA_OPTS="-XX:+UnlockExperimentalVMOptions -XX:+UseStringDeduplication -XX:+UseLargePages"
 java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_twobiers
