@@ -4,7 +4,7 @@ The One Billion Row Challenge (1BRC) is a fun exploration of how far modern Java
 Grab all your (virtual) threads, reach out to SIMD, optimize your GC, or pull any other trick, and create the fastest implementation for solving this task!
 
 The text file contains temperature values for a range of weather stations.
-Each row is one measurement in the format `<string: station id>;<double: measurement>`.
+Each row is one measurement in the format `<string: station name>;<double: measurement>`.
 The following shows ten rows as an example:
 
 ```
@@ -20,7 +20,7 @@ Conakry;31.2
 Istanbul;23.0
 ```
 
-The task is to write a Java program which reads the file, calculates the average temperature value per weather station, and emits the result on stdout like this:
+The task is to write a Java program which reads the file, calculates the average temperature value per weather station, and emits the result on stdout like this, sorted alphabetically by station name:
 
 ```
 {Abha=18.0, Abidjan=26.0, Abéché=29.4, Accra=26.4, Addis Ababa=16.0, Adelaide=17.3, ...}
@@ -84,6 +84,8 @@ The following rules and limits apply:
 If you want to use a build not available via these channels, reach out to discuss whether it can be considered.
 * No external library dependencies may be used
 * Implementations must be provided as a single source file
+* The computation must happen at application _runtime_, i.e. you cannot process the measurements file at _build time_
+(for instance, when using GraalVM) and just bake the result into the binary
 
 ## Entering the Challenge
 
