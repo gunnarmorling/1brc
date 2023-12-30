@@ -66,7 +66,7 @@ public class CalculateAverage_twobiers {
 
         @Override
         public Function<double[], Double> finisher() {
-            return a -> (a[2] == 0) ? 0.0d : Math.round ( (a[0] + a[1] / a[2]) * 10.0 / 10.0 );
+            return a -> (a[2] == 0) ? 0.0d : Math.round ( ((a[0] + a[1]) / a[2]) * 10.0 / 10.0 );
         }
 
         @Override
