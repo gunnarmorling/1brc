@@ -22,7 +22,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
-import java.util.Map;
 import java.util.Map.Entry;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
@@ -32,12 +31,16 @@ public class CalculateAverage_twobiers {
     private static final String FILE = "./measurements.txt";
 
     public static void main(String[] args) throws IOException {
-        Map<String, Double> measurements = Files.lines(Paths.get(FILE))
+        TreeMap<String, Double> measurements = Files.lines(Paths.get(FILE))
                 .parallel()
                 .map(l -> fastSplit(l))
-                .collect(groupingBy(m -> m[0], averagingDouble(m -> fastParseDouble(m[1]))));
-
-        measurements = new TreeMap<>(measurements.entrySet().stream().collect(Collectors.toMap(Entry::getKey, e -> Math.round(e.getValue() * 10.0) / 10.0)));
+                .collect(groupingBy(m -> m[0], TreeMap::new, averagingDouble(m -> fastParseDouble(m[1]))))
+                .entrySet().stream()
+                // Is it possible to combine this collector with the above?
+                .collect(
+                        Collectors.toMap(Entry::getKey, e -> Math.round(e.getValue() * 10.0) / 10.0, (k, v) -> {
+                            throw new RuntimeException("Should not happen");
+                        }, TreeMap::new));
 
         System.out.println(measurements);
     }
@@ -65,15 +68,15 @@ public class CalculateAverage_twobiers {
         boolean negative = false;
         int decimalPlaces = Integer.MIN_VALUE;
         var chars = str.toCharArray();
-        for (char c : chars) {
-            if (c >= '0' && c <= '9') {
-                value = value * 10 + (c - '0');
+        for (char ch : chars) {
+            if (ch >= '0' && ch <= '9') {
+                value = value * 10 + (ch - '0');
                 decimalPlaces++;
             }
-            else if (c == '-') {
+            else if (ch == '-') {
                 negative = true;
             }
-            else if (c == '.') {
+            else if (ch == '.') {
                 decimalPlaces = 0;
             }
         }
@@ -128,10 +131,12 @@ public class CalculateAverage_twobiers {
                 value <<= 1;
                 modDiv <<= 1;
             }
-            if (decimalPlaces > 1)
+            if (decimalPlaces > 1) {
                 value += modDiv * mod / 5;
-            else
+            }
+            else {
                 value += (modDiv * mod + 4) / 5;
+            }
         }
         final double d = Math.scalb((double) value, exp);
         return negative ? -d : d;
