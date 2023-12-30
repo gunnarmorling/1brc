@@ -15,32 +15,75 @@
  */
 package dev.morling.onebrc;
 
-import static java.util.stream.Collectors.averagingDouble;
 import static java.util.stream.Collectors.groupingBy;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
-import java.util.Map.Entry;
+import java.util.Collections;
+import java.util.Set;
 import java.util.TreeMap;
-import java.util.stream.Collectors;
+import java.util.function.BiConsumer;
+import java.util.function.BinaryOperator;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.stream.Collector;
 
 public class CalculateAverage_twobiers {
 
     private static final String FILE = "./measurements.txt";
+    private static final FastAveragingCollector FAST_AVERAGING_COLLECTOR = new FastAveragingCollector();
+    // private static final VectorSpecies<Integer> SPECIES = IntVector.SPECIES_256;
+
+    private static class FastAveragingCollector implements Collector<String[], double[], Double> {
+        @Override
+        public Supplier<double[]> supplier() {
+            return () -> new double[4];
+        }
+
+        @Override
+        public BiConsumer<double[], String[]> accumulator() {
+            return (a, t) -> {
+                double val = fastParseDouble(t[1]);
+                sumWithCompensation(a, val);
+                a[2]++;
+                a[3]+= val;
+            };
+        }
+
+        @Override
+        public BinaryOperator<double[]> combiner() {
+            return (a, b) -> {
+                sumWithCompensation(a, b[0]);
+                // Subtract compensation bits
+                sumWithCompensation(a, -b[1]);
+                a[2] += b[2]; a[3] += b[3];
+                return a;
+            };
+        }
+
+        @Override
+        public Function<double[], Double> finisher() {
+            return a -> (a[2] == 0) ? 0.0d : Math.round ( (computeFinalSum(a) / a[2]) * 10.0 / 10.0 );
+        }
+
+        @Override
+        public Set<Characteristics> characteristics() {
+            return Collections.emptySet();
+        }
+    }
 
     public static void main(String[] args) throws IOException {
         TreeMap<String, Double> measurements = Files.lines(Paths.get(FILE))
                 .parallel()
                 .map(l -> fastSplit(l))
-                .collect(groupingBy(m -> m[0], TreeMap::new, averagingDouble(m -> fastParseDouble(m[1]))))
-                .entrySet().stream()
-                // Is it possible to combine this collector with the above?
                 .collect(
-                        Collectors.toMap(Entry::getKey, e -> Math.round(e.getValue() * 10.0) / 10.0, (k, v) -> {
-                            throw new RuntimeException("Should not happen");
-                        }, TreeMap::new));
+                    groupingBy(
+                        m -> m[0],
+                        TreeMap::new,
+                        FAST_AVERAGING_COLLECTOR
+                    ));
 
         System.out.println(measurements);
     }
@@ -141,4 +184,24 @@ public class CalculateAverage_twobiers {
         final double d = Math.scalb((double) value, exp);
         return negative ? -d : d;
     }
+
+    private static double[] sumWithCompensation(double[] intermediateSum, double value) {
+        double tmp = value - intermediateSum[1];
+        double sum = intermediateSum[0];
+        double velvel = sum + tmp; // Little wolf of rounding error
+        intermediateSum[1] = (velvel - sum) - tmp;
+        intermediateSum[0] = velvel;
+        return intermediateSum;
+    }
+
+    private static double computeFinalSum(double[] summands) {
+        // Final sum with better error bounds subtract second summand as it is negated
+        double tmp = summands[0] - summands[1];
+        double simpleSum = summands[summands.length - 1];
+        if (Double.isNaN(tmp) && Double.isInfinite(simpleSum))
+            return simpleSum;
+        else
+            return tmp;
+    }
+
 }
