@@ -15,5 +15,5 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="-XX:+UnlockExperimentalVMOptions -XX:+UseStringDeduplication -XX:+UseTransparentHugePages -XX:+UseZGC -XX:+ZGenerational -Xms16g -Xmx32g"
+JAVA_OPTS="-XX:+UseStringDeduplication -XX:+CompactStrings -XX:+UseTransparentHugePages"
 java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_twobiers
