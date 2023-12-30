@@ -58,14 +58,15 @@ public class CalculateAverage_twobiers {
                 sumWithCompensation(a, b[0]);
                 // Subtract compensation bits
                 sumWithCompensation(a, -b[1]);
-                a[2] += b[2]; a[3] += b[3];
+                a[2] += b[2];
+                a[3] += b[3];
                 return a;
             };
         }
 
         @Override
         public Function<double[], Double> finisher() {
-            return a -> (a[2] == 0) ? 0.0d : Math.round ( (computeFinalSum(a) / a[2]) * 10.0 / 10.0 );
+            return a -> (a[2] == 0) ? 0.0d : Math.round ( (a[0] + a[1] / a[2]) * 10.0 / 10.0 );
         }
 
         @Override
@@ -192,16 +193,6 @@ public class CalculateAverage_twobiers {
         intermediateSum[1] = (velvel - sum) - tmp;
         intermediateSum[0] = velvel;
         return intermediateSum;
-    }
-
-    private static double computeFinalSum(double[] summands) {
-        // Final sum with better error bounds subtract second summand as it is negated
-        double tmp = summands[0] - summands[1];
-        double simpleSum = summands[summands.length - 1];
-        if (Double.isNaN(tmp) && Double.isInfinite(simpleSum))
-            return simpleSum;
-        else
-            return tmp;
     }
 
 }
