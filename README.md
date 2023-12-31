@@ -125,9 +125,10 @@ The mean value of the remaining three runs is the result for that contender and 
 If you'd like to spin up your own box for testing on Hetzner Cloud, you may find these [set-up scripts](https://github.com/gunnarmorling/cloud-boxes/) (based on Terraform and Ansible) useful.
 Note this will incur cost you are responsible for, I am not going to pay your cloud bill :)
 
-## Price
+## Prize
 
 If you enter this challenge, you may learn something new, get to inspire others, and take pride in seeing your name listed in the scoreboard above.
+Rumor has it that the winner may receive a unique 1️⃣🐝🏎️ t-shirt, too!
 
 ## FAQ
 
