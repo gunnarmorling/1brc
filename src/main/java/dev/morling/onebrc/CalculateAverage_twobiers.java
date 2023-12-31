@@ -48,7 +48,7 @@ public class CalculateAverage_twobiers {
                 double val = fastParseDouble(t[1]);
                 sumWithCompensation(a, val);
                 a[2]++;
-                a[3]+= val;
+                a[3] += val;
             };
         }
 
@@ -66,7 +66,7 @@ public class CalculateAverage_twobiers {
 
         @Override
         public Function<double[], Double> finisher() {
-            return a -> (a[2] == 0) ? 0.0d : Math.round ( ((a[0] + a[1]) / a[2]) * 10.0 / 10.0 );
+            return a -> (a[2] == 0) ? 0.0d : Math.round(((a[0] + a[1]) / a[2]) * 10.0) / 10.0;
         }
 
         @Override
@@ -80,11 +80,10 @@ public class CalculateAverage_twobiers {
                 .parallel()
                 .map(l -> fastSplit(l))
                 .collect(
-                    groupingBy(
-                        m -> m[0],
-                        TreeMap::new,
-                        FAST_AVERAGING_COLLECTOR
-                    ));
+                        groupingBy(
+                                m -> m[0],
+                                TreeMap::new,
+                                FAST_AVERAGING_COLLECTOR));
 
         System.out.println(measurements);
     }
