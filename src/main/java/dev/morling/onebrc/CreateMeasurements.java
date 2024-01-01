@@ -77,9 +77,9 @@ public class CreateMeasurements {
         // ) TO 'output.csv' (HEADER, DELIMITER ',');
         // @formatter:on
         List<WeatherStation> stations = Arrays.asList(
-                new WeatherStation("Abéché", 29.4),
                 new WeatherStation("Abha", 18.0),
                 new WeatherStation("Abidjan", 26.0),
+                new WeatherStation("Abéché", 29.4),
                 new WeatherStation("Accra", 26.4),
                 new WeatherStation("Addis Ababa", 16.0),
                 new WeatherStation("Adelaide", 17.3),

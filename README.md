@@ -1,7 +1,11 @@
 # 1️⃣🐝🏎️ The One Billion Row Challenge
 
+_Status Jan 1: This challenge is open for submissions!_
+
 The One Billion Row Challenge (1BRC) is a fun exploration of how far modern Java can be pushed for aggregating one billion rows from a text file.
 Grab all your (virtual) threads, reach out to SIMD, optimize your GC, or pull any other trick, and create the fastest implementation for solving this task!
+
+<img src="1brc.png" alt="1BRC" style="display: block; margin-left: auto; margin-right: auto; margin-bottom:1em; width: 50%;">
 
 The text file contains temperature values for a range of weather stations.
 Each row is one measurement in the format `<string: station name>;<double: measurement>`.
@@ -20,19 +24,20 @@ Conakry;31.2
 Istanbul;23.0
 ```
 
-The task is to write a Java program which reads the file, calculates the average temperature value per weather station, and emits the result on stdout like this, sorted alphabetically by station name:
+The task is to write a Java program which reads the file, calculates the min, mean, and max temperature value per weather station, and emits the results on stdout like this
+(i.e. sorted alphabetically by station name, and the result values per station in the format `<min>/<mean>/<max>`, rounded to one fractional digit):
 
 ```
-{Abha=18.0, Abidjan=26.0, Abéché=29.4, Accra=26.4, Addis Ababa=16.0, Adelaide=17.3, ...}
+{Abha=-23.0/18.0/59.2, Abidjan=-16.2/26.0/67.3, Abéché=-10.0/29.4/69.0, Accra=-10.1/26.4/66.4, Addis Ababa=-23.7/16.0/67.0, Adelaide=-27.8/17.3/58.5, ...}
 ```
 
 Submit your implementation by Jan 31 2024 and become part of the leaderboard!
 
 ## Results
 
-| # | Result (sec) | Implementation     | Submitter     |
-|---|--------------|--------------------|---------------|
-| 1.|       119.468| [CalculateAverage.java](https://github.com/gunnarmorling/onebrc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage.java) (baseline)| Gunnar Morling|
+| # | Result (m:s:ms) | Implementation     | Submitter     |
+|---|-----------------|--------------------|---------------|
+| 1.|        04:13.449| [CalculateAverage.java](https://github.com/gunnarmorling/onebrc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage.java) (baseline)| Gunnar Morling|
 
 See [below](#entering-the-challenge) for instructions how to enter the challenge with your own implementation.
 
@@ -123,9 +128,10 @@ The mean value of the remaining three runs is the result for that contender and 
 If you'd like to spin up your own box for testing on Hetzner Cloud, you may find these [set-up scripts](https://github.com/gunnarmorling/cloud-boxes/) (based on Terraform and Ansible) useful.
 Note this will incur cost you are responsible for, I am not going to pay your cloud bill :)
 
-## Price
+## Prize
 
 If you enter this challenge, you may learn something new, get to inspire others, and take pride in seeing your name listed in the scoreboard above.
+Rumor has it that the winner may receive a unique 1️⃣🐝🏎️ t-shirt, too!
 
 ## FAQ
 
