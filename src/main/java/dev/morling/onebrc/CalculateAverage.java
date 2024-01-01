@@ -52,14 +52,14 @@ public class CalculateAverage {
     }
 
     public static void main(String[] args) throws IOException {
-//         Map<String, Double> measurements1 = Files.lines(Paths.get(FILE))
-//         .map(l -> l.split(";"))
-//         .collect(groupingBy(m -> m[0], averagingDouble(m -> Double.parseDouble(m[1]))));
-//
-//         measurements1 = new TreeMap<>(measurements1.entrySet()
-//         .stream()
-//         .collect(toMap(e -> e.getKey(), e -> Math.round(e.getValue() * 10.0) / 10.0)));
-//         System.out.println(measurements1);
+        // Map<String, Double> measurements1 = Files.lines(Paths.get(FILE))
+        // .map(l -> l.split(";"))
+        // .collect(groupingBy(m -> m[0], averagingDouble(m -> Double.parseDouble(m[1]))));
+        //
+        // measurements1 = new TreeMap<>(measurements1.entrySet()
+        // .stream()
+        // .collect(toMap(e -> e.getKey(), e -> Math.round(e.getValue() * 10.0) / 10.0)));
+        // System.out.println(measurements1);
 
         Collector<Measurement, MeasurementAggregator, ResultRow> collector = Collector.of(
                 MeasurementAggregator::new,
