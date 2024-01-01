@@ -39,10 +39,9 @@ public class CalculateAverage_twobiers {
     private static class FastAveragingCollector implements Collector<String[], double[], String> {
         @Override
         public Supplier<double[]> supplier() {
-            // 0: summand 1
-            // 1: summand 2
+            // 0: parsed value
+            // 1: current sum
             // 2: count
-            // 3: parsed value
             // 4: current max
             // 5: current min
             return () -> new double[6];
@@ -52,9 +51,11 @@ public class CalculateAverage_twobiers {
         public BiConsumer<double[], String[]> accumulator() {
             return (a, t) -> {
                 double val = fastParseDouble(t[1]);
-                sumWithCompensation(a, val);
+
+                a[0] = val;
+                a[1] += val;
                 a[2]++;
-                a[3] += val;
+
                 if (val > a[4]) {
                     a[4] = val;
                 }
@@ -67,11 +68,8 @@ public class CalculateAverage_twobiers {
         @Override
         public BinaryOperator<double[]> combiner() {
             return (a, b) -> {
-                sumWithCompensation(a, b[0]);
-                // Subtract compensation bits
-                sumWithCompensation(a, -b[1]);
                 a[2] += b[2];
-                a[3] += b[3];
+                a[1] += b[1];
                 if (b[4] > a[4]) {
                     a[4] = b[4];
                 }
@@ -210,15 +208,6 @@ public class CalculateAverage_twobiers {
         }
         final double d = Math.scalb((double) value, exp);
         return negative ? -d : d;
-    }
-
-    private static double[] sumWithCompensation(double[] intermediateSum, double value) {
-        double tmp = value - intermediateSum[1];
-        double sum = intermediateSum[0];
-        double velvel = sum + tmp; // Little wolf of rounding error
-        intermediateSum[1] = (velvel - sum) - tmp;
-        intermediateSum[0] = velvel;
-        return intermediateSum;
     }
 
 }
