@@ -61,7 +61,6 @@ public class CalculateAverage_patrick {
                     return new AbstractMap.SimpleEntry<>(key, value);
                 })
                 .collect(Collectors.toConcurrentMap(
-                        // Combine/reduce:
                         entry -> entry.getKey(),
                         entry -> new Measurement(entry.getValue()),
                         ((measurement1, measurement2) -> new Measurement(
@@ -72,8 +71,6 @@ public class CalculateAverage_patrick {
 
         System.out.print(
                 resultMap.entrySet().stream().sorted(Map.Entry.comparingByKey()).map(Object::toString).collect(Collectors.joining(", ", "{", "}")));
-
-        // System.out.println("Took: " + (System.currentTimeMillis() - before));
 
     }
 }
