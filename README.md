@@ -33,9 +33,9 @@ Submit your implementation by Jan 31 2024 and become part of the leaderboard!
 
 ## Results
 
-| # | Result (sec) | Implementation     | Submitter     |
-|---|--------------|--------------------|---------------|
-| 1.|       119.468| [CalculateAverage.java](https://github.com/gunnarmorling/onebrc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage.java) (baseline)| Gunnar Morling|
+| # | Result (m:s:ms) | Implementation     | Submitter     |
+|---|-----------------|--------------------|---------------|
+| 1.|        04:13.449| [CalculateAverage.java](https://github.com/gunnarmorling/onebrc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage.java) (baseline)| Gunnar Morling|
 
 See [below](#entering-the-challenge) for instructions how to enter the challenge with your own implementation.
 
