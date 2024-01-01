@@ -5,6 +5,8 @@ _Status Jan 1: This challenge is open for submissions!_
 The One Billion Row Challenge (1BRC) is a fun exploration of how far modern Java can be pushed for aggregating one billion rows from a text file.
 Grab all your (virtual) threads, reach out to SIMD, optimize your GC, or pull any other trick, and create the fastest implementation for solving this task!
 
+<img src="1brc.png" alt="1BRC" style="display: block; margin-left: auto; margin-right: auto; margin-bottom:1em; width: 50%;">
+
 The text file contains temperature values for a range of weather stations.
 Each row is one measurement in the format `<string: station name>;<double: measurement>`.
 The following shows ten rows as an example:
