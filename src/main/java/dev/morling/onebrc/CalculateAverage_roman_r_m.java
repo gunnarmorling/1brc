@@ -15,14 +15,11 @@
  */
 package dev.morling.onebrc;
 
+import java.io.BufferedReader;
+import java.io.FileReader;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.Map;
+import java.util.HashMap;
 import java.util.TreeMap;
-import java.util.stream.Collector;
-
-import static java.util.stream.Collectors.groupingBy;
 
 public class CalculateAverage_roman_r_m {
 
@@ -34,57 +31,33 @@ public class CalculateAverage_roman_r_m {
         }
     }
 
-    private static record ResultRow(double min, double mean, double max) {
+    private static final class ResultRow {
+        double min = 0.0;
+        double sum = 0.0;
+        double max = 0.0;
+        int count = 0;
+
         public String toString() {
-            return round(min) + "/" + round(mean) + "/" + round(max);
+            return round(min) + "/" + round(sum / count) + "/" + round(max);
         }
 
         private double round(double value) {
             return Math.round(value * 10.0) / 10.0;
         }
-    };
-
-    private static class MeasurementAggregator {
-        private double min = Double.POSITIVE_INFINITY;
-        private double max = Double.NEGATIVE_INFINITY;
-        private double sum;
-        private long count;
     }
 
     public static void main(String[] args) throws IOException {
-        // Map<String, Double> measurements1 = Files.lines(Paths.get(FILE))
-        // .map(l -> l.split(";"))
-        // .collect(groupingBy(m -> m[0], averagingDouble(m -> Double.parseDouble(m[1]))));
-        //
-        // measurements1 = new TreeMap<>(measurements1.entrySet()
-        // .stream()
-        // .collect(toMap(e -> e.getKey(), e -> Math.round(e.getValue() * 10.0) / 10.0)));
-        // System.out.println(measurements1);
-
-        Collector<Measurement, MeasurementAggregator, ResultRow> collector = Collector.of(
-                MeasurementAggregator::new,
-                (a, m) -> {
-                    a.min = Math.min(a.min, m.value);
-                    a.max = Math.max(a.max, m.value);
-                    a.sum += m.value;
-                    a.count++;
-                },
-                (agg1, agg2) -> {
-                    var res = new MeasurementAggregator();
-                    res.min = Math.min(agg1.min, agg2.min);
-                    res.max = Math.max(agg1.max, agg2.max);
-                    res.sum = agg1.sum + agg2.sum;
-                    res.count = agg1.count + agg2.count;
-
-                    return res;
-                },
-                agg -> {
-                    return new ResultRow(agg.min, agg.sum / agg.count, agg.max);
-                });
-
-        Map<String, ResultRow> measurements = new TreeMap<>(Files.lines(Paths.get(FILE))
-                .map(l -> new Measurement(l.split(";")))
-                .collect(groupingBy(m -> m.station(), collector)));
+        var measurements = new TreeMap<String, ResultRow>();
+        var reader = new BufferedReader(new FileReader(FILE), 1024 * 1024);
+        String l;
+        while ((l = reader.readLine()) != null) {
+            var m = new Measurement(l.split(";"));
+            var a = measurements.computeIfAbsent(m.station, _ -> new ResultRow());
+            a.min = Math.min(a.min, m.value);
+            a.max = Math.max(a.max, m.value);
+            a.sum += m.value;
+            a.count++;
+        }
 
         System.out.println(measurements);
     }
