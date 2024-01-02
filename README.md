@@ -142,12 +142,18 @@ A: No, this challenge is focussed on Java only. Feel free to inofficially share 
 _Q: Can I use non-JVM languages and/or tools?_\
 A: No, this challenge is focussed on Java only. Feel free to inofficially share interesting implementations and results though. For instance it would be interesting to see how DuckDB fares with this task.
 
-_Q: Why_ 1️⃣🐝🏎️ _?_\
-A: It's the abbreviation of the project name: **One** **B**illion **R**ow **C**hallenge.
+_Q: Can I use JNI?_\
+A: Submissions must be implemented in Java; JNI requires glue code written in C/C++, so it cannot be used. You could use AOT compilation of Java code via GraalVM though, either by AOT-compiling the entire application, or by creating a native library which you then invoke using the new Java FFI (https://openjdk.org/jeps/442[JEP 442]).
+
+_Q: What is the encoding of the measurements.txt file?_\
+A: The file is encoded with UTF-8.
 
 _Q: Can I make assumptions on the names of the weather stations showing up in the data set?_\
 A: No, while only a fixed set of station names is used by the data set generator, any solution should work with arbitrary UTF-8 station names
 (for the sake of simplicity, names are guaranteed to contain no `;` character).
+
+_Q: Why_ 1️⃣🐝🏎️ _?_\
+A: It's the abbreviation of the project name: **One** **B**illion **R**ow **C**hallenge.
 
 ## License
 
