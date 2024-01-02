@@ -24,7 +24,7 @@ import java.util.stream.Collectors;
 
 public class CalculateAverage_royvanrijn {
 
-    private static final String FILE = "./measurements.txt";
+    private static final String FILE = "./measurements-100m.txt";
 
     private record Measurement(double min, double max, double sum, long count) {
 

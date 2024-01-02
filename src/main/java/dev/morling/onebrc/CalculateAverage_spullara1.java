@@ -15,14 +15,10 @@
  */
 package dev.morling.onebrc;
 
-import java.io.BufferedInputStream;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.Reader;
+import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.*;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
@@ -36,106 +32,237 @@ public class CalculateAverage_spullara1 {
     int max;
     int sum;
     int count;
-  }
 
-  private record Measurement(double min, double max, double sum, long count) {
-
-    Measurement(double initialMeasurement) {
-      this(initialMeasurement, initialMeasurement, initialMeasurement, 1);
-    }
-
-    public static Measurement combineWith(Measurement m1, Measurement m2) {
-      return new Measurement(
-              m1.min < m2.min ? m1.min : m2.min,
-              m1.max > m2.max ? m1.max : m2.max,
-              m1.sum + m2.sum,
-              m1.count + m2.count
-      );
-    }
-
+    @Override
     public String toString() {
-      return round(min) + "/" + round(sum / count) + "/" + round(max);
-    }
-
-    private double round(double value) {
-      return Math.round(value * 10.0) / 10.0;
+      return min/10.0 +
+              "/" + (sum / count / 10.0) +
+              "/" + max/10.0;
     }
   }
 
-  public static void main(String[] args) throws IOException {
-    String file = args.length == 0 ? FILE : args[0];
+  public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
+    String filename = args.length == 0 ? FILE : args[0];
+    File file = new File(filename);
+
+    record FileSegment(long start, long end) {
+    }
+
+    int numberOfSegments = Runtime.getRuntime().availableProcessors();
+    long fileSize = file.length();
+    long segmentSize = fileSize / numberOfSegments;
 
     long start = System.currentTimeMillis();
 
+    List<FileSegment> segments = new ArrayList<>();
+    try (RandomAccessFile randomAccessFile = new RandomAccessFile(file, "r")) {
+      for (int i = 0; i < numberOfSegments; i++) {
+        long segStart = i * segmentSize;
+        long segEnd = (i == numberOfSegments - 1) ? fileSize : segStart + segmentSize;
 
-    Spliterator<Map.Entry<String, Integer>> spliterator = new Spliterator<>() {
-      final BufferedInputStream bis = new BufferedInputStream(new FileInputStream(file), 128 * 1024);
-      final InputStreamReader isr = new InputStreamReader(bis, StandardCharsets.UTF_8);
-      final LocklessBufferedReader br = new LocklessBufferedReader(isr, 128 * 1024);
-      final StringBuilder s = new StringBuilder();
-
-      @Override
-      public synchronized boolean tryAdvance(Consumer<? super Map.Entry<String, Integer>> action) {
-        if (br.readUntil(s, ';')) {
-          String city = s.toString();
-          s.setLength(0);
-          br.readUntil(s,'\n');
-          int temp = 0;
-          int length = s.length();
-          for (int i = 0; i < length; i++) {
-            char c = s.charAt(i);
-            if (c == '-') {
-              temp *= -1;
-              continue;
-            }
-            if (c == '.') {
-              continue;
-            }
-            if (c == '\r') {
-              break;
-            }
-            temp = 10 * temp + (c - '0');
+        if (i != 0) {
+          randomAccessFile.seek(segStart);
+          while (segStart < segEnd) {
+            segStart++;
+            if (randomAccessFile.read() == '\n') break;
           }
-          s.setLength(0);
-          action.accept(new AbstractMap.SimpleEntry<>(city, temp));
-          return true;
         }
-        return false;
+
+        if (i != numberOfSegments - 1) {
+          randomAccessFile.seek(segEnd);
+          while (segEnd < fileSize) {
+            segEnd++;
+            if (randomAccessFile.read() == '\n') break;
+          }
+        }
+
+        segments.add(new FileSegment(segStart, segEnd));
       }
 
-      @Override
-      public Spliterator<Map.Entry<String, Integer>> trySplit() {
-        return null;
-      }
+      try (ExecutorService es = Executors.newFixedThreadPool(numberOfSegments)) {
+        ConcurrentMap<String, Result> resultMap = new ConcurrentSkipListMap<>();
+        List<Future<Integer>> futures = new ArrayList<>();
+        int totalLines = 0;
+        for (FileSegment segment : segments) {
+          futures.add(es.submit(() -> {
+            BoundedRandomAccessFileInputStream brafis;
+            try {
+              brafis = new BoundedRandomAccessFileInputStream(new RandomAccessFile(file, "r"), segment.start, segment.end);
+            } catch (IOException e) {
+              throw new RuntimeException(e);
+            }
+            InputStreamReader isr = new InputStreamReader(new BufferedInputStream(brafis, 128 * 1024), StandardCharsets.UTF_8);
+            LocklessBufferedReader br = new LocklessBufferedReader(isr, 128 * 1024);
+            StringBuilder s = new StringBuilder();
+            int lines = 0;
+            while (br.readUntil(s, ';')) {
+              String city = s.toString();
+              s.setLength(0);
+              br.readUntil(s, '\n');
+              int temp = 0;
+              int negative = 1;
+              int length = s.length();
+              for (int i = 0; i < length; i++) {
+                char c = s.charAt(i);
+                if (c == '-') {
+                  negative = -1;
+                  continue;
+                }
+                if (c == '.') {
+                  continue;
+                }
+                if (c == '\r') {
+                  break;
+                }
+                temp = 10 * temp + (c - '0');
+              }
+              temp *= negative;
+              s.setLength(0);
+              int finalTemp = temp;
+              resultMap.compute(city, (k, v) -> {
+                if (v == null) {
+                  Result result = new Result();
+                  result.min = finalTemp;
+                  result.max = finalTemp;
+                  result.sum = finalTemp;
+                  result.count = 1;
+                  return result;
+                } else {
+                  Result result = new Result();
+                  result.min = Math.min(v.min, finalTemp);
+                  result.max = Math.max(v.max, finalTemp);
+                  result.sum = v.sum + finalTemp;
+                  result.count = v.count + 1;
+                  return result;
+                }
+              });
+              lines++;
+            }
+            return lines;
+          }));
+        }
 
-      @Override
-      public long estimateSize() {
-        return 1_000_000_000;
-      }
+        for (Future<Integer> future : futures) {
+          Integer lines = future.get();
+          totalLines += lines;
+        }
 
-      @Override
-      public int characteristics() {
-        return Spliterator.CONCURRENT | Spliterator.IMMUTABLE | Spliterator.ORDERED | Spliterator.NONNULL;
-      }
-    };
+        // Abha=-27.6/18.0/64.9, Abidjan=-19.1/26.0/75.9, Abéché=-20.2/29.4/72.7, Accra=-18.9/26.4/70.2
 
-    ConcurrentMap<String, Measurement> resultMap = StreamSupport.stream(spliterator, true)
-            .parallel()
-            .collect(Collectors.toConcurrentMap(
-                    // Combine/reduce:
-                    Map.Entry::getKey,
-                    entry -> new Measurement(entry.getValue()),
-                    Measurement::combineWith));
+        System.out.println("Total: " + totalLines);
+        System.out.println(resultMap);
+      }
+    }
 
     System.out.println(System.currentTimeMillis() - start);
-
-    System.out.print("{");
-    System.out.print(
-            resultMap.entrySet().stream().sorted(Map.Entry.comparingByKey()).map(Object::toString).collect(Collectors.joining(", ")));
-    System.out.println("}");
-
   }
 
+  static class BoundedRandomAccessFileInputStream extends InputStream {
+    private final RandomAccessFile randomAccessFile;
+    private final long end;
+    private long currentPosition;
+
+    public BoundedRandomAccessFileInputStream(RandomAccessFile randomAccessFile, long start, long end) throws IOException {
+      this.randomAccessFile = randomAccessFile;
+      this.end = end;
+      this.currentPosition = start;
+      randomAccessFile.seek(start);
+    }
+
+    @Override
+    public int read() throws IOException {
+      // Stop reading if the end of the segment is reached
+      if (currentPosition >= end) {
+        return -1;
+      }
+      int byteRead = randomAccessFile.read();
+      if (byteRead != -1) {
+        currentPosition++;
+      }
+      return byteRead;
+    }
+
+    @Override
+    public int read(byte[] b, int off, int len) throws IOException {
+      if (currentPosition >= end) {
+        return -1;
+      }
+      len = (int) Math.min(end - currentPosition, len);
+      int read = randomAccessFile.read(b, off, len);
+      currentPosition += read;
+      return read;
+    }
+
+    @Override
+    public int available() throws IOException {
+      long remaining = end - currentPosition;
+      if (remaining > Integer.MAX_VALUE) {
+        return Integer.MAX_VALUE;
+      }
+      return (int) remaining;
+    }
+
+    @Override
+    public void close() throws IOException {
+      // Don't close the underlying file
+    }
+  }
+
+  private static class EntrySpliterator implements Spliterator<Map.Entry<String, Integer>> {
+    final InputStreamReader isr;
+    final LocklessBufferedReader br;
+    final StringBuilder s;
+
+    public EntrySpliterator(BufferedInputStream bis) {
+      isr = new InputStreamReader(bis, StandardCharsets.UTF_8);
+      br = new LocklessBufferedReader(isr, 128 * 1024);
+      s = new StringBuilder();
+    }
+
+    @Override
+    public synchronized boolean tryAdvance(Consumer<? super Map.Entry<String, Integer>> action) {
+      if (br.readUntil(s, ';')) {
+        String city = s.toString();
+        s.setLength(0);
+        br.readUntil(s, '\n');
+        int temp = 0;
+        int length = s.length();
+        for (int i = 0; i < length; i++) {
+          char c = s.charAt(i);
+          if (c == '-') {
+            temp *= -1;
+            continue;
+          }
+          if (c == '.') {
+            continue;
+          }
+          if (c == '\r') {
+            break;
+          }
+          temp = 10 * temp + (c - '0');
+        }
+        s.setLength(0);
+        action.accept(new AbstractMap.SimpleEntry<>(city, temp));
+        return true;
+      }
+      return false;
+    }
+
+    @Override
+    public Spliterator<Map.Entry<String, Integer>> trySplit() {
+      return null;
+    }
+
+    @Override
+    public long estimateSize() {
+      return 1_000_000_000;
+    }
+
+    @Override
+    public int characteristics() {
+      return Spliterator.CONCURRENT | Spliterator.IMMUTABLE | Spliterator.ORDERED | Spliterator.NONNULL;
+    }
+  }
 }
 
 class LocklessBufferedReader extends Reader {
@@ -167,16 +294,6 @@ class LocklessBufferedReader extends Reader {
     this.in = in;
     cb = new char[sz];
     nextChar = nChars = 0;
-  }
-
-  /**
-   * Creates a buffering character-input stream that uses a default-sized
-   * input buffer.
-   *
-   * @param in A Reader
-   */
-  public LocklessBufferedReader(Reader in) {
-    this(in, DEFAULT_CHAR_BUFFER_SIZE);
   }
 
   /**
@@ -253,10 +370,7 @@ class LocklessBufferedReader extends Reader {
         }
       }
       if (nextChar >= nChars) { /* EOF */
-        if (s != null && s.length() > 0)
-          return true;
-        else
-          return false;
+        return s != null && s.length() > 0;
       }
       boolean eol = false;
       char c = 0;
