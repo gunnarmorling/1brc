@@ -49,18 +49,14 @@ public class CalculateAverage_spullara {
         }
     }
 
-  /**
-   * My results on thie computer:
-   *
-   * CalculateAverage: 2m37.788s
-   * CalculateAverage_royvanrijn: 0m29.639s
-   * CalculateAverage_spullara: 0m6.278s
-   *
-   * @param args
-   * @throws IOException
-   * @throws ExecutionException
-   * @throws InterruptedException
-   */
+    /*
+     * My results on this computer:
+     *
+     * CalculateAverage: 2m37.788s
+     * CalculateAverage_royvanrijn: 0m29.639s
+     * CalculateAverage_spullara: 0m6.278s
+     *
+     */
 
   public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
     String filename = args.length == 0 ? FILE : args[0];
@@ -108,8 +104,8 @@ public class CalculateAverage_spullara {
             Map<String, Result> resultMap = new HashMap<>();
             RandomAccessFile raf = new RandomAccessFile(file, "r");
             BoundedRandomAccessFileInputStream brafis = new BoundedRandomAccessFileInputStream(raf, segment.start, segment.end);
-            InputStreamReader isr = new InputStreamReader(new BufferedInputStream(brafis, 128 * 1024), StandardCharsets.UTF_8);
-            LocklessBufferedReader br = new LocklessBufferedReader(isr, 128 * 1024);
+            InputStreamReader isr = new InputStreamReader(new BufferedInputStream(brafis, 256 * 1024), StandardCharsets.UTF_8);
+            LocklessBufferedReader br = new LocklessBufferedReader(isr, 256 * 1024);
             StringBuilder s = new StringBuilder();
             int lines = 0;
             while (br.readUntil(s, ';')) {
@@ -189,16 +185,8 @@ public class CalculateAverage_spullara {
         }
 
         @Override
-        public int read() throws IOException {
-            // Stop reading if the end of the segment is reached
-            if (currentPosition >= end) {
-                return -1;
-            }
-            int byteRead = randomAccessFile.read();
-            if (byteRead != -1) {
-                currentPosition++;
-            }
-            return byteRead;
+        public int read() {
+            throw new IllegalArgumentException();
         }
 
         @Override
@@ -213,7 +201,7 @@ public class CalculateAverage_spullara {
         }
 
         @Override
-        public int available() throws IOException {
+        public int available() {
             long remaining = end - currentPosition;
             if (remaining > Integer.MAX_VALUE) {
                 return Integer.MAX_VALUE;
@@ -222,7 +210,7 @@ public class CalculateAverage_spullara {
         }
 
         @Override
-        public void close() throws IOException {
+        public void close() {
             // Don't close the underlying file
         }
     }
@@ -237,18 +225,8 @@ class LocklessBufferedReader extends Reader {
     private char[] cb;
     private int nChars, nextChar;
 
-    private static final int INVALIDATED = -2;
-    private static final int UNMARKED = -1;
-    private int markedChar = UNMARKED;
-    private int readAheadLimit = 0; /* Valid only when markedChar > 0 */
-
-    private static final int DEFAULT_CHAR_BUFFER_SIZE = 8192;
-    private static final int DEFAULT_EXPECTED_LINE_LENGTH = 80;
-
     public LocklessBufferedReader(Reader in, int sz) {
         super(in);
-        if (sz <= 0)
-            throw new IllegalArgumentException("Buffer size <= 0");
         this.in = in;
         cb = new char[sz];
         nextChar = nChars = 0;
@@ -268,11 +246,11 @@ class LocklessBufferedReader extends Reader {
         }
     }
 
-    public int read() throws IOException {
+    public int read() {
         throw new IllegalArgumentException();
     }
 
-    public int read(char[] cbuf, int off, int len) throws IOException {
+    public int read(char[] cbuf, int off, int len) {
         throw new IllegalArgumentException();
     }
 
@@ -320,11 +298,11 @@ class LocklessBufferedReader extends Reader {
     /**
      * {@inheritDoc}
      */
-    public long skip(long n) throws IOException {
+    public long skip(long n) {
         throw new IllegalArgumentException();
     }
 
-    public boolean ready() throws IOException {
+    public boolean ready() {
         throw new IllegalArgumentException();
     }
 
@@ -332,11 +310,11 @@ class LocklessBufferedReader extends Reader {
         return true;
     }
 
-    public void mark(int readAheadLimit) throws IOException {
+    public void mark(int readAheadLimit) {
         throw new IllegalArgumentException();
     }
 
-    public void reset() throws IOException {
+    public void reset() {
         throw new IllegalArgumentException();
     }
 
