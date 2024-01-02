@@ -38,10 +38,10 @@ Submit your implementation by Jan 31 2024 and become part of the leaderboard!
 | # | Result (m:s:ms) | Implementation     | Submitter     |
 |---|-----------------|--------------------|---------------|
 | 1.|        00:38.510| [CalculateAverage_bjhara.java](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_bjhara.java)| [Hampus Ram](https://github.com/bjhara)|
-| 1.|        02:08.315| [CalculateAverage_itaske.java](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_itaske.java)| [itaske](https://github.com/itaske)|
-| 2.|        02:08.650| [CalculateAverage_kuduwa_keshavram.java](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_kuduwa_keshavram.java)| [Kuduwa Keshavram](https://github.com/kuduwa_keshavram)|
-| 2.|        02:08.845| [CalculateAverage_royvanrijn.java](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_royvanrijn.java)| [Roy van Rijn](https://github.com/royvanrijn)|
-| 3.|        04:13.449| [CalculateAverage.java](https://github.com/gunnarmorling/onebrc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage.java) (baseline)| [Gunnar Morling](https://github.com/gunnarmorling)|
+| 2.|        02:08.315| [CalculateAverage_itaske.java](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_itaske.java)| [itaske](https://github.com/itaske)|
+| 3.|        02:08.650| [CalculateAverage_kuduwa_keshavram.java](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_kuduwa_keshavram.java)| [Kuduwa Keshavram](https://github.com/kuduwa_keshavram)|
+| 4.|        02:08.845| [CalculateAverage_royvanrijn.java](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_royvanrijn.java)| [Roy van Rijn](https://github.com/royvanrijn)|
+| 5.|        04:13.449| [CalculateAverage.java](https://github.com/gunnarmorling/onebrc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage.java) (baseline)| [Gunnar Morling](https://github.com/gunnarmorling)|
 
 See [below](#entering-the-challenge) for instructions how to enter the challenge with your own implementation.
 
