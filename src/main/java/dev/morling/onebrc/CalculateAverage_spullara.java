@@ -20,18 +20,17 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
 
-public class CalculateAverage_spullara1 {
+public class CalculateAverage_spullara {
   private static final String FILE = "./measurements.txt";
 
   static final class Result {
-    int min;
-    int max;
-    int sum;
-    int count;
+    double min;
+    double max;
+    double sum;
+    double count;
 
-    Result(int min, int max, int sum, int count) {
+    Result(double min, double max, double sum, double count) {
       this.min = min;
       this.max = max;
       this.sum = sum;
@@ -40,9 +39,13 @@ public class CalculateAverage_spullara1 {
 
     @Override
     public String toString() {
-      return min / 10.0 +
-              "/" + (sum / count / 10.0) +
-              "/" + max / 10.0;
+      return round(min) +
+              "/" + round(sum / count) +
+              "/" + round(max);
+    }
+
+    double round(double v) {
+      return Math.round(v * 10.0) / 10.0;
     }
   }
 
@@ -123,7 +126,7 @@ public class CalculateAverage_spullara1 {
               }
               temp *= negative;
               s.setLength(0);
-              int finalTemp = temp;
+              double finalTemp = temp / 10.0;
               resultMap.compute(city, (k, v) -> {
                 if (v == null) {
                   return new Result(finalTemp, finalTemp, finalTemp, 1);
@@ -219,6 +222,9 @@ public class CalculateAverage_spullara1 {
   }
 }
 
+/**
+ * Remove locks and other useless stuff and add a method to read until a delimiter.
+ */
 class LocklessBufferedReader extends Reader {
   private Reader in;
 
@@ -233,14 +239,6 @@ class LocklessBufferedReader extends Reader {
   private static final int DEFAULT_CHAR_BUFFER_SIZE = 8192;
   private static final int DEFAULT_EXPECTED_LINE_LENGTH = 80;
 
-  /**
-   * Creates a buffering character-input stream that uses an input buffer of
-   * the specified size.
-   *
-   * @param in A Reader
-   * @param sz Input-buffer size
-   * @throws IllegalArgumentException If {@code sz <= 0}
-   */
   public LocklessBufferedReader(Reader in, int sz) {
     super(in);
     if (sz <= 0)
@@ -294,14 +292,6 @@ class LocklessBufferedReader extends Reader {
     }
   }
 
-  /**
-   * Reads a single character.
-   *
-   * @return The character read, as an integer in the range
-   * 0 to 65535 ({@code 0x00-0xffff}), or -1 if the
-   * end of the stream has been reached
-   * @throws IOException If an I/O error occurs
-   */
   public int read() throws IOException {
     throw new IllegalArgumentException();
   }
@@ -313,7 +303,6 @@ class LocklessBufferedReader extends Reader {
   public boolean readUntil(StringBuilder s, char delimiter) {
     int startChar;
 
-    bufferLoop:
     for (; ; ) {
 
       if (nextChar >= nChars) {
@@ -324,18 +313,17 @@ class LocklessBufferedReader extends Reader {
         }
       }
       if (nextChar >= nChars) { /* EOF */
-        return s != null && s.length() > 0;
+        return s != null && !s.isEmpty();
       }
       boolean eol = false;
       char c = 0;
       int i;
 
-      charLoop:
       for (i = nextChar; i < nChars; i++) {
         c = cb[i];
         if (c == delimiter) {
           eol = true;
-          break charLoop;
+          break;
         }
       }
 
@@ -343,12 +331,8 @@ class LocklessBufferedReader extends Reader {
       nextChar = i;
 
       if (eol) {
-        String str;
-        if (s == null) {
-          str = new String(cb, startChar, i - startChar);
-        } else {
+        if (s != null) {
           s.append(cb, startChar, i - startChar);
-          str = s.toString();
         }
         nextChar++;
         return true;
@@ -371,38 +355,14 @@ class LocklessBufferedReader extends Reader {
     throw new IllegalArgumentException();
   }
 
-  /**
-   * Tells whether this stream supports the mark() operation, which it does.
-   */
   public boolean markSupported() {
     return true;
   }
 
-  /**
-   * Marks the present position in the stream.  Subsequent calls to reset()
-   * will attempt to reposition the stream to this point.
-   *
-   * @param readAheadLimit Limit on the number of characters that may be
-   *                       read while still preserving the mark. An attempt
-   *                       to reset the stream after reading characters
-   *                       up to this limit or beyond may fail.
-   *                       A limit value larger than the size of the input
-   *                       buffer will cause a new buffer to be allocated
-   *                       whose size is no smaller than limit.
-   *                       Therefore large values should be used with care.
-   * @throws IllegalArgumentException If {@code readAheadLimit < 0}
-   * @throws IOException              If an I/O error occurs
-   */
   public void mark(int readAheadLimit) throws IOException {
     throw new IllegalArgumentException();
   }
 
-  /**
-   * Resets the stream to the most recent mark.
-   *
-   * @throws IOException If the stream has never been marked,
-   *                     or if the mark has been invalidated
-   */
   public void reset() throws IOException {
     throw new IllegalArgumentException();
   }
