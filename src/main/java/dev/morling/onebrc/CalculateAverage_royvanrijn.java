@@ -24,7 +24,7 @@ import java.util.stream.Collectors;
 
 public class CalculateAverage_royvanrijn {
 
-    private static final String FILE = "./measurements-100m.txt";
+    private static final String FILE = "./measurements.txt";
 
     private record Measurement(double min, double max, double sum, long count) {
 
@@ -51,8 +51,6 @@ public class CalculateAverage_royvanrijn {
     }
 
     public static void main(String[] args) throws IOException {
-
-
 
         long start = System.currentTimeMillis();
 
