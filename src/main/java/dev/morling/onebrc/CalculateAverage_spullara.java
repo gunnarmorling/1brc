@@ -49,6 +49,19 @@ public class CalculateAverage_spullara {
         }
     }
 
+  /**
+   * My results on thie computer:
+   *
+   * CalculateAverage: 2m37.788s
+   * CalculateAverage_royvanrijn: 0m29.639s
+   * CalculateAverage_spullara: 0m6.278s
+   *
+   * @param args
+   * @throws IOException
+   * @throws ExecutionException
+   * @throws InterruptedException
+   */
+
   public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
     String filename = args.length == 0 ? FILE : args[0];
     File file = new File(filename);
