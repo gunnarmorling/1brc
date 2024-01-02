@@ -24,7 +24,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.stream.Collectors;
 
-public class CalculateAverage_patrick {
+public class CalculateAverage_itaske {
 
     private static final String FILE = "./measurements.txt";
 
