@@ -22,7 +22,7 @@ import java.util.AbstractMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-public class CalculateAverage_royvanrijn {
+public class CalculateAverage_spullara2 {
 
     private static final String FILE = "./measurements.txt";
 
@@ -51,17 +51,30 @@ public class CalculateAverage_royvanrijn {
     }
 
     public static void main(String[] args) throws IOException {
-
-
-
         long start = System.currentTimeMillis();
 
         Map<String, Measurement> resultMap = Files.lines(Path.of(FILE)).parallel()
-                .map(record -> {
+                .map(s -> {
                     // Map to <String,double>
-                    int pivot = record.indexOf(";");
-                    String key = record.substring(0, pivot);
-                    double measured = Double.parseDouble(record.substring(pivot + 1));
+                    int pivot = s.indexOf(";");
+                    String key = s.substring(0, pivot);
+                    int temp = 0;
+                    int length = s.length();
+                    for (int i = pivot + 1; i < length; i++) {
+                        char c = s.charAt(i);
+                        if (c == '-') {
+                            temp *= -1;
+                            continue;
+                        }
+                        if (c == '.') {
+                            continue;
+                        }
+                        if (c == '\r') {
+                            break;
+                        }
+                        temp = 10 * temp + (c - '0');
+                    }
+                    double measured = temp / 10.0;
                     return new AbstractMap.SimpleEntry<>(key, measured);
                 })
                 .collect(Collectors.toConcurrentMap(
