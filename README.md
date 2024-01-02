@@ -105,7 +105,7 @@ To submit your own implementation to 1BRC, follow these steps:
 * (Optional) If you'd like to use native binaries (GraalVM), adjust the _pom.xml_ file so that it builds that binary.
 * Create a pull request against the upstream repository, clearly stating
   * The name of your implementation class.
-  * The JDK build to use (of not specified, the latest OpenJDK 21 upstream build will be used).
+  * The JDK build to use (if not specified, the latest OpenJDK 21 upstream build will be used).
   * The execution time of the program on your system and specs of the same (CPU, number of cores, RAM). This is for informative purposes only, the official runtime will be determined as described below.
 * I will run the program and determine its performance as described in the next section, and enter the result to the scoreboard.
 
