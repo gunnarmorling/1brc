@@ -52,7 +52,7 @@ public class CalculateAverage_royvanrijn {
 
     public static void main(String[] args) throws IOException {
 
-//        long start = System.currentTimeMillis();
+//        long before = System.currentTimeMillis();
 
         Map<String, Measurement> resultMap = Files.lines(Path.of(FILE)).parallel()
                 .map(record -> {
