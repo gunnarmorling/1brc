@@ -17,12 +17,8 @@ package dev.morling.onebrc;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileSystems;
-import java.nio.file.Paths;
-import java.util.HashMap;
-import java.util.Locale;
-import java.util.Map;
-import java.util.TreeMap;
+import java.nio.file.*;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collector;
 
@@ -56,7 +52,7 @@ public class CalculateAverage_fatroom {
             int measurement = 0;
             for (int i = 0; i < v.length(); i++) {
                 if (v.charAt(i) == ';') {
-                    measurement = numberCache.computeIfAbsent(v.substring(i), key -> {
+                    measurement = numberCache.computeIfAbsent(v.substring(i + 1), key -> {
                         int sign = 1;
                         int value = 0;
                         for (int j = 0; j < key.length(); j++) {
