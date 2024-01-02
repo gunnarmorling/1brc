@@ -24,9 +24,6 @@ public class CalculateAverage_roman_r_m {
 
     private static final String FILE = "./measurements.txt";
 
-    private static record Measurement(String station, double value) {
-    }
-
     private static final class ResultRow {
         double min = 0.0;
         double sum = 0.0;
@@ -48,12 +45,14 @@ public class CalculateAverage_roman_r_m {
         String l;
         while ((l = reader.readLine()) != null) {
             int i = l.indexOf(';');
-            var m = new Measurement(l.substring(0, i), Double.parseDouble(l.substring(i + 1)));
+            String station = l.substring(0, i);
+            double value = Double.parseDouble(l.substring(i + 1));
 
-            var a = measurements.computeIfAbsent(m.station, _ -> new ResultRow());
-            a.min = Math.min(a.min, m.value);
-            a.max = Math.max(a.max, m.value);
-            a.sum += m.value;
+            var a = measurements.computeIfAbsent(station, _ -> new ResultRow());
+
+            a.min = Math.min(a.min, value);
+            a.max = Math.max(a.max, value);
+            a.sum += value;
             a.count++;
         }
 
