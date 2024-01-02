@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
-public class CalculateAverage_kuduwa {
+public class CalculateAverage_kuduwa_keshavram {
 
     private static final String FILE = "./measurements.txt";
 
