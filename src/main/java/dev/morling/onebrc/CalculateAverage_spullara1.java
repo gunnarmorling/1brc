@@ -19,13 +19,25 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 public class CalculateAverage_spullara1 {
-
   private static final String FILE = "./measurements.txt";
 
-  record Result(int min, int max, int sum, int count) {
+  static final class Result {
+    int min;
+    int max;
+    int sum;
+    int count;
+
+    Result(int min, int max, int sum, int count) {
+      this.min = min;
+      this.max = max;
+      this.sum = sum;
+      this.count = count;
+    }
+
     @Override
     public String toString() {
       return min / 10.0 +
@@ -73,11 +85,11 @@ public class CalculateAverage_spullara1 {
       }
 
       try (ExecutorService es = Executors.newFixedThreadPool(numberOfSegments)) {
-        ConcurrentMap<String, Result> resultMap = new ConcurrentSkipListMap<>();
-        List<Future<Integer>> futures = new ArrayList<>();
-        int totalLines = 0;
+        List<Future<Map<String, Result>>> futures = new ArrayList<>();
+        AtomicInteger totalLines = new AtomicInteger();
         for (FileSegment segment : segments) {
           futures.add(es.submit(() -> {
+            Map<String, Result> resultMap = new HashMap<>();
             BoundedRandomAccessFileInputStream brafis;
             try {
               brafis = new BoundedRandomAccessFileInputStream(new RandomAccessFile(file, "r"), segment.start, segment.end);
@@ -116,22 +128,34 @@ public class CalculateAverage_spullara1 {
                 if (v == null) {
                   return new Result(finalTemp, finalTemp, finalTemp, 1);
                 } else {
-                  return new Result(
-                          Math.min(v.min, finalTemp),
-                          Math.max(v.max, finalTemp),
-                          v.sum + finalTemp,
-                          v.count + 1);
+                  v.min = Math.min(v.min, finalTemp);
+                  v.max = Math.max(v.max, finalTemp);
+                  v.sum += finalTemp;
+                  v.count += 1;
+                  return v;
                 }
               });
               lines++;
             }
-            return lines;
+            totalLines.addAndGet(lines);
+            return resultMap;
           }));
         }
 
-        for (Future<Integer> future : futures) {
-          Integer lines = future.get();
-          totalLines += lines;
+        Map<String, Result> resultMap = new TreeMap<>();
+        for (Future<Map<String, Result>> future : futures) {
+          Map<String, Result> partition = future.get();
+          for (Map.Entry<String, Result> entry : partition.entrySet()) {
+            resultMap.compute(entry.getKey(), (k, v) -> {
+              if (v == null) return entry.getValue();
+              Result value = entry.getValue();
+              v.min = Math.min(v.min, value.min);
+              v.max = Math.max(v.max, value.max);
+              v.sum += value.sum;
+              v.count += value.count;
+              return v;
+            });
+          }
         }
 
         System.out.println("Time: " + (System.currentTimeMillis() - start) + "ms");
@@ -191,62 +215,6 @@ public class CalculateAverage_spullara1 {
     @Override
     public void close() throws IOException {
       // Don't close the underlying file
-    }
-  }
-
-  private static class EntrySpliterator implements Spliterator<Map.Entry<String, Integer>> {
-    final InputStreamReader isr;
-    final LocklessBufferedReader br;
-    final StringBuilder s;
-
-    public EntrySpliterator(BufferedInputStream bis) {
-      isr = new InputStreamReader(bis, StandardCharsets.UTF_8);
-      br = new LocklessBufferedReader(isr, 128 * 1024);
-      s = new StringBuilder();
-    }
-
-    @Override
-    public synchronized boolean tryAdvance(Consumer<? super Map.Entry<String, Integer>> action) {
-      if (br.readUntil(s, ';')) {
-        String city = s.toString();
-        s.setLength(0);
-        br.readUntil(s, '\n');
-        int temp = 0;
-        int length = s.length();
-        for (int i = 0; i < length; i++) {
-          char c = s.charAt(i);
-          if (c == '-') {
-            temp *= -1;
-            continue;
-          }
-          if (c == '.') {
-            continue;
-          }
-          if (c == '\r') {
-            break;
-          }
-          temp = 10 * temp + (c - '0');
-        }
-        s.setLength(0);
-        action.accept(new AbstractMap.SimpleEntry<>(city, temp));
-        return true;
-      }
-      return false;
-    }
-
-    @Override
-    public Spliterator<Map.Entry<String, Integer>> trySplit() {
-      return null;
-    }
-
-    @Override
-    public long estimateSize() {
-      return 1_000_000_000;
-    }
-
-    @Override
-    public int characteristics() {
-      return Spliterator.CONCURRENT | Spliterator.IMMUTABLE | Spliterator.ORDERED | Spliterator.NONNULL;
     }
   }
 }
