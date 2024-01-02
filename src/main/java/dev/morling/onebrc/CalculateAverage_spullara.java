@@ -16,47 +16,53 @@
 package dev.morling.onebrc;
 
 import java.io.*;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.channels.SeekableByteChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class CalculateAverage_spullara {
-    private static final String FILE = "./measurements.txt";
+  private static final String FILE = "./measurements.txt";
 
-    static final class Result {
-        double min;
-        double max;
-        double sum;
-        double count;
+  static final class Result {
+    double min;
+    double max;
+    double sum;
+    double count;
 
-        Result(double min, double max, double sum, double count) {
-            this.min = min;
-            this.max = max;
-            this.sum = sum;
-            this.count = count;
-        }
-
-        @Override
-        public String toString() {
-            return round(min) +
-                    "/" + round(sum / count) +
-                    "/" + round(max);
-        }
-
-        double round(double v) {
-            return Math.round(v * 10.0) / 10.0;
-        }
+    Result(double value) {
+      this.min = value;
+      this.max = value;
+      this.sum = value;
+      this.count = 1;
     }
 
-    /*
-     * My results on this computer:
-     *
-     * CalculateAverage: 2m37.788s
-     * CalculateAverage_royvanrijn: 0m29.639s
-     * CalculateAverage_spullara: 0m6.278s
-     *
-     */
+    @Override
+    public String toString() {
+      return round(min) +
+              "/" + round(sum / count) +
+              "/" + round(max);
+    }
+
+    double round(double v) {
+      return Math.round(v * 10.0) / 10.0;
+    }
+  }
+
+  /*
+   * My results on this computer:
+   *
+   * CalculateAverage: 2m37.788s
+   * CalculateAverage_royvanrijn: 0m29.639s
+   * CalculateAverage_spullara: 0m6.278s
+   *
+   */
 
   public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
     String filename = args.length == 0 ? FILE : args[0];
@@ -102,50 +108,54 @@ public class CalculateAverage_spullara {
         for (FileSegment segment : segments) {
           futures.add(es.submit(() -> {
             Map<String, Result> resultMap = new HashMap<>();
-            RandomAccessFile raf = new RandomAccessFile(file, "r");
-            BoundedRandomAccessFileInputStream brafis = new BoundedRandomAccessFileInputStream(raf, segment.start, segment.end);
-            InputStreamReader isr = new InputStreamReader(new BufferedInputStream(brafis, 256 * 1024), StandardCharsets.UTF_8);
-            LocklessBufferedReader br = new LocklessBufferedReader(isr, 256 * 1024);
-            StringBuilder s = new StringBuilder();
-            int lines = 0;
-            while (br.readUntil(s, ';')) {
-              String city = s.toString();
-              s.setLength(0);
-              br.readUntil(s, '\n');
-              int temp = 0;
-              int negative = 1;
-              int length = s.length();
-              for (int i = 0; i < length; i++) {
-                char c = s.charAt(i);
-                if (c == '-') {
-                  negative = -1;
-                  continue;
+            MappedByteBuffer bb;
+            try (var fileChannel = (FileChannel) Files.newByteChannel(Path.of(filename), StandardOpenOption.READ)) {
+              bb = fileChannel.map(FileChannel.MapMode.READ_ONLY, segment.start, segment.end - segment.start);
+              byte[] buffer = new byte[64];
+              int lines = 0;
+              int startLine;
+              int limit = bb.limit();
+              while ((startLine = bb.position()) < limit) {
+                int currentPosition = startLine;
+                byte b;
+                int offset = 0;
+                while (currentPosition != segment.end && (b = bb.get(currentPosition++)) != ';') {
+                  buffer[offset++] = b;
                 }
-                if (c == '.') {
-                  continue;
+                String city = new String(buffer, 0, offset);
+                int temp = 0;
+                int negative = 1;
+                while (currentPosition != segment.end && (b = bb.get(currentPosition++)) != '\n') {
+                  if (b == '-') {
+                    negative = -1;
+                    continue;
+                  }
+                  if (b == '.') {
+                    continue;
+                  }
+                  if (b == '\r') {
+                    break;
+                  }
+                  temp = 10 * temp + (b - '0');
                 }
-                if (c == '\r') {
-                  break;
+                temp *= negative;
+                double finalTemp = temp / 10.0;
+                Result measurement = resultMap.get(city);
+                if (measurement == null) {
+                  measurement = new Result(finalTemp);
+                  resultMap.put(city, measurement);
+                } else {
+                  measurement.min = Math.min(measurement.min, finalTemp);
+                  measurement.max = Math.max(measurement.max, finalTemp);
+                  measurement.sum += finalTemp;
+                  measurement.count += 1;
                 }
-                temp = 10 * temp + (c - '0');
+                lines++;
+                bb.position(currentPosition);
               }
-              temp *= negative;
-              s.setLength(0);
-              double finalTemp = temp / 10.0;
-              Result measurement = resultMap.get(city);
-              if (measurement == null) {
-                measurement = new Result(finalTemp, finalTemp, finalTemp, 1);
-                resultMap.put(city, measurement);
-              } else {
-                measurement.min = Math.min(measurement.min, finalTemp);
-                measurement.max = Math.max(measurement.max, finalTemp);
-                measurement.sum += finalTemp;
-                measurement.count += 1;
-              }
-              lines++;
+              totalLines.addAndGet(lines);
+              return resultMap;
             }
-            totalLines.addAndGet(lines);
-            return resultMap;
           }));
         }
 
@@ -171,166 +181,5 @@ public class CalculateAverage_spullara {
       }
     }
   }
-
-    static class BoundedRandomAccessFileInputStream extends InputStream {
-        private final RandomAccessFile randomAccessFile;
-        private final long end;
-        private long currentPosition;
-
-        public BoundedRandomAccessFileInputStream(RandomAccessFile randomAccessFile, long start, long end) throws IOException {
-            this.randomAccessFile = randomAccessFile;
-            this.end = end;
-            this.currentPosition = start;
-            randomAccessFile.seek(start);
-        }
-
-        @Override
-        public int read() {
-            throw new IllegalArgumentException();
-        }
-
-        @Override
-        public int read(byte[] b, int off, int len) throws IOException {
-            if (currentPosition >= end) {
-                return -1;
-            }
-            len = (int) Math.min(end - currentPosition, len);
-            int read = randomAccessFile.read(b, off, len);
-            currentPosition += read;
-            return read;
-        }
-
-        @Override
-        public int available() {
-            long remaining = end - currentPosition;
-            if (remaining > Integer.MAX_VALUE) {
-                return Integer.MAX_VALUE;
-            }
-            return (int) remaining;
-        }
-
-        @Override
-        public void close() {
-            // Don't close the underlying file
-        }
-    }
 }
 
-/**
- * Remove locks and other useless stuff and add a method to read until a delimiter.
- */
-class LocklessBufferedReader extends Reader {
-    private Reader in;
-
-    private char[] cb;
-    private int nChars, nextChar;
-
-    public LocklessBufferedReader(Reader in, int sz) {
-        super(in);
-        this.in = in;
-        cb = new char[sz];
-        nextChar = nChars = 0;
-    }
-
-    /**
-     * Fills the input buffer, taking the mark into account if it is valid.
-     */
-    private void fill() throws IOException {
-        int n;
-        do {
-            n = in.read(cb, 0, cb.length);
-        } while (n == 0);
-        if (n > 0) {
-            nChars = n;
-            nextChar = 0;
-        }
-    }
-
-    public int read() {
-        throw new IllegalArgumentException();
-    }
-
-    public int read(char[] cbuf, int off, int len) {
-        throw new IllegalArgumentException();
-    }
-
-    public boolean readUntil(StringBuilder s, char delimiter) {
-        int startChar;
-
-        for (;;) {
-            if (nextChar >= nChars) {
-                try {
-                    fill();
-                }
-                catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            }
-            if (nextChar >= nChars) { /* EOF */
-                return s != null && !s.isEmpty();
-            }
-            boolean eol = false;
-            char c;
-            int i;
-
-            for (i = nextChar; i < nChars; i++) {
-                c = cb[i];
-                if (c == delimiter) {
-                    eol = true;
-                    break;
-                }
-            }
-
-            startChar = nextChar;
-            nextChar = i;
-
-            if (eol) {
-                if (s != null) {
-                    s.append(cb, startChar, i - startChar);
-                }
-                nextChar++;
-                return true;
-            }
-            s.append(cb, startChar, i - startChar);
-        }
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public long skip(long n) {
-        throw new IllegalArgumentException();
-    }
-
-    public boolean ready() {
-        throw new IllegalArgumentException();
-    }
-
-    public boolean markSupported() {
-        return true;
-    }
-
-    public void mark(int readAheadLimit) {
-        throw new IllegalArgumentException();
-    }
-
-    public void reset() {
-        throw new IllegalArgumentException();
-    }
-
-    public void close() throws IOException {
-        implClose();
-    }
-
-    private void implClose() throws IOException {
-        if (in == null)
-            return;
-        try {
-            in.close();
-        }
-        finally {
-            in = null;
-            cb = null;
-        }
-    }
-}
