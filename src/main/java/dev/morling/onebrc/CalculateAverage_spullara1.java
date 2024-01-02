@@ -20,24 +20,17 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
-import java.util.stream.StreamSupport;
 
 public class CalculateAverage_spullara1 {
 
   private static final String FILE = "./measurements.txt";
 
-  static class Result {
-    int min;
-    int max;
-    int sum;
-    int count;
-
+  record Result(int min, int max, int sum, int count) {
     @Override
     public String toString() {
-      return min/10.0 +
+      return min / 10.0 +
               "/" + (sum / count / 10.0) +
-              "/" + max/10.0;
+              "/" + max / 10.0;
     }
   }
 
@@ -121,19 +114,13 @@ public class CalculateAverage_spullara1 {
               int finalTemp = temp;
               resultMap.compute(city, (k, v) -> {
                 if (v == null) {
-                  Result result = new Result();
-                  result.min = finalTemp;
-                  result.max = finalTemp;
-                  result.sum = finalTemp;
-                  result.count = 1;
-                  return result;
+                  return new Result(finalTemp, finalTemp, finalTemp, 1);
                 } else {
-                  Result result = new Result();
-                  result.min = Math.min(v.min, finalTemp);
-                  result.max = Math.max(v.max, finalTemp);
-                  result.sum = v.sum + finalTemp;
-                  result.count = v.count + 1;
-                  return result;
+                  return new Result(
+                          Math.min(v.min, finalTemp),
+                          Math.max(v.max, finalTemp),
+                          v.sum + finalTemp,
+                          v.count + 1);
                 }
               });
               lines++;
@@ -147,14 +134,13 @@ public class CalculateAverage_spullara1 {
           totalLines += lines;
         }
 
-        // Abha=-27.6/18.0/64.9, Abidjan=-19.1/26.0/75.9, Abéché=-20.2/29.4/72.7, Accra=-18.9/26.4/70.2
+        System.out.println("Time: " + (System.currentTimeMillis() - start) + "ms");
 
-        System.out.println("Total: " + totalLines);
+        System.out.println("Lines processed: " + totalLines);
         System.out.println(resultMap);
       }
     }
 
-    System.out.println(System.currentTimeMillis() - start);
   }
 
   static class BoundedRandomAccessFileInputStream extends InputStream {
