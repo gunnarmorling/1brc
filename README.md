@@ -86,7 +86,10 @@ Execute the following steps to run the challenge:
 
 The following rules and limits apply:
 
-* Any Java distribution provided by [SDKMan](https://sdkman.io/jdks) as well as early access builds available on openjdk.net may be used (including EA builds for OpenJDK projects like Valhalla).
+* Any of these Java distributions may be used:
+    * Any builds provided by [SDKMan](https://sdkman.io/jdks)
+    * Early access builds available on openjdk.net may be used (including EA builds for OpenJDK projects like Valhalla)
+    * Builds on [builds.shipilev.net](https://builds.shipilev.net/openjdk-jdk-lilliput/)
 If you want to use a build not available via these channels, reach out to discuss whether it can be considered.
 * No external library dependencies may be used
 * Implementations must be provided as a single source file
@@ -151,6 +154,9 @@ A: The file is encoded with UTF-8.
 _Q: Can I make assumptions on the names of the weather stations showing up in the data set?_\
 A: No, while only a fixed set of station names is used by the data set generator, any solution should work with arbitrary UTF-8 station names
 (for the sake of simplicity, names are guaranteed to contain no `;` character).
+
+_Q: Can I copy code from other submissions?_
+A: Yes, you can. The primary focus of the challenge is about learning something new, rather than "winning". When you do so, please give credit to the relevant source submissions. Please don't re-submit other entries with no or only trivial improvements.
 
 _Q: Why_ 1️⃣🐝🏎️ _?_\
 A: It's the abbreviation of the project name: **One** **B**illion **R**ow **C**hallenge.
