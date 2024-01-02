@@ -27,7 +27,7 @@ public class CalculateAverage_lluismf {
 
 		Map<String, Aggregate> aggregates = new TreeMap();
 
-		try (BufferedReader reader = Files.newBufferedReader(Paths.get("measures.txt"))) {
+		try (BufferedReader reader = Files.newBufferedReader(Paths.get("measurements.txt"))) {
 			String line;
 
 			while ((line = reader.readLine()) != null) {
