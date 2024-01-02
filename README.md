@@ -146,7 +146,8 @@ _Q: Why_ 1️⃣🐝🏎️ _?_\
 A: It's the abbreviation of the project name: **One** **B**illion **R**ow **C**hallenge.
 
 _Q: Can I make assumptions on the names of the weather stations showing up in the data set?_\
-A: No, while only a fixed set of station names is used by the data set generator, any solution should work with arbitrary UTF-8 station names.
+A: No, while only a fixed set of station names is used by the data set generator, any solution should work with arbitrary UTF-8 station names
+(for the sake of simplicity, names are guaranteed to contain no `;` character).
 
 ## License
 
