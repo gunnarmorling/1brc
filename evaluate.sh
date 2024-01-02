@@ -25,5 +25,5 @@ mvn clean verify
 
 for i in {1..5}
 do
-    time ./calculate_average_$1.sh
+    ./calculate_average_$1.sh
 done
