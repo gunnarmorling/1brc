@@ -15,15 +15,6 @@
 #  limitations under the License.
 #
 
-if [ -z "$1" ]
-  then
-    echo "Usage: evaluate.sh <fork name>"
-    exit 1
-fi
 
-mvn clean verify
-
-for i in {1..5}
-do
-    ./calculate_average_$1.sh
-done
+JAVA_OPTS="--enable-preview --add-modules jdk.incubator.vector"
+time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_padreati

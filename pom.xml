@@ -103,6 +103,11 @@
           <version>3.8.1</version>
           <configuration>
             <parameters>true</parameters>
+            <compilerArgs>
+              <compilerArg>--enable-preview</compilerArg>
+              <compilerArg>--add-modules</compilerArg>
+              <compilerArg>java.base,jdk.incubator.vector</compilerArg>
+            </compilerArgs>
           </configuration>
         </plugin>
         <plugin>
