@@ -52,7 +52,7 @@ public class CalculateAverage_royvanrijn {
 
     public static void main(String[] args) throws IOException {
 
-        long start = System.currentTimeMillis();
+//        long start = System.currentTimeMillis();
 
         Map<String, Measurement> resultMap = Files.lines(Path.of(FILE)).parallel()
                 .map(record -> {
@@ -68,14 +68,12 @@ public class CalculateAverage_royvanrijn {
                         entry -> new Measurement(entry.getValue()),
                         Measurement::combineWith));
 
-        System.out.println(System.currentTimeMillis() - start);
-
         System.out.print("{");
         System.out.print(
                 resultMap.entrySet().stream().sorted(Map.Entry.comparingByKey()).map(Object::toString).collect(Collectors.joining(", ")));
         System.out.println("}");
 
-        // System.out.println("Took: " + (System.currentTimeMillis() - before));
+//        System.out.println("Took: " + (System.currentTimeMillis() - before));
 
     }
 }
