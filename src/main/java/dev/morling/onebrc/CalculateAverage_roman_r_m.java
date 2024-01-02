@@ -18,7 +18,6 @@ package dev.morling.onebrc;
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.TreeMap;
 
 public class CalculateAverage_roman_r_m {
@@ -26,9 +25,6 @@ public class CalculateAverage_roman_r_m {
     private static final String FILE = "./measurements.txt";
 
     private static record Measurement(String station, double value) {
-        private Measurement(String[] parts) {
-            this(parts[0], Double.parseDouble(parts[1]));
-        }
     }
 
     private static final class ResultRow {
@@ -51,7 +47,9 @@ public class CalculateAverage_roman_r_m {
         var reader = new BufferedReader(new FileReader(FILE), 1024 * 1024);
         String l;
         while ((l = reader.readLine()) != null) {
-            var m = new Measurement(l.split(";"));
+            int i = l.indexOf(';');
+            var m = new Measurement(l.substring(0, i), Double.parseDouble(l.substring(i + 1)));
+
             var a = measurements.computeIfAbsent(m.station, _ -> new ResultRow());
             a.min = Math.min(a.min, m.value);
             a.max = Math.max(a.max, m.value);
