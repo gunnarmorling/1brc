@@ -133,6 +133,7 @@ public class CalculateAverage_lawrey {
 
         // Print the time taken to process.
         System.out.println("Took: " + (System.currentTimeMillis() - before));
+        System.out.println(sortedMeasurementsMap.values().stream().mapToLong(m -> m.count).sum());
     }
 
     // Merges two measurement maps.
@@ -156,7 +157,7 @@ public class CalculateAverage_lawrey {
             if (i > 0)
                 skipToFirstLine(mbb);
             Key key = new Key();
-            while (mbb.remaining() > 0 && mbb.position() < chunk) {
+            while (mbb.remaining() > 0 && mbb.position() <= chunk) {
                 key.clear();
                 readKey(mbb, key);
                 int temp = readTemperatureFromBuffer(mbb);
@@ -193,11 +194,10 @@ public class CalculateAverage_lawrey {
                     break;
             }
         }
-        while (mbb.remaining() > 0) {
+        if (mbb.remaining()>0) {
             byte b = mbb.get(mbb.position());
-            if ((b & 0xff) >= ' ')
-                break;
-            mbb.position(mbb.position() + 11);
+            if (b == '\n')
+                mbb.get();
         }
         if (negative)
             temp = -temp;
@@ -208,7 +208,7 @@ public class CalculateAverage_lawrey {
     private static void readKey(MappedByteBuffer mbb, Key key) {
         while (mbb.remaining() > 0) {
             byte b = mbb.get();
-            if (b == ';' || b =='\r' || b == '\n')
+            if (b == ';' || b == '\r' || b == '\n')
                 break;
             key.append(b);
         }
