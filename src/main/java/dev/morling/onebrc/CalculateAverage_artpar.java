@@ -21,7 +21,6 @@ import jdk.incubator.vector.VectorSpecies;
 
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
@@ -212,7 +211,9 @@ public class CalculateAverage_artpar {
 
             final int VECTOR_SIZE = 512;
             final int VECTOR_SIZE_1 = VECTOR_SIZE - 1;
-            ByteBuffer nameBuffer = ByteBuffer.allocate(128);
+            // ByteBuffer nameBuffer = ByteBuffer.allocate(128);
+            byte[] rawBuffer = new byte[128];
+            int bufferIndex = 0;
             String matchedStation = "";
             boolean readUntilSemiColon = true;
 
@@ -220,23 +221,27 @@ public class CalculateAverage_artpar {
                 byte b = mappedByteBuffer.get();
                 totalBytesRead++;
                 if (readUntilSemiColon) {
-                    if ((byte) b != ';') {
-                        nameBuffer.put(b);
+                    if (b != ';') {
+                        rawBuffer[bufferIndex] = b;
+                        bufferIndex++;
                         continue;
                     }
                     else {
                         readUntilSemiColon = false;
-                        matchedStation = getNameStringFromBufferUsingBuffer(nameBuffer);
+                        matchedStation = new String(rawBuffer, 0, bufferIndex, StandardCharsets.UTF_8);
+                        bufferIndex = 0;
                         continue;
                     }
                 }
 
                 if (b != '\n') {
-                    nameBuffer.put(b);
+                    rawBuffer[bufferIndex] = b;
+                    bufferIndex++;
                 }
                 else {
                     readUntilSemiColon = true;
-                    String tempValue = getTempStringFromBufferUsingBuffer(nameBuffer);
+                    String tempValue = getTempStringFromBufferUsingBuffer(rawBuffer, bufferIndex);
+                    bufferIndex = 0;
 
                     int tempValueHashCode = tempValue.hashCode();
                     if (!hashToDouble.containsKey(tempValueHashCode)) {
@@ -271,7 +276,7 @@ public class CalculateAverage_artpar {
                         // groupedMeasurements.computeIfAbsent(matchedStation, k -> new MeasurementAggregator())
                         // .combine(ma);
 
-                        int remainingCount = array.length - i;
+                        // int remainingCount = array.length - i;
                         for (; i < array.length; i++) {
                             min = Math.min(min, array[i]);
                             max = Math.max(max, array[i]);
@@ -328,46 +333,23 @@ public class CalculateAverage_artpar {
             return groupedMeasurements;
         }
 
-        private String getNameStringFromBufferUsingBuffer(ByteBuffer nameBuffer) {
-            nameBuffer.flip();
 
-            byte[] array = nameBuffer.array();
-            int length = nameBuffer.limit();
-            int byteArrayHashCode = hashCode(array, 0, length);
-            nameBuffer.flip();
-            nameBuffer.clear();
-
-            if (!nameStringMap.containsKey(byteArrayHashCode)) {
-                String value = new String(array, 0, length, StandardCharsets.UTF_8);
-                nameStringMap.put(byteArrayHashCode, value);
-                return value;
-            }
-
-            return nameStringMap.get(byteArrayHashCode);
-        }
-
-        private int hashCode(byte[] array, int start, int length) {
+        private int hashCode(byte[] array, int length) {
             if (array == null) {
                 return 0;
             }
 
             int result = 1;
-            for (int i = start; i < start + length; i++) {
+            for (int i = 0; i < length; i++) {
                 result = 31 * result + array[i];
             }
 
             return result;
         }
 
-        private String getTempStringFromBufferUsingBuffer(ByteBuffer nameBuffer) {
-            nameBuffer.flip();
+        private String getTempStringFromBufferUsingBuffer(byte[] array, int length) {
 
-            byte[] array = nameBuffer.array();
-            int length = nameBuffer.limit();
-            int byteArrayHashCode = hashCode(array, 0, length);
-            nameBuffer.flip();
-            nameBuffer.clear();
-
+            int byteArrayHashCode = hashCode(array, length);
             if (!tempStringMap.containsKey(byteArrayHashCode)) {
                 String value = new String(array, 0, length, StandardCharsets.UTF_8);
                 tempStringMap.put(byteArrayHashCode, value);
