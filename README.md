@@ -41,13 +41,15 @@ Submit your implementation by Jan 31 2024 and become part of the leaderboard!
 | 2.|        00:16.558| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_ebarlas.java)| 21.0.1-open| [Elliot Barlas](https://github.com/ebarlas)|
 | 3.|        00:18.865| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_palmr.java)| 21.0.1-open| [Nick Palmer](https://github.com/palmr)|
 | 4.|        00:23.366| [link](https://github.com/gunnarmorling/1brc/pull/5/)| 21.0.1-open   | [Roy van Rijn](https://github.com/royvanrijn)|
-| 5.|        00:38.510| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_bjhara.java)| 21.0.1-open   | [Hampus Ram](https://github.com/bjhara)|
-| 6.|        00:50.547| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_padreati.java)| 21.0.1-open   | [Aurelian Tutuianu](https://github.com/padreati)|
-| 7.|        00:53.679| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_criccomini.java)| 21.0.1-open   | [Chris Riccomini](https://github.com/criccomini)|
-| 8.|        00:57.141| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_truelive.java)| 21.0.1-open   | [Roman Schweitzer](https://github.com/truelive)|
-| 9.|        02:08.315| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_itaske.java)| 21.0.1-open   | [itaske](https://github.com/itaske)|
-|10.|        02:08.650| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_kuduwa_keshavram.java)| 21.0.1-open   | [Kuduwa Keshavram](https://github.com/kuduwa_keshavram)|
-|11.|        04:13.449| [link](https://github.com/gunnarmorling/onebrc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage.java) (baseline)| 21.0.1-open   | [Gunnar Morling](https://github.com/gunnarmorling)|
+| 5.|        00:38.106| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_seijikun.java)| 21.0.1-open   | [Markus Ebner](https://github.com/seijikun)|
+| 6.|        00:38.510| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_bjhara.java)| 21.0.1-open   | [Hampus Ram](https://github.com/bjhara)|
+| 7.|        00:50.547| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_padreati.java)| 21.0.1-open   | [Aurelian Tutuianu](https://github.com/padreati)|
+| 8.|        00:53.679| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_criccomini.java)| 21.0.1-open   | [Chris Riccomini](https://github.com/criccomini)|
+| 9.|        00:57.141| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_truelive.java)| 21.0.1-open   | [Roman Schweitzer](https://github.com/truelive)|
+|10.|        02:00.101| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_khmarbaise.java)| 21.0.1-open   | [khmarbaise](https://github.com/khmarbaise)|
+|11.|        02:08.315| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_itaske.java)| 21.0.1-open   | [itaske](https://github.com/itaske)|
+|12.|        02:08.650| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_kuduwa_keshavram.java)| 21.0.1-open   | [Kuduwa Keshavram](https://github.com/kuduwa_keshavram)|
+|13.|        04:13.449| [link](https://github.com/gunnarmorling/onebrc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage.java) (baseline)| 21.0.1-open   | [Gunnar Morling](https://github.com/gunnarmorling)|
 
 See [below](#entering-the-challenge) for instructions how to enter the challenge with your own implementation.
 
