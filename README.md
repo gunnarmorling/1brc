@@ -37,8 +37,12 @@ Submit your implementation by Jan 31 2024 and become part of the leaderboard!
 
 | # | Result (m:s:ms) | Implementation     | Submitter     |
 |---|-----------------|--------------------|---------------|
-| 1.|        02:08.845| [CalculateAverage_royvanrijn.java](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_royvanrijn.java)| Roy van Rijn|
-| 2.|        04:13.449| [CalculateAverage.java](https://github.com/gunnarmorling/onebrc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage.java) (baseline)| Gunnar Morling|
+| 1.|        00:23.366| [link](https://github.com/gunnarmorling/1brc/pull/5/)| [Roy van Rijn](https://github.com/royvanrijn)|
+| 2.|        00:38.510| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_bjhara.java)| [Hampus Ram](https://github.com/bjhara)|
+| 3.|        00:50.547| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_padreati.java)| [Aurelian Tutuianu](https://github.com/padreati)|
+| 4.|        02:08.315| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_itaske.java)| [itaske](https://github.com/itaske)|
+| 5.|        02:08.650| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_kuduwa_keshavram.java)| [Kuduwa Keshavram](https://github.com/kuduwa_keshavram)|
+| 6.|        04:13.449| [link](https://github.com/gunnarmorling/onebrc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage.java) (baseline)| [Gunnar Morling](https://github.com/gunnarmorling)|
 
 See [below](#entering-the-challenge) for instructions how to enter the challenge with your own implementation.
 
@@ -86,7 +90,10 @@ Execute the following steps to run the challenge:
 
 The following rules and limits apply:
 
-* Any Java distribution provided by [SDKMan](https://sdkman.io/jdks) as well as early access builds available on openjdk.net may be used (including EA builds for OpenJDK projects like Valhalla).
+* Any of these Java distributions may be used:
+    * Any builds provided by [SDKMan](https://sdkman.io/jdks)
+    * Early access builds available on openjdk.net may be used (including EA builds for OpenJDK projects like Valhalla)
+    * Builds on [builds.shipilev.net](https://builds.shipilev.net/openjdk-jdk-lilliput/)
 If you want to use a build not available via these channels, reach out to discuss whether it can be considered.
 * No external library dependencies may be used
 * Implementations must be provided as a single source file
@@ -105,7 +112,7 @@ To submit your own implementation to 1BRC, follow these steps:
 * (Optional) If you'd like to use native binaries (GraalVM), adjust the _pom.xml_ file so that it builds that binary.
 * Create a pull request against the upstream repository, clearly stating
   * The name of your implementation class.
-  * The JDK build to use (of not specified, the latest OpenJDK 21 upstream build will be used).
+  * The JDK build to use (if not specified, the latest OpenJDK 21 upstream build will be used).
   * The execution time of the program on your system and specs of the same (CPU, number of cores, RAM). This is for informative purposes only, the official runtime will be determined as described below.
 * I will run the program and determine its performance as described in the next section, and enter the result to the scoreboard.
 
@@ -142,11 +149,21 @@ A: No, this challenge is focussed on Java only. Feel free to inofficially share 
 _Q: Can I use non-JVM languages and/or tools?_\
 A: No, this challenge is focussed on Java only. Feel free to inofficially share interesting implementations and results though. For instance it would be interesting to see how DuckDB fares with this task.
 
-_Q: Why_ 1️⃣🐝🏎️ _?_\
-A: It's the abbreviation of the project name: **One** **B**illion **R**ow **C**hallenge.
+_Q: Can I use JNI?_\
+A: Submissions must be implemented in Java; JNI requires glue code written in C/C++, so it cannot be used. You could use AOT compilation of Java code via GraalVM though, either by AOT-compiling the entire application, or by creating a native library which you then invoke using the new Java FFI (https://openjdk.org/jeps/442[JEP 442]).
+
+_Q: What is the encoding of the measurements.txt file?_\
+A: The file is encoded with UTF-8.
 
 _Q: Can I make assumptions on the names of the weather stations showing up in the data set?_\
-A: No, while only a fixed set of station names is used by the data set generator, any solution should work with arbitrary UTF-8 station names.
+A: No, while only a fixed set of station names is used by the data set generator, any solution should work with arbitrary UTF-8 station names
+(for the sake of simplicity, names are guaranteed to contain no `;` character).
+
+_Q: Can I copy code from other submissions?_
+A: Yes, you can. The primary focus of the challenge is about learning something new, rather than "winning". When you do so, please give credit to the relevant source submissions. Please don't re-submit other entries with no or only trivial improvements.
+
+_Q: Why_ 1️⃣🐝🏎️ _?_\
+A: It's the abbreviation of the project name: **One** **B**illion **R**ow **C**hallenge.
 
 ## License
 
