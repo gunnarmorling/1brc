@@ -15,7 +15,6 @@
  */
 package dev.morling.onebrc;
 
-import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -28,6 +27,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.StructuredTaskScope;
 
 import jdk.incubator.vector.ByteVector;
+import jdk.incubator.vector.VectorMask;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
 
@@ -47,19 +47,34 @@ public class CalculateAverage_padreati {
         }
     }
 
-    private record MeasurementAggregator(double min, double max, double sum, long count) {
+    private static class MeasurementAggregator {
+
+        private double min;
+        private double max;
+        private double sum;
+        private long count;
 
         public MeasurementAggregator(double seed) {
-            this(seed, seed, seed, 1);
+            this.min = seed;
+            this.max = seed;
+            this.sum = seed;
+            this.count = 1L;
+        }
+
+        public MeasurementAggregator merge(double v) {
+            this.min = Math.min(min, v);
+            this.max = Math.max(max, v);
+            this.sum += v;
+            this.count++;
+            return this;
         }
 
         public MeasurementAggregator merge(MeasurementAggregator b) {
-            return new MeasurementAggregator(
-                    Math.min(min, b.min),
-                    Math.max(max, b.max),
-                    sum + b.sum,
-                    count + b.count
-            );
+            this.min = Math.min(min, b.min);
+            this.max = Math.max(max, b.max);
+            this.sum += b.sum;
+            this.count += b.count;
+            return this;
         }
 
         public ResultRow toResultRow() {
@@ -72,20 +87,12 @@ public class CalculateAverage_padreati {
     }
 
     private void run() throws IOException {
-        File file = new File(FILE);
-        var splits = findFileSplits();
-        List<StructuredTaskScope.Subtask<Map<String, MeasurementAggregator>>> subtasks = new ArrayList<>();
         try (var scope = new StructuredTaskScope.ShutdownOnFailure()) {
-            for (int i = 0; i < splits.size(); i++) {
-                long splitStart = splits.get(i);
-                long splitEnd = i < splits.size() - 1 ? splits.get(i + 1) : file.length() + 1;
-                subtasks.add(scope.fork(() -> chunkProcessor(file, splitStart, splitEnd)));
-            }
+            var subtasks = runSplits(scope);
             scope.join();
             scope.throwIfFailed();
 
-            var resultList = subtasks.stream().map(StructuredTaskScope.Subtask::get).toList();
-            TreeMap<String, ResultRow> measurements = collapseResults(resultList);
+            TreeMap<String, ResultRow> measurements = collapseResults(subtasks);
             System.out.println(measurements);
 
         }
@@ -94,16 +101,15 @@ public class CalculateAverage_padreati {
         }
     }
 
-    private List<Long> findFileSplits() throws IOException {
-        var splits = new ArrayList<Long>();
-        splits.add(0L);
+    private List<StructuredTaskScope.Subtask<Map<String, MeasurementAggregator>>> runSplits(StructuredTaskScope.ShutdownOnFailure scope)
+            throws IOException {
+
+        List<StructuredTaskScope.Subtask<Map<String, MeasurementAggregator>>> subtasks = new ArrayList<>();
+        long last = 0L;
 
         File file = new File(FILE);
         long next = CHUNK_SIZE;
-        while (true) {
-            if (next >= file.length()) {
-                break;
-            }
+        while (next < file.length()) {
             try (FileInputStream fis = new FileInputStream(file)) {
                 long skip = fis.skip(next);
                 if (skip != next) {
@@ -118,18 +124,17 @@ public class CalculateAverage_padreati {
                     }
                     break;
                 }
-                // skip eventual \\r
-                if (fis.read() == '\r') {
-                    next++;
-                }
-                splits.add(next + 1);
+                long nnext = next + 1;
+                long llast = last;
+                subtasks.add(scope.fork(() -> chunkProcessor(file, llast, nnext)));
+                last = nnext;
                 next += CHUNK_SIZE;
             }
         }
-        return splits;
+        return subtasks;
     }
 
-    public Map<String, MeasurementAggregator> chunkProcessor(File source, long start, long end) throws IOException {
+    private Map<String, MeasurementAggregator> chunkProcessor(File source, long start, long end) throws IOException {
         var map = new HashMap<String, MeasurementAggregator>();
         byte[] buffer = new byte[(int) (end - start)];
         int len;
@@ -138,53 +143,84 @@ public class CalculateAverage_padreati {
             len = bis.read(buffer, 0, buffer.length);
         }
 
-        List<Integer> nlIndexes = new ArrayList<>();
-        List<Integer> commaIndexes = new ArrayList<>();
+        List<Byte> indexes = new ArrayList<>();
 
         int loopBound = species.loopBound(len);
         int i = 0;
+        int last = 0;
 
         for (; i < loopBound; i += species.length()) {
             ByteVector v = ByteVector.fromArray(species, buffer, i);
-            var mask = v.compare(VectorOperators.EQ, '\n');
-            for (int j = 0; j < species.length(); j++) {
-                if (mask.laneIsSet(j)) {
-                    nlIndexes.add(i + j);
-                }
-            }
-            mask = v.compare(VectorOperators.EQ, ';');
-            for (int j = 0; j < species.length(); j++) {
-                if (mask.laneIsSet(j)) {
-                    commaIndexes.add(i + j);
-                }
-            }
+            var mask1 = v.compare(VectorOperators.EQ, '\n');
+            var mask2 = v.compare(VectorOperators.EQ, ';');
+            last = pushIndexes(mask1.or(mask2), last, indexes);
         }
         for (; i < len; i++) {
             if (buffer[i] == '\n') {
-                nlIndexes.add(i);
+                indexes.add((byte) (i - loopBound + last + 1));
+                last = -i + loopBound - 1;
+                continue;
             }
             if (buffer[i] == ';') {
-                commaIndexes.add(i);
+                indexes.add((byte) (i - loopBound + last + 1));
+                last = -i + loopBound - 1;
             }
         }
 
         int startLine = 0;
-        for (int j = 0; j < nlIndexes.size(); j++) {
-            int endLine = nlIndexes.get(j);
-            int commaIndex = commaIndexes.get(j);
-            String key = new String(buffer, startLine, commaIndex - startLine);
-            double value = Double.parseDouble(new String(buffer, commaIndex + 1, endLine - commaIndex - 1));
-            map.merge(key, new MeasurementAggregator(value), MeasurementAggregator::merge);
-            startLine = endLine + 1;
+        for (int j = 0; j < indexes.size(); j += 2) {
+            int commaLen = indexes.get(j);
+            int nlLen = indexes.get(j + 1);
+            String key = new String(buffer, startLine, commaLen - 1);
+            startLine += commaLen;
+            double value = parseDouble(buffer, startLine, nlLen - 1);
+            if (!map.containsKey(key)) {
+                map.put(key, new MeasurementAggregator(value));
+            }
+            else {
+                map.get(key).merge(value);
+            }
+            startLine += nlLen;
         }
         return map;
     }
 
-    private TreeMap<String, ResultRow> collapseResults(List<Map<String, MeasurementAggregator>> resultList) {
-        HashMap<String, MeasurementAggregator> aggregate = new HashMap<>();
-        for (var map : resultList) {
+    private double parseDouble(byte[] buffer, int start, int len) {
+        int sign = 1;
+        if (buffer[start] == '-') {
+            sign = -1;
+        }
+        int value = 0;
+        for (int k = start + ((sign < 0) ? 1 : 0); k < start + len; k++) {
+            if (buffer[k] != '.') {
+                value = value * 10 + (buffer[k] - '0');
+            }
+        }
+        return sign * value / 10.;
+    }
+
+    private int pushIndexes(VectorMask<Byte> mask, int prev, List<Byte> indexes) {
+        for (int i = 0; i < species.length(); i++) {
+            if (mask.laneIsSet(i)) {
+                indexes.add((byte) (i + prev + 1));
+                prev = -i - 1;
+            }
+        }
+        return species.length() + prev;
+    }
+
+    private TreeMap<String, ResultRow> collapseResults(List<StructuredTaskScope.Subtask<Map<String, MeasurementAggregator>>> resultList) {
+        Map<String, MeasurementAggregator> aggregate = resultList.getFirst().get();
+        for (var subtask : resultList.subList(1, resultList.size())) {
+            var map = subtask.get();
             for (var entry : map.entrySet()) {
-                aggregate.merge(entry.getKey(), entry.getValue(), MeasurementAggregator::merge);
+                String key = entry.getKey();
+                if (!aggregate.containsKey(key)) {
+                    aggregate.put(key, entry.getValue());
+                }
+                else {
+                    aggregate.get(key).merge(entry.getValue());
+                }
             }
         }
         TreeMap<String, ResultRow> measurements = new TreeMap<>();
