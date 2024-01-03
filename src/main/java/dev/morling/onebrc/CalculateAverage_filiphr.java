@@ -41,6 +41,7 @@ import java.util.stream.StreamSupport;
  * Using big decimal and iterating the buffer once:    0m 20s
  * Using long parse:                                   0m 11s
  * Using array hash code for city key:                 0m 7.1s
+ * Manually compute the value:                         0m 6.8s
  * <p>
  * Using 21.0.1 Temurin with ShenandoahGC on Macbook (Intel) Pro
  * `sdk use java 21.0.1-tem`
@@ -156,10 +157,6 @@ public class CalculateAverage_filiphr {
         Map<Integer, Measurement> measurements = HashMap.newHashMap(415);
         int limit = bb.limit();
         byte[] cityBuffer = new byte[128];
-        char[] charArray = new char[8];
-        CharBuffer charBuffer = CharBuffer.wrap(charArray);
-        charBuffer.clear();
-        charBuffer.position(0);
 
         while (bb.position() < limit) {
             int cityBufferIndex = 0;
@@ -177,20 +174,29 @@ public class CalculateAverage_filiphr {
             }
 
             byte lastPositionByte = '\n';
-            int temperatureBufferIndex = 0;
+            boolean negative = false;
+            long value = 0;
             while (bb.position() < limit) {
                 byte positionByte = bb.get();
                 if (positionByte == '\r' || positionByte == '\n') {
                     lastPositionByte = positionByte;
                     break;
                 }
+                else if (positionByte == '-') {
+                    negative = true;
+                }
                 else if (positionByte != '.') {
-                    charArray[temperatureBufferIndex++] = (char) positionByte;
+                    // The 0 to 9 characters have an int value of 48 (for 0) to 57 (for 9)
+                    // Therefore, in order to compute the digit we subtract with 48
+                    int digit = positionByte - 48;
+                    // We are computing the value by hand (in order to avoid iterating the index twice)
+                    value = value * 10 + digit;
                 }
             }
 
-            // Create the temperature
-            long value = Long.parseLong(charBuffer, 0, temperatureBufferIndex, 10);
+            if (negative) {
+                value = -value;
+            }
 
             Measurement measurement = measurements.get(cityKey);
             if (measurement == null) {
