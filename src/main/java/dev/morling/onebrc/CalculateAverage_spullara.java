@@ -15,14 +15,18 @@
  */
 package dev.morling.onebrc;
 
-import java.io.*;
-import java.nio.MappedByteBuffer;
+import java.io.File;
+import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.TreeMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -41,19 +45,17 @@ public class CalculateAverage_spullara {
      */
 
   public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
-    String filename = args.length == 0 ? FILE : args[0];
-    File file = new File(filename);
-
+    var filename = args.length == 0 ? FILE : args[0];
+    var file = new File(filename);
     long start = System.currentTimeMillis();
 
-    AtomicInteger totalLines = new AtomicInteger();
+    var totalLines = new AtomicInteger();
     var results = getFileSegments(file).stream().map(segment -> {
       var resultMap = new ByteArrayToResultMap();
       long segmentEnd = segment.end();
-      MappedByteBuffer bb;
       try (var fileChannel = (FileChannel) Files.newByteChannel(Path.of(filename), StandardOpenOption.READ)) {
-        bb = fileChannel.map(FileChannel.MapMode.READ_ONLY, segment.start(), segmentEnd - segment.start());
-        byte[] buffer = new byte[64];
+        var bb = fileChannel.map(FileChannel.MapMode.READ_ONLY, segment.start(), segmentEnd - segment.start());
+        var buffer = new byte[64];
         int lines = 0;
         int startLine;
         int limit = bb.limit();
@@ -84,9 +86,7 @@ public class CalculateAverage_spullara {
           double finalTemp = temp / 10.0;
           resultMap.putOrMerge(buffer, 0, offset,
                   () -> new Result(finalTemp),
-                  measurement -> {
-                    merge(measurement, finalTemp, finalTemp, finalTemp, 1);
-                  });
+                  measurement -> merge(measurement, finalTemp, finalTemp, finalTemp, 1));
           lines++;
           bb.position(currentPosition);
         }
