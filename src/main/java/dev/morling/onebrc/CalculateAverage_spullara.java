@@ -179,7 +179,7 @@ record FileSegment(long start, long end) {
 }
 
 class ByteArrayToResultMap {
-  public static final int MAPSIZE = 8192;
+  public static final int MAPSIZE = 1024*128;
   Result[] slots = new Result[MAPSIZE];
   byte[][] keys = new byte[MAPSIZE][];
 
