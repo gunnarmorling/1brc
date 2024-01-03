@@ -93,7 +93,7 @@ public class CalculateAverage_lawrey {
         // Converts the key's data to a String.
         @Override
         public String toString() {
-            return new String(data, StandardCharsets.UTF_8);
+            return new String(data, 0, length, StandardCharsets.UTF_8);
         }
 
         // Appends a byte to the key and updates its hash.
