@@ -20,9 +20,7 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.Map;
-import java.util.TreeMap;
+import java.util.*;
 
 public class CalculateAverage_palmr {
 
@@ -61,7 +59,7 @@ public class CalculateAverage_palmr {
             thread.start();
         }
 
-        ByteArrayKeyedMap finalAggregator = new ByteArrayKeyedMap();
+        final Map<String, MeasurementAggregator> finalAggregator = new TreeMap<>();
 
         for (int i = 0; i < THREAD_COUNT; i++) {
             try {
@@ -71,15 +69,23 @@ public class CalculateAverage_palmr {
                 throw new RuntimeException(e);
             }
 
-            results[i].getAsTreeMap().forEach((_, v) -> {
-                MeasurementAggregator aggregator = finalAggregator.computeIfAbsent(v.stationName, v.stationName.length, v.stationNameHashCode);
-                aggregator.count += v.count;
-                aggregator.min = Math.min(aggregator.min, v.min);
-                aggregator.max = Math.max(aggregator.max, v.max);
-                aggregator.sum += v.sum;
+            results[i].getAsUnorderedList().forEach(v -> {
+                String stationName = new String(v.stationNameBytes, StandardCharsets.UTF_8);
+                finalAggregator.compute(stationName, (_, x) -> {
+                    if (x == null) {
+                        return v;
+                    }
+                    else {
+                        x.count += v.count;
+                        x.min = Math.min(x.min, v.min);
+                        x.max = Math.max(x.max, v.max);
+                        x.sum += v.sum;
+                        return x;
+                    }
+                });
             });
         }
-        System.out.println(finalAggregator.getAsTreeMap());
+        System.out.println(finalAggregator);
     }
 
     private static ByteArrayKeyedMap readAndParse(final FileChannel channel,
@@ -189,15 +195,15 @@ public class CalculateAverage_palmr {
     }
 
     private static class MeasurementAggregator {
-        public final byte[] stationName;
-        public final int stationNameHashCode;
+        final byte[] stationNameBytes;
+        final int stationNameHashCode;
         private double min = Double.POSITIVE_INFINITY;
         private double max = Double.NEGATIVE_INFINITY;
         private double sum;
         private long count;
 
-        public MeasurementAggregator(final byte[] stationName, final int stationNameHashCode) {
-            this.stationName = stationName;
+        public MeasurementAggregator(final byte[] stationNameBytes, final int stationNameHashCode) {
+            this.stationNameBytes = stationNameBytes;
             this.stationNameHashCode = stationNameHashCode;
         }
 
@@ -213,7 +219,7 @@ public class CalculateAverage_palmr {
     private static class ByteArrayKeyedMap {
         private final int BUCKET_COUNT = 0xFFF; // 413 unique stations in the data set, & 0xFFF ~= 399 (only 14 collisions (given our hashcode implementation))
         private final MeasurementAggregator[] buckets = new MeasurementAggregator[BUCKET_COUNT + 1];
-        private final TreeMap<String, MeasurementAggregator> sortedMap = new TreeMap<>();
+        private final List<MeasurementAggregator> compactUnorderedBuckets = new ArrayList<>(413);
 
         public MeasurementAggregator computeIfAbsent(final byte[] key, final int keyLength, final int keyHashCode) {
             int index = keyHashCode & BUCKET_COUNT;
@@ -224,11 +230,11 @@ public class CalculateAverage_palmr {
                     final byte[] copiedKey = Arrays.copyOf(key, keyLength);
                     MeasurementAggregator measurementAggregator = new MeasurementAggregator(copiedKey, keyHashCode);
                     buckets[index] = measurementAggregator;
-                    sortedMap.put(new String(key, 0, keyLength, StandardCharsets.UTF_8), measurementAggregator);
+                    compactUnorderedBuckets.add(measurementAggregator);
                     return measurementAggregator;
                 }
                 else {
-                    if (Arrays.equals(key, 0, keyLength, maybe.stationName, 0, maybe.stationName.length)) {
+                    if (Arrays.equals(key, 0, keyLength, maybe.stationNameBytes, 0, maybe.stationNameBytes.length)) {
                         return maybe;
                     }
                     index++;
@@ -237,8 +243,8 @@ public class CalculateAverage_palmr {
             }
         }
 
-        public Map<String, MeasurementAggregator> getAsTreeMap() {
-            return sortedMap;
+        public List<MeasurementAggregator> getAsUnorderedList() {
+            return compactUnorderedBuckets;
         }
     }
 }
