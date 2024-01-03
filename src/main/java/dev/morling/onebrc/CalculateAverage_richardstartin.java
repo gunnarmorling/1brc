@@ -52,6 +52,26 @@ public class CalculateAverage_richardstartin {
         return new String(bytes, StandardCharsets.UTF_8);
     }
 
+    static double parseTemperature(ByteBuffer slice) {
+        // credit: adapted from spullara's submission
+        int value = 0;
+        int negative = 1;
+        int i = 0;
+        while (i != slice.limit()) {
+            byte b = slice.get(i++);
+            switch (b) {
+                case '-':
+                    negative = -1;
+                case '.':
+                    break;
+                default:
+                    value = 10 * value + (b - '0');
+            }
+        }
+        value *= negative;
+        return value / 10.0;
+    }
+
     @FunctionalInterface
     interface IndexedStringConsumer {
         void accept(String value, int index);
@@ -316,11 +336,7 @@ public class CalculateAverage_richardstartin {
                 offset = nextSeparator + 1;
                 int newLine = findIndexOf(slice, offset, NEW_LINE);
                 // parse the double
-                // todo do this without allocating a string, could use a fast parsing falgorithm
-                var bytes = new byte[newLine - offset];
-                slice.get(offset, bytes);
-                var string = new String(bytes, StandardCharsets.US_ASCII);
-                double d = Double.parseDouble(string);
+                double d = parseTemperature(slice.slice(offset, newLine - offset));
 
                 Page.update(pages, dictId, d);
 
