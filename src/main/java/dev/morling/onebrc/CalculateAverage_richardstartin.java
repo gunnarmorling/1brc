@@ -384,7 +384,7 @@ public class CalculateAverage_richardstartin {
     }
 
     public static void main(String[] args) throws IOException {
-        int maxChunkSize = 10 << 20; // 10MiB
+        int maxChunkSize = 250 << 20; // 250MiB
         try (var raf = new RandomAccessFile(FILE, "r");
              var channel = raf.getChannel()) {
             long size = channel.size();
