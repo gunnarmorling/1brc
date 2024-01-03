@@ -107,6 +107,7 @@ public class CalculateAverage_spullara {
                 continue;
               }
               if (b == '\r') {
+                currentPosition++;
                 break;
               }
               temp = 10 * temp + (b - '0');
