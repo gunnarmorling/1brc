@@ -39,7 +39,7 @@ public class CalculateAverage_artpar {
     private static final Map<Integer, Double> hashToDouble = new ConcurrentHashMap<>(1024 * 1024);
     private static final VectorSpecies<Double> SPECIES = DoubleVector.SPECIES_PREFERRED;
 
-    public static void main(String[] args) throws IOException {
+    public CalculateAverage_artpar() throws IOException {
         long start = Instant.now().toEpochMilli();
         Path measurementFile = Paths.get(FILE);
         OpenOption openOptions = StandardOpenOption.READ;
@@ -82,6 +82,7 @@ public class CalculateAverage_artpar {
                 chunkStartPosition = chunkStartPosition + chunkSize + 1;
             }
         }
+        fis.close();
 
         Map<String, MeasurementAggregator> globalMap = futures.parallelStream()
                 .flatMap(future -> {
@@ -108,9 +109,13 @@ public class CalculateAverage_artpar {
         Map<String, ResultRow> measurements = new TreeMap<>(results);
 
         System.out.println(measurements);
-        // long end = Instant.now().toEpochMilli();
-        // System.out.println((end - start) / 1000);
+//        long end = Instant.now().toEpochMilli();
+//        System.out.println((end - start) / 1000);
 
+    }
+
+    public static void main(String[] args) throws IOException {
+        new CalculateAverage_artpar();
     }
 
     public static double sum(double[] array) {
@@ -129,6 +134,40 @@ public class CalculateAverage_artpar {
         }
 
         return sum;
+    }
+
+    public static double parseDouble(byte[] str, int length) {
+
+        boolean negative = false;
+
+        int start = 0;
+        int decimalIndex = -1;
+        double result = 0;
+
+        // Check for negative numbers
+        if (str[0] == '-') {
+            negative = true;
+            start++;
+        }
+
+        // Parse each character
+        for (int i = start; i < length; i++) {
+            byte c = str[i];
+
+            if (c == '.') {
+                decimalIndex = i;
+            }
+            else {
+                result = result * 10 + (c - '0');
+            }
+        }
+
+        // Adjust for the decimal point
+        if (decimalIndex != -1) {
+            result /= 10;
+        }
+
+        return negative ? -result : result;
     }
 
     private record Measurement(String station, double value) {
@@ -187,7 +226,7 @@ public class CalculateAverage_artpar {
         }
     }
 
-    private static class ReaderRunnable {
+    private class ReaderRunnable {
         private final MappedByteBuffer mappedByteBuffer;
         private final OpenOption openOptions;
         private final long chunkStartPosition;
@@ -228,7 +267,10 @@ public class CalculateAverage_artpar {
                     }
                     else {
                         readUntilSemiColon = false;
+                        // Integer bufferHash = hashCode(rawBuffer, bufferIndex);
+                        // int finalBufferIndex = bufferIndex;
                         matchedStation = new String(rawBuffer, 0, bufferIndex, StandardCharsets.UTF_8);
+                        // matchedStation = new String(rawBuffer, 0, bufferIndex, StandardCharsets.UTF_8);
                         bufferIndex = 0;
                         continue;
                     }
@@ -240,21 +282,21 @@ public class CalculateAverage_artpar {
                 }
                 else {
                     readUntilSemiColon = true;
-                    String tempValue = getTempStringFromBufferUsingBuffer(rawBuffer, bufferIndex);
-                    bufferIndex = 0;
+                    // String tempValue = new String(rawBuffer, 0, bufferIndex, StandardCharsets.UTF_8);
 
-                    int tempValueHashCode = tempValue.hashCode();
-                    if (!hashToDouble.containsKey(tempValueHashCode)) {
-                        hashToDouble.put(tempValueHashCode, Double.parseDouble(tempValue));
-                    }
-                    double doubleValue = hashToDouble.get(tempValueHashCode);
+                    // int tempValueHashCode = tempValue.hashCode();
+                    // if (!hashToDouble.containsKey(tempValueHashCode)) {
+                    // hashToDouble.put(tempValueHashCode, parseDouble(tempValue));
+                    // }
+                    double doubleValue = parseDouble(rawBuffer, bufferIndex);
+                    bufferIndex = 0;
 
                     // Measurement measurement = new Measurement(matchedStation, doubleValue);
                     double[] array = stationValueMap.computeIfAbsent(matchedStation, (k) -> {
                         stationIndexMap.put(k, 0);
                         return new double[VECTOR_SIZE];
                     });
-                    Integer index = stationIndexMap.get(matchedStation);
+                    int index = stationIndexMap.get(matchedStation);
                     array[index] = doubleValue;
                     if (index == VECTOR_SIZE_1) {
 
@@ -298,7 +340,7 @@ public class CalculateAverage_artpar {
             VectorSpecies<Double> species = DoubleVector.SPECIES_PREFERRED;
             for (String stationName : stationIndexMap.keySet()) {
 
-                Integer count = stationIndexMap.get(stationName);
+                int count = stationIndexMap.get(stationName);
                 if (count < 1) {
                     continue;
                 }
@@ -333,7 +375,6 @@ public class CalculateAverage_artpar {
             return groupedMeasurements;
         }
 
-
         private int hashCode(byte[] array, int length) {
             if (array == null) {
                 return 0;
@@ -359,4 +400,5 @@ public class CalculateAverage_artpar {
             return tempStringMap.get(byteArrayHashCode);
         }
     }
+
 }
