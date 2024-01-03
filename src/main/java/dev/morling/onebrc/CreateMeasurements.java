@@ -18,19 +18,35 @@ package dev.morling.onebrc;
 import java.io.BufferedWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.Random;
+
+class WeatherStation {
+    private String id;
+    private double meanTemperature;
+    private Random random;
+
+    public WeatherStation(String id, double meanTemperature) {
+        this.id = id;
+        this.meanTemperature = meanTemperature;
+        this.random = new Random(id.hashCode());
+    }
+
+    public String id() {
+        return this.id;
+    }
+
+    public double measurement() {
+        double m = this.random.nextGaussian(this.meanTemperature, 10);
+        return Math.round(m * 10.0) / 10.0;
+    }
+}
 
 public class CreateMeasurements {
 
     private static final Path MEASUREMENT_FILE = Path.of("./measurements.txt");
-
-    private record WeatherStation(String id, double meanTemperature) {
-        double measurement() {
-            double m = ThreadLocalRandom.current().nextGaussian(meanTemperature, 10);
-            return Math.round(m * 10.0) / 10.0;
-        }
-    }
 
     public static void main(String[] args) throws Exception {
         long start = System.currentTimeMillis();
@@ -489,14 +505,16 @@ public class CreateMeasurements {
                 new WeatherStation("Zanzibar City", 26.0),
                 new WeatherStation("Zürich", 9.3));
 
+        Random random = new Random(0x3162726331627263L);
         try (BufferedWriter bw = Files.newBufferedWriter(MEASUREMENT_FILE)) {
             for (int i = 0; i < size; i++) {
                 if (i > 0 && i % 50_000_000 == 0) {
                     System.out.printf("Wrote %,d measurements in %s ms%n", i, System.currentTimeMillis() - start);
                 }
-                WeatherStation station = stations.get(ThreadLocalRandom.current().nextInt(stations.size()));
+                WeatherStation station = stations.get(random.nextInt(stations.size()));
                 bw.write(station.id());
-                bw.write(";" + station.measurement());
+                bw.write(";");
+                bw.write(Double.toString(station.measurement()));
                 bw.write('\n');
             }
         }
