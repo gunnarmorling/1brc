@@ -16,14 +16,11 @@
 package dev.morling.onebrc;
 
 import java.io.*;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collector;
-
-import static java.util.stream.Collector.Characteristics.CONCURRENT;
-import static java.util.stream.Collectors.groupingByConcurrent;
+import java.util.concurrent.*;
 
 public class CalculateAverage_fatroom {
 
@@ -48,62 +45,100 @@ public class CalculateAverage_fatroom {
             this.count = count;
         }
 
-        public void consume(String v) {
-            int measurement = 0;
-            for (int i = 0; i < v.length(); i++) {
-                if (v.charAt(i) == ';') {
-                    measurement = numberCache.computeIfAbsent(v.substring(i + 1), key -> {
-                        int sign = 1;
-                        int value = 0;
-                        for (int j = 0; j < key.length(); j++) {
-                            int c = key.charAt(j);
-                            if (c == '-') {
-                                sign = -1;
-                                continue;
-                            }
-                            if (c == '.') {
-                                continue;
-                            }
-                            value = value * 10 + (c - '0');
-                        }
-                        value *= sign;
-                        return value;
-                    });
-                    break;
-                }
-            }
-
-            this.min = this.min < measurement ? this.min : measurement;
-            this.max = this.max > measurement ? this.max : measurement;
-            this.sum += measurement;
+        public void consume(int value) {
+            this.min = this.min < value ? this.min : value;
+            this.max = this.max > value ? this.max : value;
+            this.sum += value;
             this.count++;
         }
 
         public MeasurementAggregator combineWith(MeasurementAggregator that) {
-            return new MeasurementAggregator(
-                    this.min < that.min ? this.min : that.min,
-                    this.max > that.max ? this.max : that.max,
-                    this.sum + that.sum,
-                    this.count + that.count);
+            this.min = this.min < that.min ? this.min : that.min;
+            this.max = this.max > that.max ? this.max : that.max;
+            this.sum += that.sum;
+            this.count += that.count;
+            return this;
+        }
+
+        @Override
+        public String toString() {
+            return String.format(Locale.ROOT, "%.1f/%.1f/%.1f", min / 10.0, sum / count / 10.0, max / 10.0);
         }
     }
 
-    public static void main(String[] args) throws IOException {
-        var reader = new BufferedReader(new InputStreamReader(FileSystems.getDefault().provider().newInputStream(Paths.get(FILE)), StandardCharsets.UTF_8),
-                1024 * 32);
+    public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
+        int SEGMENT_LENGTH = 256_000_000; // 256 MB
 
-        Collector<String, MeasurementAggregator, String> collector = Collector.of(
-                MeasurementAggregator::new,
-                MeasurementAggregator::consume,
-                MeasurementAggregator::combineWith,
-                agg -> String.format(Locale.ROOT, "%.1f/%.1f/%.1f", agg.min / 10.0, agg.sum / agg.count / 10.0, agg.max / 10.0),
-                CONCURRENT);
+        RandomAccessFile file = new RandomAccessFile(FILE, "r");
+        long fileSize = file.length();
+        long position = 0;
 
-        var measurements = new TreeMap<>(reader.lines()
-                .parallel()
-                .unordered()
-                .collect(groupingByConcurrent(v -> v.substring(0, v.indexOf(";")), collector)));
+        List<Callable<Map<String, MeasurementAggregator>>> tasks = new ArrayList<>();
+        while (position < fileSize) {
+            long end = Math.min(position + SEGMENT_LENGTH, fileSize);
+            int length = (int) (end - position);
+            MappedByteBuffer buffer = file.getChannel().map(FileChannel.MapMode.READ_ONLY, position, length);
+            while (buffer.get(length - 1) != '\n') {
+                length--;
+            }
+            final int finalLength = length;
+            tasks.add(() -> processBuffer(buffer, finalLength));
+            position += length;
+        }
 
-        System.out.println(measurements);
+        var executor = Executors.newFixedThreadPool(tasks.size());
+
+        Map<String, MeasurementAggregator> aggregates = new TreeMap<>();
+        for (Future<Map<String, MeasurementAggregator>> future : executor.invokeAll(tasks)) {
+            Map<String, MeasurementAggregator> segmentAggregates = future.get();
+            for (Map.Entry<String, MeasurementAggregator> entry : segmentAggregates.entrySet()) {
+                MeasurementAggregator aggregator = aggregates.computeIfAbsent(entry.getKey(), s -> new MeasurementAggregator());
+                aggregator.combineWith(entry.getValue());
+            }
+        }
+        executor.shutdown();
+        executor.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
+
+        System.out.println(aggregates);
+    }
+
+    private static Map<String, MeasurementAggregator> processBuffer(MappedByteBuffer source, int length) {
+        Map<String, MeasurementAggregator> aggregates = new HashMap<>();
+        String station = null;
+        byte[] buffer = new byte[64];
+        int idx = 0;
+        for (int i = 0; i < length; ++i) {
+            byte b = source.get(i);
+            buffer[idx++] = b;
+            if (b == ';') {
+                station = new String(buffer, 0, idx - 1, StandardCharsets.UTF_8);
+                idx = 0;
+            }
+            else if (b == '\n') {
+                int temperature = parseMeasurement(buffer, idx - 1);
+                MeasurementAggregator aggregator = aggregates.computeIfAbsent(station, s -> new MeasurementAggregator());
+                aggregator.consume(temperature);
+                idx = 0;
+            }
+        }
+        return aggregates;
+    }
+
+    private static int parseMeasurement(byte[] source, int size) {
+        int sign = 1;
+        int value = 0;
+        for (int i = 0; i < size; i++) {
+            int c = source[i];
+            if (c == '-') {
+                sign = -1;
+                continue;
+            }
+            if (c == '.') {
+                continue;
+            }
+            value = value * 10 + (c - '0');
+        }
+        value *= sign;
+        return value;
     }
 }
