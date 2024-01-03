@@ -19,6 +19,8 @@ import java.io.*;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.TreeMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -47,14 +49,14 @@ public class CalculateAverage_seijikun {
         }
     }
 
-    public static class StationIdent implements Comparable<StationIdent> {
+    public static class StationIdent {
         private final int nameLength;
-        private final String name;
+        private final byte[] name;
         private final int nameHash;
 
         public StationIdent(byte[] name, int nameHash) {
             this.nameLength = name.length;
-            this.name = new String(name);
+            this.name = name;
             this.nameHash = nameHash;
         }
 
@@ -69,12 +71,7 @@ public class CalculateAverage_seijikun {
             if (other.nameLength != nameLength) {
                 return false;
             }
-            return name.equals(other.name);
-        }
-
-        @Override
-        public int compareTo(StationIdent o) {
-            return name.compareTo(o.name);
+            return Arrays.equals(name, other.name);
         }
     }
 
@@ -89,7 +86,7 @@ public class CalculateAverage_seijikun {
         // state
         private MappedByteBuffer buffer = null;
         private int ptr = 0;
-        private TreeMap<StationIdent, MeasurementAggregator> workSet;
+        private HashMap<StationIdent, MeasurementAggregator> workSet;
 
         public ChunkReader(RandomAccessFile file, long startOffset, long endOffset) {
             this.file = file;
@@ -133,7 +130,7 @@ public class CalculateAverage_seijikun {
 
         @Override
         public void run() {
-            workSet = new TreeMap<>();
+            workSet = new HashMap<>();
             int chunkSize = (int) (endOffset - startOffset);
             try {
                 buffer = file.getChannel().map(FileChannel.MapMode.READ_ONLY, startOffset, chunkSize);
@@ -159,12 +156,12 @@ public class CalculateAverage_seijikun {
         }
     }
 
-    private static void printWorkSet(TreeMap<StationIdent, MeasurementAggregator> result, PrintStream out) {
+    private static void printWorkSet(TreeMap<String, MeasurementAggregator> result, PrintStream out) {
         out.write('{');
         var iterator = result.entrySet().iterator();
         while (iterator.hasNext()) {
             var entry = iterator.next();
-            out.print(entry.getKey().name);
+            out.print(entry.getKey());
             out.write('=');
             entry.getValue().printInto(out);
             if (iterator.hasNext()) {
@@ -210,12 +207,13 @@ public class CalculateAverage_seijikun {
         }
 
         // merge chunks
-        var result = chunks[0].workSet;
-        for (int i = 1; i < jobCnt; ++i) {
+        var result = new TreeMap<String, MeasurementAggregator>();
+        for (int i = 0; i < jobCnt; ++i) {
             chunks[i].workSet.forEach((ident, otherStationWorkSet) -> {
-                var stationWorkSet = result.get(ident);
+                var identStr = new String(ident.name);
+                var stationWorkSet = result.get(identStr);
                 if (stationWorkSet == null) {
-                    result.put(ident, otherStationWorkSet);
+                    result.put(identStr, otherStationWorkSet);
                 }
                 else {
                     stationWorkSet.min = Math.min(stationWorkSet.min, otherStationWorkSet.min);
@@ -225,7 +223,6 @@ public class CalculateAverage_seijikun {
                 }
             });
         }
-
         result.forEach((ignored, meas) -> meas.finish());
 
         // print in required format
