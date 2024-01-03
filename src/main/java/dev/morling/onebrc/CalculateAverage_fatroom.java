@@ -26,16 +26,14 @@ public class CalculateAverage_fatroom {
 
     private static final String FILE = "./measurements.txt";
 
-    private static final Map<String, Integer> numberCache = new ConcurrentHashMap<>(2000);
-
     private static class MeasurementAggregator {
-        private int min;
-        private int max;
-        private long sum;
+        private double min;
+        private double max;
+        private double sum;
         private long count;
 
         public MeasurementAggregator() {
-            this(Integer.MAX_VALUE, Integer.MIN_VALUE, 0, 0);
+            this(1000, -1000, 0, 0);
         }
 
         public MeasurementAggregator(int min, int max, long sum, long count) {
@@ -45,7 +43,7 @@ public class CalculateAverage_fatroom {
             this.count = count;
         }
 
-        public void consume(int value) {
+        public void consume(double value) {
             this.min = this.min < value ? this.min : value;
             this.max = this.max > value ? this.max : value;
             this.sum += value;
@@ -62,7 +60,7 @@ public class CalculateAverage_fatroom {
 
         @Override
         public String toString() {
-            return String.format(Locale.ROOT, "%.1f/%.1f/%.1f", min / 10.0, sum / count / 10.0, max / 10.0);
+            return String.format(Locale.ROOT, "%.1f/%.1f/%.1f", min / 10.0, Math.round(sum / count * 10.0) / 100.0, max / 10.0);
         }
     }
 
@@ -115,7 +113,7 @@ public class CalculateAverage_fatroom {
                 idx = 0;
             }
             else if (b == '\n') {
-                int temperature = parseMeasurement(buffer, idx - 1);
+                double temperature = parseMeasurement(buffer, idx - 1);
                 MeasurementAggregator aggregator = aggregates.computeIfAbsent(station, s -> new MeasurementAggregator());
                 aggregator.consume(temperature);
                 idx = 0;
@@ -124,21 +122,13 @@ public class CalculateAverage_fatroom {
         return aggregates;
     }
 
-    private static int parseMeasurement(byte[] source, int size) {
-        int sign = 1;
-        int value = 0;
-        for (int i = 0; i < size; i++) {
-            int c = source[i];
-            if (c == '-') {
-                sign = -1;
-                continue;
-            }
-            if (c == '.') {
-                continue;
-            }
-            value = value * 10 + (c - '0');
-        }
-        value *= sign;
-        return value;
+    static double parseMeasurement(byte[] source, int size) {
+        int isNegativeSignPresent = ~(source[0] >> 4) & 1;
+        int has4 = (size - isNegativeSignPresent) >> 2;
+        int firstDigit = source[isNegativeSignPresent] - '0';
+        int secondDigit = source[isNegativeSignPresent + has4] - '0';
+        int thirdDigit = source[isNegativeSignPresent + 2 + has4] - '0';
+        int value = has4 * firstDigit * 100 + secondDigit * 10 + thirdDigit;
+        return -isNegativeSignPresent ^ value - isNegativeSignPresent;
     }
 }
