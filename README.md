@@ -8,7 +8,7 @@ Grab all your (virtual) threads, reach out to SIMD, optimize your GC, or pull an
 <img src="1brc.png" alt="1BRC" style="display: block; margin-left: auto; margin-right: auto; margin-bottom:1em; width: 50%;">
 
 The text file contains temperature values for a range of weather stations.
-Each row is one measurement in the format `<string: station name>;<double: measurement>`.
+Each row is one measurement in the format `<string: station name>;<double: measurement>`, with the measurement value having exactly one fractional digit.
 The following shows ten rows as an example:
 
 ```
@@ -132,6 +132,7 @@ The `time` program is used for measuring execution times, i.e. end-to-end times 
 Each contender will be run five times in a row.
 The slowest and the fastest runs are discarded.
 The mean value of the remaining three runs is the result for that contender and will be added to the results table above.
+The exact same _measurements.txt_ file is used for evaluating all contenders.
 
 If you'd like to spin up your own box for testing on Hetzner Cloud, you may find these [set-up scripts](https://github.com/gunnarmorling/cloud-boxes/) (based on Terraform and Ansible) useful.
 Note this will incur cost you are responsible for, I am not going to pay your cloud bill :)
@@ -150,7 +151,7 @@ _Q: Can I use non-JVM languages and/or tools?_\
 A: No, this challenge is focussed on Java only. Feel free to inofficially share interesting implementations and results though. For instance it would be interesting to see how DuckDB fares with this task.
 
 _Q: Can I use JNI?_\
-A: Submissions must be implemented in Java; JNI requires glue code written in C/C++, so it cannot be used. You could use AOT compilation of Java code via GraalVM though, either by AOT-compiling the entire application, or by creating a native library which you then invoke using the new Java FFI (https://openjdk.org/jeps/442[JEP 442]).
+A: Submissions must be completely implemented in Java, i.e. you cannot write JNI glue code in C/C++. You could use AOT compilation of Java code via GraalVM though, either by AOT-compiling the entire application, or by creating a native library (see [here](https://www.graalvm.org/22.0/reference-manual/native-image/ImplementingNativeMethodsInJavaWithSVM/).
 
 _Q: What is the encoding of the measurements.txt file?_\
 A: The file is encoded with UTF-8.
