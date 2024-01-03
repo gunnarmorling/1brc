@@ -194,7 +194,7 @@ public class CalculateAverage_lawrey {
                     break;
             }
         }
-        if (mbb.remaining()>0) {
+        if (mbb.remaining() > 0) {
             byte b = mbb.get(mbb.position());
             if (b == '\n')
                 mbb.get();
