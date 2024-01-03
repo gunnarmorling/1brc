@@ -23,29 +23,28 @@ import java.util.stream.Collectors;
 
 public class CalculateAverage_naive {
 
-  record Result(double min, double max, double sum, long count) {
-  }
+    record Result(double min, double max, double sum, long count) {
+    }
 
-  public static void main(String[] args) throws FileNotFoundException {
-    long start = System.currentTimeMillis();
-    var results = new BufferedReader(new FileReader("./measurements.txt"))
-            .lines()
-            .parallel()
-            .map(l -> l.split(";"))
-            .collect(Collectors.toMap(
-                    parts -> parts[0],
-                    parts -> {
-                      double temperature = Double.parseDouble(parts[1]);
-                      return new Result(temperature, temperature, temperature, 1);
-                    },
-                    (oldResult, newResult) -> {
-                      double min = Math.min(oldResult.min, newResult.min);
-                      double max = Math.max(oldResult.max, newResult.max);
-                      double sum = oldResult.sum + newResult.sum;
-                      long count = oldResult.count + newResult.count;
-                      return new Result(min, max, sum, count);
-                    }, ConcurrentSkipListMap::new));
-    System.out.println(System.currentTimeMillis() - start);
-    System.out.println(results);
-  }
+    public static void main(String[] args) throws FileNotFoundException {
+        long start = System.currentTimeMillis();
+        var results = new BufferedReader(new FileReader("./measurements.txt"))
+                .lines()
+                .map(l -> l.split(";"))
+                .collect(Collectors.toMap(
+                        parts -> parts[0],
+                        parts -> {
+                            double temperature = Double.parseDouble(parts[1]);
+                            return new Result(temperature, temperature, temperature, 1);
+                        },
+                        (oldResult, newResult) -> {
+                            double min = Math.min(oldResult.min, newResult.min);
+                            double max = Math.max(oldResult.max, newResult.max);
+                            double sum = oldResult.sum + newResult.sum;
+                            long count = oldResult.count + newResult.count;
+                            return new Result(min, max, sum, count);
+                        }, ConcurrentSkipListMap::new));
+        System.out.println(System.currentTimeMillis() - start);
+        System.out.println(results);
+    }
 }
