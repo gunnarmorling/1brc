@@ -143,7 +143,7 @@ public class CalculateAverage_palmr {
             }
             else if (currentChar == '\n') {
                 if (state.stationPointerEnd != 0) {
-                    double value = (double) state.measurementValue * state.exponent;
+                    double value = state.measurementValue * state.exponent;
 
                     MeasurementAggregator aggregator = state.aggregators.computeIfAbsent(state.stationBuffer, state.stationPointerEnd, state.signedHashCode);
                     aggregator.count++;
@@ -182,7 +182,7 @@ public class CalculateAverage_palmr {
         byte[] stationBuffer = new byte[STATION_NAME_BUFFER_SIZE];
         int signedHashCode = 0;
         int stationPointerEnd = 0;
-        long measurementValue = 0;
+        double measurementValue = 0;
         double exponent = 0.1;
 
         public void reset() {
