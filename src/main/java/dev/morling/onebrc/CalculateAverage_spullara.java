@@ -33,7 +33,7 @@ public class CalculateAverage_spullara {
      *
      * CalculateAverage: 2m37.788s
      * CalculateAverage_royvanrijn: 0m29.639s
-     * CalculateAverage_spullara: 0m6.278s
+     * CalculateAverage_spullara: 0m2.013s
      *
      */
 
@@ -139,7 +139,7 @@ public class CalculateAverage_spullara {
             for (Future<ByteArrayToResultMap> future : futures) {
                 var partition = future.get();
                 for (var entry : partition.getAll()) {
-                    String key = new String(entry.key(), 0, entry.key().length);
+                    String key = new String(entry.key());
                     resultMap.compute(key, (k, v) -> {
                         if (v == null)
                             return entry.value();
