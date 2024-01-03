@@ -47,6 +47,8 @@ import java.util.stream.StreamSupport;
  * When using Oracle GraalVM 21.0.1+12.1
  * `sdk use java 21.0.1-graal`
  * It takes 0m 15s on my machine
+ * `sdk use java 21.0.1-graalce`
+ * It takes 0m 20s on my machine
  *
  * @author Filip Hrisafov
  */
