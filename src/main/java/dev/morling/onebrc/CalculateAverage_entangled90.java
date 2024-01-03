@@ -22,6 +22,7 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -42,7 +43,7 @@ public class CalculateAverage_entangled90 {
         Scanner scanner = new Scanner();
         long start = System.currentTimeMillis();
         PooledChunkProcessor chunkProcessor = new PooledChunkProcessor(Runtime.getRuntime().availableProcessors());
-        scanner.scan(FILE, chunkProcessor);
+        scanner.scan(FILE, chunkProcessor, 0L, -1);
         long finish = System.currentTimeMillis();
         var map = chunkProcessor.result();
         map.printResults();
@@ -78,21 +79,22 @@ class AggregatedProcessor {
 
     @Override
     public String toString() {
-        return round(min) + "/" + round(mean()) + "/" + round(max);
+        return String.format("%.1f/%.1f/%.1f", min, mean(), max);
     }
 }
 
 class ProcessorMap {
-    Map<String, AggregatedProcessor> processors = new HashMap<>(1024);
+    Map<BytesWrapper, AggregatedProcessor> processors = new HashMap<>(1024);
 
     public void printResults() {
         System.out.print("{");
         System.out.print(
-                processors.entrySet().stream().sorted(Map.Entry.comparingByKey()).map(Object::toString).collect(Collectors.joining(", ")));
+                processors.entrySet().stream()
+                        .sorted(Map.Entry.comparingByKey()).map(Object::toString).collect(Collectors.joining(", ")));
         System.out.println("}");
     }
 
-    public void addMeasure(String city, double value) {
+    public void addMeasure(BytesWrapper city, double value) {
         var processor = processors.get(city);
         if (processor == null) {
             processor = new AggregatedProcessor();
@@ -101,7 +103,7 @@ class ProcessorMap {
         processor.addMeasure(value);
     }
 
-    private void combine(String city, AggregatedProcessor processor) {
+    private void combine(BytesWrapper city, AggregatedProcessor processor) {
         var thisProcessor = processors.get(city);
         if (thisProcessor == null) {
             processors.put(city, processor);
@@ -124,7 +126,6 @@ class ProcessorMap {
 
 class PooledChunkProcessor implements Consumer<ByteBuffer> {
     private final ArrayBlockingQueue<ByteBuffer> queue;
-    private final ArrayList<Thread> threads;
     private final ProcessorMap[] results;
     private final CountDownLatch latch;
 
@@ -133,7 +134,6 @@ class PooledChunkProcessor implements Consumer<ByteBuffer> {
     public PooledChunkProcessor(int n) {
         queue = new ArrayBlockingQueue<>(4 * 1024);
         results = new ProcessorMap[n];
-        threads = new ArrayList<>(n);
         latch = new CountDownLatch(n);
         for (int i = 0; i < n; i++) {
             int finalI = i;
@@ -158,7 +158,6 @@ class PooledChunkProcessor implements Consumer<ByteBuffer> {
                 results[finalI] = processor.processors;
                 latch.countDown();
             });
-            threads.add(t);
             t.start();
         }
     }
@@ -196,32 +195,35 @@ class ChunkProcessor implements Consumer<ByteBuffer> {
     // true if you can continue
     // false if input is missing
     public boolean processRow(ByteBuffer bb) {
-        int cityLimit = findChar(bb, (byte) ';');
-        if (cityLimit < 0) {
+        int colonIdx = findChar(bb, (byte) ';');
+        if (colonIdx < 0) {
             return false;
         }
-        String city = stringFromBB(bb, cityLimit - bb.position()).trim();
-        bb.position(cityLimit + 1);
+        // String city = stringFromBB(bb, colonIdx - bb.position()).trim();
+        var wrapper = wrapperFromBB(bb, colonIdx - bb.position());
+        bb.position(colonIdx + 1);
 
-        int valueLimit = findChar(bb, (byte) '\n');
-        if (valueLimit < 0) {
-            return false;
-        }
-        double value = Double.parseDouble(stringFromBB(bb, valueLimit - cityLimit));
-        // double value = parseFromBB(bb, valueLimit - cityLimit);
-        bb.position(valueLimit + 1);
+        // double value = Double.parseDouble(stringFromBB(bb, valueLimit - cityLimit));
+        double value = parseDoubleNewLine(bb);
         // System.out.println("Read: " + city + "=" + value);
-        processors.addMeasure(city, value);
+        processors.addMeasure(wrapper, value);
 
         return true;
     }
 
-    private String stringFromBB(ByteBuffer bb, int length) {
+    private static String stringFromBB(ByteBuffer bb, int length) {
         var bytes = new byte[length];
         bb.get(bytes);
         return new String(bytes, StandardCharsets.UTF_8);
     }
 
+    private static BytesWrapper wrapperFromBB(ByteBuffer bb, int length) {
+        var bytes = new byte[length];
+        bb.get(bytes);
+        return new BytesWrapper(bytes);
+    }
+
+    // dont' advance bb
     private int findChar(ByteBuffer bb, byte c) {
         for (int i = bb.position(); i < bb.limit(); i++) {
             if (bb.get(i) == c)
@@ -229,35 +231,56 @@ class ChunkProcessor implements Consumer<ByteBuffer> {
         }
         return -1;
     }
+
+    // parses double untile new line and advances buffer
+    private static double parseDoubleNewLine(ByteBuffer bb) {
+        int result = 0;
+        int sign = 1;
+        byte c;
+        do {
+            c = bb.get();
+            switch (c) {
+                case '-':
+                    sign = -1;
+                    break;
+                case '.', ',', '\r', '\n':
+                    break;
+                default:
+                    result = result * 10 + (c - '0');
+
+            }
+        } while (c != '\n' && bb.position() < bb.limit());
+        return result * sign / 10.0;
+    }
 }
 
 class Scanner {
     private static final int MAX_MAPPED_MEMORY = 4 * 1024 * 1024;
 
-    public void scan(String fileName, Consumer<ByteBuffer> consumer) throws IOException {
+    public void scan(String fileName, Consumer<ByteBuffer> consumer, long offset, long len) throws IOException {
         try (var file = new RandomAccessFile(fileName, "r"); FileChannel channel = file.getChannel()) {
             int chunkId = 0;
-            // file pointer
-            long fp = 0L;
-            long fileLen = file.length();
+            if (len < 0) {
+                len = file.length();
+            }
 
             while (true) {
-                if (fp > 0) {
-                    file.seek(fp);
+                if (offset > 0) {
+                    file.seek(offset);
                 }
-                MappedByteBuffer bb = channel.map(FileChannel.MapMode.READ_ONLY, fp, Math.min(MAX_MAPPED_MEMORY, fileLen - fp));
+                MappedByteBuffer bb = channel.map(FileChannel.MapMode.READ_ONLY, offset, Math.min(MAX_MAPPED_MEMORY, len - offset));
                 bb.load();
                 var limitIdx = findLastNewLine(bb);
                 bb.limit(limitIdx);
                 // get last newline from the end
                 consumer.accept(bb);
                 chunkId++;
-                fp += offset;
+                offset += limitIdx;
                 if (CalculateAverage_entangled90.DEBUG && chunkId % 10 == 0) {
-                    System.out.println(" read chunk " + chunkId + " at pointer " + fp + "(" + ((int) (fp * 100 / fileLen)) + "%)");
+                    System.out.println(" read chunk " + chunkId + " at pointer " + offset + "(" + ((int) (offset * 100 / len)) + "%)");
                 }
 
-                if (fp >= fileLen - 1) {
+                if (offset >= len - 1) {
                     break;
                 }
             }
@@ -271,5 +294,38 @@ class Scanner {
             }
         }
         return -1;
+    }
+}
+
+class BytesWrapper implements Comparable<BytesWrapper> {
+    private final byte[] bytes;
+
+    public BytesWrapper(byte[] bytes) {
+        this.bytes = bytes;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (obj instanceof BytesWrapper) {
+            return Arrays.equals(bytes, ((BytesWrapper) obj).bytes);
+        }
+        else {
+            return false;
+        }
+    }
+
+    @Override
+    public int hashCode() {
+        return Arrays.hashCode(bytes);
+    }
+
+    @Override
+    public String toString() {
+        return new String(bytes);
+    }
+
+    @Override
+    public int compareTo(BytesWrapper bytesWrapper) {
+        return this.toString().compareTo(bytesWrapper.toString());
     }
 }
