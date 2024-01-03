@@ -143,7 +143,7 @@ public class CalculateAverage_palmr {
             }
             else if (currentChar == '\n') {
                 if (state.stationPointerEnd != 0) {
-                    double value = state.measurementValue / state.divisor;
+                    double value = (double)state.measurementValue * state.exponent;
 
                     MeasurementAggregator aggregator = state.aggregators.computeIfAbsent(state.stationBuffer, state.stationPointerEnd, state.signedHashCode);
                     aggregator.count++;
@@ -166,7 +166,7 @@ public class CalculateAverage_palmr {
                 }
                 else {
                     if (currentChar == '-') {
-                        state.divisor = -10;
+                        state.exponent = -1.0e1;
                     }
                     else if (currentChar != '.') {
                         state.measurementValue = state.measurementValue * 10 + (currentChar - '0');
@@ -182,15 +182,15 @@ public class CalculateAverage_palmr {
         byte[] stationBuffer = new byte[STATION_NAME_BUFFER_SIZE];
         int signedHashCode = 0;
         int stationPointerEnd = 0;
-        double measurementValue = 0;
-        double divisor = 10;
+        long measurementValue = 0;
+        double exponent = 1.0e1;
 
         public void reset() {
             parsingValue = false;
             signedHashCode = 0;
             stationPointerEnd = 0;
             measurementValue = 0;
-            divisor = 10;
+            exponent = 1.0e1;
         }
     }
 
