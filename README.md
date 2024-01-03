@@ -35,7 +35,7 @@ Submit your implementation by Jan 31 2024 and become part of the leaderboard!
 
 ## Results
 
-| # | Result (m:s:ms) | Implementation     | Submitter     |
+| # | Result (m:s.ms) | Implementation     | Submitter     |
 |---|-----------------|--------------------|---------------|
 | 1.|        00:23.366| [link](https://github.com/gunnarmorling/1brc/pull/5/)| [Roy van Rijn](https://github.com/royvanrijn)|
 | 2.|        00:38.510| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_bjhara.java)| [Hampus Ram](https://github.com/bjhara)|
