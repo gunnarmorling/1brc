@@ -21,6 +21,8 @@ if [ -z "$1" ]
     exit 1
 fi
 
+java --version
+
 mvn clean verify
 
 for i in {1..5}
