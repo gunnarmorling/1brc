@@ -116,7 +116,7 @@ To submit your own implementation to 1BRC, follow these steps:
   * The execution time of the program on your system and specs of the same (CPU, number of cores, RAM). This is for informative purposes only, the official runtime will be determined as described below.
 * I will run the program and determine its performance as described in the next section, and enter the result to the scoreboard.
 
-**Note:** I reserve the right to not evaluate specific submissions if I feel doubtful about the implementation (I.e. I won't run your BitCoin miner ;).
+**Note:** I reserve the right to not evaluate specific submissions if I feel doubtful about the implementation (I.e. I won't run your Bitcoin miner ;).
 
 If you'd like to discuss any potential ideas for implementing 1BRC with the community,
 you can use the [GitHub Discussions](https://github.com/gunnarmorling/onebrc/discussions) of this repository.
@@ -149,6 +149,9 @@ A: No, this challenge is focussed on Java only. Feel free to inofficially share 
 
 _Q: Can I use non-JVM languages and/or tools?_\
 A: No, this challenge is focussed on Java only. Feel free to inofficially share interesting implementations and results though. For instance it would be interesting to see how DuckDB fares with this task.
+
+_Q: I've got an implementation—but it's not in Java. Can I share it somewhere?_\
+A: Whilst non-Java solutions cannot be formally submitted to the challenge, you are welcome to share them over in the [Show and tell](https://github.com/gunnarmorling/1brc/discussions/categories/show-and-tell) GitHub discussion area.
 
 _Q: Can I use JNI?_\
 A: Submissions must be completely implemented in Java, i.e. you cannot write JNI glue code in C/C++. You could use AOT compilation of Java code via GraalVM though, either by AOT-compiling the entire application, or by creating a native library (see [here](https://www.graalvm.org/22.0/reference-manual/native-image/ImplementingNativeMethodsInJavaWithSVM/).
