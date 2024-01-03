@@ -52,66 +52,33 @@ public class CalculateAverage_entangled90 {
     }
 }
 
-interface MetricProcessor {
-    void addMeasure(double value);
-}
+class AggregatedProcessor {
+    public double max = 0D;
+    public double min = 0D;
+    private double sum = 0D;
+    private long count = 0L;
 
-class AggregatedProcessor implements MetricProcessor {
-    public Max max = new Max();
-    public Min min = new Min();
-    public Mean mean = new Mean();
-
-    @Override
     public void addMeasure(double value) {
-        max.addMeasure(value);
-        min.addMeasure(value);
-        mean.addMeasure(value);
+        max = Math.max(max, value);
+        min = Math.min(min, value);
+        sum += value;
+        count++;
     }
 
     public void combine(AggregatedProcessor processor) {
-        max.addMeasure(processor.max.max);
-        min.addMeasure(processor.min.min);
-        mean.sum += processor.mean.sum;
-        mean.count += processor.mean.count;
-    }
-
-    @Override
-    public String toString() {
-        return round(min.min) + "/" + round(mean.mean()) + "/" + round(max.max);
-    }
-}
-
-class Mean implements MetricProcessor {
-    public double sum = 0f;
-    public long count = 0;
-
-    public void addMeasure(double value) {
-        sum += value;
-        count++;
+        max = Math.max(max, processor.max);
+        min = Math.min(min, processor.min);
+        sum += processor.sum;
+        count += processor.count;
     }
 
     public double mean() {
         return sum / count;
     }
-}
 
-class Min implements MetricProcessor {
-    public double min = Double.POSITIVE_INFINITY;
-
-    public void addMeasure(double value) {
-        if (value < min) {
-            min = value;
-        }
-    }
-}
-
-class Max implements MetricProcessor {
-    public double max = Double.NEGATIVE_INFINITY;
-
-    public void addMeasure(double value) {
-        if (value > max) {
-            max = value;
-        }
+    @Override
+    public String toString() {
+        return round(min) + "/" + round(mean()) + "/" + round(max);
     }
 }
 
@@ -265,18 +232,17 @@ class ChunkProcessor implements Consumer<ByteBuffer> {
 }
 
 class Scanner {
-    private static final int MAX_MAPPED_MEMORY = 1 * 1024 * 1024;
+    private static final int MAX_MAPPED_MEMORY = 4 * 1024 * 1024;
 
     public void scan(String fileName, Consumer<ByteBuffer> consumer) throws IOException {
         try (var file = new RandomAccessFile(fileName, "r"); FileChannel channel = file.getChannel()) {
-            int offset = 0;
             int chunkId = 0;
             // file pointer
             long fp = 0L;
             long fileLen = file.length();
 
             while (true) {
-                if (offset > 0) {
+                if (fp > 0) {
                     file.seek(fp);
                 }
                 MappedByteBuffer bb = channel.map(FileChannel.MapMode.READ_ONLY, fp, Math.min(MAX_MAPPED_MEMORY, fileLen - fp));
@@ -285,12 +251,12 @@ class Scanner {
                 bb.limit(limitIdx);
                 // get last newline from the end
                 consumer.accept(bb);
-                offset = limitIdx;
                 chunkId++;
+                fp += offset;
                 if (CalculateAverage_entangled90.DEBUG && chunkId % 10 == 0) {
                     System.out.println(" read chunk " + chunkId + " at pointer " + fp + "(" + ((int) (fp * 100 / fileLen)) + "%)");
                 }
-                fp += offset;
+
                 if (fp >= fileLen - 1) {
                     break;
                 }
