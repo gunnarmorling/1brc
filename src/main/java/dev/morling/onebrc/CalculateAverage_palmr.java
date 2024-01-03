@@ -28,7 +28,7 @@ public class CalculateAverage_palmr {
     public static final int CHUNK_SIZE = 1024 * 1024 * 10; // Trial and error showed ~10MB to be a good size on our machine
     public static final int LITTLE_CHUNK_SIZE = 128; // Enough bytes to cover a station name and measurement value :fingers-crossed:
     public static final int STATION_NAME_BUFFER_SIZE = 50;
-    public static final int THREAD_COUNT = 8;
+    public static final int THREAD_COUNT = Math.min(8, Runtime.getRuntime().availableProcessors());
 
     public static void main(String[] args) throws IOException {
 
