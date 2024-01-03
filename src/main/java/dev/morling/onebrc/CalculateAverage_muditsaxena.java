@@ -72,70 +72,44 @@ public class CalculateAverage_muditsaxena {
             this.input = input;
         }
 
-        // @Override
-        // public V call() throws Exception {
-        // for (String inputTask : inputList) {
-        // Measurement measurement = new Measurement(inputTask.split(";"));
-        // MeasurementAggregator measurementAggregator = map.getOrDefault(measurement.station(), new MeasurementAggregator());
-        // measurementAggregator.count += 1;
-        // measurementAggregator.sum += measurement.value;
-        // measurementAggregator.max = Math.max(measurementAggregator.max, measurement.value);
-        // measurementAggregator.min = Math.min(measurementAggregator.min, measurement.value);
-        // map.put(measurement.station(), measurementAggregator);
-        // }
-        // inputList = null;
-        // return null;
-        // }
-
         @Override
         public V call() throws Exception {
-            Measurement measurement = new Measurement(this.input.split(";"));
-            MeasurementAggregator measurementAggregator = map.getOrDefault(measurement.station(), new MeasurementAggregator());
-            measurementAggregator.count += 1;
-            measurementAggregator.sum += measurement.value;
-            measurementAggregator.max = Math.max(measurementAggregator.max, measurement.value);
-            measurementAggregator.min = Math.min(measurementAggregator.min, measurement.value);
-            map.put(measurement.station(), measurementAggregator);
+            for (String inputTask : inputList) {
+                Measurement measurement = new Measurement(inputTask.split(";"));
+                MeasurementAggregator measurementAggregator = map.getOrDefault(measurement.station(), new MeasurementAggregator());
+                measurementAggregator.count += 1;
+                measurementAggregator.sum += measurement.value;
+                measurementAggregator.max = Math.max(measurementAggregator.max, measurement.value);
+                measurementAggregator.min = Math.min(measurementAggregator.min, measurement.value);
+                map.put(measurement.station(), measurementAggregator);
+            }
+            inputList = null;
             return null;
         }
+
     }
 
     static ConcurrentMap<String, MeasurementAggregator> map = new ConcurrentHashMap<>();
     static final int TASK_LIST_CAPACITY = 100;
 
     public static void main(String[] args) throws IOException {
-        // ExecutorService executorService = Executors.newWorkStealingPool(Runtime.getRuntime().availableProcessors());
         ExecutorService virtualThreadExecutors = Executors.newVirtualThreadPerTaskExecutor();
 
         List<String> taskList = new ArrayList<>(TASK_LIST_CAPACITY);
         List<CompletableFuture<Void>> tasks = new ArrayList<>();
-        int index = 0;
-        // int arrayCapacity = 500000; // 1000000
-        // CompletableFuture<Void>[] taskFutures = new CompletableFuture[arrayCapacity];
 
-//        Files.lines(Path.of(FILE))
-//                .parallel()
-//                .map(line -> tasks.add(CompletableFuture.runAsync(new FutureTask<>(new TaskRunner<>(line)), virtualThreadExecutors)));
+        try (BufferedReader br = Files.newBufferedReader(Paths.get(FILE))) {
+            while (br.readLine() != null) {
+                String line = br.readLine();
 
-        // try (BufferedReader br = Files.newBufferedReader(Paths.get(FILE))) {
-        // while (br.readLine() != null) {
-        // String line = br.readLine();
-        // // Try creating virtual thread per line? How will that perform
-        // // tasks.add(CompletableFuture.runAsync(new FutureTask<>(new TaskRunner<>(line)), virtualThreadExecutors));
-        //
-        // taskList.add(line);
-        //
-        // if (taskList.size() >= TASK_LIST_CAPACITY) {
-        // tasks.add(CompletableFuture.runAsync(new FutureTask<>(new TaskRunner<>(taskList)), virtualThreadExecutors));
-        // taskList = null;
-        // taskList = new ArrayList<>(TASK_LIST_CAPACITY);
-        // }
-        // }
-        // }
-
-        // CompletableFuture<Void>[] taskFutures = tasks.stream()
-        // .map(task -> CompletableFuture.runAsync(task, executorService))
-        // .toArray(CompletableFuture[]::new);
+                taskList.add(line);
+                if (taskList.size() >= TASK_LIST_CAPACITY) {
+                    tasks.add(CompletableFuture.runAsync(new FutureTask<>(new TaskRunner<>(taskList)), virtualThreadExecutors));
+                    taskList = null;
+                    taskList = new ArrayList<>(TASK_LIST_CAPACITY);
+                }
+            }
+        }
 
         for (CompletableFuture<Void> task : tasks) {
             if (task != null) {
@@ -143,24 +117,8 @@ public class CalculateAverage_muditsaxena {
             }
         }
 
-        // for (CompletableFuture<Void> task : taskFutures) {
-        // if (task != null) {
-        // task.join();
-        // }
-        // }
-
-        // CompletableFuture.allOf(taskFutures).join();
-
         Map<String, ResultRow> resultRowMap = new TreeMap<>();
         map.forEach((key, value) -> resultRowMap.put(key, new ResultRow(value.min, value.sum / value.count, value.max)));
         System.out.println(resultRowMap);
-
-        // for (Map.Entry<String, MeasurementAggregator> entry : map.entrySet()) {
-        // System.out.print();
-        // }
-        // Map<String, ResultRow> measurements = map.entrySet().stream().parallel().collect(Collectors.toMap(entry -> entry.getKey(),
-        // entry -> new ResultRow(entry.getValue().min, entry.getValue().sum / entry.getValue().count, entry.getValue().max), TreeMap::new));
-        //
-        // System.out.println(measurements);
     }
 }
