@@ -21,7 +21,6 @@ public class CalculateAverage_ebarlas {
         }
         var path = Paths.get(args[0]);
         var numPartitions = Integer.parseInt(args[1]);
-        assert numPartitions > 0;
         var channel = FileChannel.open(path, StandardOpenOption.READ);
         var partitionSize = channel.size() / numPartitions;
         var partitions = new Partition[numPartitions];
@@ -49,8 +48,7 @@ public class CalculateAverage_ebarlas {
         }
         var partitionList = List.of(partitions);
         foldFootersAndHeaders(partitionList);
-        var stats = foldStats(partitionList);
-        printResults(stats);
+        printResults(foldStats(partitionList));
     }
 
     private static void printResults(Stats[] stats) { // adheres to Gunnar's reference code
@@ -73,7 +71,6 @@ public class CalculateAverage_ebarlas {
     }
 
     private static Stats[] foldStats(List<Partition> partitions) { // fold stats from all partitions into first partition
-        assert !partitions.isEmpty();
         var target = partitions.getFirst().stats;
         for (int i = 1; i < partitions.size(); i++) {
             var current = partitions.get(i).stats;
@@ -129,20 +126,17 @@ public class CalculateAverage_ebarlas {
         var negative = false;
         var val = 0;
         var header = first ? null : readHeader(buffer);
+        Stats st = null;
         while (buffer.hasRemaining()) {
             var b = buffer.get();
             if (readingKey) {
                 if (b == ';') {
                     var idx = HASH_MOD + keyHash % HASH_MOD;
-                    var st = stats[idx];
+                    st = stats[idx];
                     if (st == null) {
-                        var pos = buffer.position();
-                        var keySize = pos - keyStart - 1;
-                        var key = new byte[keySize];
-                        buffer.position(keyStart);
-                        buffer.get(key);
-                        buffer.position(pos);
-                        stats[idx] = new Stats(key);
+                        var key = new byte[buffer.position() - keyStart - 1];
+                        buffer.get(keyStart, key, 0, key.length);
+                        st = stats[idx] = new Stats(key);
                     }
                     readingKey = false;
                 } else {
@@ -150,8 +144,11 @@ public class CalculateAverage_ebarlas {
                 }
             } else {
                 if (b == '\n') {
-                    var idx = HASH_MOD + keyHash % HASH_MOD;
-                    updateStats(stats[idx], negative ? -val : val);
+                    var v = negative ? -val : val;
+                    st.min = Math.min(st.min, v);
+                    st.max = Math.max(st.max, v);
+                    st.sum += v;
+                    st.count++;
                     readingKey = true;
                     keyHash = 0;
                     val = 0;
@@ -159,48 +156,31 @@ public class CalculateAverage_ebarlas {
                     keyStart = buffer.position();
                 } else if (b == '-') {
                     negative = true;
-                } else if (b == '.') {
-                    // skip
-                } else {
+                } else if (b != '.') { // skip '.' since fractional tenth unit after decimal point is assumed
                     val = val * 10 + (b - '0');
                 }
             }
         }
-        var footer = keyStart < buffer.position()
-                ? readFooter(buffer, keyStart)
-                : null;
+        var footer = keyStart < buffer.position() ? readFooter(buffer, keyStart) : null;
         return new Partition(header, footer, stats);
     }
 
-    private static void updateStats(Stats st, int val) {
-        st.min = Math.min(st.min, val);
-        st.max = Math.max(st.max, val);
-        st.sum += val;
-        st.count++;
-    }
-
-    private static byte[] readFooter(ByteBuffer buffer, int lineStart) {
+    private static byte[] readFooter(ByteBuffer buffer, int lineStart) { // read from line start to current pos (end-of-input)
         var footer = new byte[buffer.position() - lineStart];
-        var pos = buffer.position();
-        buffer.position(lineStart);
-        buffer.get(footer);
-        buffer.position(pos);
+        buffer.get(lineStart, footer, 0, footer.length);
         return footer;
     }
 
-    private static byte[] readHeader(ByteBuffer buffer) {
+    private static byte[] readHeader(ByteBuffer buffer) { // read up to and including first newline (or end-of-input)
         while (buffer.hasRemaining() && buffer.get() != '\n') ;
         var header = new byte[buffer.position()];
-        var pos = buffer.position();
-        buffer.position(0);
-        buffer.get(header);
-        buffer.position(pos);
+        buffer.get(0, header, 0, header.length);
         return header;
     }
 
     record Partition(byte[] header, byte[] footer, Stats[] stats) {}
 
-    private static class Stats {
+    private static class Stats { // min, max, and sum values are modeled with integral types that represent tenths of a unit
         final byte[] key;
         int min = Integer.MAX_VALUE;
         int max = Integer.MIN_VALUE;
@@ -211,5 +191,4 @@ public class CalculateAverage_ebarlas {
             this.key = key;
         }
     }
-
 }
