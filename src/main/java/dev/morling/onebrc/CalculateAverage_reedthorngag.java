@@ -110,7 +110,7 @@ public class CalculateAverage_reedthorngag {
 
     public static void main(String[] args) throws Exception {
 
-        long startTime = System.currentTimeMillis();
+        //long startTime = System.currentTimeMillis();
 
         final Data file = new Data();
 
@@ -163,7 +163,6 @@ public class CalculateAverage_reedthorngag {
             }
         }
 
-        System.out.println(stations.keySet().toArray()[0]);
         System.out.print("{");
         for (String key : stations.keySet().stream().sorted().toList()) {
             System.out.print(stations.get(key).toString());
@@ -172,7 +171,7 @@ public class CalculateAverage_reedthorngag {
         System.out.print("\b\b}");
 
 
-        long end = System.currentTimeMillis();
-        System.out.println("\n\nRan for " + (end - startTime) + "ms ("+ (end - startTime) / 1000.0 + "s)");
+        //long end = System.currentTimeMillis();
+        //System.out.println("\n\nRan for " + (end - startTime) + "ms ("+ (end - startTime) / 1000.0 + "s)");
     }
 }
