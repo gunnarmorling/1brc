@@ -17,7 +17,6 @@ package dev.morling.onebrc;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.MappedByteBuffer;
@@ -40,6 +39,7 @@ import java.util.stream.StreamSupport;
  * Initial submission:                                 1m 35s
  * Adding memory mapped files:                         0m 55s (based on bjhara's submission)
  * Using big decimal and iterating the buffer once:    0m 20s
+ * Using long parse:                                   0m 11s
  * <p>
  * Using 21.0.1 Temurin with ShenandoahGC on Macbook (Intel) Pro
  * `sdk use java 21.0.1-tem`
@@ -59,12 +59,12 @@ public class CalculateAverage_filiphr {
 
     private static final class Measurement {
 
-        private double min = Long.MAX_VALUE;
-        private double max = Long.MIN_VALUE;
-        private double sum = 0L;
+        private long min = Long.MAX_VALUE;
+        private long max = Long.MIN_VALUE;
+        private long sum = 0L;
         private long count = 0L;
 
-        private void add(double value) {
+        private void add(long value) {
             this.min = Math.min(this.min, value);
             this.max = Math.max(this.max, value);
             this.sum += value;
@@ -82,7 +82,7 @@ public class CalculateAverage_filiphr {
 
         @Override
         public String toString() {
-            return round(min) + "/" + round((sum) / count) + "/" + round(max);
+            return round(min / 10.0) + "/" + round((sum / 10.0) / count) + "/" + round(max / 10.0);
         }
 
         private double round(double value) {
@@ -143,7 +143,10 @@ public class CalculateAverage_filiphr {
         Map<String, Measurement> measurements = HashMap.newHashMap(415);
         int limit = bb.limit();
         byte[] buffer = new byte[128];
-        CharBuffer charBuffer = CharBuffer.allocate(8);
+        char[] charArray = new char[8];
+        CharBuffer charBuffer = CharBuffer.wrap(charArray);
+        charBuffer.clear();
+        charBuffer.position(0);
 
         while (bb.position() < limit) {
             int bufferIndex = 0;
@@ -160,22 +163,21 @@ public class CalculateAverage_filiphr {
             // Create the city
             String city = new String(buffer, 0, bufferIndex);
 
-            charBuffer.clear();
             byte lastPositionByte = '\n';
+            bufferIndex = 0;
             while (bb.position() < limit) {
                 byte positionByte = bb.get();
                 if (positionByte == '\r' || positionByte == '\n') {
                     lastPositionByte = positionByte;
                     break;
                 }
-                charBuffer.append((char) positionByte);
+                else if (positionByte != '.') {
+                    charArray[bufferIndex++] = (char) positionByte;
+                }
             }
 
-            int position = charBuffer.position();
-            charBuffer.position(0);
             // Create the temperature string
-            BigDecimal bigDecimal = new BigDecimal(charBuffer.array(), 0, position);
-            double value = bigDecimal.doubleValue();
+            long value = Long.parseLong(charBuffer, 0, bufferIndex, 10);
 
             measurements.computeIfAbsent(city, k -> new Measurement())
                     .add(value);
