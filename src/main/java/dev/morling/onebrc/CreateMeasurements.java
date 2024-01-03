@@ -16,16 +16,14 @@
 package dev.morling.onebrc;
 
 import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.OutputStreamWriter;
-import java.util.Arrays;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 public class CreateMeasurements {
 
-    private static final String FILE = "./measurements.txt";
+    private static final Path MEASUREMENT_FILE = Path.of("./measurements.txt");
 
     private record WeatherStation(String id, double meanTemperature) {
         double measurement() {
@@ -76,7 +74,7 @@ public class CreateMeasurements {
         //         )
         // ) TO 'output.csv' (HEADER, DELIMITER ',');
         // @formatter:on
-        List<WeatherStation> stations = Arrays.asList(
+        List<WeatherStation> stations = List.of(
                 new WeatherStation("Abha", 18.0),
                 new WeatherStation("Abidjan", 26.0),
                 new WeatherStation("Abéché", 29.4),
@@ -491,20 +489,17 @@ public class CreateMeasurements {
                 new WeatherStation("Zanzibar City", 26.0),
                 new WeatherStation("Zürich", 9.3));
 
-        File measurements = new File(FILE);
-        try (FileOutputStream fos = new FileOutputStream(measurements); BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(fos));) {
+        try (BufferedWriter bw = Files.newBufferedWriter(MEASUREMENT_FILE)) {
             for (int i = 0; i < size; i++) {
                 if (i > 0 && i % 50_000_000 == 0) {
-                    System.out.println("Wrote %,d measurements in %s ms".formatted(i, System.currentTimeMillis() - start));
+                    System.out.printf("Wrote %,d measurements in %s ms%n", i, System.currentTimeMillis() - start);
                 }
                 WeatherStation station = stations.get(ThreadLocalRandom.current().nextInt(stations.size()));
                 bw.write(station.id());
                 bw.write(";" + station.measurement());
                 bw.newLine();
             }
-            bw.flush();
-
-            System.out.println("Created file with %,d measurements in %s ms".formatted(size, System.currentTimeMillis() - start));
         }
+        System.out.printf("Created file with %,d measurements in %s ms%n", size, System.currentTimeMillis() - start);
     }
 }
