@@ -24,6 +24,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 public class CalculateAverage_spullara {
   private static final String FILE = "./measurements.txt";
@@ -51,7 +52,8 @@ public class CalculateAverage_spullara {
     long start = System.currentTimeMillis();
 
     List<FileSegment> segments = new ArrayList<>();
-    try (RandomAccessFile randomAccessFile = new RandomAccessFile(file, "r")) {
+    try (
+            RandomAccessFile randomAccessFile = new RandomAccessFile(file, "r")) {
       for (int i = 0; i < numberOfSegments; i++) {
         long segStart = i * segmentSize;
         long segEnd = (i == numberOfSegments - 1) ? fileSize : segStart + segmentSize;
@@ -60,7 +62,8 @@ public class CalculateAverage_spullara {
           randomAccessFile.seek(segStart);
           while (segStart < segEnd) {
             segStart++;
-            if (randomAccessFile.read() == '\n') break;
+            if (randomAccessFile.read() == '\n')
+              break;
           }
         }
 
@@ -68,90 +71,88 @@ public class CalculateAverage_spullara {
           randomAccessFile.seek(segEnd);
           while (segEnd < fileSize) {
             segEnd++;
-            if (randomAccessFile.read() == '\n') break;
+            if (randomAccessFile.read() == '\n')
+              break;
           }
         }
 
         segments.add(new FileSegment(segStart, segEnd));
       }
 
-      try (ExecutorService es = Executors.newVirtualThreadPerTaskExecutor()) {
-        List<Future<ByteArrayToResultMap>> futures = new ArrayList<>();
-        AtomicInteger totalLines = new AtomicInteger();
-        for (FileSegment segment : segments) {
-          futures.add(es.submit(() -> {
-            var resultMap = new ByteArrayToResultMap();
-            MappedByteBuffer bb;
-            try (var fileChannel = (FileChannel) Files.newByteChannel(Path.of(filename), StandardOpenOption.READ)) {
-              bb = fileChannel.map(FileChannel.MapMode.READ_ONLY, segment.start, segment.end - segment.start);
-              byte[] buffer = new byte[64];
-              int lines = 0;
-              int startLine;
-              int limit = bb.limit();
-              while ((startLine = bb.position()) < limit) {
-                int currentPosition = startLine;
-                byte b;
-                int offset = 0;
-                while (currentPosition != segment.end && (b = bb.get(currentPosition++)) != ';') {
-                  buffer[offset++] = b;
-                }
-                int temp = 0;
-                int negative = 1;
-                while (currentPosition != segment.end && (b = bb.get(currentPosition++)) != '\n') {
-                  if (b == '-') {
-                    negative = -1;
-                    continue;
-                  }
-                  if (b == '.') {
-                    continue;
-                  }
-                  if (b == '\r') {
-                    break;
-                  }
-                  temp = 10 * temp + (b - '0');
-                }
-                temp *= negative;
-                double finalTemp = temp / 10.0;
-                Result measurement = resultMap.get(buffer, 0, offset);
-                if (measurement == null) {
-                  measurement = new Result(finalTemp);
-                  resultMap.put(buffer, 0, offset, measurement);
-                } else {
-                  measurement.min = Math.min(measurement.min, finalTemp);
-                  measurement.max = Math.max(measurement.max, finalTemp);
-                  measurement.sum += finalTemp;
-                  measurement.count += 1;
-                }
-                lines++;
-                bb.position(currentPosition);
-              }
-              totalLines.addAndGet(lines);
-              return resultMap;
+      AtomicInteger totalLines = new AtomicInteger();
+      var results = segments.stream().map(segment -> {
+        var resultMap = new ByteArrayToResultMap();
+        MappedByteBuffer bb;
+        try (var fileChannel = (FileChannel) Files.newByteChannel(Path.of(filename), StandardOpenOption.READ)) {
+          bb = fileChannel.map(FileChannel.MapMode.READ_ONLY, segment.start, segment.end - segment.start);
+          byte[] buffer = new byte[64];
+          int lines = 0;
+          int startLine;
+          int limit = bb.limit();
+          while ((startLine = bb.position()) < limit) {
+            int currentPosition = startLine;
+            byte b;
+            int offset = 0;
+            while (currentPosition != segment.end && (b = bb.get(currentPosition++)) != ';') {
+              buffer[offset++] = b;
             }
-          }));
-        }
-
-        Map<String, Result> resultMap = new TreeMap<>();
-        for (Future<ByteArrayToResultMap> future : futures) {
-          var partition = future.get();
-          for (var entry : partition.getAll()) {
-            String key = new String(entry.key());
-            resultMap.compute(key, (k, v) -> {
-              if (v == null) return entry.value();
-              Result value = entry.value();
-              v.min = Math.min(v.min, value.min);
-              v.max = Math.max(v.max, value.max);
-              v.sum += value.sum;
-              v.count += value.count;
-              return v;
-            });
+            int temp = 0;
+            int negative = 1;
+            while (currentPosition != segment.end && (b = bb.get(currentPosition++)) != '\n') {
+              if (b == '-') {
+                negative = -1;
+                continue;
+              }
+              if (b == '.') {
+                continue;
+              }
+              if (b == '\r') {
+                break;
+              }
+              temp = 10 * temp + (b - '0');
+            }
+            temp *= negative;
+            double finalTemp = temp / 10.0;
+            Result measurement = resultMap.get(buffer, 0, offset);
+            if (measurement == null) {
+              measurement = new Result(finalTemp);
+              resultMap.put(buffer, 0, offset, measurement);
+            } else {
+              measurement.min = Math.min(measurement.min, finalTemp);
+              measurement.max = Math.max(measurement.max, finalTemp);
+              measurement.sum += finalTemp;
+              measurement.count += 1;
+            }
+            lines++;
+            bb.position(currentPosition);
           }
+          totalLines.addAndGet(lines);
+          return resultMap;
+        } catch (IOException e) {
+          throw new RuntimeException(e);
         }
+      }).parallel().toList();
 
-        System.out.println("Time: " + (System.currentTimeMillis() - start) + "ms");
-        System.out.println("Lines processed: " + totalLines);
-        System.out.println(resultMap);
+      Map<String, Result> resultMap = new TreeMap<>();
+      for (ByteArrayToResultMap partition : results) {
+        for (var entry : partition.getAll()) {
+          String key = new String(entry.key());
+          resultMap.compute(key, (k, v) -> {
+            if (v == null)
+              return entry.value();
+            Result value = entry.value();
+            v.min = Math.min(v.min, value.min);
+            v.max = Math.max(v.max, value.max);
+            v.sum += value.sum;
+            v.count += value.count;
+            return v;
+          });
+        }
       }
+
+      System.out.println("Time: " + (System.currentTimeMillis() - start) + "ms");
+      System.out.println("Lines processed: " + totalLines);
+      System.out.println(resultMap);
     }
   }
 }
@@ -175,6 +176,7 @@ class Result {
   double round(double v) {
     return Math.round(v * 10.0) / 10.0;
   }
+
 }
 
 record Pair(int slot, Result slotValue) {
