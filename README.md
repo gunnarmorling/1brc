@@ -93,7 +93,19 @@ Execute the following steps to run the challenge:
     Adjust the `CalculateAverage` program to speed it up, in any way you see fit (just sticking to a few rules described below).
     Options include parallelizing the computation, using the (incubating) Vector API, memory-mapping different sections of the file concurrently, using AppCDS, GraalVM, CRaC, etc. for speeding up the application start-up, choosing and tuning the garbage collector, and much more. 
 
-The following rules and limits apply:
+## Flamegraph/Profiling
+
+A tip is that if you have [jbang](https://jbang.dev) installed, you can get a flamegraph of your program by running:
+
+`jbang --javaagent=ap-loader@jvm-profiling-tools/ap-loader=start,event=cpu,file=profile.html -m dev.morling.onebrc.CalculateAverage_yourname target/average-1.0.0-SNAPSHOT.jar`
+
+or directly on the .java file:
+
+`jbang --javaagent=ap-loader@jvm-profiling-tools/ap-loader=start,event=cpu,file=profile.html src/main/java/dev/morling/onebrc/CalculateAverage_yourname`
+
+When you run this, it will generate a flamegraph in profile.html. You can then open this in a browser and see where your program is spending its time.
+
+## Rules and limits
 
 * Any of these Java distributions may be used:
     * Any builds provided by [SDKMan](https://sdkman.io/jdks)
