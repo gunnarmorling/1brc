@@ -44,6 +44,10 @@ import java.util.stream.StreamSupport;
  * Using 21.0.1 Temurin with ShenandoahGC on Macbook (Intel) Pro
  * `sdk use java 21.0.1-tem`
  *
+ * When using Oracle GraalVM 21.0.1+12.1
+ * `sdk use java 21.0.1-graal`
+ * It takes 0m 15s on my machine
+ *
  * @author Filip Hrisafov
  */
 public class CalculateAverage_filiphr {
@@ -102,7 +106,8 @@ public class CalculateAverage_filiphr {
     private static Map<String, Measurement> mergeMaps(Map<String, Measurement> map1, Map<String, Measurement> map2) {
         if (map1.isEmpty()) {
             return map2;
-        } else {
+        }
+        else {
             Set<String> cities = new HashSet<>(map1.keySet());
             cities.addAll(map2.keySet());
             Map<String, Measurement> result = HashMap.newHashMap(cities.size());
@@ -114,11 +119,13 @@ public class CalculateAverage_filiphr {
                     // When m2 is null then it is not possible for m1 to be null as well,
                     // since cities is a union of the map key sets
                     result.put(city, m1);
-                } else if (m1 == null) {
+                }
+                else if (m1 == null) {
                     // When m1 is null then it is not possible for m2 to be null as well,
                     // since cities is a union of the map key sets
                     result.put(city, m2);
-                } else {
+                }
+                else {
                     result.put(city, Measurement.combine(m1, m2));
                 }
             }
