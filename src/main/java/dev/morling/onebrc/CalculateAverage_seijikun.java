@@ -26,7 +26,6 @@ public class CalculateAverage_seijikun {
 
     private static final String FILE = "./measurements.txt";
 
-
     private static class MeasurementAggregator {
         private double min = Double.POSITIVE_INFINITY;
         private double max = Double.NEGATIVE_INFINITY;
@@ -179,7 +178,7 @@ public class CalculateAverage_seijikun {
             chunkStartPtr = chunkEndPtr;
         }
 
-        try(var executor = Executors.newFixedThreadPool(jobCnt)) {
+        try (var executor = Executors.newFixedThreadPool(jobCnt)) {
             for (int i = 0; i < jobCnt; ++i) {
                 executor.submit(chunks[i]);
             }
