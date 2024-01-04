@@ -87,7 +87,7 @@ Execute the following steps to run the challenge:
 3. Calculate the average measurement values:
 
     ```
-    ./calculate_average.sh
+    ./calculate_average_baseline.sh
     ```
 
     The provided naive example implementation uses the Java streams API for processing the file and completes the task in ~2 min on environment used for [result evaluation](#evaluating-results).
@@ -96,11 +96,11 @@ Execute the following steps to run the challenge:
 4. Optimize the heck out of it:
 
     Adjust the `CalculateAverage` program to speed it up, in any way you see fit (just sticking to a few rules described below).
-    Options include parallelizing the computation, using the (incubating) Vector API, memory-mapping different sections of the file concurrently, using AppCDS, GraalVM, CRaC, etc. for speeding up the application start-up, choosing and tuning the garbage collector, and much more. 
+    Options include parallelizing the computation, using the (incubating) Vector API, memory-mapping different sections of the file concurrently, using AppCDS, GraalVM, CRaC, etc. for speeding up the application start-up, choosing and tuning the garbage collector, and much more.
 
 ## Flamegraph/Profiling
 
-A tip is that if you have [jbang](https://jbang.dev) installed, you can get a flamegraph of your program by running 
+A tip is that if you have [jbang](https://jbang.dev) installed, you can get a flamegraph of your program by running
 [async-profiler](https://github.com/jvm-profiling-tools/async-profiler) via [ap-loader](https://github.com/jvm-profiling-tools/ap-loader):
 
 `jbang --javaagent=ap-loader@jvm-profiling-tools/ap-loader=start,event=cpu,file=profile.html -m dev.morling.onebrc.CalculateAverage_yourname target/average-1.0.0-SNAPSHOT.jar`
