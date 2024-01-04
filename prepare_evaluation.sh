@@ -17,15 +17,12 @@
 
 if [ -z "$1" ]
   then
-    echo "Usage: evaluate.sh <fork name>"
+    echo "Usage: prepare_evaluation.sh <fork name>"
     exit 1
 fi
 
-java --version
 
-mvn clean verify
+git checkout -b $1
 
-for i in {1..5}
-do
-    ./calculate_average_$1.sh
-done
+git pull https://github.com/$1/1brc.git
+# git pull git@github.com:$1/1brc.git
