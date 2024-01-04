@@ -139,14 +139,14 @@ public class CalculateAverage_ebarlas {
     }
 
     private static Partition doProcessBuffer(ByteBuffer buffer, boolean first, Stats[] stats) {
+        var header = first ? null : readHeader(buffer);
         var readingKey = true; // reading key or value?
         var keyBuf = new byte[MAX_KEY_SIZE]; // buffer for key
         var keyPos = 0; // current position in key buffer
         var keyHash = 0; // accumulating hash of key
+        var keyStart = buffer.position(); // start of key in buffer used for footer calc
         var negative = false; // is value negative?
         var val = 0; // accumulating value
-        var header = first ? null : readHeader(buffer);
-        var keyStart = buffer.position(); // start of key in buffer used for footer calc
         Stats st = null;
         while (buffer.hasRemaining()) {
             var b = buffer.get();
