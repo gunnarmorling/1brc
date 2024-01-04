@@ -67,22 +67,19 @@ public class CalculateAverage_moysesb {
         File f = new File(FILE);
         long fileSize = f.length();
         long split = 0;
-        long chunkSize = Math.min(1 << 24, fileSize / 6);
+        long chunkSize = Math.max(fileSize, Math.min(1 << 24, fileSize / 6));
         List<Future<Map<ByteArray, double[]>>> tasks = new ArrayList<>();
 
-        AtomicInteger taskCounter = new AtomicInteger(0);
         while (split < fileSize) {
             final long[] offset = {split};
             var task = exec.submit(() -> {
-                int taskId = taskCounter.incrementAndGet();
                 try {
                     final Map<ByteArray, double[]> results = new HashMap<>(512);
-                    int gone = 0;
                     file:
                     for (; ; ) {
                         long chunk = Math.min(fileSize - offset[0], chunkSize);
                         if (chunk == 0) {
-                            return null;
+                            return results;
                         }
                         MemorySegment mm = file.map(FileChannel.MapMode.READ_ONLY, offset[0], chunk, Arena.ofConfined());
 
@@ -101,13 +98,11 @@ public class CalculateAverage_moysesb {
                                 double val = 0d;
                                 int dotOffset = 0;
                                 int l = 0;
-                                int strlen = 0;
                                 int nameHash = 0;
                                 for (; ; ) {
                                     byte b = mm.get(ValueLayout.OfByte.JAVA_BYTE, i++);
                                     if (b == ';') {
                                         target = valb;
-                                        strlen = l;
                                         l = 0;
                                     } else if (b == '\n') {
                                         int integral = 0;
@@ -131,7 +126,7 @@ public class CalculateAverage_moysesb {
                                         val *= mult;
                                         var ba = new ByteArray(city, nameHash);
 
-                                        var r = results.computeIfAbsent(ba, _s -> new double[]{Double.MAX_VALUE, Double.MIN_VALUE, 0d, 0d});
+                                        var r = results.computeIfAbsent(ba, _s -> new double[]{1000, -1000, 0d, 0d});
                                         r[0] = Math.min(r[0], val);
                                         r[1] = Math.max(r[1], val);
                                         r[2]++;
@@ -163,14 +158,12 @@ public class CalculateAverage_moysesb {
             split += chunkSize;
         }
 
-        int errors = 0;
         int taken = 0;
         while (taken < tasks.size()) {
             Future<Map<ByteArray, double[]>> fut = exec.take();
             var map = fut.get();
             taken++;
             if (map == null) {
-                errors++;
                 continue;
             }
             for (Map.Entry<ByteArray, double[]> e : map.entrySet()) {
@@ -188,7 +181,10 @@ public class CalculateAverage_moysesb {
 
         SortedMap<String, String> sorted = new TreeMap<>();
         for (Map.Entry<ByteArray, double[]> e : allResults.entrySet()) {
-            String city = new String(e.getKey().value, StandardCharsets.UTF_8);
+            byte[] utf8 = e.getKey().value;
+            int strlen = 0;
+            while (utf8[strlen] != '\0') strlen++;
+            String city = new String(utf8, 0,  strlen, StandardCharsets.UTF_8);
             double[] r = e.getValue();
             String fmt = FormatProcessor.FMT."%.1f\{round(r[0])}/%.1f\{round(r[3]/r[2])}/%.1f\{round(r[1])}";
             sorted.put(city, fmt);
