@@ -37,12 +37,14 @@ public class CalculateAverage_artsiomkorzun {
     private static final int SEGMENT_OVERLAP = 1024;
 
     public static void main(String[] args) throws Exception {
-        /*for (int i = 0; i < 10; i++) {
-            long start = System.currentTimeMillis();
-            execute();
-            long end = System.currentTimeMillis();
-            System.err.println("Time: " + (end - start));
-        }*/
+        /*
+         * for (int i = 0; i < 10; i++) {
+         * long start = System.currentTimeMillis();
+         * execute();
+         * long end = System.currentTimeMillis();
+         * System.err.println("Time: " + (end - start));
+         * }
+         */
 
         execute();
     }
@@ -103,7 +105,8 @@ public class CalculateAverage_artsiomkorzun {
     private static long size(Path file) {
         try {
             return Files.size(file);
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
@@ -111,7 +114,8 @@ public class CalculateAverage_artsiomkorzun {
     private static MappedByteBuffer map(long position, int size) {
         try (FileChannel channel = FileChannel.open(FILE, StandardOpenOption.READ)) {
             return channel.map(FileChannel.MapMode.READ_ONLY, position, size); // leaking until gc
-        } catch (Throwable e) {
+        }
+        catch (Throwable e) {
             throw new RuntimeException(e);
         }
     }
@@ -138,7 +142,8 @@ public class CalculateAverage_artsiomkorzun {
         b = buffer.get();
         if (b == '-') {
             multiplier = -1;
-        } else {
+        }
+        else {
             assert b >= '0' && b <= '9';
             value = b - '0';
         }
