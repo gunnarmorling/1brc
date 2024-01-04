@@ -34,7 +34,7 @@ import java.util.function.BiConsumer;
 
 public class CalculateAverage_yavuztas {
 
-    private static final Path FILE = Path.of("./measurements-sample.txt");
+    private static final Path FILE = Path.of("./measurements.txt");
 
     private static class Measurement {
         private double min;
