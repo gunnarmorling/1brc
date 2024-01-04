@@ -38,19 +38,20 @@ Submit your implementation by Jan 31 2024 and become part of the leaderboard!
 | # | Result (m:s.ms) | Implementation     | JDK | Submitter     |
 |---|-----------------|--------------------|-----|---------------|
 | 1.|        00:14.848| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_spullara.java)| 21.0.1-graalce| [Sam Pullara](https://github.com/spullara)|
-| 2.|        00:18.865| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_palmr.java)| 21.0.1-open| [Nick Palmer](https://github.com/palmr)|
-| 3.|        00:21.853| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_filiphr.java)| 21.0.1-graal| [Filip Hrisafov](https://github.com/filiphr)|
-| 4.|        00:23.366| [link](https://github.com/gunnarmorling/1brc/pull/5/)| 21.0.1-open   | [Roy van Rijn](https://github.com/royvanrijn)|
-| 5.|        00:38.106| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_seijikun.java)| 21.0.1-open   | [Markus Ebner](https://github.com/seijikun)|
-| 6.|        00:38.510| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_bjhara.java)| 21.0.1-open   | [Hampus Ram](https://github.com/bjhara)|
-| 7.|        00:38.819| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_richardstartin.java)| 21.0.1-open   | [Richard Startin](https://github.com/richardstartin)|
-| 8.|        00:50.547| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_padreati.java)| 21.0.1-open   | [Aurelian Tutuianu](https://github.com/padreati)|
-| 9.|        00:53.679| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_criccomini.java)| 21.0.1-open   | [Chris Riccomini](https://github.com/criccomini)|
-|10.|        00:57.141| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_truelive.java)| 21.0.1-open   | [Roman Schweitzer](https://github.com/truelive)|
-|11.|        02:00.101| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_khmarbaise.java)| 21.0.1-open   | [khmarbaise](https://github.com/khmarbaise)|
-|12.|        02:08.315| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_itaske.java)| 21.0.1-open   | [itaske](https://github.com/itaske)|
-|13.|        02:08.650| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_kuduwa_keshavram.java)| 21.0.1-open   | [Kuduwa Keshavram](https://github.com/kuduwa_keshavram)|
-|14.|        04:13.449| [link](https://github.com/gunnarmorling/onebrc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage.java) (baseline)| 21.0.1-open   | [Gunnar Morling](https://github.com/gunnarmorling)|
+| 2.|        00:17.905| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_lawrey.java)| 21.0.1-open| [Peter Lawrey](https://github.com/peter-lawrey)|
+| 3.|        00:18.865| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_palmr.java)| 21.0.1-open| [Nick Palmer](https://github.com/palmr)|
+| 4.|        00:21.853| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_filiphr.java)| 21.0.1-graal| [Filip Hrisafov](https://github.com/filiphr)|
+| 5.|        00:23.260| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_richardstartin.java)| 21.0.1-open   | [Richard Startin](https://github.com/richardstartin)|
+| 6.|        00:23.366| [link](https://github.com/gunnarmorling/1brc/pull/5/)| 21.0.1-open   | [Roy van Rijn](https://github.com/royvanrijn)|
+| 7.|        00:38.106| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_seijikun.java)| 21.0.1-open   | [Markus Ebner](https://github.com/seijikun)|
+| 8.|        00:38.510| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_bjhara.java)| 21.0.1-open   | [Hampus Ram](https://github.com/bjhara)|
+| 9.|        00:50.547| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_padreati.java)| 21.0.1-open   | [Aurelian Tutuianu](https://github.com/padreati)|
+|10.|        00:53.679| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_criccomini.java)| 21.0.1-open   | [Chris Riccomini](https://github.com/criccomini)|
+|11.|        00:57.141| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_truelive.java)| 21.0.1-open   | [Roman Schweitzer](https://github.com/truelive)|
+|12.|        02:00.101| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_khmarbaise.java)| 21.0.1-open   | [khmarbaise](https://github.com/khmarbaise)|
+|13.|        02:08.315| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_itaske.java)| 21.0.1-open   | [itaske](https://github.com/itaske)|
+|14.|        02:08.650| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_kuduwa_keshavram.java)| 21.0.1-open   | [Kuduwa Keshavram](https://github.com/kuduwa_keshavram)|
+|15.|        04:13.449| [link](https://github.com/gunnarmorling/onebrc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage.java) (baseline)| 21.0.1-open   | [Gunnar Morling](https://github.com/gunnarmorling)|
 
 See [below](#entering-the-challenge) for instructions how to enter the challenge with your own implementation.
 
@@ -63,7 +64,7 @@ See [below](#entering-the-challenge) for instructions how to enter the challenge
 This repository contains two programs:
 
 * `dev.morling.onebrc.CreateMeasurements` (invoked via _create\_measurements.sh_): Creates the file _measurements.txt_ in the root directory of this project with a configurable number of random measurement values
-* `dev.morling.onebrc.CalculateAverage` (invoked via _calculate\_average.sh_): Calculates the average values for the file _measurements.txt_
+* `dev.morling.onebrc.CalculateAverage` (invoked via _calculate\_average\_baseline.sh_): Calculates the average values for the file _measurements.txt_
 
 Execute the following steps to run the challenge:
 
@@ -133,7 +134,7 @@ To submit your own implementation to 1BRC, follow these steps:
 * Create a fork of the [onebrc](https://github.com/gunnarmorling/onebrc/) GitHub repository.
 * Create a copy of _CalculateAverage.java_, named _CalculateAverage\_<your_GH_user>.java_, e.g. _CalculateAverage\_doloreswilson.java_.
 * Make that implementation fast. Really fast.
-* Create a copy of _calculate_average.sh_, named _calculate\_average\_<your_GH_user>.sh_, e.g. _calculate\_average\_doloreswilson.sh_.
+* Create a copy of _calculate_average_baseline.sh_, named _calculate\_average\_<your_GH_user>.sh_, e.g. _calculate\_average\_doloreswilson.sh_.
 * Adjust that script so that it references your implementation class name. If needed, provide any JVM arguments via the `JAVA_OPTS` variable in that script.
 * OpenJDK 21 is the default. If a custom JDK build is required, include the SDKMAN command `sdk use java [version]` in the launch shell script prior to application start.
 * (Optional) If you'd like to use native binaries (GraalVM), adjust the _pom.xml_ file so that it builds that binary.

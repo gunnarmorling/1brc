@@ -52,6 +52,26 @@ public class CalculateAverage_richardstartin {
         return new String(bytes, StandardCharsets.UTF_8);
     }
 
+    static double parseTemperature(ByteBuffer slice) {
+        // credit: adapted from spullara's submission
+        int value = 0;
+        int negative = 1;
+        int i = 0;
+        while (i != slice.limit()) {
+            byte b = slice.get(i++);
+            switch (b) {
+                case '-':
+                    negative = -1;
+                case '.':
+                    break;
+                default:
+                    value = 10 * value + (b - '0');
+            }
+        }
+        value *= negative;
+        return value / 10.0;
+    }
+
     @FunctionalInterface
     interface IndexedStringConsumer {
         void accept(String value, int index);
@@ -60,15 +80,14 @@ public class CalculateAverage_richardstartin {
     /** Maps text to an integer encoding. Adapted from async-profiler. */
     public static class Dictionary {
 
-        private static final int ROW_BITS = 7;
+        private static final int ROW_BITS = 12;
         private static final int ROWS = (1 << ROW_BITS);
         private static final int CELLS = 3;
         private static final int TABLE_CAPACITY = (ROWS * CELLS);
 
         private final Table table = new Table(nextBaseIndex());
 
-        private static final AtomicIntegerFieldUpdater<Dictionary> BASE_INDEX_UPDATER =
-                AtomicIntegerFieldUpdater.newUpdater(Dictionary.class, "baseIndex");
+        private static final AtomicIntegerFieldUpdater<Dictionary> BASE_INDEX_UPDATER = AtomicIntegerFieldUpdater.newUpdater(Dictionary.class, "baseIndex");
         volatile int baseIndex;
 
         private void forEach(Table table, IndexedStringConsumer consumer) {
@@ -90,28 +109,30 @@ public class CalculateAverage_richardstartin {
             forEach(this.table, consumer);
         }
 
-        public int encode(long hash, ByteBuffer slice) {
+        public int encode(int hash, ByteBuffer slice) {
             Table table = this.table;
             while (true) {
-                int rowIndex = (int)(Math.abs(hash) % ROWS);
+                int rowIndex = Math.abs(hash) % ROWS;
                 Row row = table.rows[rowIndex];
                 for (int c = 0; c < CELLS; c++) {
                     ByteBuffer storedKey = row.keys.get(c);
                     if (storedKey == null) {
                         if (row.keys.compareAndSet(c, null, slice)) {
                             return table.index(rowIndex, c);
-                        } else {
+                        }
+                        else {
                             storedKey = row.keys.get(c);
                             if (slice.equals(storedKey)) {
                                 return table.index(rowIndex, c);
                             }
                         }
-                    } else if (slice.equals(storedKey)) {
+                    }
+                    else if (slice.equals(storedKey)) {
                         return table.index(rowIndex, c);
                     }
                 }
                 table = row.getOrCreateNextTable(this::nextBaseIndex);
-                hash = Long.rotateRight(hash, ROW_BITS);
+                hash = Integer.rotateRight(hash, ROW_BITS);
             }
         }
 
@@ -121,8 +142,7 @@ public class CalculateAverage_richardstartin {
 
         private static final class Row {
 
-            private static final AtomicReferenceFieldUpdater<Row, Table>
-                    NEXT_TABLE_UPDATER = AtomicReferenceFieldUpdater.newUpdater(Row.class, Table.class, "next");
+            private static final AtomicReferenceFieldUpdater<Row, Table> NEXT_TABLE_UPDATER = AtomicReferenceFieldUpdater.newUpdater(Row.class, Table.class, "next");
             private final AtomicReferenceArray<ByteBuffer> keys = new AtomicReferenceArray<>(CELLS);
             volatile Table next;
 
@@ -132,7 +152,8 @@ public class CalculateAverage_richardstartin {
                     Table newTable = new Table(baseIndexSupplier.getAsInt());
                     if (NEXT_TABLE_UPDATER.compareAndSet(this, null, newTable)) {
                         next = newTable;
-                    } else {
+                    }
+                    else {
                         next = this.next;
                     }
                 }
@@ -160,14 +181,16 @@ public class CalculateAverage_richardstartin {
     private static long compilePattern(long repeat) {
         return 0x101010101010101L * repeat;
     }
+
     private static long compilePattern(char delimiter) {
-        return compilePattern (delimiter & 0xFFL);
+        return compilePattern(delimiter & 0xFFL);
     }
+
     private static long compilePattern(byte delimiter) {
         return compilePattern(delimiter & 0xFFL);
     }
 
-    private static final long NEW_LINE = compilePattern((byte)'\n');
+    private static final long NEW_LINE = compilePattern((byte) '\n');
     private static final long DELIMITER = compilePattern(';');
 
     private static int firstInstance(long word, long pattern) {
@@ -205,43 +228,6 @@ public class CalculateAverage_richardstartin {
             }
         }
         return buffer.limit();
-    }
-
-    private static long hash(ByteBuffer slice) {
-        long hash = slice.limit() + PRIME_5 + 0x123456789abcdef1L;
-        int i = 0;
-        for (; i + Long.BYTES < slice.limit(); i += Long.BYTES) {
-            hash = hashLong(hash, slice.getLong(i));
-        }
-        long part = 0L;
-        for (; i < slice.limit(); i++) {
-            part = (part >>> 8) | ((slice.get(i) & 0xFFL) << 56);
-        }
-        hash = hashLong(hash, part);
-        return mix(hash);
-    }
-
-    static final long PRIME_1 = 0x9E3779B185EBCA87L;
-    static final long PRIME_2 = 0xC2B2AE3D27D4EB4FL;
-    static final long PRIME_3 = 0x165667B19E3779F9L;
-    static final long PRIME_4 = 0x85EBCA77C2B2AE63L;
-    static final long PRIME_5 = 0x27D4EB2F165667C5L;
-
-    private static long hashLong(long hash, long k) {
-        k *= PRIME_2;
-        k = Long.rotateLeft(k, 31);
-        k *= PRIME_1;
-        hash ^= k;
-        return Long.rotateLeft(hash, 27) * PRIME_1 + PRIME_4;
-    }
-
-    private static long mix(long hash) {
-        hash ^= hash >>> 33;
-        hash *= PRIME_2;
-        hash ^= hash >>> 29;
-        hash *= PRIME_3;
-        hash ^= hash >>> 32;
-        return hash;
     }
 
     static class Page {
@@ -311,16 +297,12 @@ public class CalculateAverage_richardstartin {
                 ByteBuffer key = slice.slice(offset, nextSeparator - offset).order(ByteOrder.LITTLE_ENDIAN);
                 // find the global dictionary code to aggregate,
                 // making this code global allows easy merging
-                int dictId = dictionary.encode(hash(key), key);
+                int dictId = dictionary.encode(key.hashCode(), key);
 
                 offset = nextSeparator + 1;
                 int newLine = findIndexOf(slice, offset, NEW_LINE);
                 // parse the double
-                // todo do this without allocating a string, could use a fast parsing falgorithm
-                var bytes = new byte[newLine - offset];
-                slice.get(offset, bytes);
-                var string = new String(bytes, StandardCharsets.US_ASCII);
-                double d = Double.parseDouble(string);
+                double d = parseTemperature(slice.slice(offset, newLine - offset));
 
                 Page.update(pages, dictId, d);
 
@@ -332,11 +314,12 @@ public class CalculateAverage_richardstartin {
             for (int i = 0; i < contribution.length; i++) {
                 if (aggregate[i] == null) {
                     aggregate[i] = contribution[i];
-                } else if (contribution[i] != null) {
+                }
+                else if (contribution[i] != null) {
                     double[] to = aggregate[i];
                     double[] from = contribution[i];
                     // todo won't vectorise - consider separating aggregates into distinct regions and apply
-                    //  loop fission (if this shows up in the profile)
+                    // loop fission (if this shows up in the profile)
                     for (int j = 0; j < to.length; j += 4) {
                         to[j] += from[j];
                         to[j + 1] = Math.min(to[j + 1], from[j + 1]);
@@ -351,11 +334,12 @@ public class CalculateAverage_richardstartin {
         protected double[][] compute() {
             if (min == max) {
                 // fixme - hardcoded to problem size
-                var pages = new double[1024][];
+                var pages = new double[600][];
                 var slice = slices.get(min);
                 computeSlice(slice, pages);
                 return pages;
-            } else {
+            }
+            else {
                 int mid = (min + max) / 2;
                 var low = new AggregationTask(dictionary, slices, min, mid);
                 var high = new AggregationTask(dictionary, slices, mid + 1, max);
@@ -368,9 +352,9 @@ public class CalculateAverage_richardstartin {
     }
 
     public static void main(String[] args) throws IOException {
-        int maxChunkSize = 10 << 20; // 10MiB
+        int maxChunkSize = 250 << 20; // 250MiB
         try (var raf = new RandomAccessFile(FILE, "r");
-             var channel = raf.getChannel()) {
+                var channel = raf.getChannel()) {
             long size = channel.size();
             // make as few mmap calls as possible subject to the 2GiB limit per buffer
             List<ByteBuffer> rawBuffers = new ArrayList<>();
