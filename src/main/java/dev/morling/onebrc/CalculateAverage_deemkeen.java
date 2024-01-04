@@ -40,6 +40,11 @@ public class CalculateAverage_deemkeen {
         int numberOfSegments = 996; // good integer divisor
         long segmentSize = fileSize / numberOfSegments;
 
+        if (segmentSize < 1000) {
+            numberOfSegments = 1;
+            segmentSize = fileSize;
+        }
+
         long start = System.currentTimeMillis();
 
         Map<String, Result> resultMap = new TreeMap<>();
@@ -81,7 +86,8 @@ public class CalculateAverage_deemkeen {
                         MappedByteBuffer bb;
                         try {
                             bb = fileChannel.map(FileChannel.MapMode.READ_ONLY, segment.start, segment.end - segment.start);
-                        } catch (IOException e) {
+                        }
+                        catch (IOException e) {
                             throw new RuntimeException(e);
                         }
                         byte[] buffer = new byte[64];
@@ -115,7 +121,8 @@ public class CalculateAverage_deemkeen {
                             if (measurement == null) {
                                 measurement = new Result(finalTemp);
                                 segmentResultMap.put(buffer, 0, offset, measurement);
-                            } else {
+                            }
+                            else {
                                 measurement.min = Math.min(measurement.min, finalTemp);
                                 measurement.max = Math.max(measurement.max, finalTemp);
                                 measurement.sum += finalTemp;
@@ -135,7 +142,8 @@ public class CalculateAverage_deemkeen {
                     while (!es.awaitTermination(24L, TimeUnit.HOURS)) {
                         System.out.println("Still waiting for termination..");
                     }
-                } catch (InterruptedException e) {
+                }
+                catch (InterruptedException e) {
                     // do nothing
                 }
 
@@ -209,7 +217,8 @@ public class CalculateAverage_deemkeen {
                 byte[] bytes = new byte[size];
                 System.arraycopy(key, offset, bytes, 0, size);
                 keys[result.slot()] = bytes;
-            } else {
+            }
+            else {
                 result.slotValue().min = Math.min(result.slotValue().min, value.min);
                 result.slotValue().max = Math.max(result.slotValue().max, value.max);
                 result.slotValue().sum += value.sum;
