@@ -185,6 +185,7 @@
                 <exclude>**/.dontdelete</exclude>
                 <exclude>**/measurements*.txt</exclude>
                 <exclude>**/measurements*.out</exclude>
+                <exclude>out_expected.txt</exclude>
               </excludes>
             </configuration>
             <executions>
