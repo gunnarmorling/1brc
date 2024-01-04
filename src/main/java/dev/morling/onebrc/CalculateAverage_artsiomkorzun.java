@@ -71,7 +71,8 @@ public class CalculateAverage_artsiomkorzun {
         Aggregates aggregates = new Aggregates();
         Row row = new Row();
 
-        while (buffer.position() <= limit && parse(buffer, row)) {
+        while (buffer.position() <= limit) {
+            parse(buffer, row);
             aggregates.add(row);
         }
 
@@ -121,7 +122,7 @@ public class CalculateAverage_artsiomkorzun {
         }
     }
 
-    private static boolean parse(ByteBuffer buffer, Row row) {
+    private static void parse(ByteBuffer buffer, Row row) {
         int index = 0;
         byte b;
 
@@ -155,7 +156,6 @@ public class CalculateAverage_artsiomkorzun {
         assert b == '\n';
 
         row.temperature = value * multiplier;
-        return true;
     }
 
     private static class Row {
