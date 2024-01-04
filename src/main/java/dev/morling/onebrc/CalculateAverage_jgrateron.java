@@ -32,7 +32,7 @@ public class CalculateAverage_jgrateron {
     private static int MAX_LINES = 100000;
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        //long startTime = System.nanoTime();
+        // long startTime = System.nanoTime();
 
         var tasks = new ArrayList<TaskCalcular>();
         try (var reader = new BufferedReader(new FileReader(FILE))) {
@@ -73,7 +73,7 @@ public class CalculateAverage_jgrateron {
 
         System.out.println("{" + result + "}");
 
-        //System.out.println("Total: " + (System.nanoTime() - startTime) / 1000000);
+        // System.out.println("Total: " + (System.nanoTime() - startTime) / 1000000);
     }
 
     /*
