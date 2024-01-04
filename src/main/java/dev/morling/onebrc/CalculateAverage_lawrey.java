@@ -15,6 +15,8 @@
  */
 package dev.morling.onebrc;
 
+import org.radughiorma.Arguments;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -25,9 +27,6 @@ import java.util.*;
 import java.util.stream.LongStream;
 
 public class CalculateAverage_lawrey {
-
-    // Path to the file containing temperature measurements.
-    private static final String FILE = "./measurements.txt";
 
     // Inner class representing a measurement with min, max, and average calculations.
     static class Measurement {
@@ -110,7 +109,7 @@ public class CalculateAverage_lawrey {
 
     public static void main(String[] args) throws IOException {
         // Open the file for reading.
-        File file = new File(FILE);
+        File file = new File(Arguments.measurmentsFilename(args));
         long length = file.length();
         long chunk = 1 << 28; // Size of the chunk to be processed.
         RandomAccessFile raf = new RandomAccessFile(file, "r");

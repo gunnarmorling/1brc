@@ -27,11 +27,10 @@ import org.radughiorma.ConsoleOutputRecorder;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -53,7 +52,7 @@ class CalculateAverageTest {
 
     @ParameterizedTest
     @MethodSource("contendantsProvider")
-    void results(Class calculateAverateClass, Object args, String expectedResultPath) throws NoSuchMethodException, IOException {
+    void results(Class<?> calculateAverateClass, Object args, String expectedResultPath) throws NoSuchMethodException, IOException {
         ReflectionUtils.invokeMethod(calculateAverateClass.getMethod("main", String[].class), null, args);
 
         String expectedResult = Files.readString(Paths.get(expectedResultPath), StandardCharsets.UTF_8);
@@ -61,27 +60,33 @@ class CalculateAverageTest {
 
     }
 
-    static Stream<Arguments> contendantsProvider() {
+    static Stream<Arguments> contendantsProvider() throws IOException {
         List<Class<?>> classes = ReflectionSupport.findAllClassesInPackage(
                 "dev.morling.onebrc",
                 aClass -> !aClass.isMemberClass() && !aClass.isAnonymousClass() && !aClass.isLocalClass(),
                 aClassName -> "dev.morling.onebrc.CalculateAverage".equals(aClassName) || aClassName.startsWith("dev.morling.onebrc.CalculateAverage_")
         );
-        Stream<Arguments> calculateAverage = Stream.of(1, 2, 10)
-                .flatMap(sampleSize -> classes
+        Stream<Arguments> calculateAverage = getTestSamples()
+                .stream()
+                .flatMap(sample -> classes
                         .stream()
                         .map(aClass -> {
                             Object[] arguments = Stream.concat(
-                                            Stream.of(STR."target/test-classes/samples/measurements-\{sampleSize}.txt"),
+                                            Stream.of(sample.toString()),
                                             Arrays.stream(DEFAULT_ARGS.getOrDefault(aClass, new String[]{})))
                                     .toArray(String[]::new);
                             return Arguments.of(
                                     aClass,
                                     arguments,
-                                    STR."target/test-classes/samples/measurements-\{sampleSize}.out");
+                                    sample.toString().replace(".txt",".out"));
                         })
                 );
         return calculateAverage;
+    }
+
+    private static Set<Path> getTestSamples() throws IOException {
+        return Files.list(Paths.get("target/test-classes/samples/"))
+                .filter(path -> path.toString().endsWith(".txt")).collect(Collectors.toSet());
     }
 
 }
