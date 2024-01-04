@@ -1,6 +1,6 @@
 # 1️⃣🐝🏎️ The One Billion Row Challenge
 
-_Status Jan 1: This challenge is open for submissions!_
+_Status Jan 1: This challenge is [open for submissions](https://www.morling.dev/blog/one-billion-row-challenge/)!_
 
 The One Billion Row Challenge (1BRC) is a fun exploration of how far modern Java can be pushed for aggregating one billion rows from a text file.
 Grab all your (virtual) threads, reach out to SIMD, optimize your GC, or pull any other trick, and create the fastest implementation for solving this task!
@@ -38,16 +38,19 @@ Submit your implementation by Jan 31 2024 and become part of the leaderboard!
 | # | Result (m:s.ms) | Implementation     | JDK | Submitter     |
 |---|-----------------|--------------------|-----|---------------|
 | 1.|        00:14.848| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_spullara.java)| 21.0.1-graalce| [Sam Pullara](https://github.com/spullara)|
-| 2.|        00:16.558| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_ebarlas.java)| 21.0.1-open| [Elliot Barlas](https://github.com/ebarlas)|
-| 3.|        00:18.865| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_palmr.java)| 21.0.1-open| [Nick Palmer](https://github.com/palmr)|
+| 2.|        00:18.865| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_palmr.java)| 21.0.1-open| [Nick Palmer](https://github.com/palmr)|
+| 3.|        00:21.853| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_filiphr.java)| 21.0.1-graal| [Filip Hrisafov](https://github.com/filiphr)|
 | 4.|        00:23.366| [link](https://github.com/gunnarmorling/1brc/pull/5/)| 21.0.1-open   | [Roy van Rijn](https://github.com/royvanrijn)|
-| 5.|        00:38.510| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_bjhara.java)| 21.0.1-open   | [Hampus Ram](https://github.com/bjhara)|
-| 6.|        00:50.547| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_padreati.java)| 21.0.1-open   | [Aurelian Tutuianu](https://github.com/padreati)|
-| 7.|        00:53.679| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_criccomini.java)| 21.0.1-open   | [Chris Riccomini](https://github.com/criccomini)|
-| 8.|        00:57.141| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_truelive.java)| 21.0.1-open   | [Roman Schweitzer](https://github.com/truelive)|
-| 9.|        02:08.315| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_itaske.java)| 21.0.1-open   | [itaske](https://github.com/itaske)|
-|10.|        02:08.650| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_kuduwa_keshavram.java)| 21.0.1-open   | [Kuduwa Keshavram](https://github.com/kuduwa_keshavram)|
-|11.|        04:13.449| [link](https://github.com/gunnarmorling/onebrc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage.java) (baseline)| 21.0.1-open   | [Gunnar Morling](https://github.com/gunnarmorling)|
+| 5.|        00:38.106| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_seijikun.java)| 21.0.1-open   | [Markus Ebner](https://github.com/seijikun)|
+| 6.|        00:38.510| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_bjhara.java)| 21.0.1-open   | [Hampus Ram](https://github.com/bjhara)|
+| 7.|        00:38.819| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_richardstartin.java)| 21.0.1-open   | [Richard Startin](https://github.com/richardstartin)|
+| 8.|        00:50.547| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_padreati.java)| 21.0.1-open   | [Aurelian Tutuianu](https://github.com/padreati)|
+| 9.|        00:53.679| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_criccomini.java)| 21.0.1-open   | [Chris Riccomini](https://github.com/criccomini)|
+|10.|        00:57.141| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_truelive.java)| 21.0.1-open   | [Roman Schweitzer](https://github.com/truelive)|
+|11.|        02:00.101| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_khmarbaise.java)| 21.0.1-open   | [khmarbaise](https://github.com/khmarbaise)|
+|12.|        02:08.315| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_itaske.java)| 21.0.1-open   | [itaske](https://github.com/itaske)|
+|13.|        02:08.650| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_kuduwa_keshavram.java)| 21.0.1-open   | [Kuduwa Keshavram](https://github.com/kuduwa_keshavram)|
+|14.|        04:13.449| [link](https://github.com/gunnarmorling/onebrc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage.java) (baseline)| 21.0.1-open   | [Gunnar Morling](https://github.com/gunnarmorling)|
 
 See [below](#entering-the-challenge) for instructions how to enter the challenge with your own implementation.
 
@@ -93,7 +96,20 @@ Execute the following steps to run the challenge:
     Adjust the `CalculateAverage` program to speed it up, in any way you see fit (just sticking to a few rules described below).
     Options include parallelizing the computation, using the (incubating) Vector API, memory-mapping different sections of the file concurrently, using AppCDS, GraalVM, CRaC, etc. for speeding up the application start-up, choosing and tuning the garbage collector, and much more. 
 
-The following rules and limits apply:
+## Flamegraph/Profiling
+
+A tip is that if you have [jbang](https://jbang.dev) installed, you can get a flamegraph of your program by running 
+[async-profiler](https://github.com/jvm-profiling-tools/async-profiler) via [ap-loader](https://github.com/jvm-profiling-tools/ap-loader):
+
+`jbang --javaagent=ap-loader@jvm-profiling-tools/ap-loader=start,event=cpu,file=profile.html -m dev.morling.onebrc.CalculateAverage_yourname target/average-1.0.0-SNAPSHOT.jar`
+
+or directly on the .java file:
+
+`jbang --javaagent=ap-loader@jvm-profiling-tools/ap-loader=start,event=cpu,file=profile.html src/main/java/dev/morling/onebrc/CalculateAverage_yourname`
+
+When you run this, it will generate a flamegraph in profile.html. You can then open this in a browser and see where your program is spending its time.
+
+## Rules and limits
 
 * Any of these Java distributions may be used:
     * Any builds provided by [SDKMan](https://sdkman.io/jdks)
@@ -104,6 +120,10 @@ If you want to use a build not available via these channels, reach out to discus
 * Implementations must be provided as a single source file
 * The computation must happen at application _runtime_, i.e. you cannot process the measurements file at _build time_
 (for instance, when using GraalVM) and just bake the result into the binary
+* Input value ranges are as follows:
+    * Station name: non null UTF-8 string of min length 1 character and max length 100 characters
+    * Temperature value: non null double between -99.9 (inclusive) and 99.9 (inclusive), always with one fractional digit
+* Implementations must not rely on specifics of a given data set, e.g. any valid station name as per the constraints above and any data distribution (number of measurements per station) must be supported
 
 ## Entering the Challenge
 
@@ -114,10 +134,10 @@ To submit your own implementation to 1BRC, follow these steps:
 * Make that implementation fast. Really fast.
 * Create a copy of _calculate_average.sh_, named _calculate\_average\_<your_GH_user>.sh_, e.g. _calculate\_average\_doloreswilson.sh_.
 * Adjust that script so that it references your implementation class name. If needed, provide any JVM arguments via the `JAVA_OPTS` variable in that script.
+* OpenJDK 21 is the default. If a custom JDK build is required, include the SDKMAN command `sdk use java [version]` in the launch shell script prior to application start.
 * (Optional) If you'd like to use native binaries (GraalVM), adjust the _pom.xml_ file so that it builds that binary.
 * Create a pull request against the upstream repository, clearly stating
   * The name of your implementation class.
-  * The JDK build to use (if not specified, the latest OpenJDK 21 upstream build will be used).
   * The execution time of the program on your system and specs of the same (CPU, number of cores, RAM). This is for informative purposes only, the official runtime will be determined as described below.
 * I will run the program and determine its performance as described in the next section, and enter the result to the scoreboard.
 
@@ -168,8 +188,11 @@ _Q: Can I make assumptions on the names of the weather stations showing up in th
 A: No, while only a fixed set of station names is used by the data set generator, any solution should work with arbitrary UTF-8 station names
 (for the sake of simplicity, names are guaranteed to contain no `;` character).
 
-_Q: Can I copy code from other submissions?_
+_Q: Can I copy code from other submissions?_\
 A: Yes, you can. The primary focus of the challenge is about learning something new, rather than "winning". When you do so, please give credit to the relevant source submissions. Please don't re-submit other entries with no or only trivial improvements.
+
+_Q: Which operating system is used for evaluation?_\
+A: Fedora 39.
 
 _Q: Why_ 1️⃣🐝🏎️ _?_\
 A: It's the abbreviation of the project name: **One** **B**illion **R**ow **C**hallenge.
