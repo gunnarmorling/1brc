@@ -111,7 +111,12 @@ public class CalculateAverage_ebarlas {
             var pPrev = partitions.get(i - 1);
             var merged = mergeFooterAndHeader(pPrev.footer, pNext.header);
             if (merged != null) {
-                doProcessBuffer(ByteBuffer.wrap(merged), true, pPrev.stats); // fold into prev partition
+                if (merged[merged.length - 1] == '\n') { // fold into prev partition
+                    doProcessBuffer(ByteBuffer.wrap(merged), true, pPrev.stats);
+                }
+                else { // no newline appeared in partition, carry forward
+                    pNext.footer = merged;
+                }
             }
         }
     }
@@ -138,10 +143,10 @@ public class CalculateAverage_ebarlas {
         var keyBuf = new byte[MAX_KEY_SIZE]; // buffer for key
         var keyPos = 0; // current position in key buffer
         var keyHash = 0; // accumulating hash of key
-        var keyStart = 0; // start of key in buffer used for footer calc
         var negative = false; // is value negative?
         var val = 0; // accumulating value
         var header = first ? null : readHeader(buffer);
+        var keyStart = buffer.position(); // start of key in buffer used for footer calc
         Stats st = null;
         while (buffer.hasRemaining()) {
             var b = buffer.get();
@@ -221,7 +226,16 @@ public class CalculateAverage_ebarlas {
         return header;
     }
 
-    record Partition(byte[] header, byte[] footer, Stats[] stats) {
+    private static class Partition {
+        byte[] header;
+        byte[] footer;
+        Stats[] stats;
+
+        Partition(byte[] header, byte[] footer, Stats[] stats) {
+            this.header = header;
+            this.footer = footer;
+            this.stats = stats;
+        }
     }
 
     private static class Stats { // min, max, and sum values are modeled with integral types that represent tenths of a unit
