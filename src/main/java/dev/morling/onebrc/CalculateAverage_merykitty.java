@@ -69,7 +69,7 @@ public class CalculateAverage_merykitty {
             PoorManMapNode(MemorySegment data, long offset, long size, int hash) {
                 this.hash = hash;
                 this.size = size;
-                this.data = new byte[BYTE_SPECIES.vectorByteSize() * 2];
+                this.data = new byte[BYTE_SPECIES.vectorByteSize() + (int) KEY_MAX_SIZE];
                 this.aggr = new Aggregator();
                 MemorySegment.copy(data, offset, MemorySegment.ofArray(this.data), BYTE_SPECIES.vectorByteSize(), size);
             }
@@ -84,15 +84,20 @@ public class CalculateAverage_merykitty {
             this.nodes = new PoorManMapNode[1 << 10];
         }
 
-        Aggregator indexTail(long offset, long size, int hash) {
+        Aggregator indexSimple(long offset, long size, int hash) {
             hash = rehash(hash);
             int bucketMask = nodes.length - 1;
             int bucket = hash & bucketMask;
             for (;; bucket = (bucket + 1) & bucketMask) {
                 PoorManMapNode node = nodes[bucket];
                 if (node == null) {
-                    // We are at the tail so no need to grow
                     this.size++;
+                    if (this.size * R_LOAD_FACTOR > nodes.length) {
+                        grow();
+                        bucketMask = nodes.length - 1;
+                        for (bucket = hash & bucketMask; nodes[bucket] != null; bucket = (bucket + 1) & bucketMask) {
+                        }
+                    }
                     node = new PoorManMapNode(this.data, offset, size, hash);
                     nodes[bucket] = node;
                     return node.aggr;
@@ -204,7 +209,7 @@ public class CalculateAverage_merykitty {
             for (; data.get(ValueLayout.JAVA_BYTE, offset + semicolonPos) != ';'; semicolonPos++) {
             }
             int hash = line.reinterpretAsInts().lane(0);
-            var aggr = aggrMap.indexTail(offset, semicolonPos, hash);
+            var aggr = aggrMap.indexSimple(offset, semicolonPos, hash);
             return parseDataPoint(aggr, data, offset + 1 + semicolonPos);
         }
 
@@ -291,7 +296,7 @@ public class CalculateAverage_merykitty {
             else {
                 hash = data.get(ValueLayout.JAVA_BYTE, offset);
             }
-            var aggr = aggrMap.indexTail(offset, semicolonPos, hash);
+            var aggr = aggrMap.indexSimple(offset, semicolonPos, hash);
             offset = parseDataPointTail(aggr, data, offset + 1 + semicolonPos);
         }
 
