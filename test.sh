@@ -22,12 +22,18 @@ if [ -z "$1" ]; then
   exit 1
 fi
 
+CALCULATE_FILE="./calculate_average_$1.sh"
+if [ ! -f "$CALCULATE_FILE" ]; then
+    echo "$CALCULATE_FILE does not exist."
+    exit 1
+fi
+
 for sample in $(ls src/test/resources/samples/*.txt); do
   echo "Validating calculate_average_$1.sh -- $sample"
 
   rm -f measurements.txt
   ln -s $sample measurements.txt
 
-  diff <("./calculate_average_$1.sh") ${sample%.txt}.out
+  diff <(${CALCULATE_FILE}) ${sample%.txt}.out
 done
 rm measurements.txt
