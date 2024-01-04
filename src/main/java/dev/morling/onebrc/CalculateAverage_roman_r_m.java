@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
+import java.util.HashMap;
 import java.util.TreeMap;
 
 public class CalculateAverage_roman_r_m {
@@ -29,7 +30,7 @@ public class CalculateAverage_roman_r_m {
     public static void main(String[] args) throws IOException {
         long fileSize = new File(FILE).length();
 
-        var measurements = new TreeMap<String, ResultRow>();
+        var measurements = new HashMap<String, ResultRow>();
 
         var station = new ByteString();
         var value = new ByteString();
@@ -73,22 +74,7 @@ public class CalculateAverage_roman_r_m {
             }
         }
 
-        // var reader = new BufferedReader(new FileReader(FILE), 1024 * 1024);
-        // String l;
-        // while ((l = reader.readLine()) != null) {
-        // int i = l.indexOf(';');
-        // String station = l.substring(0, i);
-        // double value = Double.parseDouble(l.substring(i + 1));
-        //
-        // var a = measurements.computeIfAbsent(station, _ -> new ResultRow());
-        //
-        // a.min = Math.min(a.min, value);
-        // a.max = Math.max(a.max, value);
-        // a.sum += value;
-        // a.count++;
-        // }
-
-        System.out.println(measurements);
+        System.out.println(new TreeMap<>(measurements));
     }
 
     static final class ByteString {
