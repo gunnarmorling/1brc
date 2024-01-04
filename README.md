@@ -98,7 +98,8 @@ Execute the following steps to run the challenge:
 
 ## Flamegraph/Profiling
 
-A tip is that if you have [jbang](https://jbang.dev) installed, you can get a flamegraph of your program by running:
+A tip is that if you have [jbang](https://jbang.dev) installed, you can get a flamegraph of your program by running 
+[async-profiler](https://github.com/jvm-profiling-tools/async-profiler) via [ap-loader](https://github.com/jvm-profiling-tools/ap-loader):
 
 `jbang --javaagent=ap-loader@jvm-profiling-tools/ap-loader=start,event=cpu,file=profile.html -m dev.morling.onebrc.CalculateAverage_yourname target/average-1.0.0-SNAPSHOT.jar`
 
