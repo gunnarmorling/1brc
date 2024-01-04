@@ -127,9 +127,9 @@ public class CalculateAverage_royvanrijn {
             try (var fileChannel = (FileChannel) Files.newByteChannel(Path.of(FILE), StandardOpenOption.READ)) {
                 var bb = fileChannel.map(FileChannel.MapMode.READ_ONLY, segment.start(), segmentEnd - segment.start());
 
-                // Work with any UTF-8 city name, up to 1024 in length:
-                var buffer = new byte[1031]; // 1024 + ; + -XX.X + \n
-                var cityNameAsLongArray = new long[128]; // 128*8=1024
+                // Work with any UTF-8 city name, up to 100 in length:
+                var buffer = new byte[106]; // 100 + ; + -XX.X + \n
+                var cityNameAsLongArray = new long[13]; // 13*8=104=kenough.
                 var delimiterPointerAndHash = new int[2];
 
                 // Calculate using native ordering (fastest?):
@@ -214,11 +214,13 @@ public class CalculateAverage_royvanrijn {
 
         MeasurementRepository repository = new MeasurementRepository();
 
-        // Simulate adding two entries with the same calculated hash:
+        // Simulate adding two entries with the same hash:
         byte[] b1 = "City1;10.0".getBytes();
         byte[] b2 = "City2;41.1".getBytes();
         repository.update(b1, 5, 1234, new long[]{ 1234L });
         repository.update(b2, 5, 1234, new long[]{ 4321L });
+        // And update the same record shouldn't add a third (this happened):
+        repository.update(b1, 5, 1234, new long[]{ 1234L });
 
         if (repository.values.size() != 2) {
             System.out.println("Error, should have two entries:");
@@ -247,24 +249,25 @@ public class CalculateAverage_royvanrijn {
             if (index < Long.BYTES) {
                 final long partialHash = word & PARTIAL_INDEX_MASKS[index];
                 asLong[lCnt] = partialHash;
-                hash = 31 * hash + (int) (partialHash >>> 32);
-                hash = 31 * hash + (int) partialHash;
+                hash = 961 * hash + 31 * (int) (partialHash >>> 32) + (int) partialHash;
                 output[0] = (i + index);
                 output[1] = hash;
                 return;
             }
             asLong[lCnt++] = word;
-            hash = 31 * hash + (int) (word >>> 32);
-            hash = 31 * hash + (int) word;
+            hash = 961 * hash + 31 * (int) (word >>> 32) + (int) word;
         }
+        handleEnding(bb, (byte) pattern, limit, output, asLong, i, lCnt, hash);
+    }
+
+    public void handleEnding(final ByteBuffer bb, final byte pattern, final int limit, final int[] output, final long[] asLong, int i, final int lCnt, int hash) {
         // Handle remaining bytes
         long partialHash = 0;
         for (; i < limit; i++) {
             byte read;
-            if ((read = bb.get(i)) == (byte) pattern) {
+            if ((read = bb.get(i)) == pattern) {
                 asLong[lCnt] = partialHash;
-                hash = 31 * hash + (int) (partialHash >>> 32);
-                hash = 31 * hash + (int) partialHash;
+                hash = 961 * hash + 31 * (int) (partialHash >>> 32) + (int) partialHash;
                 output[0] = i;
                 output[1] = hash;
                 return;
@@ -364,16 +367,20 @@ public class CalculateAverage_royvanrijn {
      * So I've written an extremely simple linear probing hashmap that should work well enough.
      */
     class MeasurementRepository {
-        private static final int SIZE = 16384; // Much larger than the number of cities, needs power of two
-        private int[] indices = new int[SIZE]; // Hashtable is just an int[]
+        private int size = 16384;// 16384; // Much larger than the number of cities, needs power of two
+        private int[] indices = new int[size]; // Hashtable is just an int[]
 
         MeasurementRepository() {
+            populateEmptyIndices(indices);
+        }
+
+        private void populateEmptyIndices(int[] array) {
             // Optimized fill with -1, fastest method:
-            int len = indices.length;
-            indices[0] = -1;
+            int len = array.length;
+            array[0] = -1;
             // Value of i will be [1, 2, 4, 8, 16, 32, ..., len]
             for (int i = 1; i < len; i += i) {
-                System.arraycopy(indices, 0, indices, i, i);
+                System.arraycopy(array, 0, array, i, i);
             }
         }
 
@@ -390,26 +397,59 @@ public class CalculateAverage_royvanrijn {
 
             final int cityNameAsLongLength = 1 + (length >>> 3); // amount of longs that captures this cityname
 
-            int hashtableIndex = (SIZE - 1) & calculatedHash;
+            int hashtableIndex = (size - 1) & calculatedHash;
             int valueIndex;
+
             Entry retrievedEntry = null;
-            while ((valueIndex = indices[hashtableIndex]) != -1 &&
-                    ((retrievedEntry = values.get(valueIndex)).hash != calculatedHash ||
-                            !arrayEquals(retrievedEntry.cityNameAsLong, cityNameAsLongArray, cityNameAsLongLength))) { // equals check
-                hashtableIndex = (hashtableIndex + 1) % SIZE;
+
+            while (true) { // search for the right spot
+                if ((valueIndex = indices[hashtableIndex]) == -1) {
+                    break; // Empty slot found, stop the loop
+                }
+                else {
+                    // Non-empty slot, retrieve entry
+                    if ((retrievedEntry = values.get(valueIndex)).hash == calculatedHash &&
+                            arrayEquals(retrievedEntry.cityNameAsLong, cityNameAsLongArray, cityNameAsLongLength)) {
+                        break; // Both hash and cityname match, stop the loop
+                    }
+                }
+                // Move to the next index
+                hashtableIndex = (hashtableIndex + 1) % size;
             }
+
             if (valueIndex >= 0) {
                 return retrievedEntry.measurement;
             }
 
             // --- This is a brand new entry, insert into the hashtable and do the extra calculations (once!)
-            indices[hashtableIndex] = values.size();
 
             // Keep the already processed longs for fast equals:
             long[] cityNameAsLongArrayCopy = new long[cityNameAsLongLength];
             System.arraycopy(cityNameAsLongArray, 0, cityNameAsLongArrayCopy, 0, cityNameAsLongLength);
 
             Entry toAdd = new Entry(calculatedHash, cityNameAsLongArrayCopy, new String(buffer, 0, length), new Measurement());
+
+            // Code to regrow (if we get more unique entries): (not needed/not optimized yet)
+            // if (values.size() > size / 2) {
+            // // We probably don't want this...
+            //
+            // int newSize = size << 1;
+            // int[] newIndices = new int[newSize];
+            // populateEmptyIndices(newIndices);
+            // for (int i = 0; i < values.size(); i++) {
+            // Entry e = values.get(i);
+            // int updatedIndex = (newSize - 1) & e.hash;
+            // newIndices[updatedIndex] = i;
+            // }
+            // indices = newIndices;
+            // size = newSize;
+            // }
+
+            if (values.size() > 600) {
+                System.out.println("Error!");
+            }
+            indices[hashtableIndex] = values.size();
+
             values.add(toAdd);
             return toAdd.measurement;
         }
@@ -419,8 +459,10 @@ public class CalculateAverage_royvanrijn {
      * For case multiple hashes are equal (however unlikely) check the actual key (using longs)
      */
     private boolean arrayEquals(final long[] a, final long[] b, final int length) {
-        if (a.length < length)
-            return false;
-        return Arrays.equals(a, 0, length, b, 0, length);
+        for (int i = 0; i < length; i++) {
+            if (a[i] != b[i])
+                return false;
+        }
+        return true;
     }
 }
