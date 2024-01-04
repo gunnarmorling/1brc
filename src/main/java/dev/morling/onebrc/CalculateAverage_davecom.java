@@ -16,6 +16,7 @@
 package dev.morling.onebrc;
 
 import java.io.IOException;
+import java.math.RoundingMode;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -118,7 +119,8 @@ public class CalculateAverage_davecom {
         StringBuilder sb = new StringBuilder();
         sb.append('{');
         var sortedNames = mins.keySet().stream().sorted().toArray(String[]::new);
-        DecimalFormat df = new DecimalFormat("#.0");
+        DecimalFormat df = new DecimalFormat("0.0");
+        df.setRoundingMode(RoundingMode.HALF_UP);
         for (String name : sortedNames) {
             double min = ((double) mins.get(name)) / 10;
             double max = ((double) maxs.get(name)) / 10;
@@ -142,23 +144,23 @@ public class CalculateAverage_davecom {
     }
 
     public static void main(String[] args) throws IOException {
-        // configuration information
-        int numProcessors = Runtime.getRuntime().availableProcessors();
-        int numChunks = numProcessors * 2000;
-        // System.out.println("numProcessors: " + numProcessors);
-        // System.out.println("numChunks: " + numChunks);
-
         // create thread pool
         ExecutorService es = Executors.newVirtualThreadPerTaskExecutor();
 
         // load file
         FileChannel fc = FileChannel.open(Path.of(FILE));
 
+        // configuration information
+        long fileSize = fc.size();
+        int numProcessors = Runtime.getRuntime().availableProcessors();
+        int numChunks = numProcessors * 2000;
+        // System.out.println("numProcessors: " + numProcessors);
+        // System.out.println("numChunks: " + numChunks);
+
         // create check buffer
         ByteBuffer bb = ByteBuffer.allocateDirect(128);
 
         // find appropriate chunks
-        long fileSize = fc.size();
         // System.out.println("fileSize: " + fileSize);
         long chunkLimit = fileSize / numChunks;
         long chunkStart = 0;
