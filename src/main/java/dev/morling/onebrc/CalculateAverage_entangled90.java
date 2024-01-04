@@ -21,7 +21,6 @@ import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -141,7 +140,7 @@ class PooledChunkProcessor implements Consumer<ByteBuffer> {
                 var processor = new ChunkProcessor();
                 while (!Thread.interrupted()) {
                     try {
-                        var element = queue.poll(10, TimeUnit.MILLISECONDS);
+                        var element = queue.poll(1, TimeUnit.MILLISECONDS);
                         if (element != null)
                             processor.processChunk(element);
                         else if (queueClosed) {
@@ -195,26 +194,18 @@ class ChunkProcessor implements Consumer<ByteBuffer> {
     // true if you can continue
     // false if input is missing
     public boolean processRow(ByteBuffer bb) {
-        int colonIdx = findChar(bb, (byte) ';');
+        int colonIdx = findSemiColon(bb);
         if (colonIdx < 0) {
             return false;
         }
-        // String city = stringFromBB(bb, colonIdx - bb.position()).trim();
+        while (bb.get(bb.position()) == '\n') {
+            bb.get();
+        }
         var wrapper = wrapperFromBB(bb, colonIdx - bb.position());
         bb.position(colonIdx + 1);
-
-        // double value = Double.parseDouble(stringFromBB(bb, valueLimit - cityLimit));
         double value = parseDoubleNewLine(bb);
-        // System.out.println("Read: " + city + "=" + value);
         processors.addMeasure(wrapper, value);
-
         return true;
-    }
-
-    private static String stringFromBB(ByteBuffer bb, int length) {
-        var bytes = new byte[length];
-        bb.get(bytes);
-        return new String(bytes, StandardCharsets.UTF_8);
     }
 
     private static BytesWrapper wrapperFromBB(ByteBuffer bb, int length) {
@@ -223,10 +214,10 @@ class ChunkProcessor implements Consumer<ByteBuffer> {
         return new BytesWrapper(bytes);
     }
 
-    // dont' advance bb
-    private int findChar(ByteBuffer bb, byte c) {
+    // don't advance bb
+    private int findSemiColon(ByteBuffer bb) {
         for (int i = bb.position(); i < bb.limit(); i++) {
-            if (bb.get(i) == c)
+            if (bb.get(i) == (byte) ';')
                 return i;
         }
         return -1;
@@ -247,7 +238,6 @@ class ChunkProcessor implements Consumer<ByteBuffer> {
                     break;
                 default:
                     result = result * 10 + (c - '0');
-
             }
         } while (c != '\n' && bb.position() < bb.limit());
         return result * sign / 10.0;
