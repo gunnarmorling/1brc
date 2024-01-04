@@ -23,6 +23,7 @@ import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CountDownLatch;
@@ -53,8 +54,8 @@ public class CalculateAverage_entangled90 {
 }
 
 class AggregatedProcessor {
-    public double max = 0D;
-    public double min = 0D;
+    public double max = Double.NEGATIVE_INFINITY;
+    public double min = Double.POSITIVE_INFINITY;
     private double sum = 0D;
     private long count = 0L;
 
@@ -78,7 +79,7 @@ class AggregatedProcessor {
 
     @Override
     public String toString() {
-        return String.format("%.1f/%.1f/%.1f", min, mean(), max);
+        return String.format(Locale.US, "%.1f/%.1f/%.1f", min, mean(), max);
     }
 }
 
