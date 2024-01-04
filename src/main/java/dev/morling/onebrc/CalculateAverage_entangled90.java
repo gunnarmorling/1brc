@@ -269,7 +269,6 @@ class Scanner {
                     file.seek(offset);
                 }
                 MappedByteBuffer bb = channel.map(FileChannel.MapMode.READ_ONLY, offset, Math.min(MAX_MAPPED_MEMORY, len - offset));
-                bb.load();
                 var limitIdx = findLastNewLine(bb);
                 bb.limit(limitIdx);
                 // get last newline from the end
