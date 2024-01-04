@@ -41,4 +41,7 @@ nb-configuration.xml
 #JReleaser
 out/
 
+# 1BRC
 /measurements*.txt
+*.out
+out_expected.txt

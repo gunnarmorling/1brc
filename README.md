@@ -63,7 +63,7 @@ See [below](#entering-the-challenge) for instructions how to enter the challenge
 This repository contains two programs:
 
 * `dev.morling.onebrc.CreateMeasurements` (invoked via _create\_measurements.sh_): Creates the file _measurements.txt_ in the root directory of this project with a configurable number of random measurement values
-* `dev.morling.onebrc.CalculateAverage` (invoked via _calculate\_average.sh_): Calculates the average values for the file _measurements.txt_
+* `dev.morling.onebrc.CalculateAverage` (invoked via _calculate\_average\_baseline.sh_): Calculates the average values for the file _measurements.txt_
 
 Execute the following steps to run the challenge:
 
@@ -133,7 +133,7 @@ To submit your own implementation to 1BRC, follow these steps:
 * Create a fork of the [onebrc](https://github.com/gunnarmorling/onebrc/) GitHub repository.
 * Create a copy of _CalculateAverage.java_, named _CalculateAverage\_<your_GH_user>.java_, e.g. _CalculateAverage\_doloreswilson.java_.
 * Make that implementation fast. Really fast.
-* Create a copy of _calculate_average.sh_, named _calculate\_average\_<your_GH_user>.sh_, e.g. _calculate\_average\_doloreswilson.sh_.
+* Create a copy of _calculate_average_baseline.sh_, named _calculate\_average\_<your_GH_user>.sh_, e.g. _calculate\_average\_doloreswilson.sh_.
 * Adjust that script so that it references your implementation class name. If needed, provide any JVM arguments via the `JAVA_OPTS` variable in that script.
 * OpenJDK 21 is the default. If a custom JDK build is required, include the SDKMAN command `sdk use java [version]` in the launch shell script prior to application start.
 * (Optional) If you'd like to use native binaries (GraalVM), adjust the _pom.xml_ file so that it builds that binary.
