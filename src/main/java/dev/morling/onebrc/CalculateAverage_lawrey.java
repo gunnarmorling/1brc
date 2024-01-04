@@ -119,12 +119,11 @@ public class CalculateAverage_lawrey {
         RandomAccessFile raf = new RandomAccessFile(file, "r");
 
         // Process the file in chunks and merge the results.
-        Map<Key, Measurement> allMeasurementsMap =
-                LongStream.range(0, length / chunk + 1)
-                        .parallel()
-                        .mapToObj(i -> extractMeasurementsFromChunk(i, chunk, length, raf))
-                        .reduce((a, b) -> mergeMeasurementMaps(a, b))
-                        .orElseGet(Collections::emptyMap);
+        Map<Key, Measurement> allMeasurementsMap = LongStream.range(0, length / chunk + 1)
+                .parallel()
+                .mapToObj(i -> extractMeasurementsFromChunk(i, chunk, length, raf))
+                .reduce((a, b) -> mergeMeasurementMaps(a, b))
+                .orElseGet(Collections::emptyMap);
 
         // Sort the measurements and print them.
         Map<String, Measurement> sortedMeasurementsMap = new TreeMap<>();
