@@ -21,7 +21,7 @@ for impl in $(ls calculate_average_*.sh | sort); do
   noext="${impl%%.sh}"
   name=${noext##calculate_average_}
 
-  if output=$(./test.sh "$name" 2>&1); then
+  if output=$(./test.sh "$name" "$1" 2>&1); then
     echo "PASS $name"
   else
     echo "FAIL $name"
