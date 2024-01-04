@@ -53,7 +53,7 @@ public class CalculateAverage_MichelSchudel {
 
     private static void processLine(String line) {
         Object[] measurement = parseLine(line);
-        allMap.compute((String)measurement[0], (k, v) -> {
+        allMap.compute((String)measurement[0], (__, v) -> {
             var temp = (double)measurement[1];
             if (v == null) return createTemperateCalculation(temp);
             else return computeTemperatureCalculation(temp, v);
