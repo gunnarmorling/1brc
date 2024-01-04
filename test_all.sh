@@ -17,17 +17,14 @@
 
 set -euo pipefail
 
-if [ -z "$1" ]; then
-  echo "Usage: test.sh <fork name>"
-  exit 1
-fi
+for impl in $(ls calculate_average_*.sh | sort); do
+  noext="${impl%%.sh}"
+  name=${noext##calculate_average_}
 
-for sample in $(ls src/test/resources/samples/*.txt); do
-  echo "Validating calculate_average_$1.sh -- $sample"
-
-  rm -f measurements.txt
-  ln -s $sample measurements.txt
-
-  diff <("./calculate_average_$1.sh") ${sample%.txt}.out
+  if output=$(./test.sh "$name" 2>&1); then
+    echo "PASS $name"
+  else
+    echo "FAIL $name"
+    echo "$output" 1>&2
+  fi
 done
-rm measurements.txt
