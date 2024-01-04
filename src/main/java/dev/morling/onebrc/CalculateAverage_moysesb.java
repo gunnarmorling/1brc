@@ -30,7 +30,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class CalculateAverage_moysesb {
 
@@ -62,12 +61,13 @@ public class CalculateAverage_moysesb {
     static final Map<ByteArray, double[]> allResults = new HashMap<>(512);
 
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
-        ExecutorCompletionService<Map<ByteArray, double[]>> exec = new ExecutorCompletionService<>(Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors()));
+        int ncpus = Runtime.getRuntime().availableProcessors();
+        ExecutorCompletionService<Map<ByteArray, double[]>> exec = new ExecutorCompletionService<>(Executors.newFixedThreadPool(ncpus));
         var file = FileChannel.open(Path.of(FILE), StandardOpenOption.READ);
         File f = new File(FILE);
         long fileSize = f.length();
         long split = 0;
-        long chunkSize = Math.max(fileSize, Math.min(1 << 24, fileSize / 6));
+        long chunkSize = Math.min(1 << 28,  fileSize < 1 << 28 ? fileSize : (fileSize / ncpus));
         List<Future<Map<ByteArray, double[]>>> tasks = new ArrayList<>();
 
         while (split < fileSize) {
@@ -126,7 +126,7 @@ public class CalculateAverage_moysesb {
                                         val *= mult;
                                         var ba = new ByteArray(city, nameHash);
 
-                                        var r = results.computeIfAbsent(ba, _s -> new double[]{1000, -1000, 0d, 0d});
+                                        var r = results.computeIfAbsent(ba, _s -> new double[]{1000, -1000, 0, 0});
                                         r[0] = Math.min(r[0], val);
                                         r[1] = Math.max(r[1], val);
                                         r[2]++;
