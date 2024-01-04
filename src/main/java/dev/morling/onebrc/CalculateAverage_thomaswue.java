@@ -25,7 +25,7 @@ import java.util.*;
 
 public class CalculateAverage_thomaswue {
     private static final String FILE = "./measurements.txt";
-    private static final int MAX_CITY_NAME_LENGTH = 64;
+    private static final int MAX_CITY_NAME_LENGTH = 100;
 
     // Segment in the file that will be processed in parallel.
     private record Segment(long start, int size) {
@@ -79,7 +79,13 @@ public class CalculateAverage_thomaswue {
         HashMap<String, Result> result = allResults.getFirst();
         for (int i = 1; i < allResults.size(); ++i) {
             for (Map.Entry<String, Result> r : allResults.get(i).entrySet()) {
-                result.get(r.getKey()).add(r.getValue());
+                Result current = result.get(r.getKey());
+                if (current != null) {
+                    current.add(r.getValue());
+                }
+                else {
+                    result.put(r.getKey(), r.getValue());
+                }
             }
         }
 
