@@ -31,6 +31,6 @@ do
   rm -f measurements.txt
   ln -s $sample measurements.txt
 
-  diff <(./calculate_average.sh) ${sample%.txt}.out
+  diff <("./calculate_average_$1.sh") ${sample%.txt}.out
 done
 rm measurements.txt

@@ -35,7 +35,7 @@ public class CreateMeasurements2 {
     private static final String FILE = "./measurements2.txt";
 
     static class WeatherStation {
-        final static char[] NUMBERS = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9' };
+        final static char[] NUMBERS = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' };
 
         final String id;
         final int meanTemperature;
@@ -58,8 +58,8 @@ public class CreateMeasurements2 {
          * @param buffer the buffer to append to
          */
         void measurement(final CheaperCharBuffer buffer) {
-        	// fake -10.9 to +10.9 variance without double operations and rounding
-        	// gives us -10 to +10
+            // fake -10.9 to +10.9 variance without double operations and rounding
+            // gives us -10 to +10
             int m = meanTemperature + (r.nextInt(21) - 10);
             // gives us a decimal digit 0 to 9 as char
             char d = NUMBERS[r.nextInt(10)];
@@ -569,39 +569,39 @@ public class CreateMeasurements2 {
 
         // manual loop unroll for less jumps
         for (int i = 0; i < count; i = i + 8) {
-        	{
-        		// try to fill teh cpu pipeline as much as possible with
-        		// independent operations
-        		int s1 = r1.nextInt(stationCount);
-        		int s2 = r2.nextInt(stationCount);
-        		int s3 = r3.nextInt(stationCount);
-        		int s4 = r4.nextInt(stationCount);
-        		// get us the ojects one after the other to have the array
-        		// in our L1 cache and not push it out with other data
-        		var w1 = stations.get(s1);
-        		var w2 = stations.get(s2);
-        		var w3 = stations.get(s3);
-        		var w4 = stations.get(s4);
-        		// write our data to our buffer
-        		w1.measurement(sb);
-        		w2.measurement(sb);
-        		w3.measurement(sb);
-        		w4.measurement(sb);
-        	}
-        	{
-        		int s1 = r1.nextInt(stationCount);
-        		int s2 = r2.nextInt(stationCount);
-        		int s3 = r3.nextInt(stationCount);
-        		int s4 = r4.nextInt(stationCount);
-        		var w1 = stations.get(s1);
-        		var w2 = stations.get(s2);
-        		var w3 = stations.get(s3);
-        		var w4 = stations.get(s4);
-        		w1.measurement(sb);
-        		w2.measurement(sb);
-        		w3.measurement(sb);
-        		w4.measurement(sb);
-        	}
+            {
+                // try to fill teh cpu pipeline as much as possible with
+                // independent operations
+                int s1 = r1.nextInt(stationCount);
+                int s2 = r2.nextInt(stationCount);
+                int s3 = r3.nextInt(stationCount);
+                int s4 = r4.nextInt(stationCount);
+                // get us the ojects one after the other to have the array
+                // in our L1 cache and not push it out with other data
+                var w1 = stations.get(s1);
+                var w2 = stations.get(s2);
+                var w3 = stations.get(s3);
+                var w4 = stations.get(s4);
+                // write our data to our buffer
+                w1.measurement(sb);
+                w2.measurement(sb);
+                w3.measurement(sb);
+                w4.measurement(sb);
+            }
+            {
+                int s1 = r1.nextInt(stationCount);
+                int s2 = r2.nextInt(stationCount);
+                int s3 = r3.nextInt(stationCount);
+                int s4 = r4.nextInt(stationCount);
+                var w1 = stations.get(s1);
+                var w2 = stations.get(s2);
+                var w3 = stations.get(s3);
+                var w4 = stations.get(s4);
+                w1.measurement(sb);
+                w2.measurement(sb);
+                w3.measurement(sb);
+                w4.measurement(sb);
+            }
             // write the buffer directly, no intermediate string copy
             bw.write(sb.data_, 0, sb.length_);
 
