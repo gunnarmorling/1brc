@@ -18,7 +18,6 @@ package dev.morling.onebrc;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
@@ -40,8 +39,9 @@ import java.util.stream.StreamSupport;
  * Adding memory mapped files:                         0m 55s (based on bjhara's submission)
  * Using big decimal and iterating the buffer once:    0m 20s
  * Using long parse:                                   0m 11s
- * Using array hash code for city key:                 0m 7.1s
+ * Using array hash code for city key:                 0m 7.1s (this is invalid since it can lead to hash collisions)
  * Manually compute the value:                         0m 6.8s
+ * Revert array hash code for city key:                0m 10s
  * <p>
  * Using 21.0.1 Temurin with ShenandoahGC on Macbook (Intel) Pro
  * `sdk use java 21.0.1-tem`
@@ -100,7 +100,7 @@ public class CalculateAverage_filiphr {
     public static void main(String[] args) throws IOException {
         // long start = System.nanoTime();
 
-        Map<Integer, Measurement> measurements;
+        Map<String, Measurement> measurements;
         try (FileChannel fileChannel = FileChannel.open(Paths.get(FILE), StandardOpenOption.READ)) {
             measurements = fineChannelStream(fileChannel)
                     .parallel()
@@ -117,16 +117,16 @@ public class CalculateAverage_filiphr {
         // System.out.println("Done in " + (System.nanoTime() - start) / 1000000 + " ms");
     }
 
-    private static Map<Integer, Measurement> mergeMaps(Map<Integer, Measurement> map1, Map<Integer, Measurement> map2) {
+    private static Map<String, Measurement> mergeMaps(Map<String, Measurement> map1, Map<String, Measurement> map2) {
         if (map1.isEmpty()) {
             return map2;
         }
         else {
-            Set<Integer> cities = new HashSet<>(map1.keySet());
+            Set<String> cities = new HashSet<>(map1.keySet());
             cities.addAll(map2.keySet());
-            Map<Integer, Measurement> result = HashMap.newHashMap(cities.size());
+            Map<String, Measurement> result = HashMap.newHashMap(cities.size());
 
-            for (Integer city : cities) {
+            for (String city : cities) {
                 Measurement m1 = map1.get(city);
                 Measurement m2 = map2.get(city);
                 if (m2 == null) {
@@ -153,8 +153,8 @@ public class CalculateAverage_filiphr {
      * We are using {@code Map<Integer, Measurement>} because creating the string key on every single line is obsolete.
      * Instead, we create a hash key from the string, and we use that as a key in the map.
      */
-    private static Map<Integer, Measurement> parseBuffer(ByteBuffer bb) {
-        Map<Integer, Measurement> measurements = HashMap.newHashMap(415);
+    private static Map<String, Measurement> parseBuffer(ByteBuffer bb) {
+        Map<String, Measurement> measurements = HashMap.newHashMap(415);
         int limit = bb.limit();
         byte[] cityBuffer = new byte[128];
 
@@ -162,16 +162,15 @@ public class CalculateAverage_filiphr {
             int cityBufferIndex = 0;
 
             // Iterate through the byte buffer and fill the buffer until we find the separator (;)
-            // While iterating we are also going to compute the city hash key
-            int cityKey = 1;
             while (bb.position() < limit) {
                 byte positionByte = bb.get();
                 if (positionByte == ';') {
                     break;
                 }
                 cityBuffer[cityBufferIndex++] = positionByte;
-                cityKey = 31 * cityKey + positionByte;
             }
+
+            String city = new String(cityBuffer, 0, cityBufferIndex);
 
             byte lastPositionByte = '\n';
             boolean negative = false;
@@ -198,11 +197,10 @@ public class CalculateAverage_filiphr {
                 value = -value;
             }
 
-            Measurement measurement = measurements.get(cityKey);
+            Measurement measurement = measurements.get(city);
             if (measurement == null) {
-                String city = new String(cityBuffer, 0, cityBufferIndex);
                 measurement = new Measurement(city);
-                measurements.put(cityKey, measurement);
+                measurements.put(city, measurement);
             }
             measurement.add(value);
 
