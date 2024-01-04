@@ -33,25 +33,21 @@ public class CalculateAverage_fatroom {
         private long count;
 
         public MeasurementAggregator() {
-            this(1000, -1000, 0, 0);
-        }
-
-        public MeasurementAggregator(int min, int max, long sum, long count) {
-            this.min = min;
-            this.max = max;
-            this.sum = sum;
-            this.count = count;
+            this.min = 1000;
+            this.max = -1000;
+            this.sum = 0;
+            this.count = 0;
         }
 
         public void consume(double value) {
-            this.min = this.min < value ? this.min : value;
+            this.min = value > this.min ? this.min : value;
             this.max = this.max > value ? this.max : value;
             this.sum += value;
             this.count++;
         }
 
         public MeasurementAggregator combineWith(MeasurementAggregator that) {
-            this.min = this.min < that.min ? this.min : that.min;
+            this.min = that.min > this.min ? this.min : that.min;
             this.max = this.max > that.max ? this.max : that.max;
             this.sum += that.sum;
             this.count += that.count;
@@ -60,7 +56,9 @@ public class CalculateAverage_fatroom {
 
         @Override
         public String toString() {
-            return String.format(Locale.ROOT, "%.1f/%.1f/%.1f", min / 10.0, Math.round(sum / count * 10.0) / 100.0, max / 10.0);
+            StringBuilder sb = new StringBuilder();
+            sb.append(min / 10.0).append("/").append(Math.round(sum / count * 10.0) / 100.0).append("/").append(max / 10.0);
+            return sb.toString();
         }
     }
 
@@ -87,11 +85,10 @@ public class CalculateAverage_fatroom {
         var executor = Executors.newFixedThreadPool(tasks.size());
 
         Map<String, MeasurementAggregator> aggregates = new TreeMap<>();
-        for (Future<Map<String, MeasurementAggregator>> future : executor.invokeAll(tasks)) {
-            Map<String, MeasurementAggregator> segmentAggregates = future.get();
-            for (Map.Entry<String, MeasurementAggregator> entry : segmentAggregates.entrySet()) {
-                MeasurementAggregator aggregator = aggregates.computeIfAbsent(entry.getKey(), s -> new MeasurementAggregator());
-                aggregator.combineWith(entry.getValue());
+        for (var future : executor.invokeAll(tasks)) {
+            var segmentAggregates = future.get();
+            for (var entry : segmentAggregates.entrySet()) {
+                aggregates.merge(entry.getKey(), entry.getValue(), MeasurementAggregator::combineWith);
             }
         }
         executor.shutdown();
@@ -102,20 +99,30 @@ public class CalculateAverage_fatroom {
 
     private static Map<String, MeasurementAggregator> processBuffer(MappedByteBuffer source, int length) {
         Map<String, MeasurementAggregator> aggregates = new HashMap<>();
-        String station = null;
+        String station;
         byte[] buffer = new byte[64];
+        int measurementLength;
         int idx = 0;
         for (int i = 0; i < length; ++i) {
             byte b = source.get(i);
             buffer[idx++] = b;
             if (b == ';') {
                 station = new String(buffer, 0, idx - 1, StandardCharsets.UTF_8);
-                idx = 0;
-            }
-            else if (b == '\n') {
-                double temperature = parseMeasurement(buffer, idx - 1);
-                MeasurementAggregator aggregator = aggregates.computeIfAbsent(station, s -> new MeasurementAggregator());
-                aggregator.consume(temperature);
+                measurementLength = 3;
+                source.position(i + 1);
+                buffer[0] = source.get(++i);
+                buffer[1] = source.get(++i);
+                buffer[2] = source.get(++i);
+                buffer[3] = source.get(++i);
+                if (buffer[3] != '\n') {
+                    measurementLength++;
+                    buffer[4] = source.get(++i);
+                    if (buffer[4] != '\n') {
+                        i++;
+                        measurementLength++;
+                    }
+                }
+                aggregates.computeIfAbsent(station, s -> new MeasurementAggregator()).consume(parseMeasurement(buffer, measurementLength));
                 idx = 0;
             }
         }
@@ -124,10 +131,10 @@ public class CalculateAverage_fatroom {
 
     static double parseMeasurement(byte[] source, int size) {
         int isNegativeSignPresent = ~(source[0] >> 4) & 1;
-        int has4 = (size - isNegativeSignPresent) >> 2;
         int firstDigit = source[isNegativeSignPresent] - '0';
-        int secondDigit = source[isNegativeSignPresent + has4] - '0';
-        int thirdDigit = source[isNegativeSignPresent + 2 + has4] - '0';
+        int secondDigit = source[size - 3] - '0';
+        int thirdDigit = source[size - 1] - '0';
+        int has4 = (size - isNegativeSignPresent) >> 2;
         int value = has4 * firstDigit * 100 + secondDigit * 10 + thirdDigit;
         return -isNegativeSignPresent ^ value - isNegativeSignPresent;
     }
