@@ -15,6 +15,8 @@
  */
 package dev.morling.onebrc;
 
+import org.radughiorma.Arguments;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -33,8 +35,6 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 public class CalculateAverage_spullara {
-  private static final String FILE = "./measurements.txt";
-
     /*
      * My results on this computer:
      *
@@ -45,7 +45,7 @@ public class CalculateAverage_spullara {
      */
 
   public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
-    var filename = args.length == 0 ? FILE : args[0];
+    var filename = Arguments.measurmentsFilename(args);
     var file = new File(filename);
     long start = System.currentTimeMillis();
 

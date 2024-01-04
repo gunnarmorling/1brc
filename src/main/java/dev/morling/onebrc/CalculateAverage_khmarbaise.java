@@ -15,6 +15,8 @@
  */
 package dev.morling.onebrc;
 
+import org.radughiorma.Arguments;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,8 +29,6 @@ import java.util.stream.Stream;
 import static java.util.stream.Collectors.groupingBy;
 
 public class CalculateAverage_khmarbaise {
-
-    private static final Path MEASUREMENT_FILES = Path.of("./measurements.txt");
 
     private record MeasurementRecord(String city, Double measuredValue) {
     }
@@ -44,7 +44,7 @@ public class CalculateAverage_khmarbaise {
             s.getValue().getMin(), s.getValue().getAverage(), s.getValue().getMax());
 
     public static void main(String[] args) throws IOException {
-        try (Stream<String> lines = Files.lines(MEASUREMENT_FILES)) {
+        try (Stream<String> lines = Files.lines(Arguments.measurmentsPath(args))) {
             var collect = lines
                     .parallel()
                     .map(toMeasurementRecord)

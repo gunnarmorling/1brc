@@ -15,6 +15,8 @@
  */
 package dev.morling.onebrc;
 
+import org.radughiorma.Arguments;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,8 +25,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 public class CalculateAverage_kuduwa_keshavram {
-
-    private static final String FILE = "./measurements.txt";
 
   private record Measurement(double min, double max, double sum, long count) {
 
@@ -52,7 +52,7 @@ public class CalculateAverage_kuduwa_keshavram {
     public static void main(String[] args) throws IOException {
         // long before = System.currentTimeMillis();
         Map<String, Measurement> resultMap = new ConcurrentHashMap<>();
-        Files.lines(Path.of(FILE))
+        Files.lines(Arguments.measurmentsPath(args))
                 .parallel()
                 .forEach(
                         line -> {

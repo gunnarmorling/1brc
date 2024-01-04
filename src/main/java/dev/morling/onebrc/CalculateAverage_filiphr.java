@@ -15,6 +15,8 @@
  */
 package dev.morling.onebrc;
 
+import org.radughiorma.Arguments;
+
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.math.BigDecimal;
@@ -54,7 +56,6 @@ import java.util.stream.StreamSupport;
  */
 public class CalculateAverage_filiphr {
 
-    private static final String FILE = "./measurements.txt";
     private static final long CHUNK_SIZE = 1024 * 1024 * 10L; // 1KB * 10KB ~ 10MB
 
     private static final class Measurement {
@@ -94,7 +95,7 @@ public class CalculateAverage_filiphr {
         // long start = System.nanoTime();
 
         Map<String, Measurement> measurements;
-        try (FileChannel fileChannel = FileChannel.open(Paths.get(FILE), StandardOpenOption.READ)) {
+        try (FileChannel fileChannel = FileChannel.open(Arguments.measurmentsPath(args), StandardOpenOption.READ)) {
             measurements = fineChannelStream(fileChannel)
                     .parallel()
                     .map(CalculateAverage_filiphr::parseBuffer)

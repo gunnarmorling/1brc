@@ -15,18 +15,17 @@
  */
 package dev.morling.onebrc;
 
-import static java.util.stream.Collectors.*;
+import org.radughiorma.Arguments;
 
 import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collector;
 
-public class CalculateAverage {
+import static java.util.stream.Collectors.groupingBy;
 
-    private static final String FILE = "./measurements.txt";
+public class CalculateAverage {
 
     private static record Measurement(String station, double value) {
         private Measurement(String[] parts) {
@@ -82,7 +81,7 @@ public class CalculateAverage {
                     return new ResultRow(agg.min, agg.sum / agg.count, agg.max);
                 });
 
-        Map<String, ResultRow> measurements = new TreeMap<>(Files.lines(Paths.get(FILE))
+        Map<String, ResultRow> measurements = new TreeMap<>(Files.lines(Arguments.measurmentsPath(args))
                 .map(l -> new Measurement(l.split(";")))
                 .collect(groupingBy(m -> m.station(), collector)));
 

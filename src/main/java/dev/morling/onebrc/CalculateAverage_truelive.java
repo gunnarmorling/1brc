@@ -15,6 +15,8 @@
  */
 package dev.morling.onebrc;
 
+import org.radughiorma.Arguments;
+
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -27,8 +29,6 @@ import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 public class CalculateAverage_truelive {
-
-    private static final String FILE = "./measurements.txt";
     private static final long CHUNK_SIZE = 1024 * 1024 * 10L;
 
     private static int branchlessParseInt(final byte[] input, final int length) {
@@ -120,7 +120,7 @@ public class CalculateAverage_truelive {
          * Shoutout to bjhara
          */
         final Iterator<ByteBuffer> iterator = new Iterator<>() {
-            final FileChannel in = new FileInputStream(FILE).getChannel();
+            final FileChannel in = new FileInputStream(Arguments.measurmentsFilename(args)).getChannel();
             final long total = in.size();
             long start;
 

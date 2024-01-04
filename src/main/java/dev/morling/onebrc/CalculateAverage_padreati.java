@@ -30,11 +30,12 @@ import java.util.concurrent.StructuredTaskScope;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
+import org.radughiorma.Arguments;
 
 public class CalculateAverage_padreati {
 
     private static final VectorSpecies<Byte> species = ByteVector.SPECIES_PREFERRED;
-    private static final String FILE = "./measurements.txt";
+    private static String FILE;
     private static final int CHUNK_SIZE = 1024 * 1024;
 
     private record ResultRow(double min, double mean, double max) {
@@ -68,6 +69,7 @@ public class CalculateAverage_padreati {
     }
 
     public static void main(String[] args) throws IOException {
+        FILE = Arguments.measurmentsFilename(args);
         new CalculateAverage_padreati().run();
     }
 

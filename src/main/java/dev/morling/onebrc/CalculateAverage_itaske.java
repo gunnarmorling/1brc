@@ -15,6 +15,8 @@
  */
 package dev.morling.onebrc;
 
+import org.radughiorma.Arguments;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -25,8 +27,6 @@ import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.stream.Collectors;
 
 public class CalculateAverage_itaske {
-
-    private static final String FILE = "./measurements.txt";
 
     private record Measurement(long count, double sum, double min, double max) {
 
@@ -53,7 +53,7 @@ public class CalculateAverage_itaske {
 
     public static void main(String[] args) throws IOException {
 
-        Map<String, Measurement> resultMap = Files.lines(Path.of(FILE)).parallel()
+        Map<String, Measurement> resultMap = Files.lines(Arguments.measurmentsPath(args)).parallel()
                 .map(line -> {
                     int separatorIndex = line.indexOf(";");
                     String key = line.substring(0, separatorIndex);

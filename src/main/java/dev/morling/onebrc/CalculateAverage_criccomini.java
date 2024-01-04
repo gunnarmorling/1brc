@@ -15,6 +15,8 @@
  */
 package dev.morling.onebrc;
 
+import org.radughiorma.Arguments;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -25,9 +27,6 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public class CalculateAverage_criccomini {
-
-    private static final String FILE = "./measurements.txt";
-    private static final long FILE_SIZE = new File(FILE).length();
     private static final long SEGMENT_SIZE = 256_000_000;
 
     private static class MeasurementAggregator {
@@ -77,6 +76,8 @@ public class CalculateAverage_criccomini {
     }
 
     public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
+        String FILE = Arguments.measurmentsFilename(args);
+        long FILE_SIZE = new File(FILE).length();
         ExecutorService executor = Executors.newFixedThreadPool(128);
         RandomAccessFile file = new RandomAccessFile(FILE, "r");
         long position = 0;

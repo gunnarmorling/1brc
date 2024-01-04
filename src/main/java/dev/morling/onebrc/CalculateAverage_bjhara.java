@@ -15,6 +15,8 @@
  */
 package dev.morling.onebrc;
 
+import org.radughiorma.Arguments;
+
 import java.io.*;
 import java.nio.*;
 import java.nio.channels.*;
@@ -23,8 +25,6 @@ import java.util.*;
 import java.util.stream.*;
 
 public class CalculateAverage_bjhara {
-    private static final String FILE = "./measurements.txt";
-
     private static class Measurement {
         private double min = Double.POSITIVE_INFINITY;
         private double max = Double.NEGATIVE_INFINITY;
@@ -50,7 +50,7 @@ public class CalculateAverage_bjhara {
     }
 
     public static void main(String[] args) throws IOException {
-        try (FileChannel fileChannel = (FileChannel) Files.newByteChannel(Path.of(FILE),
+        try (FileChannel fileChannel = (FileChannel) Files.newByteChannel(Arguments.measurmentsPath(args),
                 EnumSet.of(StandardOpenOption.READ))) {
 
             var cities = splitFileChannel(fileChannel)

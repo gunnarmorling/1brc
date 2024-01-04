@@ -15,6 +15,8 @@
  */
 package dev.morling.onebrc;
 
+import org.radughiorma.Arguments;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -51,7 +53,7 @@ import java.util.stream.Collectors;
  */
 public class CalculateAverage_royvanrijn {
 
-    private static final String FILE = "./measurements.txt";
+    private static String FILE;
 
     // mutable state now instead of records, ugh, less instantiation.
     static final class Measurement {
@@ -89,6 +91,7 @@ public class CalculateAverage_royvanrijn {
     }
 
     public static final void main(String[] args) throws Exception {
+        FILE = Arguments.measurmentsFilename(args);
         new CalculateAverage_royvanrijn().run();
     }
 

@@ -15,6 +15,8 @@
  */
 package dev.morling.onebrc;
 
+import org.radughiorma.Arguments;
+
 import java.io.*;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -23,8 +25,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 public class CalculateAverage_seijikun {
-
-    private static final String FILE = "./measurements.txt";
 
     private static class MeasurementAggregator {
         private double min = Double.POSITIVE_INFINITY;
@@ -152,7 +152,7 @@ public class CalculateAverage_seijikun {
     }
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        RandomAccessFile file = new RandomAccessFile(FILE, "r");
+        RandomAccessFile file = new RandomAccessFile(Arguments.measurmentsFilename(args), "r");
 
         int jobCnt = Runtime.getRuntime().availableProcessors();
 

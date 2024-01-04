@@ -15,6 +15,8 @@
  */
 package dev.morling.onebrc;
 
+import org.radughiorma.Arguments;
+
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
@@ -23,8 +25,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 public class CalculateAverage_palmr {
-
-    private static final String FILE = "./measurements.txt";
     public static final int CHUNK_SIZE = 1024 * 1024 * 10; // Trial and error showed ~10MB to be a good size on our machine
     public static final int LITTLE_CHUNK_SIZE = 128; // Enough bytes to cover a station name and measurement value :fingers-crossed:
     public static final int STATION_NAME_BUFFER_SIZE = 50;
@@ -33,7 +33,7 @@ public class CalculateAverage_palmr {
     public static void main(String[] args) throws IOException {
 
         @SuppressWarnings("resource") // It's faster to leak the file than be well-behaved
-        RandomAccessFile file = new RandomAccessFile(FILE, "r");
+        RandomAccessFile file = new RandomAccessFile(Arguments.measurmentsFilename(args), "r");
         FileChannel channel = file.getChannel();
         long fileSize = channel.size();
 

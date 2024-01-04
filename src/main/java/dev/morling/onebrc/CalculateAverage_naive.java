@@ -15,6 +15,8 @@
  */
 package dev.morling.onebrc;
 
+import org.radughiorma.Arguments;
+
 import java.io.BufferedReader;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
@@ -28,7 +30,7 @@ public class CalculateAverage_naive {
 
     public static void main(String[] args) throws FileNotFoundException {
         long start = System.currentTimeMillis();
-        var results = new BufferedReader(new FileReader("./measurements.txt"))
+        var results = new BufferedReader(new FileReader(Arguments.measurmentsFilename(args)))
                 .lines()
                 .map(l -> l.split(";"))
                 .collect(Collectors.toMap(

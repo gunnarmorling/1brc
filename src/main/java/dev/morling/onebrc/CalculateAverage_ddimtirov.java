@@ -15,6 +15,8 @@
  */
 package dev.morling.onebrc;
 
+import org.radughiorma.Arguments;
+
 import java.io.*;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -35,8 +37,6 @@ import java.util.TreeMap;
 //                  0:37
 
 public class CalculateAverage_ddimtirov {
-    private static final String FILE = "./measurements.txt";
-
     private static final int HASH_NO_CLASH_MODULUS = 49999;
     private static final int OFFSET_MIN = 0;
     private static final int OFFSET_MAX = 1;
@@ -44,7 +44,7 @@ public class CalculateAverage_ddimtirov {
 
     @SuppressWarnings("RedundantSuppression")
     public static void main(String[] args) throws IOException {
-        var path = Path.of(FILE);
+        var path = Arguments.measurmentsPath(args);
         var start = Instant.now();
         var desiredSegmentsCount = Runtime.getRuntime().availableProcessors();
 
@@ -68,7 +68,7 @@ public class CalculateAverage_ddimtirov {
         // noinspection ConstantValue
         if (start != null)
             System.err.println(Duration.between(start, Instant.now()));
-        assert Files.readAllLines(Path.of("measurements_result.txt")).getFirst().equals(result);
+        // assert Files.readAllLines(Path.of("measurements_result.txt")).getFirst().equals(result);
     }
 
     record FileSegment(long start, long size) {

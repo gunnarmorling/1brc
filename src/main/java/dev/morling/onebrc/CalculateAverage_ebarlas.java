@@ -25,7 +25,6 @@ import java.util.List;
 import java.util.TreeMap;
 
 public class CalculateAverage_ebarlas {
-
     private static final int HASH_FACTOR = 278;
     private static final int HASH_MOD = 3_487;
 
