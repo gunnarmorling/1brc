@@ -196,18 +196,20 @@ public class CalculateAverage_royvanrijn {
         // These all have the same hashes:
         testInput("Delft;-12.4", 0, true, new int[]{ 5, 1718384401 }, new long[]{ 499934586180L });
         testInput("aDelft;-12.4", 1, true, new int[]{ 6, 1718384401 }, new long[]{ 499934586180L });
-        testInput("Rotterdam;-12.4", 0, true, new int[]{ 9, -359026917 }, new long[]{ 5940094476791997537L, 109L });
-        testInput("abcdefghijklmnpoqrstuvwxyzRotterdam;-12.4", 26, true, new int[]{ 35, -359026917 }, new long[]{ 5940094476791997537L, 109L });
-        testInput("abcdefghijklmnpoqrstuvwxyzARotterdam;-12.4", 27, true, new int[]{ 36, -359026917 }, new long[]{ 5940094476791997537L, 109L });
 
         testInput("Delft;-12.4", 0, false, new int[]{ 5, 1718384401 }, new long[]{ 499934586180L });
         testInput("aDelft;-12.4", 1, false, new int[]{ 6, 1718384401 }, new long[]{ 499934586180L });
+
+        testInput("Rotterdam;-12.4", 0, true, new int[]{ 9, -784321989 }, new long[]{ 7017859899421126482L, 109L });
+        testInput("abcdefghijklmnpoqrstuvwxyzRotterdam;-12.4", 26, true, new int[]{ 35, -784321989 }, new long[]{ 7017859899421126482L, 109L });
+        testInput("abcdefghijklmnpoqrstuvwxyzARotterdam;-12.4", 27, true, new int[]{ 36, -784321989 }, new long[]{ 7017859899421126482L, 109L });
+
         testInput("Rotterdam;-12.4", 0, false, new int[]{ 9, -784321989 }, new long[]{ 7017859899421126482L, 109L });
         testInput("abcdefghijklmnpoqrstuvwxyzRotterdam;-12.4", 26, false, new int[]{ 35, -784321989 }, new long[]{ 7017859899421126482L, 109L });
         testInput("abcdefghijklmnpoqrstuvwxyzARotterdam;-12.4", 27, false, new int[]{ 36, -784321989 }, new long[]{ 7017859899421126482L, 109L });
 
-        // These have different hashes:
-        testInput("abcdefghijklmnpoqrstuvwxyzAROtterdam;-12.4", 27, true, new int[]{ 36, 1589227291 }, new long[]{ 5931087277537256545L, 109L });
+        // These have different hashes from the strings above:
+        testInput("abcdefghijklmnpoqrstuvwxyzAROtterdam;-12.4", 27, true, new int[]{ 36, -792194501 }, new long[]{ 7017859899421118290L, 109L });
         testInput("abcdefghijklmnpoqrstuvwxyzAROtterdam;-12.4", 27, false, new int[]{ 36, -792194501 }, new long[]{ 7017859899421118290L, 109L });
 
         MeasurementRepository repository = new MeasurementRepository();
@@ -239,10 +241,11 @@ public class CalculateAverage_royvanrijn {
         int lCnt = 0;
         for (i = start; i <= limit - 8; i += 8) {
             long word = bb.getLong(i);
-            int index = firstAnyPattern(word, pattern, bufferBigEndian);
+            if (bufferBigEndian)
+                word = Long.reverseBytes(word); // Reversing the bytes is the cheapest way to do this
+            int index = firstAnyPattern(word, pattern);
             if (index < Long.BYTES) {
-                final long mask = PARTIAL_INDEX_MASKS[index];
-                final long partialHash = (bufferBigEndian ? Long.reverseBytes(word) : word) & mask;
+                final long partialHash = word & PARTIAL_INDEX_MASKS[index];
                 asLong[lCnt] = partialHash;
                 hash = 31 * hash + (int) (partialHash >>> 32);
                 hash = 31 * hash + (int) partialHash;
@@ -277,12 +280,12 @@ public class CalculateAverage_royvanrijn {
                 ((long) value << 24) | ((long) value << 16) | ((long) value << 8) | (long) value;
     }
 
-    private static int firstAnyPattern(final long word, final long pattern, final boolean bufferBigEndian) {
+    private static int firstAnyPattern(final long word, final long pattern) {
         final long match = word ^ pattern;
         long mask = match - 0x0101010101010101L;
         mask &= ~match;
         mask &= 0x8080808080808080L;
-        return (bufferBigEndian ? Long.numberOfLeadingZeros(mask) : Long.numberOfTrailingZeros(mask)) >>> 3;
+        return Long.numberOfTrailingZeros(mask) >> 3;
     }
 
     record FileSegment(long start, long end) {
