@@ -62,8 +62,8 @@ public class CalculateAverage_royvanrijn {
         long sum;
 
         public Measurement() {
-            this.min = 10000;
-            this.max = -10000;
+            this.min = 1000;
+            this.max = -1000;
         }
 
         public Measurement updateWith(int measurement) {
@@ -149,6 +149,12 @@ public class CalculateAverage_royvanrijn {
 
                     // Simple lookup is faster for '\n' (just three options)
                     int endPointer;
+
+                    if (delimiterPointer >= limit) {
+                        bb.position(limit); // skip to next line.
+                        return measurements;
+                    }
+
                     if (bb.get(delimiterPointer + 4) == '\n') {
                         endPointer = delimiterPointer + 4;
                     }
@@ -257,15 +263,11 @@ public class CalculateAverage_royvanrijn {
             asLong[lCnt++] = word;
             hash = 961 * hash + 31 * (int) (word >>> 32) + (int) word;
         }
-        handleEnding(bb, (byte) pattern, limit, output, asLong, i, lCnt, hash);
-    }
-
-    public void handleEnding(final ByteBuffer bb, final byte pattern, final int limit, final int[] output, final long[] asLong, int i, final int lCnt, int hash) {
         // Handle remaining bytes
         long partialHash = 0;
         for (; i < limit; i++) {
             byte read;
-            if ((read = bb.get(i)) == pattern) {
+            if ((read = bb.get(i)) == (byte) pattern) {
                 asLong[lCnt] = partialHash;
                 hash = 961 * hash + 31 * (int) (partialHash >>> 32) + (int) partialHash;
                 output[0] = i;
@@ -300,6 +302,10 @@ public class CalculateAverage_royvanrijn {
         final long fileSize = file.length();
         final long segmentSize = fileSize / numberOfSegments;
         final List<FileSegment> segments = new ArrayList<>();
+        if (segmentSize < 1000) {
+            segments.add(new FileSegment(0, fileSize));
+            return segments;
+        }
         try (RandomAccessFile randomAccessFile = new RandomAccessFile(file, "r")) {
             for (int i = 0; i < numberOfSegments; i++) {
                 long segStart = i * segmentSize;
@@ -444,10 +450,6 @@ public class CalculateAverage_royvanrijn {
             // indices = newIndices;
             // size = newSize;
             // }
-
-            if (values.size() > 600) {
-                System.out.println("Error!");
-            }
             indices[hashtableIndex] = values.size();
 
             values.add(toAdd);
