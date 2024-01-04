@@ -43,5 +43,5 @@ out/
 
 # 1BRC
 /measurements*.txt
-*.out
+/*.out
 out_expected.txt
