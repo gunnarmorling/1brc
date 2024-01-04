@@ -299,7 +299,7 @@ public class CalculateAverage_merykitty {
     }
 
     public static void main(String[] args) throws InterruptedException, IOException {
-        int processorCnt = Math.min(8, Runtime.getRuntime().availableProcessors());
+        int processorCnt = Runtime.getRuntime().availableProcessors();
         var res = HashMap.<String, Aggregator> newHashMap(processorCnt);
         try (var file = FileChannel.open(Path.of(FILE), StandardOpenOption.READ);
                 var arena = Arena.ofShared()) {
