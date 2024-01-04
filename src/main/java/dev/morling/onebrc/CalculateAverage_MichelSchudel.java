@@ -33,16 +33,10 @@ public class CalculateAverage_MichelSchudel {
     private static final String FILE_NAME = "measurements.txt";
 
     public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
-        long start = System.currentTimeMillis();
-
         Stream<String> lines = Files.lines(Paths.get(FILE_NAME));
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             lines.parallel().forEach(CalculateAverage_MichelSchudel::processLine);
         }
-
-        long end = System.currentTimeMillis() - start;
-        System.out.println("processing took " + end + "ms.");
-
         printResult();
     }
 
