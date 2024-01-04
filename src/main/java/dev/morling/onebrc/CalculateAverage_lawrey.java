@@ -158,7 +158,8 @@ public class CalculateAverage_lawrey {
                 m.sample(temp / 10.0);
             }
 
-        } catch (IOException ioe) {
+        }
+        catch (IOException ioe) {
             throw new RuntimeException(ioe);
         }
         return map;
@@ -168,8 +169,7 @@ public class CalculateAverage_lawrey {
     private static int readTemperatureFromBuffer(MappedByteBuffer mbb) {
         int temp = 0;
         boolean negative = false;
-        outer:
-        while (mbb.remaining() > 0) {
+        outer: while (mbb.remaining() > 0) {
             byte b = mbb.get();
             switch (b) {
                 case '-':

@@ -168,29 +168,30 @@
             </plugins>
         </pluginManagement>
 
-    </build>
-    <profiles>
-        <profile>
-            <id>qa</id>
-            <activation>
-                <property>
-                    <name>!quick</name>
-                </property>
-            </activation>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>com.mycila</groupId>
-                        <artifactId>license-maven-plugin</artifactId>
-                        <configuration>
-                            <header>etc/license.txt</header>
-                            <strictCheck>true</strictCheck>
-                            <aggregate>true</aggregate>
-                            <excludes>
-                                <exclude>LICENSE.txt</exclude>
-                                <exclude>**/.dontdelete</exclude>
-                                <exclude>**/measurements*.txt</exclude>
-                            <exclude>**/measurements*.out</exclude>
+  </build>
+  <profiles>
+    <profile>
+      <id>qa</id>
+      <activation>
+        <property>
+          <name>!quick</name>
+        </property>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>com.mycila</groupId>
+            <artifactId>license-maven-plugin</artifactId>
+            <configuration>
+              <header>etc/license.txt</header>
+              <strictCheck>true</strictCheck>
+              <aggregate>true</aggregate>
+              <excludes>
+                <exclude>LICENSE.txt</exclude>
+                <exclude>**/.dontdelete</exclude>
+                <exclude>**/measurements*.txt</exclude>
+                <exclude>**/measurements*.out</exclude>
+                <exclude>out_expected.txt</exclude>
               </excludes>
                         </configuration>
                         <executions>
