@@ -69,7 +69,7 @@ public class CalculateAverage_itaske {
                                 Math.min(measurement1.min, measurement2.min),
                                 Math.max(measurement1.max, measurement2.max)))));
 
-        System.out.print(
+        System.out.println(
                 resultMap.entrySet().stream().sorted(Map.Entry.comparingByKey()).map(Object::toString).collect(Collectors.joining(", ", "{", "}")));
 
     }

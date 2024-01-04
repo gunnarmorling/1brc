@@ -17,7 +17,6 @@ package dev.morling.onebrc;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.MappedByteBuffer;
@@ -40,6 +39,9 @@ import java.util.stream.StreamSupport;
  * Initial submission:                                 1m 35s
  * Adding memory mapped files:                         0m 55s (based on bjhara's submission)
  * Using big decimal and iterating the buffer once:    0m 20s
+ * Using long parse:                                   0m 11s
+ * Using array hash code for city key:                 0m 7.1s
+ * Manually compute the value:                         0m 6.8s
  * <p>
  * Using 21.0.1 Temurin with ShenandoahGC on Macbook (Intel) Pro
  * `sdk use java 21.0.1-tem`
@@ -59,12 +61,17 @@ public class CalculateAverage_filiphr {
 
     private static final class Measurement {
 
-        private double min = Long.MAX_VALUE;
-        private double max = Long.MIN_VALUE;
-        private double sum = 0L;
+        private final String city;
+        private long min = Long.MAX_VALUE;
+        private long max = Long.MIN_VALUE;
+        private long sum = 0L;
         private long count = 0L;
 
-        private void add(double value) {
+        private Measurement(String city) {
+            this.city = city;
+        }
+
+        private void add(long value) {
             this.min = Math.min(this.min, value);
             this.max = Math.max(this.max, value);
             this.sum += value;
@@ -72,7 +79,7 @@ public class CalculateAverage_filiphr {
         }
 
         public static Measurement combine(Measurement m1, Measurement m2) {
-            Measurement measurement = new Measurement();
+            Measurement measurement = new Measurement(m1.city);
             measurement.min = Math.min(m1.min, m2.min);
             measurement.max = Math.max(m1.max, m2.max);
             measurement.sum = m1.sum + m2.sum;
@@ -82,7 +89,7 @@ public class CalculateAverage_filiphr {
 
         @Override
         public String toString() {
-            return round(min) + "/" + round((sum) / count) + "/" + round(max);
+            return round(min / 10.0) + "/" + round((sum / 10.0) / count) + "/" + round(max / 10.0);
         }
 
         private double round(double value) {
@@ -93,7 +100,7 @@ public class CalculateAverage_filiphr {
     public static void main(String[] args) throws IOException {
         // long start = System.nanoTime();
 
-        Map<String, Measurement> measurements;
+        Map<Integer, Measurement> measurements;
         try (FileChannel fileChannel = FileChannel.open(Paths.get(FILE), StandardOpenOption.READ)) {
             measurements = fineChannelStream(fileChannel)
                     .parallel()
@@ -101,20 +108,25 @@ public class CalculateAverage_filiphr {
                     .reduce(Collections.emptyMap(), CalculateAverage_filiphr::mergeMaps);
         }
 
-        System.out.println(new TreeMap<>(measurements));
+        Map<String, Measurement> finalMeasurements = new TreeMap<>();
+        for (Measurement measurement : measurements.values()) {
+            finalMeasurements.put(measurement.city, measurement);
+        }
+
+        System.out.println(finalMeasurements);
         // System.out.println("Done in " + (System.nanoTime() - start) / 1000000 + " ms");
     }
 
-    private static Map<String, Measurement> mergeMaps(Map<String, Measurement> map1, Map<String, Measurement> map2) {
+    private static Map<Integer, Measurement> mergeMaps(Map<Integer, Measurement> map1, Map<Integer, Measurement> map2) {
         if (map1.isEmpty()) {
             return map2;
         }
         else {
-            Set<String> cities = new HashSet<>(map1.keySet());
+            Set<Integer> cities = new HashSet<>(map1.keySet());
             cities.addAll(map2.keySet());
-            Map<String, Measurement> result = HashMap.newHashMap(cities.size());
+            Map<Integer, Measurement> result = HashMap.newHashMap(cities.size());
 
-            for (String city : cities) {
+            for (Integer city : cities) {
                 Measurement m1 = map1.get(city);
                 Measurement m2 = map2.get(city);
                 if (m2 == null) {
@@ -137,48 +149,62 @@ public class CalculateAverage_filiphr {
     }
 
     /**
-     * This is an adapted implementation of the bjhara parseBuffer
+     * This is an adapted implementation of the bjhara parseBuffer.
+     * We are using {@code Map<Integer, Measurement>} because creating the string key on every single line is obsolete.
+     * Instead, we create a hash key from the string, and we use that as a key in the map.
      */
-    private static Map<String, Measurement> parseBuffer(ByteBuffer bb) {
-        Map<String, Measurement> measurements = HashMap.newHashMap(415);
+    private static Map<Integer, Measurement> parseBuffer(ByteBuffer bb) {
+        Map<Integer, Measurement> measurements = HashMap.newHashMap(415);
         int limit = bb.limit();
-        byte[] buffer = new byte[128];
-        CharBuffer charBuffer = CharBuffer.allocate(8);
+        byte[] cityBuffer = new byte[128];
 
         while (bb.position() < limit) {
-            int bufferIndex = 0;
+            int cityBufferIndex = 0;
 
             // Iterate through the byte buffer and fill the buffer until we find the separator (;)
+            // While iterating we are also going to compute the city hash key
+            int cityKey = 1;
             while (bb.position() < limit) {
                 byte positionByte = bb.get();
                 if (positionByte == ';') {
                     break;
                 }
-                buffer[bufferIndex++] = positionByte;
+                cityBuffer[cityBufferIndex++] = positionByte;
+                cityKey = 31 * cityKey + positionByte;
             }
 
-            // Create the city
-            String city = new String(buffer, 0, bufferIndex);
-
-            charBuffer.clear();
             byte lastPositionByte = '\n';
+            boolean negative = false;
+            long value = 0;
             while (bb.position() < limit) {
                 byte positionByte = bb.get();
                 if (positionByte == '\r' || positionByte == '\n') {
                     lastPositionByte = positionByte;
                     break;
                 }
-                charBuffer.append((char) positionByte);
+                else if (positionByte == '-') {
+                    negative = true;
+                }
+                else if (positionByte != '.') {
+                    // The 0 to 9 characters have an int value of 48 (for 0) to 57 (for 9)
+                    // Therefore, in order to compute the digit we subtract with 48
+                    int digit = positionByte - 48;
+                    // We are computing the value by hand (in order to avoid iterating the index twice)
+                    value = value * 10 + digit;
+                }
             }
 
-            int position = charBuffer.position();
-            charBuffer.position(0);
-            // Create the temperature string
-            BigDecimal bigDecimal = new BigDecimal(charBuffer.array(), 0, position);
-            double value = bigDecimal.doubleValue();
+            if (negative) {
+                value = -value;
+            }
 
-            measurements.computeIfAbsent(city, k -> new Measurement())
-                    .add(value);
+            Measurement measurement = measurements.get(cityKey);
+            if (measurement == null) {
+                String city = new String(cityBuffer, 0, cityBufferIndex);
+                measurement = new Measurement(city);
+                measurements.put(cityKey, measurement);
+            }
+            measurement.add(value);
 
             // and get rid of the new line (handle both kinds)
             if (lastPositionByte == '\r') {
