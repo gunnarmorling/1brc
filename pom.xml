@@ -178,7 +178,8 @@
               <excludes>
                 <exclude>LICENSE.txt</exclude>
                 <exclude>**/.dontdelete</exclude>
-                <exclude>measurements*.txt</exclude>
+                <exclude>**/measurements*.txt</exclude>
+                <exclude>**/measurements*.out</exclude>
               </excludes>
             </configuration>
             <executions>
