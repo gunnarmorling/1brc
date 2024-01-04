@@ -1,6 +1,6 @@
 # 1️⃣🐝🏎️ The One Billion Row Challenge
 
-_Status Jan 1: This challenge is open for submissions!_
+_Status Jan 1: This challenge is [open for submissions](https://www.morling.dev/blog/one-billion-row-challenge/)!_
 
 The One Billion Row Challenge (1BRC) is a fun exploration of how far modern Java can be pushed for aggregating one billion rows from a text file.
 Grab all your (virtual) threads, reach out to SIMD, optimize your GC, or pull any other trick, and create the fastest implementation for solving this task!
@@ -98,7 +98,8 @@ Execute the following steps to run the challenge:
 
 ## Flamegraph/Profiling
 
-A tip is that if you have [jbang](https://jbang.dev) installed, you can get a flamegraph of your program by running:
+A tip is that if you have [jbang](https://jbang.dev) installed, you can get a flamegraph of your program by running 
+[async-profiler](https://github.com/jvm-profiling-tools/async-profiler) via [ap-loader](https://github.com/jvm-profiling-tools/ap-loader):
 
 `jbang --javaagent=ap-loader@jvm-profiling-tools/ap-loader=start,event=cpu,file=profile.html -m dev.morling.onebrc.CalculateAverage_yourname target/average-1.0.0-SNAPSHOT.jar`
 
@@ -119,6 +120,10 @@ If you want to use a build not available via these channels, reach out to discus
 * Implementations must be provided as a single source file
 * The computation must happen at application _runtime_, i.e. you cannot process the measurements file at _build time_
 (for instance, when using GraalVM) and just bake the result into the binary
+* Input value ranges are as follows:
+    * Station name: non null UTF-8 string of min length 1 character and max length 100 characters
+    * Temperature value: non null double between -99.9 (inclusive) and 99.9 (inclusive), always with one fractional digit
+* Implementations must not rely on specifics of a given data set, e.g. any valid station name as per the constraints above and any data distribution (number of measurements per station) must be supported
 
 ## Entering the Challenge
 
@@ -183,8 +188,11 @@ _Q: Can I make assumptions on the names of the weather stations showing up in th
 A: No, while only a fixed set of station names is used by the data set generator, any solution should work with arbitrary UTF-8 station names
 (for the sake of simplicity, names are guaranteed to contain no `;` character).
 
-_Q: Can I copy code from other submissions?_
+_Q: Can I copy code from other submissions?_\
 A: Yes, you can. The primary focus of the challenge is about learning something new, rather than "winning". When you do so, please give credit to the relevant source submissions. Please don't re-submit other entries with no or only trivial improvements.
+
+_Q: Which operating system is used for evaluation?_\
+A: Fedora 39.
 
 _Q: Why_ 1️⃣🐝🏎️ _?_\
 A: It's the abbreviation of the project name: **One** **B**illion **R**ow **C**hallenge.
