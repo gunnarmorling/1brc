@@ -15,6 +15,6 @@
 #  limitations under the License.
 #
 
-
-JAVA_OPTS="--enable-preview"
+sdk use java 21.0.1-graal
+JAVA_OPTS="--enable-preview -Xms512m"
 time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_yavuztas

@@ -36,7 +36,7 @@ public class CalculateAverage_yavuztas {
 
     private static final Path FILE = Path.of("./measurements.txt");
 
-    private static class Measurement {
+    static class Measurement {
         private double min;
         private double max;
         private double sum;
@@ -54,6 +54,40 @@ public class CalculateAverage_yavuztas {
 
         private double round(double value) {
             return Math.round(value * 10.0) / 10.0;
+        }
+    }
+
+    static class Key {
+
+        int hash;
+
+        String value;
+
+        public Key(String value) {
+            this.value = value;
+            this.hash = value.hashCode();
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o)
+                return true;
+
+            final Key key = (Key) o;
+            if (o == null || getClass() != o.getClass() || this.hash != key.hash)
+                return false;
+
+            return this.value.equals(key.value);
+        }
+
+        @Override
+        public int hashCode() {
+            return this.hash;
+        }
+
+        @Override
+        public String toString() {
+            return this.value;
         }
     }
 
@@ -75,7 +109,7 @@ public class CalculateAverage_yavuztas {
             this.buffer = buffer;
         }
 
-        void traverse(BiConsumer<String, Double> consumer) {
+        void traverse(BiConsumer<Key, Double> consumer) {
 
             int semiColonPos = 0;
             int lineBreakPos = 0;
@@ -97,11 +131,11 @@ public class CalculateAverage_yavuztas {
 
                 this.position = lineBreakPos; // skip to line end
 
-                consumer.accept(station, Double.parseDouble(temperature));
+                consumer.accept(new Key(station), Double.parseDouble(temperature));
             }
         }
 
-        Map<String, Measurement> accumulate(Map<String, Measurement> initial) {
+        Map<Key, Measurement> accumulate(Map<Key, Measurement> initial) {
 
             traverse((station, temperature) -> {
                 initial.compute(station, (_, m) -> {
@@ -174,10 +208,10 @@ public class CalculateAverage_yavuztas {
             this.accessorPool = Executors.newFixedThreadPool(concurrency);
         }
 
-        void readAndCollect(Map<String, Measurement> output) {
+        void readAndCollect(Map<Key, Measurement> output) {
             for (final FixedRegionDataAccessor accessor : this.accessors) {
                 this.accessorPool.submit(() -> {
-                    final Map<String, Measurement> partial = accessor.accumulate(new HashMap<>(1 << 12, 1)); // aka 4k
+                    final Map<Key, Measurement> partial = accessor.accumulate(new HashMap<>(1 << 10, 1)); // aka 1k
                     this.mergerThread.submit(() -> mergeMaps(output, partial));
                 });
             }
@@ -209,7 +243,7 @@ public class CalculateAverage_yavuztas {
             return position;
         }
 
-        private static Map<String, Measurement> mergeMaps(Map<String, Measurement> map1, Map<String, Measurement> map2) {
+        private static Map<Key, Measurement> mergeMaps(Map<Key, Measurement> map1, Map<Key, Measurement> map2) {
             map2.forEach((s, measurement) -> {
                 map1.merge(s, measurement, (m1, m2) -> {
                     m1.min = Math.min(m1.min, m2.min);
@@ -226,11 +260,16 @@ public class CalculateAverage_yavuztas {
     }
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        final Map<String, Measurement> output = new TreeMap<>();
+        final Map<Key, Measurement> output = new HashMap<>(1 << 10, 1); // aka 1k
         try (final FastDataReader reader = new FastDataReader(FILE)) {
             reader.readAndCollect(output);
         }
-        System.out.println(output);
+
+        final TreeMap<String, Measurement> sorted = new TreeMap<>();
+        output.forEach((s, measurement) -> {
+            sorted.put(s.value, measurement);
+        });
+        System.out.println(sorted);
     }
 
 }
