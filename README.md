@@ -187,8 +187,11 @@ _Q: Can I make assumptions on the names of the weather stations showing up in th
 A: No, while only a fixed set of station names is used by the data set generator, any solution should work with arbitrary UTF-8 station names
 (for the sake of simplicity, names are guaranteed to contain no `;` character).
 
-_Q: Can I copy code from other submissions?_
+_Q: Can I copy code from other submissions?_\
 A: Yes, you can. The primary focus of the challenge is about learning something new, rather than "winning". When you do so, please give credit to the relevant source submissions. Please don't re-submit other entries with no or only trivial improvements.
+
+_Q: Which operating system is used for evaluation?_\
+A: Fedora 39.
 
 _Q: Why_ 1️⃣🐝🏎️ _?_\
 A: It's the abbreviation of the project name: **One** **B**illion **R**ow **C**hallenge.
