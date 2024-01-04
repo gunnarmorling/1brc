@@ -51,7 +51,8 @@ public class CalculateAverage_ebarlas {
                 try {
                     var buffer = channel.map(FileChannel.MapMode.READ_ONLY, pStart, pSize);
                     partitions[pIdx] = processBuffer(buffer, pIdx == 0);
-                } catch (IOException e) {
+                }
+                catch (IOException e) {
                     throw new RuntimeException(e);
                 }
             };
@@ -94,7 +95,8 @@ public class CalculateAverage_ebarlas {
                     var t = target[j];
                     if (t == null) {
                         target[j] = current[j]; // copy ref from current to target
-                    } else {
+                    }
+                    else {
                         t.min = Math.min(t.min, current[j].min);
                         t.max = Math.max(t.max, current[j].max);
                         t.sum += current[j].sum;
@@ -154,10 +156,12 @@ public class CalculateAverage_ebarlas {
                         st = stats[idx] = new Stats(key);
                     }
                     readingKey = false;
-                } else {
+                }
+                else {
                     keyHash = HASH_FACTOR * keyHash + b;
                 }
-            } else {
+            }
+            else {
                 if (b == '\n') {
                     var v = negative ? -val : val;
                     st.min = Math.min(st.min, v);
@@ -169,9 +173,11 @@ public class CalculateAverage_ebarlas {
                     val = 0;
                     negative = false;
                     keyStart = buffer.position();
-                } else if (b == '-') {
+                }
+                else if (b == '-') {
                     negative = true;
-                } else if (b != '.') { // skip '.' since fractional tenth unit after decimal point is assumed
+                }
+                else if (b != '.') { // skip '.' since fractional tenth unit after decimal point is assumed
                     val = val * 10 + (b - '0');
                 }
             }
@@ -187,13 +193,15 @@ public class CalculateAverage_ebarlas {
     }
 
     private static byte[] readHeader(ByteBuffer buffer) { // read up to and including first newline (or end-of-input)
-        while (buffer.hasRemaining() && buffer.get() != '\n') ;
+        while (buffer.hasRemaining() && buffer.get() != '\n')
+            ;
         var header = new byte[buffer.position()];
         buffer.get(0, header, 0, header.length);
         return header;
     }
 
-    record Partition(byte[] header, byte[] footer, Stats[] stats) {}
+    record Partition(byte[] header, byte[] footer, Stats[] stats) {
+    }
 
     private static class Stats { // min, max, and sum values are modeled with integral types that represent tenths of a unit
         final byte[] key;

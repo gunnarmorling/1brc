@@ -41,4 +41,4 @@ nb-configuration.xml
 #JReleaser
 out/
 
-measurements*.txt
+/measurements*.txt
