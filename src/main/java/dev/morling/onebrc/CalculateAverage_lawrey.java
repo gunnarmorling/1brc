@@ -109,9 +109,6 @@ public class CalculateAverage_lawrey {
     }
 
     public static void main(String[] args) throws IOException {
-        // Start time for performance measurement.
-        long before = System.currentTimeMillis();
-
         // Open the file for reading.
         File file = new File(FILE);
         long length = file.length();
@@ -129,10 +126,6 @@ public class CalculateAverage_lawrey {
         Map<String, Measurement> sortedMeasurementsMap = new TreeMap<>();
         allMeasurementsMap.forEach((k, m) -> sortedMeasurementsMap.put(k.toString(), m));
         System.out.println(sortedMeasurementsMap);
-
-        // Print the time taken to process.
-        System.out.println("Took: " + (System.currentTimeMillis() - before));
-        System.out.println(sortedMeasurementsMap.values().stream().mapToLong(m -> m.count).sum());
     }
 
     // Merges two measurement maps.
