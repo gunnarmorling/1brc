@@ -34,7 +34,7 @@ import java.util.function.BiConsumer;
 
 public class CalculateAverage_yavuztas {
 
-    private static final Path FILE = Path.of("./measurements.txt");
+    private static final Path FILE = Path.of("./measurements-sample.txt");
 
     private static class Measurement {
         private double min;
@@ -135,13 +135,18 @@ public class CalculateAverage_yavuztas {
         private final ExecutorService accessorPool;
 
         public FastDataReader(Path path) throws IOException {
-            final var concurrency = Runtime.getRuntime().availableProcessors();
+            var concurrency = Runtime.getRuntime().availableProcessors();
             final long fileSize = Files.size(path);
-            final long regionSize = fileSize / concurrency;
+            long regionSize = fileSize / concurrency;
 
             if (regionSize > Integer.MAX_VALUE) {
                 // TODO multiply concurrency and try again
                 throw new IllegalArgumentException("Bigger than integer!");
+            }
+            // handling extreme cases
+            if (regionSize <= 256) { // small file, no need concurrency
+                concurrency = 1;
+                regionSize = fileSize;
             }
 
             long startPosition = 0;
