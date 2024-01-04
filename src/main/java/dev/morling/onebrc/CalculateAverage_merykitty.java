@@ -263,8 +263,15 @@ public class CalculateAverage_merykitty {
     private static PoorManMap processFile(MemorySegment data, long offset, long limit) {
         var aggrMap = new PoorManMap(data);
         if (offset != 0) {
-            for (offset--; data.get(ValueLayout.JAVA_BYTE, offset++) != '\n';) {
+            offset--;
+            for (; offset < limit;) {
+                if (data.get(ValueLayout.JAVA_BYTE, offset++) == '\n') {
+                    break;
+                }
             }
+        }
+        if (offset == limit) {
+            return aggrMap;
         }
 
         while (offset < Math.min(limit, data.byteSize() - Math.max(BYTE_SPECIES.vectorByteSize(),
