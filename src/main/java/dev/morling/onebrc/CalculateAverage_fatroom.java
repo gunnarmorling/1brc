@@ -57,7 +57,7 @@ public class CalculateAverage_fatroom {
         @Override
         public String toString() {
             StringBuilder sb = new StringBuilder();
-            sb.append(min / 10.0).append("/").append(Math.round(sum / count * 10.0) / 100.0).append("/").append(max / 10.0);
+            sb.append(min / 10.0).append("/").append(Math.round(sum / count) / 10.0).append("/").append(max / 10.0);
             return sb.toString();
         }
     }
@@ -98,7 +98,7 @@ public class CalculateAverage_fatroom {
     }
 
     private static Map<String, MeasurementAggregator> processBuffer(MappedByteBuffer source, int length) {
-        Map<String, MeasurementAggregator> aggregates = new HashMap<>();
+        Map<String, MeasurementAggregator> aggregates = new HashMap<>(500);
         String station;
         byte[] buffer = new byte[64];
         int measurementLength;
