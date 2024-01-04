@@ -155,9 +155,9 @@ public class CalculateAverage_merykitty {
 
         // Now digits is in the form 0xUU00TTHH00
         // 0xUU00TTHH00 * (100 * 0x1000000 + 10 * 0x10000 + 1) =
-        // 0x000000UU00TTHH00
-        // + 0x00UU00TTHH000000 * 10
-        // + 0xUU00TTHH00000000 * 100
+        // 0x000000UU00TTHH00 +
+        // 0x00UU00TTHH000000 * 10 +
+        // 0xUU00TTHH00000000 * 100
         // Now TT * 100 has 2 trailing zeroes and HH * 100 + TT * 10 + UU < 0x400
         // This results in our value lies in the bit 32 to 41 of this product
         // That was close :)
