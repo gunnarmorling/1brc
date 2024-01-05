@@ -23,10 +23,11 @@ import java.lang.foreign.MemorySegment;
 import java.nio.channels.FileChannel;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ForkJoinPool;
-import java.util.stream.IntStream;
+import java.util.stream.LongStream;
 
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.nio.channels.FileChannel.MapMode.READ_ONLY;
@@ -37,9 +38,9 @@ public class CalculateAverage_kgeri {
     private static final String FILE = "./measurements.txt";
 
     private static class MeasurementAggregate {
-        private double min = Double.MAX_VALUE;
+        private double min = Double.POSITIVE_INFINITY;
         private double sum = 0d;
-        private double max = Double.MIN_VALUE;
+        private double max = Double.NEGATIVE_INFINITY;
         private long count;
 
         public void append(double measurement) {
@@ -137,7 +138,7 @@ public class CalculateAverage_kgeri {
         MemorySegment data;
         try {
             long offset = Math.max(0, from - 1);
-            long size = Math.min(channel.size() - offset, chunkSize + 1024);
+            long size = Math.min(channel.size() - offset, chunkSize + 256);
             data = channel.map(READ_ONLY, offset, size, Arena.ofConfined());
         }
         catch (IOException e) {
@@ -201,13 +202,18 @@ public class CalculateAverage_kgeri {
 
         try (RandomAccessFile raf = new RandomAccessFile(FILE, "r")) {
             long size = raf.length();
-            int threads = ForkJoinPool.getCommonPoolParallelism();
-            long chunkSize = size / threads;
+            long threads = Math.min(ForkJoinPool.getCommonPoolParallelism(), Math.max(size / 1000000, 1));
+            long chunkSize = Math.ceilDiv(size, threads);
+            System.err.printf("Processing size=%d, threads=%d, chunkSize=%d%n", size, threads, chunkSize);
 
-            IntStream.range(0, threads)
+            List<Map<StringSlice, MeasurementAggregate>> chunks = LongStream.range(0, threads)
                     .parallel()
                     .mapToObj(i -> readChunk(raf.getChannel(), i * chunkSize, chunkSize))
-                    .forEach(r -> r.forEach((n, m) -> measurements.computeIfAbsent(n.toString(), x -> new MeasurementAggregate()).merge(m)));
+                    .toList();
+
+            for (Map<StringSlice, MeasurementAggregate> chunk : chunks) {
+                chunk.forEach((n, m) -> measurements.computeIfAbsent(n.toString(), x -> new MeasurementAggregate()).merge(m));
+            }
         }
 
         System.out.println(measurements);
