@@ -15,7 +15,6 @@
  */
 package dev.morling.onebrc;
 
-import jdk.incubator.vector.DoubleVector;
 import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
@@ -31,16 +30,16 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
 public class CalculateAverage_artpar {
     public static final int N_THREADS = 8;
     private static final String FILE = "./measurements.txt";
-    private static final Map<Integer, String> nameStringMap = new ConcurrentHashMap<>(1024 * 1024);
-    private static final Map<Integer, String> tempStringMap = new ConcurrentHashMap<>(1024 * 1024);
-    private static final Map<Integer, Double> hashToDouble = new ConcurrentHashMap<>(1024 * 1024);
-    private static final VectorSpecies<Integer> SPECIES = IntVector.SPECIES_MAX;
+    private static final VectorSpecies<Integer> SPECIES = IntVector.SPECIES_PREFERRED;
     final int VECTOR_SIZE = 512;
     final int VECTOR_SIZE_1 = VECTOR_SIZE - 1;
     final int SIZE = 1024 * 128;
@@ -75,12 +74,14 @@ public class CalculateAverage_artpar {
                 if (chunkStartPosition + chunkSize >= fileSize) {
                     chunkSize = fileSize - chunkStartPosition;
                 }
+                if (chunkSize > Integer.MAX_VALUE) {
+                    chunkSize = Integer.MAX_VALUE;
+                }
 
                 MappedByteBuffer mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, chunkStartPosition,
                         chunkSize);
 
-                ReaderRunnable readerRunnable = new ReaderRunnable(mappedByteBuffer,
-                        chunkStartPosition, chunkSize);
+                ReaderRunnable readerRunnable = new ReaderRunnable(mappedByteBuffer);
                 Future<Map<String, MeasurementAggregator>> future = threadPool.submit(readerRunnable::run);
                 futures.add(future);
                 chunkStartPosition = chunkStartPosition + chunkSize + 1;
@@ -98,8 +99,7 @@ public class CalculateAverage_artpar {
                     }
                 })
                 .collect(Collectors.toConcurrentMap(
-                        Map.Entry::getKey,
-                        Map.Entry::getValue,
+                        Map.Entry::getKey, Map.Entry::getValue,
                         MeasurementAggregator::combine));
 
         Map<String, ResultRow> results = globalMap.entrySet().stream().parallel()
@@ -123,7 +123,6 @@ public class CalculateAverage_artpar {
         boolean negative = false;
 
         int start = 0;
-        int decimalIndex = -1;
         int result = 0;
 
         // Check for negative numbers
@@ -132,14 +131,10 @@ public class CalculateAverage_artpar {
             start++;
         }
 
-        // Parse each character
         for (int i = start; i < length; i++) {
             byte c = str[i];
 
-            if (c == '.') {
-                continue;
-            }
-            else {
+            if (c != '.') {
                 result = result * 10 + (c - '0');
             }
         }
@@ -153,31 +148,28 @@ public class CalculateAverage_artpar {
     }
 
     public static int hashCode(byte[] array, int length) {
-        if (array == null || length == 0) {
-            return 0;
-        }
 
-        int result = 1;
+        int h = 1;
         int i = 0;
-
-        // Loop unrolling for every 4 elements
-        for (; i <= length - 4; i += 4) {
-            result = result
-                    + (array[i] * 31 * 31 * 31)
-                    + (array[i + 1] * 31 * 31)
-                    + (array[i + 2] * 31)
-                    + array[i + 3];
+        for (; i + 7 < length; i += 8) {
+            h = 31 * 31 * 31 * 31 * 31 * 31 * 31 * 31 * h + 31 * 31 * 31 * 31
+                    * 31 * 31 * 31 * array[i] + 31 * 31 * 31 * 31 * 31 * 31
+                            * array[i + 1]
+                    + 31 * 31 * 31 * 31 * 31 * array[i + 2] + 31
+                            * 31 * 31 * 31 * array[i + 3]
+                    + 31 * 31 * 31 * array[i + 4]
+                    + 31 * 31 * array[i + 5] + 31 * array[i + 6] + array[i + 7];
         }
 
-        // Process remaining elements
+        for (; i + 3 < length; i += 4) {
+            h = 31 * 31 * 31 * 31 * h + 31 * 31 * 31 * array[i] + 31 * 31
+                    * array[i + 1] + 31 * array[i + 2] + array[i + 3];
+        }
         for (; i < length; i++) {
-            result = result * 31 + array[i];
+            h = 31 * h + array[i];
         }
 
-        return result;
-    }
-
-    private record Measurement(String station, double value) {
+        return h;
     }
 
     private record ResultRow(double min, double mean, double max, long count, double sum) {
@@ -195,7 +187,6 @@ public class CalculateAverage_artpar {
         private double max = Double.NEGATIVE_INFINITY;
         private double sum;
         private long count;
-        private String name;
 
         public MeasurementAggregator() {
         }
@@ -207,11 +198,7 @@ public class CalculateAverage_artpar {
             this.count = count;
         }
 
-        public String getName() {
-            return name;
-        }
-
-        synchronized MeasurementAggregator combine(MeasurementAggregator other) {
+        MeasurementAggregator combine(MeasurementAggregator other) {
             min = Math.min(min, other.min);
             max = Math.max(max, other.max);
             sum += other.sum;
@@ -219,7 +206,7 @@ public class CalculateAverage_artpar {
             return this;
         }
 
-        synchronized MeasurementAggregator combine(double otherMin, double otherMax, double otherSum, long otherCount) {
+        MeasurementAggregator combine(double otherMin, double otherMax, double otherSum, long otherCount) {
             min = Math.min(min, otherMin);
             max = Math.max(max, otherMax);
             sum += otherSum;
@@ -235,15 +222,11 @@ public class CalculateAverage_artpar {
 
     private class ReaderRunnable {
         private final MappedByteBuffer mappedByteBuffer;
-        private final long chunkStartPosition;
-        private final long chunkSize;
         StationNameMap stationNameMap = new StationNameMap();
         // double[][] stationValueMap = new double[SIZE][];
 
-        private ReaderRunnable(MappedByteBuffer mappedByteBuffer, long chunkStartPosition, long chunkSize) {
+        private ReaderRunnable(MappedByteBuffer mappedByteBuffer) {
             this.mappedByteBuffer = mappedByteBuffer;
-            this.chunkStartPosition = chunkStartPosition;
-            this.chunkSize = chunkSize;
         }
 
         public Map<String, MeasurementAggregator> run() {
@@ -337,8 +320,6 @@ public class CalculateAverage_artpar {
 
             }
 
-            VectorSpecies<Double> species = DoubleVector.SPECIES_PREFERRED;
-
             Arrays.stream(stationNameMap.names)
                     .filter(Objects::nonNull)
                     .parallel()
@@ -405,18 +386,6 @@ public class CalculateAverage_artpar {
                     .collect(Collectors.toMap(e -> e.name, e -> e.measurementAggregator));
             // return groupedMeasurements;
         }
-
-        private String getTempStringFromBufferUsingBuffer(byte[] array, int length) {
-
-            int byteArrayHashCode = CalculateAverage_artpar.hashCode(array, length);
-            if (!tempStringMap.containsKey(byteArrayHashCode)) {
-                String value = new String(array, 0, length, StandardCharsets.UTF_8);
-                tempStringMap.put(byteArrayHashCode, value);
-                return value;
-            }
-
-            return tempStringMap.get(byteArrayHashCode);
-        }
     }
 
     class StationName {
@@ -449,18 +418,11 @@ public class CalculateAverage_artpar {
             if (indexes[position] != 0) {
                 return names[indexes[position]];
             }
-            while (true) {
-                synchronized (this) {
-                    StationName stationName = new StationName(
-                            new String(stationNameBytes, 0, length, StandardCharsets.UTF_8), position, hash);
-                    if (indexes[position] != 0) {
-                        continue;
-                    }
-                    indexes[position] = ++currentIndex;
-                    names[indexes[position]] = stationName;
-                    return stationName;
-                }
-            }
+            StationName stationName = new StationName(
+                    new String(stationNameBytes, 0, length, StandardCharsets.UTF_8), position, hash);
+            indexes[position] = ++currentIndex;
+            names[indexes[position]] = stationName;
+            return stationName;
         }
     }
 
