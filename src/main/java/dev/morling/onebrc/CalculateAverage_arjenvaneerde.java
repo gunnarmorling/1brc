@@ -135,7 +135,7 @@ public class CalculateAverage_arjenvaneerde {
   }
 
   private static final String                FILE             = "./measurements.txt";
-  private static final int                   NUM_THREADS      = 16;
+  private static final int                   NUM_THREADS      = 8;
   private static final int                   BYTE_BUFFER_SIZE = 16 * 1024 * 1024;
   private static final ExecutorService       threads          = Executors.newFixedThreadPool(NUM_THREADS);
   private static final List<Future<Integer>> futures          = new ArrayList<>(NUM_THREADS);
