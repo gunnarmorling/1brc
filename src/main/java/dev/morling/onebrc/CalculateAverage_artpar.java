@@ -256,75 +256,85 @@ public class CalculateAverage_artpar {
             StationName matchedStation = null;
             boolean readUntilSemiColon = true;
 
+            int MAPPED_BYTE_BUFFER_SIZE = 1024;
+            byte[] mappedBytes = new byte[MAPPED_BYTE_BUFFER_SIZE];
+            int i1;
             while (mappedByteBuffer.hasRemaining()) {
-                byte b = mappedByteBuffer.get();
-                totalBytesRead++;
-                if (readUntilSemiColon) {
-                    if (b != ';') {
+                int remaining = mappedByteBuffer.remaining();
+                mappedByteBuffer.get(mappedBytes, 0, Math.min(remaining, MAPPED_BYTE_BUFFER_SIZE));
+                i1 = 0;
+                while (i1 < remaining && i1 < MAPPED_BYTE_BUFFER_SIZE) {
+                    byte b = mappedBytes[i1];
+                    i1++;
+                    totalBytesRead++;
+                    if (readUntilSemiColon) {
+                        if (b != ';') {
+                            rawBuffer[bufferIndex] = b;
+                            bufferIndex++;
+                            continue;
+                        }
+                        else {
+                            readUntilSemiColon = false;
+                            // Integer bufferHash = hashCode(rawBuffer, bufferIndex);
+                            // int finalBufferIndex = bufferIndex;
+                            matchedStation = stationNameMap.getOrCreate(rawBuffer, bufferIndex);
+                            // matchedStation = new String(rawBuffer, 0, bufferIndex, StandardCharsets.UTF_8);
+                            bufferIndex = 0;
+                            continue;
+                        }
+                    }
+
+                    if (b != '\n') {
                         rawBuffer[bufferIndex] = b;
                         bufferIndex++;
-                        continue;
                     }
                     else {
-                        readUntilSemiColon = false;
-                        // Integer bufferHash = hashCode(rawBuffer, bufferIndex);
-                        // int finalBufferIndex = bufferIndex;
-                        matchedStation = stationNameMap.getOrCreate(rawBuffer, bufferIndex);
-                        // matchedStation = new String(rawBuffer, 0, bufferIndex, StandardCharsets.UTF_8);
+                        readUntilSemiColon = true;
+                        // String tempValue = new String(rawBuffer, 0, bufferIndex, StandardCharsets.UTF_8);
+
+                        // int tempValueHashCode = tempValue.hashCode();
+                        // if (!hashToDouble.containsKey(tempValueHashCode)) {
+                        // hashToDouble.put(tempValueHashCode, parseDouble(tempValue));
+                        // }
+                        int doubleValue = parseDouble(rawBuffer, bufferIndex);
                         bufferIndex = 0;
-                        continue;
+
+                        // Measurement measurement = new Measurement(matchedStation, doubleValue);
+                        int[] array = matchedStation.values;
+                        int index = matchedStation.count;
+                        array[index] = doubleValue;
+                        if (index == VECTOR_SIZE_1) {
+
+                            int i = 0;
+                            double min = Double.POSITIVE_INFINITY;
+                            double max = Double.NEGATIVE_INFINITY;
+                            double sum = 0;
+                            long count = 0;
+                            for (; i < SPECIES.loopBound(array.length); i += SPECIES.length()) {
+                                // Vector operations
+                                IntVector vector = IntVector.fromArray(SPECIES, array, i);
+                                min = Math.min(min, vector.reduceLanes(VectorOperators.MIN));
+                                max = Math.max(max, vector.reduceLanes(VectorOperators.MAX));
+                                sum += vector.reduceLanes(VectorOperators.ADD);
+                                count += vector.length();
+                            }
+
+                            for (; i < array.length; i++) {
+                                min = Math.min(min, array[i]);
+                                max = Math.max(max, array[i]);
+                                sum += array[i];
+                                count++;
+                            }
+
+                            matchedStation.measurementAggregator.combine(min, max, sum, count);
+
+                            matchedStation.count = 0;
+                            continue;
+                        }
+                        matchedStation.count++;
                     }
                 }
 
-                if (b != '\n') {
-                    rawBuffer[bufferIndex] = b;
-                    bufferIndex++;
-                }
-                else {
-                    readUntilSemiColon = true;
-                    // String tempValue = new String(rawBuffer, 0, bufferIndex, StandardCharsets.UTF_8);
-
-                    // int tempValueHashCode = tempValue.hashCode();
-                    // if (!hashToDouble.containsKey(tempValueHashCode)) {
-                    // hashToDouble.put(tempValueHashCode, parseDouble(tempValue));
-                    // }
-                    int doubleValue = parseDouble(rawBuffer, bufferIndex);
-                    bufferIndex = 0;
-
-                    // Measurement measurement = new Measurement(matchedStation, doubleValue);
-                    int[] array = matchedStation.values;
-                    int index = matchedStation.count;
-                    array[index] = doubleValue;
-                    if (index == VECTOR_SIZE_1) {
-
-                        int i = 0;
-                        double min = Double.POSITIVE_INFINITY;
-                        double max = Double.NEGATIVE_INFINITY;
-                        double sum = 0;
-                        long count = 0;
-                        for (; i < SPECIES.loopBound(array.length); i += SPECIES.length()) {
-                            // Vector operations
-                            IntVector vector = IntVector.fromArray(SPECIES, array, i);
-                            min = Math.min(min, vector.reduceLanes(VectorOperators.MIN));
-                            max = Math.max(max, vector.reduceLanes(VectorOperators.MAX));
-                            sum += vector.reduceLanes(VectorOperators.ADD);
-                            count += vector.length();
-                        }
-
-                        for (; i < array.length; i++) {
-                            min = Math.min(min, array[i]);
-                            max = Math.max(max, array[i]);
-                            sum += array[i];
-                            count++;
-                        }
-
-                        matchedStation.measurementAggregator.combine(min, max, sum, count);
-
-                        matchedStation.count = 0;
-                        continue;
-                    }
-                    matchedStation.count++;
-                }
             }
 
             VectorSpecies<Double> species = DoubleVector.SPECIES_PREFERRED;
