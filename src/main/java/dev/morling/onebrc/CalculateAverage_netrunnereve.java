@@ -18,22 +18,22 @@ package dev.morling.onebrc;
 import java.io.IOException;
 import java.io.BufferedReader;
 import java.io.FileReader;
-import java.util.HashMap;
+import java.util.TreeMap;
 
 public class CalculateAverage_netrunnereve {
 
     private static final String FILE = "./measurements.txt";
 
     private static class MeasurementAggregator {
-        private int min = Integer.MAX_VALUE;
-        private int max = Integer.MIN_VALUE;
-        private int sum = 0;
+        private double min = Double.POSITIVE_INFINITY;
+        private double max = Double.NEGATIVE_INFINITY;
+        private double sum = 0;
         private int count = 0;
     }
 
     public static void main(String[] args) {
         try {
-            HashMap<String, MeasurementAggregator> staHash = new HashMap<String, MeasurementAggregator>();
+            TreeMap<String, MeasurementAggregator> staTree = new TreeMap<String, MeasurementAggregator>();
 
             BufferedReader filBuf = new BufferedReader(new FileReader(FILE));
             String line = filBuf.readLine();
@@ -41,35 +41,36 @@ public class CalculateAverage_netrunnereve {
             while (line != null) {
                 String[] linSpl = line.split(";", 2); // station, measurement
                 String station = linSpl[0];
-                String temperature = linSpl[1];
 
-                MeasurementAggregator ma = staHash.get(station);
+                MeasurementAggregator ma = staTree.get(station);
                 if (ma == null) {
                     ma = new MeasurementAggregator();
                 }
 
-                int tempI = Integer.parseInt(temperature.replace(".", "")); // x10
-                if (tempI < ma.min) {
-                    ma.min = tempI;
+                double tempa = Double.parseDouble(linSpl[1]);
+                if (tempa < ma.min) {
+                    ma.min = tempa;
                 }
-                if (tempI > ma.max) {
-                    ma.max = tempI;
+                if (tempa > ma.max) {
+                    ma.max = tempa;
                 }
-                ma.sum += tempI;
+                ma.sum += tempa;
                 ma.count++;
 
-                staHash.put(station, ma);
+                staTree.put(linSpl[0], ma);
 
                 line = filBuf.readLine();
             }
 
-            System.out.print("{");
-            for (String i : staHash.keySet()) {
-                MeasurementAggregator ma = staHash.get(i);
-                float avg = ma.sum / ma.count;
-                System.out.print(i + "=" + ma.min + "/" + avg + "/" + ma.max + ", ");
+            String out = "{";
+            for (String i : staTree.keySet()) {
+                MeasurementAggregator ma = staTree.get(i);
+                double avg = Math.round(ma.sum / ma.count * 10.0) / 10.0;
+                out += i + "=" + ma.min + "/" + avg + "/" + ma.max + ", ";
             }
-            System.out.print("}\n");
+            out = out.replaceAll(", $", "");
+            out += "}\n";
+            System.out.print(out);
 
             filBuf.close();
         }
