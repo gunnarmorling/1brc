@@ -15,34 +15,36 @@
  */
 package dev.morling.onebrc;
 
-import static java.util.stream.Collectors.*;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collector;
+import java.util.stream.Stream;
+
+import static java.util.stream.Collectors.groupingBy;
 
 public class CalculateAverage {
 
     private static final String FILE = "./measurements.txt";
 
-    private static record Measurement(String station, double value) {
+    private record Measurement(String station, double value) {
         private Measurement(String[] parts) {
             this(parts[0], Double.parseDouble(parts[1]));
         }
+
     }
 
-    private static record ResultRow(double min, double mean, double max) {
+    private record ResultRow(double min, double mean, double max) {
         public String toString() {
             return round(min) + "/" + round(mean) + "/" + round(max);
         }
 
-        private double round(double value) {
+        private double round(final double value) {
             return Math.round(value * 10.0) / 10.0;
         }
-    };
+    }
 
     private static class MeasurementAggregator {
         private double min = Double.POSITIVE_INFINITY;
@@ -51,15 +53,7 @@ public class CalculateAverage {
         private long count;
     }
 
-    public static void main(String[] args) throws IOException {
-        // Map<String, Double> measurements1 = Files.lines(Paths.get(FILE))
-        // .map(l -> l.split(";"))
-        // .collect(groupingBy(m -> m[0], averagingDouble(m -> Double.parseDouble(m[1]))));
-        //
-        // measurements1 = new TreeMap<>(measurements1.entrySet()
-        // .stream()
-        // .collect(toMap(e -> e.getKey(), e -> Math.round(e.getValue() * 10.0) / 10.0)));
-        // System.out.println(measurements1);
+    public static void main(final String[] args) throws IOException {
 
         Collector<Measurement, MeasurementAggregator, ResultRow> collector = Collector.of(
                 MeasurementAggregator::new,
@@ -78,14 +72,14 @@ public class CalculateAverage {
 
                     return res;
                 },
-                agg -> {
-                    return new ResultRow(agg.min, agg.sum / agg.count, agg.max);
-                });
+                agg -> new ResultRow(agg.min, agg.sum / agg.count, agg.max), Collector.Characteristics.CONCURRENT);
+        try (Stream<String> lines = Files.lines(Paths.get(FILE))) {
 
-        Map<String, ResultRow> measurements = new TreeMap<>(Files.lines(Paths.get(FILE))
-                .map(l -> new Measurement(l.split(";")))
-                .collect(groupingBy(m -> m.station(), collector)));
+            Map<String, ResultRow> measurements = new TreeMap<>(lines
+                    .parallel().map(l -> new Measurement(l.split(";")))
+                    .collect(groupingBy(Measurement::station, collector)));
 
-        System.out.println(measurements);
+            System.out.println(measurements);
+        }
     }
 }
