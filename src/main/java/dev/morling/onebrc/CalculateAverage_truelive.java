@@ -23,6 +23,7 @@ import java.nio.channels.FileChannel;
 import java.util.*;
 import java.util.concurrent.atomic.DoubleAccumulator;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.stream.Collector;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
@@ -92,6 +93,58 @@ public class CalculateAverage_truelive {
         }
     }
 
+    static class Mes {
+        int min; int max; int sum; long count;
+
+        public Mes(int min, int max, int sum, long count) {
+            this.max = max;
+            this.min = min;
+            this.sum = sum;
+            this.count = count;
+
+        }
+
+        public static Mes of(final int mes) {
+            final Mes measurement = new Mes(
+                    mes,
+                    mes,
+                    mes,
+                    1
+            );
+            return measurement;
+        }
+
+        public Mes add(final int measurment) {
+            min = Math.min(min, measurment);
+            max = Math.max(max, measurment);
+            sum += measurment;
+            count++;
+            return this;
+        }
+
+        public String toString() {
+            return round(min) +
+                   "/" +
+                   round(((double) sum) / count) +
+                   "/" +
+                   round(max);
+        }
+
+        private double round(final double value) {
+            return Math.round(value) / 10.0;
+        }
+
+        public static Mes combineWith(final Mes m1, final Mes m2) {
+
+            return new Mes(
+                    Math.min(m1.min, m2.min),
+                    Math.max(m1.max, m2.max),
+                    m1.sum + m2.sum,
+                    m1.count + m2.count
+            );
+        }
+    }
+
     public static void main(final String[] args) throws IOException {
         // long before = System.currentTimeMillis();
         /**
@@ -157,18 +210,15 @@ public class CalculateAverage_truelive {
         String name = null;
         final byte[] arr = new byte[128];
         int cur = 0;
-        int hash = 0;
         while (bug.hasRemaining()) {
             char c = (char) bug.get();
             arr[cur++] = (byte) c;
             while (c != ';') {
-                hash += 31 * hash + c;
                 c = (char) bug.get();
                 arr[cur++] = (byte) c;
             }
             name = new String(arr, 0, cur - 1);
             cur = 0;
-            hash = 0;
             while (c != '\n') {
                 c = (char) bug.get();
                 arr[cur++] = (byte) c;
