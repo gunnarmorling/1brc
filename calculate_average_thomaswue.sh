@@ -15,6 +15,8 @@
 #  limitations under the License.
 #
 
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+sdk use java 21.0.1-graal 1>&2
 NATIVE_IMAGE_OPTS="--gc=epsilon -O3 -march=native --enable-preview"
 JAVA_OPTS="--enable-preview"
 
@@ -25,7 +27,6 @@ if [ -z "${JVM_MODE}" ]; then
             : # Picking up existing native image.
         else
             echo 'Using native image without PGO data, set PGO_MODE to use profile-guided optimizations instead.'
-            sdk use java 21.0.1-graal
             native-image $NATIVE_IMAGE_OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o image_calculateaverage_thomaswue dev.morling.onebrc.CalculateAverage_thomaswue
         fi
         time ./image_calculateaverage_thomaswue
@@ -37,21 +38,18 @@ if [ -z "${JVM_MODE}" ]; then
                 echo 'Picking up profiling information from profile_thomaswue.iprof.'
             else
                 echo 'Could not find profiling information, therefore it will be now regenerated.'
-                sdk use java 21.0.1-graal
-                native-image --pgo-instrument -cp target/average-1.0.0-SNAPSHOT.jar -o instrumented_calculateaverage_thomaswue dev.morling.onebrc.CalculateAverage_thomaswue
+                native-image --enable-preview --pgo-instrument -cp target/average-1.0.0-SNAPSHOT.jar -o instrumented_calculateaverage_thomaswue dev.morling.onebrc.CalculateAverage_thomaswue
                 echo 'Running example with instrumented image for 20 seconds.'
                 timeout 20 ./instrumented_calculateaverage_thomaswue
                 mv default.iprof profile_thomaswue.iprof
             fi
             echo 'Could not find a native image, building a new one now.'
-            sdk use java 21.0.1-graal
             native-image $NATIVE_IMAGE_OPTS --pgo=profile_thomaswue.iprof -cp target/average-1.0.0-SNAPSHOT.jar -o image_calculateaverage_thomaswue_pgo dev.morling.onebrc.CalculateAverage_thomaswue
 	fi
         time ./image_calculateaverage_thomaswue_pgo
     fi
 else
     # Chosing JVM mode, unset JVM_MODE variable to select native image mode.
-    sdk use java 21.0.1-graal
     time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_thomaswue
 fi
 
