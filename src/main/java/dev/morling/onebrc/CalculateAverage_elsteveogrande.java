@@ -15,55 +15,27 @@
  */
 package dev.morling.onebrc;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.LinkedList;
-import java.util.List;
+import java.io.*;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
-import java.util.concurrent.ConcurrentSkipListMap;
 
 public class CalculateAverage_elsteveogrande {
 
     private static final String FILE = "./measurements.txt";
 
-    long hash(byte[] bytes) {
-        assert (bytes.length % 8 == 0);
-        long ret = 0x7654_3210_fedc_ba98L;
-        for (int b = 0; b < bytes.length; b += 8) {
-            for (int i = b; i < b + 8; i++) {
-                // noinspection PointlessBitwiseExpression
-                ret += (0L
-                        | ((((long) (bytes[i])) & 0xff) << 56)
-                        | ((((long) (bytes[i])) & 0xff) << 48)
-                        | ((((long) (bytes[i])) & 0xff) << 40)
-                        | ((((long) (bytes[i])) & 0xff) << 32)
-                        | ((((long) (bytes[i])) & 0xff) << 24)
-                        | ((((long) (bytes[i])) & 0xff) << 16)
-                        | ((((long) (bytes[i])) & 0xff) << 8)
-                        | ((((long) (bytes[i])) & 0xff) << 0));
-            }
-        }
-        return ret;
-    }
-
-    final class Bucket {
-        final String stationString;
-        final byte[] station;
-        final long hash;
+    static final class Station {
+        final String name;
         float min = Float.MAX_VALUE;
         float max = Float.MIN_VALUE;
         float total = 0;
         int count = 0;
 
-        Bucket(String station) {
-            this.stationString = station;
-            this.station = new byte[32];
-            var bytes = station.getBytes(StandardCharsets.UTF_8);
-            assert (bytes.length <= 32);
-            System.arraycopy(bytes, 0, this.station, 0, bytes.length);
-            this.hash = hash(this.station);
+        Station(String name) {
+            this.name = name;
         }
 
         void update(float val) {
@@ -73,157 +45,143 @@ public class CalculateAverage_elsteveogrande {
             count++;
         }
 
-        @Override
-        public String toString() {
-            return this.stationString
-                    + '='
-                    + String.format("%.1f", this.min)
-                    + '/'
-                    + String.format("%.1f", this.total / this.count)
-                    + '/'
-                    + String.format("%.1f", this.max);
+        public void update(Station that) {
+            min = Math.min(this.min, that.min);
+            max = Math.max(this.max, that.max);
+            this.total += that.total;
+            this.count += that.count;
         }
 
-        @Override
-        public int hashCode() {
-            return Long.hashCode(this.hash);
+        public String toString() {
+            return STR.
+                    "\{String.format("%.1f", this.min)}\{'/'}\{String.format("%.1f", this.total / this.count)}\{'/'}\{String.format("%.1f", this.max)}";
         }
     }
 
-    SortedMap<String, Bucket> allBuckets = new ConcurrentSkipListMap<>();
+    static final int NPROCS = Runtime.getRuntime().availableProcessors();
 
-    final class Task extends Thread {
-        final List<String> list = new LinkedList<>();
-        final TreeMap<String, Bucket> buckets = new TreeMap<>();
+    static class Task extends Thread {
+        final MappedByteBuffer mmap;
+        final Map<Integer, Station> stations = new HashMap<>();
 
-        Bucket getBucket(String station) {
-            return buckets.computeIfAbsent(
-                    station,
-                    s -> {
-                        var ret = new Bucket(s);
-                        allBuckets.put(s, ret);
-                        return ret;
-                    });
-        }
-
-        void update(String station, float val) {
-            var bucket = getBucket(station);
-            bucket.update(val);
-        }
-
-        void update(String line) {
-            int semi = line.indexOf(';');
-            var station = line.substring(0, semi);
-            var val = Float.parseFloat(line.substring(semi + 1));
-            update(station, val);
+        Task(MappedByteBuffer mmap) {
+            this.mmap = mmap;
         }
 
         @Override
         public void run() {
-            for (var line : list) {
-                update(line);
+            int n = mmap.capacity();
+
+            byte[] stationBytes = new byte[32];
+            byte[] valBytes = new byte[8];
+            int i = 0;
+            while (i < n) {
+                int s = 0;
+                int v = 0;
+                byte b;
+                while ((b = mmap.get(i++)) != ';') {
+                    stationBytes[s++] = b;
+                }
+                while ((b = mmap.get(i++)) != '\n') {
+                    valBytes[v++] = b;
+                }
+
+                final var ss = s;
+                var station = stations.computeIfAbsent(
+                        key(stationBytes, s),
+                        _ -> {
+                            var name = new String(stationBytes, 0, ss);
+                            return new Station(name);
+                        });
+                var val = parseFloatDot1(valBytes);
+                station.update(val);
             }
+        }
+
+        private int key(byte[] bytes, int len) {
+            int i = 0;
+            int ret = 0;
+            byte b;
+            len = Math.min(4, len);
+            while (i < len) {
+                b = bytes[i++];
+                ret = (59 * ret) + b;
+            }
+            return ret;
+        }
+
+        private float parseFloatDot1(byte[] s) {
+            byte b;
+            int i = 0;
+            float ret = 0.0f;
+            boolean neg = false;
+            if (s[i] == '-') {
+                ++i;
+                neg = true;
+            }
+            while ((b = s[i++]) != '.') {
+                ret = (ret * 10.0f) + (float) (b - '0');
+            }
+            ret += ((b - '0') / 10.0f);
+            return neg ? -ret : ret;
         }
     }
 
-    private void run() throws Exception {
-        Task[] tasks = new Task[8];
-        for (int i = 0; i < tasks.length; i++) {
-            tasks[i] = new Task();
+    private void consumeFiles() throws IOException {
+        Task[] tasks = new Task[NPROCS];
+
+        try (var file = new RandomAccessFile(new File(FILE), "r")) {
+            long[] offsets = new long[NPROCS + 1];
+
+            var size = file.length();
+            for (int i = 1; i < NPROCS; i++) {
+                long offset = (long) (size * ((float) i) / NPROCS);
+                file.seek(offset);
+                // noinspection StatementWithEmptyBody
+                while (file.readByte() != '\n') {
+                }
+                offsets[i] = file.getFilePointer();
+            }
+            offsets[NPROCS] = size;
+
+            for (int i = 0; i < NPROCS; i++) {
+                tasks[i] = new Task(
+                        file.getChannel().map(
+                                FileChannel.MapMode.READ_ONLY,
+                                offsets[i],
+                                offsets[i + 1] - offsets[i]));
+                tasks[i].start();
+            }
+
+            for (int i = 0; i < NPROCS; i++) {
+                while (true) {
+                    try {
+                        tasks[i].join();
+                        break;
+                    }
+                    catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            }
         }
 
-        try (var lines = Files.lines(Paths.get(FILE))) {
-            lines.forEach(line -> {
-                var index = ((int) line.charAt(0)) % tasks.length;
-                var task = tasks[index];
-                task.list.add(line);
+        final SortedMap<String, Station> stationsByName = new TreeMap<>();
+        for (var task : tasks) {
+            task.stations.forEach((_, station) -> {
+                var s = stationsByName.computeIfAbsent(station.name, Station::new);
+                s.update(station);
             });
         }
 
-        for (Task task : tasks) {
-            task.start();
-        }
+        System.out.println(stationsByName);
+    }
 
-        for (Task task : tasks) {
-            task.join();
-        }
-
-        final long firstHash = allBuckets.firstEntry().getValue().hash;
-        System.out.print('{');
-        allBuckets.values().forEach(b -> {
-            if (b.hash != firstHash) {
-                System.out.print(", ");
-            }
-            System.out.println(b); ////////////////////////////////////////////////////////
-            // System.out.print(b);
-        });
-        System.out.println('}');
+    private void run() throws Exception {
+        consumeFiles();
     }
 
     public static void main(String[] args) throws Exception {
         (new CalculateAverage_elsteveogrande()).run();
     }
-
-    //
-    //
-    // private static record Measurement(String station, double value) {
-    // private Measurement(String[] parts) {
-    // this(parts[0], Double.parseDouble(parts[1]));
-    // }
-    // }
-    //
-    // private static record ResultRow(double min, double mean, double max) {
-    // public String toString() {
-    // return round(min) + "/" + round(mean) + "/" + round(max);
-    // }
-    //
-    // private double round(double value) {
-    // return Math.round(value * 10.0) / 10.0;
-    // }
-    // };
-    //
-    // private static class MeasurementAggregator {
-    // private double min = Double.POSITIVE_INFINITY;
-    // private double max = Double.NEGATIVE_INFINITY;
-    // private double sum;
-    // private long count;
-    // }
-    //
-    // public static void main(String[] args) throws IOException {
-    // // Map<String, Double> measurements1 = Files.lines(Paths.get(FILE))
-    // // .map(l -> l.split(";"))
-    // // .collect(groupingBy(m -> m[0], averagingDouble(m -> Double.parseDouble(m[1]))));
-    // //
-    // // measurements1 = new TreeMap<>(measurements1.entrySet()
-    // // .stream()
-    // // .collect(toMap(e -> e.getKey(), e -> Math.round(e.getValue() * 10.0) / 10.0)));
-    // // System.out.println(measurements1);
-    //
-    // Collector<Measurement, MeasurementAggregator, ResultRow> collector = Collector.of(
-    // MeasurementAggregator::new,
-    // (a, m) -> {
-    // a.min = Math.min(a.min, m.value);
-    // a.max = Math.max(a.max, m.value);
-    // a.sum += m.value;
-    // a.count++;
-    // },
-    // (agg1, agg2) -> {
-    // var res = new MeasurementAggregator();
-    // res.min = Math.min(agg1.min, agg2.min);
-    // res.max = Math.max(agg1.max, agg2.max);
-    // res.sum = agg1.sum + agg2.sum;
-    // res.count = agg1.count + agg2.count;
-    //
-    // return res;
-    // },
-    // agg -> {
-    // return new ResultRow(agg.min, agg.sum / agg.count, agg.max);
-    // });
-    //
-    // Map<String, ResultRow> measurements = new TreeMap<>(Files.lines(Paths.get(FILE))
-    // .map(l -> new Measurement(l.split(";")))
-    // .collect(groupingBy(m -> m.station(), collector)));
-    //
-    // System.out.println(measurements);
-    // }
 }
