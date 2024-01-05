@@ -15,6 +15,6 @@
 #  limitations under the License.
 #
 
-
-JAVA_OPTS="-Xmx4G"
+sdk use java 21.0.1-graalce
+JAVA_OPTS="-Xmx8G -Xms2G"
 time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_truelive
