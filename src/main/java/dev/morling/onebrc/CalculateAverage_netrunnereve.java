@@ -73,12 +73,14 @@ public class CalculateAverage_netrunnereve {
             String out = "{";
             for (int i = 0; i < staHash.size(); i++) {
                 MeasurementAggregator ma = staHash.get(staArr[i]);
-                double min = Math.round(Double.valueOf(ma.min) / 10.0);
-                double avg = Math.round(Double.valueOf(ma.sum) / Double.valueOf(ma.count) / 10.0);
-                double max = Math.round(Double.valueOf(ma.max) / 10.0);
-                out += staArr[i] + "=" + min + "/" + avg + "/" + max + ", ";
+                double min = Math.round(Double.valueOf(ma.min)) / 10.0;
+                double avg = Math.round(Double.valueOf(ma.sum) / Double.valueOf(ma.count)) / 10.0;
+                double max = Math.round(Double.valueOf(ma.max)) / 10.0;
+                out += staArr[i] + "=" + min + "/" + avg + "/" + max;
+                if (i != (staHash.size() - 1)) {
+                    out += ", ";
+                }
             }
-            out = out.replaceAll(", $", "");
             out += "}\n";
             System.out.print(out);
 
