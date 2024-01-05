@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 #  Copyright 2023 The original authors
 #
@@ -15,6 +15,5 @@
 #  limitations under the License.
 #
 
-
-JAVA_OPTS=""
-time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_itaske
+JAVA_OPTS="-Xmx16G"
+time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_nstng

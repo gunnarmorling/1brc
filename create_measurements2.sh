@@ -16,5 +16,4 @@
 #
 
 
-JAVA_OPTS=""
-time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_itaske
+java --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CreateMeasurements2 $1

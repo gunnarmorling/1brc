@@ -21,7 +21,12 @@ if [ -z "$1" ]
     exit 1
 fi
 
+java --version
+
 mvn clean verify
+
+rm -f measurements.txt
+ln -s measurements_1B.txt measurements.txt
 
 for i in {1..5}
 do
