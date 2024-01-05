@@ -31,6 +31,7 @@ public class CalculateAverage_truelive {
     private static final String FILE = "./measurements.txt";
     private static final long CHUNK_SIZE = 1024 * 1024 * 10L;
 
+
     private static double getDouble(final byte[] arr, int pos) {
         final int negative = ~(arr[pos] >> 4) & 1;
         int sig = 1;
@@ -155,29 +156,28 @@ public class CalculateAverage_truelive {
         bug.mark();
         String name = null;
         final byte[] arr = new byte[128];
+        int cur = 0;
+        int hash = 0;
         while (bug.hasRemaining()) {
-            final char c = (char) bug.get();
-            if (c == ';') {
-                final int pos = bug.position();
-                bug.reset();
-                final int len = pos - bug.position() - 1;
-                bug.get(bug.position(), arr, 0, len);
-                name = new String(arr, 0, len);
-                bug.position(pos);
-                bug.mark();
+            char c = (char) bug.get();
+            arr[cur++] = (byte) c;
+            while (c != ';') {
+                hash += 31 * hash + c;
+                c = (char) bug.get();
+                arr[cur++] = (byte) c;
             }
-            else if (c == '\n') {
-                final int pos = bug.position();
-                bug.reset();
-                final int len = pos - bug.position();
-                bug.get(bug.position(), arr, 0, len);
-                //final double temp = Double.parseDouble(new String(arr, 0, len));
-                final double temp = getDouble(arr, 0);
-                resultMap.compute(name, (k, v) -> (v == null) ? Measurement.of(temp) : v.add(temp));
-                bug.position(pos);
-                bug.mark();
+            name = new String(arr, 0, cur - 1);
+            cur = 0;
+            hash = 0;
+            while (c != '\n') {
+                c = (char) bug.get();
+                arr[cur++] = (byte) c;
             }
+            final double temp = getDouble(arr, 0);
+            resultMap.compute(name, (k, v) -> (v == null) ? Measurement.of(temp) : v.add(temp));
+            cur = 0;
         }
         return resultMap;
     }
+
 }
