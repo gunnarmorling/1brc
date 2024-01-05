@@ -141,16 +141,6 @@ public class CalculateAverage_arjenvaneerde {
   private static final List<Future<Integer>> futures          = new ArrayList<>(NUM_THREADS);
   private static final Measures[]            measures         = new Measures[NUM_THREADS];
 
-  private static record ResultRow(double min, double mean, double max) {
-    public String toString() {
-      return round(min) + "/" + round(mean) + "/" + round(max);
-    }
-
-    private double round(double value) {
-      return Math.round(value * 10.0) / 10.0;
-    }
-  }
-
   private static class BytesProcessor implements Runnable {
     final Measures measures;
     final byte[]   buffer;
@@ -170,7 +160,7 @@ public class CalculateAverage_arjenvaneerde {
     public void run() {
       int startOfLinePos = startPos;
       int endOfLinePos   = startOfLinePos;
-      int sepPos         = -1;
+      int sepPos;
       // Process all lines
       while (endOfLinePos < endPos) {
         while (buffer[endOfLinePos] != ';') {
