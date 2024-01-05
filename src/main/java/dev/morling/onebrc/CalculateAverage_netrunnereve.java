@@ -28,13 +28,13 @@ public class CalculateAverage_netrunnereve {
 
     private static final String FILE = "./measurements.txt";
 
-    private static record Measurement(String station, double value) {
+    private static record Measurement(String station, float value) {
         private Measurement(String[] parts) {
-            this(parts[0], Double.parseDouble(parts[1]));
+            this(parts[0], Float.parseFloat(parts[1]));
         }
     }
 
-    private static record ResultRow(double min, double mean, double max) {
+    private static record ResultRow(float min, float mean, float max) {
         public String toString() {
             return round(min) + "/" + round(mean) + "/" + round(max);
         }
@@ -45,22 +45,13 @@ public class CalculateAverage_netrunnereve {
     };
 
     private static class MeasurementAggregator {
-        private double min = Double.POSITIVE_INFINITY;
-        private double max = Double.NEGATIVE_INFINITY;
-        private double sum;
+        private float min = Float.POSITIVE_INFINITY;
+        private float max = Float.NEGATIVE_INFINITY;
+        private float sum;
         private long count;
     }
 
     public static void main(String[] args) throws IOException {
-        // Map<String, Double> measurements1 = Files.lines(Paths.get(FILE))
-        // .map(l -> l.split(";"))
-        // .collect(groupingBy(m -> m[0], averagingDouble(m -> Double.parseDouble(m[1]))));
-        //
-        // measurements1 = new TreeMap<>(measurements1.entrySet()
-        // .stream()
-        // .collect(toMap(e -> e.getKey(), e -> Math.round(e.getValue() * 10.0) / 10.0)));
-        // System.out.println(measurements1);
-
         Collector<Measurement, MeasurementAggregator, ResultRow> collector = Collector.of(
                 MeasurementAggregator::new,
                 (a, m) -> {
