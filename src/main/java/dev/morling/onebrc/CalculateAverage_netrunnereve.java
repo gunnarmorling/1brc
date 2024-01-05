@@ -25,9 +25,9 @@ public class CalculateAverage_netrunnereve {
     private static final String FILE = "./measurements.txt";
 
     private static class MeasurementAggregator {
-        private float min = Float.POSITIVE_INFINITY;
-        private float max = Float.NEGATIVE_INFINITY;
-        private float sum = 0;
+        private int min = Integer.MAX_VALUE;
+        private int max = Integer.MIN_VALUE;
+        private int sum = 0;
         private int count = 0;
     }
 
@@ -41,36 +41,35 @@ public class CalculateAverage_netrunnereve {
             while (line != null) {
                 String[] linSpl = line.split(";", 2); // station, measurement
                 String station = linSpl[0];
+                String temperature = linSpl[1];
 
                 MeasurementAggregator ma = staHash.get(station);
                 if (ma == null) {
                     ma = new MeasurementAggregator();
                 }
 
-                float tempa = Float.parseFloat(linSpl[1]);
-                if (tempa < ma.min) {
-                    ma.min = tempa;
+                int tempI = Integer.parseInt(temperature.replace(".", "")); // x10
+                if (tempI < ma.min) {
+                    ma.min = tempI;
                 }
-                if (tempa > ma.max) {
-                    ma.max = tempa;
+                if (tempI > ma.max) {
+                    ma.max = tempI;
                 }
-                ma.sum += tempa;
+                ma.sum += tempI;
                 ma.count++;
 
-                staHash.put(linSpl[0], ma);
+                staHash.put(station, ma);
 
                 line = filBuf.readLine();
             }
 
-            /*
-             * System.out.print("{");
-             * for (String i : staHash.keySet()) {
-             * MeasurementAggregator ma = staHash.get(i);
-             * float avg = ma.sum/ma.count;
-             * System.out.print(i + "=" + ma.min + "/" + avg + "/" + ma.max + ", ");
-             * }
-             * System.out.print("}\n");
-             */
+            System.out.print("{");
+            for (String i : staHash.keySet()) {
+                MeasurementAggregator ma = staHash.get(i);
+                float avg = ma.sum / ma.count;
+                System.out.print(i + "=" + ma.min + "/" + avg + "/" + ma.max + ", ");
+            }
+            System.out.print("}\n");
 
             filBuf.close();
         }
