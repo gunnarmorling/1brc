@@ -16,9 +16,11 @@
 package dev.morling.onebrc;
 
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.TreeMap;
@@ -42,14 +44,12 @@ public class CalculateAverage_iziamos {
 
     public static void main(String[] args) throws Exception {
         // Thread.sleep(10000);
-        final var raf = new RandomAccessFile(FILE, "r");
-        final var fileSize = raf.length();
+        final var channel = (FileChannel) Files.newByteChannel(Path.of(FILE), StandardOpenOption.READ);
 
+        final var fileSize = channel.size();
         final long threadCount = 1 + fileSize / CHUNK_SIZE;
-
-        final FileChannel channel = raf.getChannel();
-
         final PartialResult aggregate = new PartialResult();
+
         final CompletableFuture<?> taskCompleteFutureThing = CompletableFuture.allOf(LongStream.range(0, threadCount)
                 .mapToObj(t -> processSegment(channel, t, CHUNK_SIZE, t == threadCount - 1)
                         .thenAccept(result -> mergeResults(aggregate, result)))
@@ -58,10 +58,11 @@ public class CalculateAverage_iziamos {
         taskCompleteFutureThing.join();
 
         final Map<String, ResultRow> output = new TreeMap<>();
-        aggregate.forEach((name, max, min, sum, count) -> output.put(bytesToString(name), new ResultRow(min, (double) sum / count, max)));
-        System.out.println(output);
 
-        // System.out.println(Arrays.stream(aggregate.counts).sum());
+        aggregate.forEach((name, max, min, sum, count) -> output.put(bytesToString(name), new ResultRow(min, (double) sum / count, max)));
+
+        System.out.println(output);
+//        System.out.println(Arrays.stream(aggregate.counts).sum());
     }
 
     private static void mergeResults(final PartialResult aggregate, final PartialResult result) {
