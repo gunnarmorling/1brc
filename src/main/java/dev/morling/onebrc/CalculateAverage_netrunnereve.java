@@ -34,10 +34,10 @@ public class CalculateAverage_netrunnereve {
 
     public static void main(String[] args) {
         try {
-            HashMap<String, MeasurementAggregator> staHash = new HashMap<String, MeasurementAggregator>();
-
             BufferedReader filBuf = new BufferedReader(new FileReader(FILE));
             String line = filBuf.readLine();
+
+            HashMap<String, MeasurementAggregator> staHash = new HashMap<String, MeasurementAggregator>();
 
             while (line != null) {
                 String[] linSpl = line.split(";", 2); // station, measurement
@@ -46,6 +46,7 @@ public class CalculateAverage_netrunnereve {
                 MeasurementAggregator ma = staHash.get(station);
                 if (ma == null) {
                     ma = new MeasurementAggregator();
+                    staHash.put(linSpl[0], ma);
                 }
 
                 double tempa = Double.parseDouble(linSpl[1]);
@@ -57,8 +58,6 @@ public class CalculateAverage_netrunnereve {
                 }
                 ma.sum += tempa;
                 ma.count++;
-
-                staHash.put(linSpl[0], ma);
 
                 line = filBuf.readLine();
             }
