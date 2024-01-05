@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 #
 #  Copyright 2023 The original authors
 #
@@ -15,19 +15,7 @@
 #  limitations under the License.
 #
 
-set -euo pipefail
 
-if [ -z "$1" ]; then
-  echo "Usage: test.sh <fork name>"
-  exit 1
-fi
+JAVA_OPTS="-Xnoclassgc -Xms16G -Xmx16G"
 
-for sample in $(ls src/test/resources/samples/*.txt); do
-  echo "Validating calculate_average_$1.sh -- $sample"
-
-  rm -f measurements.txt
-  ln -s $sample measurements.txt
-
-  diff <("./calculate_average_$1.sh") ${sample%.txt}.out
-done
-rm measurements.txt
+time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_fatroom

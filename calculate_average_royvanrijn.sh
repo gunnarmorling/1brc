@@ -15,7 +15,7 @@
 #  limitations under the License.
 #
 
-
+sdk use java 21.0.1-graal
 # Added for fun, doesn't seem to be making a difference...
 if [ -f "target/calculate_average_royvanrijn.jsa" ]; then
     JAVA_OPTS="-XX:SharedArchiveFile=target/calculate_average_royvanrijn.jsa -Xshare:on"
