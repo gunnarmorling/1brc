@@ -98,7 +98,7 @@ public class CalculateAverage_yavuztas {
         static final byte SEMI_COLON = 59; // ';'
         static final byte LINE_BREAK = 10; // '\n'
 
-        final byte[] workBuffer = new byte[64]; // assuming max 64 bytes for a row is enough
+        final byte[] workBuffer = new byte[128]; // assuming max 128 bytes for a row is enough
 
         long startPos;
         long size;
@@ -280,9 +280,7 @@ public class CalculateAverage_yavuztas {
         }
 
         final TreeMap<String, Measurement> sorted = new TreeMap<>();
-        output.forEach((s, measurement) -> {
-            sorted.put(s.toString(), measurement);
-        });
+        output.forEach((s, measurement) -> sorted.put(s.toString(), measurement));
         System.out.println(sorted);
     }
 
