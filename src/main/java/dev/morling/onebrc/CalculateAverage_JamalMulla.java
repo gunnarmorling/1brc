@@ -125,8 +125,9 @@ public class CalculateAverage_JamalMulla {
 
         @Override
         public void run() {
-            StringBuilder nameSb = new StringBuilder();
-            StringBuilder valSb = new StringBuilder();
+            // no names bigger than this
+            byte[] nameBytes = new byte[127];
+            byte[] valBytes = new byte[127];
             boolean inName = true;
             MappedByteBuffer mappedByteBuffer;
             try {
@@ -135,18 +136,18 @@ public class CalculateAverage_JamalMulla {
             catch (IOException e) {
                 throw new RuntimeException(e);
             }
-            CharBuffer cb = StandardCharsets.UTF_8.decode(mappedByteBuffer);
-            int index = 0;
-            while (cb.hasRemaining()) {
-                char c = cb.get();
-                if (c == ';') {
+            short nameIndex = 0;
+            short valIndex = 0;
+            while (mappedByteBuffer.hasRemaining()) {
+                byte c = mappedByteBuffer.get();
+                if (c == 0x3B /* Semicolon */) {
                     // no longer in name
                     inName = false;
                 }
-                else if (c == '\n') {
+                else if (c == 0xA /* Newline */) {
                     // back to name and reset buffers at end
-                    String name = nameSb.toString();
-                    double t = Double.parseDouble(valSb.toString());
+                    String name = new String(nameBytes, 0, nameIndex, StandardCharsets.UTF_8);
+                    double t = Double.parseDouble(new String(valBytes, 0, valIndex, StandardCharsets.UTF_8));
                     if (results.containsKey(name)) {
                         ResultRow rr = results.get(name);
                         rr.min = Math.min(rr.min, t);
@@ -158,16 +159,15 @@ public class CalculateAverage_JamalMulla {
                         results.put(name, new ResultRow(t));
                     }
                     inName = true;
-                    nameSb.setLength(0);
-                    valSb.setLength(0);
+                    nameIndex = 0;
+                    valIndex = 0;
                 }
                 else if (inName) {
-                    nameSb.append(c);
+                    nameBytes[nameIndex++] = c;
                 }
                 else {
-                    valSb.append(c);
+                    valBytes[valIndex++] = c;
                 }
-                index++;
             }
         }
     }
