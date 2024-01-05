@@ -219,19 +219,20 @@ public class CalculateAverage_seijikun {
         out.println('}');
     }
 
-    public static void main(String[] args) throws IOException, InterruptedException {
-        RandomAccessFile file = new RandomAccessFile(FILE, "r");
+    private static int createChunks(final RandomAccessFile file, final ChunkReader[] chunks) throws IOException {
+        final long fileEndPtr = file.length();
+        final long chunkSize = Math.max(1, fileEndPtr / chunks.length);
 
-        int jobCnt = Runtime.getRuntime().availableProcessors();
-
-        final var chunks = new ChunkReader[jobCnt];
-        final long chunkSize = file.length() / jobCnt;
+        int jobCnt = 0;
         long chunkStartPtr = 0;
         final byte[] tmpBuffer = new byte[128];
-        for (int i = 0; i < jobCnt; ++i) {
-            long chunkEndPtr = chunkStartPtr + chunkSize;
-            if (i != (jobCnt - 1)) { // align chunks to newlines
-                file.seek(chunkEndPtr - 1);
+        while (chunkStartPtr < fileEndPtr) {
+            long chunkEndPtr = Math.min(chunkStartPtr + chunkSize, fileEndPtr);
+
+            // Seek into file at the calculated chunk end ptr, then extend it until the next
+            // new-line or EOF
+            if (chunkEndPtr < fileEndPtr) {
+                file.seek(Math.max(0, chunkEndPtr - 1));
                 file.read(tmpBuffer);
                 int offset = 0;
                 while (tmpBuffer[offset] != '\n') {
@@ -239,16 +240,21 @@ public class CalculateAverage_seijikun {
                 }
                 chunkEndPtr += offset;
             }
-            else { // last chunk ends at file end
-                chunkEndPtr = file.length();
-            }
-            chunks[i] = new ChunkReader(file, chunkStartPtr, chunkEndPtr);
+
+            chunks[jobCnt] = new ChunkReader(file, chunkStartPtr, chunkEndPtr);
+            jobCnt += 1;
             chunkStartPtr = chunkEndPtr;
-            if (chunkEndPtr == file.length()) {
-                jobCnt = i + 1;
-                break;
-            }
         }
+        return jobCnt;
+    }
+
+    public static void main(String[] args) throws IOException, InterruptedException {
+        final RandomAccessFile file = new RandomAccessFile(FILE, "r");
+
+        int jobCnt = Runtime.getRuntime().availableProcessors();
+
+        final var chunks = new ChunkReader[jobCnt];
+        jobCnt = createChunks(file, chunks);
 
         try (final var executor = Executors.newFixedThreadPool(jobCnt)) {
             for (int i = 0; i < jobCnt; ++i) {
