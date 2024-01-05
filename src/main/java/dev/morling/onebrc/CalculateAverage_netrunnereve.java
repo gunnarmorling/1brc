@@ -26,7 +26,6 @@ public class CalculateAverage_netrunnereve {
     private static final String FILE = "./measurements.txt";
 
     private static class MeasurementAggregator {
-        private String station = "";
         private short min = Short.MAX_VALUE;
         private short max = Short.MIN_VALUE;
         private long sum = 0;
@@ -38,25 +37,16 @@ public class CalculateAverage_netrunnereve {
             BufferedReader filBuf = new BufferedReader(new FileReader(FILE));
             String line = filBuf.readLine();
 
-            MeasurementAggregator[] maArr = new MeasurementAggregator[10000];
-            int maCnt = 0;
+            HashMap<String, MeasurementAggregator> staHash = new HashMap<String, MeasurementAggregator>();
 
             while (line != null) {
                 String[] linSpl = line.split(";", 2); // station, measurement
                 String station = linSpl[0];
 
-                MeasurementAggregator ma = null;
-                for (int i = 0; i < maCnt; i++) {
-                    if (station.equals(maArr[i].station)) {
-                        ma = maArr[i];
-                        break;
-                    }
-                }
+                MeasurementAggregator ma = staHash.get(station);
                 if (ma == null) {
                     ma = new MeasurementAggregator();
-                    ma.station = station;
-                    maArr[maCnt] = ma;
-                    maCnt++;
+                    staHash.put(station, ma);
                 }
 
                 short tempa = Short.parseShort(linSpl[1].replace(".", "")); // x10
@@ -72,29 +62,27 @@ public class CalculateAverage_netrunnereve {
                 line = filBuf.readLine();
             }
 
-            /*
-             * String[] staArr = new String[staHash.size()];
-             * int j = 0;
-             * for (String i : staHash.keySet()) {
-             * staArr[j] = i;
-             * j++;
-             * }
-             * Arrays.sort(staArr);
-             * 
-             * String out = "{";
-             * for (int i = 0; i < staHash.size(); i++) {
-             * MeasurementAggregator ma = staHash.get(staArr[i]);
-             * double min = Math.round(Double.valueOf(ma.min)) / 10.0;
-             * double avg = Math.round(Double.valueOf(ma.sum) / Double.valueOf(ma.count)) / 10.0;
-             * double max = Math.round(Double.valueOf(ma.max)) / 10.0;
-             * out += staArr[i] + "=" + min + "/" + avg + "/" + max;
-             * if (i != (staHash.size() - 1)) {
-             * out += ", ";
-             * }
-             * }
-             * out += "}\n";
-             * System.out.print(out);
-             */
+            String[] staArr = new String[staHash.size()];
+            int j = 0;
+            for (String i : staHash.keySet()) {
+                staArr[j] = i;
+                j++;
+            }
+            Arrays.sort(staArr);
+
+            String out = "{";
+            for (int i = 0; i < staHash.size(); i++) {
+                MeasurementAggregator ma = staHash.get(staArr[i]);
+                double min = Math.round(Double.valueOf(ma.min)) / 10.0;
+                double avg = Math.round(Double.valueOf(ma.sum) / Double.valueOf(ma.count)) / 10.0;
+                double max = Math.round(Double.valueOf(ma.max)) / 10.0;
+                out += staArr[i] + "=" + min + "/" + avg + "/" + max;
+                if (i != (staHash.size() - 1)) {
+                    out += ", ";
+                }
+            }
+            out += "}\n";
+            System.out.print(out);
 
             filBuf.close();
         }
