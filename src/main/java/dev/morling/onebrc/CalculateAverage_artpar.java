@@ -19,8 +19,8 @@ import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
 
-import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
@@ -51,10 +51,10 @@ public class CalculateAverage_artpar {
 
         long expectedChunkSize = fileSize / N_THREADS;
 
-        ExecutorService threadPool = Executors.newFixedThreadPool(N_THREADS);
+        ExecutorService threadPool = Executors.newVirtualThreadPerTaskExecutor();
 
         long chunkStartPosition = 0;
-        FileInputStream fis = new FileInputStream(measurementFile.toFile());
+        RandomAccessFile fis = new RandomAccessFile(measurementFile.toFile(), "r");
         List<Future<Map<String, MeasurementAggregator>>> futures = new ArrayList<>();
         long bytesReadCurrent = 0;
 
@@ -62,7 +62,7 @@ public class CalculateAverage_artpar {
             for (int i = 0; i < N_THREADS; i++) {
 
                 long chunkSize = expectedChunkSize;
-                chunkSize = fis.skip(chunkSize);
+                chunkSize = fis.skipBytes(Math.toIntExact(chunkSize));
 
                 bytesReadCurrent += chunkSize;
                 while (((char) fis.read()) != '\n' && bytesReadCurrent < fileSize) {
@@ -83,6 +83,7 @@ public class CalculateAverage_artpar {
 
                 ReaderRunnable readerRunnable = new ReaderRunnable(mappedByteBuffer);
                 Future<Map<String, MeasurementAggregator>> future = threadPool.submit(readerRunnable::run);
+                // System.out.println("Added future [" + chunkStartPosition + "][" + chunkSize + "]");
                 futures.add(future);
                 chunkStartPosition = chunkStartPosition + chunkSize + 1;
             }
@@ -97,8 +98,7 @@ public class CalculateAverage_artpar {
                     catch (InterruptedException | ExecutionException e) {
                         throw new RuntimeException(e);
                     }
-                })
-                .collect(Collectors.toConcurrentMap(
+                }).parallel().collect(Collectors.toMap(
                         Map.Entry::getKey, Map.Entry::getValue,
                         MeasurementAggregator::combine));
 
@@ -214,6 +214,14 @@ public class CalculateAverage_artpar {
             return this;
         }
 
+        MeasurementAggregator combine(double value) {
+            min = Math.min(min, value);
+            max = Math.max(max, value);
+            sum += value;
+            count += 1;
+            return this;
+        }
+
         ResultRow finish() {
             double mean = (count > 0) ? sum / count : 0;
             return new ResultRow(min, mean, max, count, sum);
@@ -230,6 +238,8 @@ public class CalculateAverage_artpar {
         }
 
         public Map<String, MeasurementAggregator> run() {
+            // System.out.println("Started future - " + mappedByteBuffer.position());
+
             long start = Date.from(Instant.now()).getTime();
             int totalBytesRead = 0;
 
@@ -283,92 +293,93 @@ public class CalculateAverage_artpar {
                         bufferIndex = 0;
 
                         // Measurement measurement = new Measurement(matchedStation, doubleValue);
-                        int[] array = matchedStation.values;
+                        // int[] array = matchedStation.values;
                         int index = matchedStation.count;
-                        array[index] = doubleValue;
-                        if (index == VECTOR_SIZE_1) {
-
-                            int i = 0;
-                            double min = Double.POSITIVE_INFINITY;
-                            double max = Double.NEGATIVE_INFINITY;
-                            double sum = 0;
-                            long count = 0;
-                            for (; i < SPECIES.loopBound(array.length); i += SPECIES.length()) {
-                                // Vector operations
-                                IntVector vector = IntVector.fromArray(SPECIES, array, i);
-                                min = Math.min(min, vector.reduceLanes(VectorOperators.MIN));
-                                max = Math.max(max, vector.reduceLanes(VectorOperators.MAX));
-                                sum += vector.reduceLanes(VectorOperators.ADD);
-                                count += vector.length();
-                            }
-
-                            for (; i < array.length; i++) {
-                                min = Math.min(min, array[i]);
-                                max = Math.max(max, array[i]);
-                                sum += array[i];
-                                count++;
-                            }
-
-                            matchedStation.measurementAggregator.combine(min, max, sum, count);
-
-                            matchedStation.count = 0;
-                            continue;
-                        }
+                        matchedStation.measurementAggregator.combine(doubleValue);
+                        // array[index] = doubleValue;
+                        // if (index == VECTOR_SIZE_1) {
+                        //
+                        // int i = 0;
+                        // double min = Double.POSITIVE_INFINITY;
+                        // double max = Double.NEGATIVE_INFINITY;
+                        // double sum = 0;
+                        // long count = 0;
+                        // for (; i < SPECIES.loopBound(array.length); i += SPECIES.length()) {
+                        // // Vector operations
+                        // IntVector vector = IntVector.fromArray(SPECIES, array, i);
+                        // min = Math.min(min, vector.reduceLanes(VectorOperators.MIN));
+                        // max = Math.max(max, vector.reduceLanes(VectorOperators.MAX));
+                        // sum += vector.reduceLanes(VectorOperators.ADD);
+                        // count += vector.length();
+                        // }
+                        //
+                        // for (; i < array.length; i++) {
+                        // min = Math.min(min, array[i]);
+                        // max = Math.max(max, array[i]);
+                        // sum += array[i];
+                        // count++;
+                        // }
+                        //
+                        // matchedStation.measurementAggregator.combine(min, max, sum, count);
+                        //
+                        // matchedStation.count = 0;
+                        // continue;
+                        // }
                         matchedStation.count++;
                     }
                 }
 
             }
 
-            Arrays.stream(stationNameMap.names)
-                    .filter(Objects::nonNull)
-                    .parallel()
-                    .forEach(stationName -> {
-                        int count = stationName.count;
-                        if (count < 1) {
-                            return;
-                        }
-                        else if (count == 1) {
-                            int[] array = stationName.values;
-                            double val = array[0];
-                            MeasurementAggregator ma = new MeasurementAggregator(val, val, val, 1);
-                            stationName.measurementAggregator.combine(ma);
-                        }
-                        else {
-                            int[] array = stationName.values;
-                            int[] subArray = new int[count];
-                            System.arraycopy(array, 0, subArray, 0, count);
-                            // Creating a DoubleVector from the array
-                            // System.out.println("Create vector from [" + count + "] -> " + subArray.length);
-
-                            int i = 0;
-                            double min = Double.POSITIVE_INFINITY;
-                            double max = Double.NEGATIVE_INFINITY;
-                            double sum = 0;
-                            long subCount = 0;
-
-                            for (; i < SPECIES.loopBound(subArray.length); i += SPECIES.length()) {
-                                // Vector operations
-                                IntVector vector = IntVector.fromArray(SPECIES, subArray, i);
-                                min = Math.min(min, vector.reduceLanes(VectorOperators.MIN));
-                                max = Math.max(max, vector.reduceLanes(VectorOperators.MAX));
-                                sum += vector.reduceLanes(VectorOperators.ADD);
-                                subCount += vector.length();
-                            }
-
-                            for (; i < subArray.length; i++) {
-                                min = Math.min(min, subArray[i]);
-                                max = Math.max(max, subArray[i]);
-                                sum += subArray[i];
-                                subCount++;
-                            }
-
-                            MeasurementAggregator ma = new MeasurementAggregator(min, max, sum, subCount);
-                            stationName.measurementAggregator.combine(ma);
-                        }
-
-                        stationName.count = 0;
-                    });
+            // Arrays.stream(stationNameMap.names)
+            // .filter(Objects::nonNull)
+            // .parallel()
+            // .forEach(stationName -> {
+            // int count = stationName.count;
+            // if (count < 1) {
+            // return;
+            // }
+            // else if (count == 1) {
+            // int[] array = stationName.values;
+            // double val = array[0];
+            // MeasurementAggregator ma = new MeasurementAggregator(val, val, val, 1);
+            // stationName.measurementAggregator.combine(ma);
+            // }
+            // else {
+            // int[] array = stationName.values;
+            // int[] subArray = new int[count];
+            // System.arraycopy(array, 0, subArray, 0, count);
+            // // Creating a DoubleVector from the array
+            // // System.out.println("Create vector from [" + count + "] -> " + subArray.length);
+            //
+            // int i = 0;
+            // double min = Double.POSITIVE_INFINITY;
+            // double max = Double.NEGATIVE_INFINITY;
+            // double sum = 0;
+            // long subCount = 0;
+            //
+            // for (; i < SPECIES.loopBound(subArray.length); i += SPECIES.length()) {
+            // // Vector operations
+            // IntVector vector = IntVector.fromArray(SPECIES, subArray, i);
+            // min = Math.min(min, vector.reduceLanes(VectorOperators.MIN));
+            // max = Math.max(max, vector.reduceLanes(VectorOperators.MAX));
+            // sum += vector.reduceLanes(VectorOperators.ADD);
+            // subCount += vector.length();
+            // }
+            //
+            // for (; i < subArray.length; i++) {
+            // min = Math.min(min, subArray[i]);
+            // max = Math.max(max, subArray[i]);
+            // sum += subArray[i];
+            // subCount++;
+            // }
+            //
+            // MeasurementAggregator ma = new MeasurementAggregator(min, max, sum, subCount);
+            // stationName.measurementAggregator.combine(ma);
+            // }
+            //
+            // stationName.count = 0;
+            // });
 
             // for (StationName stationName : stationNameMap.names) {
             // if (stationName == null) {
@@ -393,7 +404,7 @@ public class CalculateAverage_artpar {
         private final String name;
         private final int index;
         public int count = 0;
-        public int[] values = new int[VECTOR_SIZE];
+        // public int[] values = new int[VECTOR_SIZE];
         public MeasurementAggregator measurementAggregator = new MeasurementAggregator();
 
         public StationName(String name, int index, int hash) {
