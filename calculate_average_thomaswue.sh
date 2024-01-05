@@ -15,8 +15,8 @@
 #  limitations under the License.
 #
 
-NATIVE_IMAGE_OPTS="--gc=epsilon -O3 -march=native"
-JAVA_OPTS=""
+NATIVE_IMAGE_OPTS="--gc=epsilon -O3 -march=native --enable-preview"
+JAVA_OPTS="--enable-preview"
 
 if [ -z "${JVM_MODE}" ]; then
     # Chosing native image mode, set JVM_MODE variable to select JVM mode.
