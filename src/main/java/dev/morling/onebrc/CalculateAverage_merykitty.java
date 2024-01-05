@@ -215,7 +215,8 @@ public class CalculateAverage_merykitty {
 
         long currOffset = offset;
         while (true) {
-            long semicolonPos = Long.numberOfTrailingZeros(semicolons);
+            int localOffset = (int) (currOffset - offset);
+            long semicolonPos = Long.numberOfTrailingZeros(semicolons) - localOffset;
             int hash = data.get(ValueLayout.JAVA_INT_UNALIGNED, currOffset);
             if (semicolonPos < Integer.BYTES) {
                 hash = (byte) hash;
@@ -245,7 +246,6 @@ public class CalculateAverage_merykitty {
                     continue;
                 }
 
-                int localOffset = (int) (currOffset - offset);
                 var nodeKey = ByteVector.fromArray(BYTE_SPECIES, node.data, BYTE_SPECIES.length() - localOffset);
                 var eqMask = line.compare(VectorOperators.EQ, nodeKey).toLong();
                 long validMask = (-1L >>> -semicolonPos) << localOffset;
@@ -256,7 +256,7 @@ public class CalculateAverage_merykitty {
             }
 
             long nextOffset = parseDataPoint(aggr, data, currOffset + 1 + semicolonPos);
-            semicolons >>>= (nextOffset - currOffset);
+            semicolons &= (semicolons - 1);
             if (semicolons == 0) {
                 return nextOffset;
             }
@@ -279,8 +279,8 @@ public class CalculateAverage_merykitty {
             return aggrMap;
         }
 
-        while (offset < Math.min(limit, data.byteSize() - Math.max(BYTE_SPECIES.vectorByteSize(),
-                Long.BYTES + 1 + KEY_MAX_SIZE))) {
+        while (offset < limit - Math.max(BYTE_SPECIES.vectorByteSize(),
+                Long.BYTES + 1 + KEY_MAX_SIZE)) {
             offset = iterate(aggrMap, data, offset);
         }
 
