@@ -21,10 +21,7 @@ import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -56,8 +53,8 @@ public class CalculateAverage_entangled90 {
 class AggregatedProcessor {
     public double max = Double.NEGATIVE_INFINITY;
     public double min = Double.POSITIVE_INFINITY;
-    private double sum = 0D;
-    private long count = 0L;
+    private double sum = 0L;
+    public long count = 0L;
 
     public void addMeasure(double value) {
         max = Math.max(max, value);
@@ -77,9 +74,13 @@ class AggregatedProcessor {
         return sum / count;
     }
 
+    private static double round(double d) {
+        return Math.round(d * 10.0) / 10.0;
+    }
+
     @Override
     public String toString() {
-        return String.format(Locale.US, "%.1f/%.1f/%.1f", min, mean(), max);
+        return String.format(Locale.US, "%.1f/%.1f/%.1f", round(min), round(mean()), round(max));
     }
 }
 
@@ -224,7 +225,7 @@ class ChunkProcessor implements Consumer<ByteBuffer> {
         return -1;
     }
 
-    // parses double untile new line and advances buffer
+    // parses double until new line and advances buffer
     private static double parseDoubleNewLine(ByteBuffer bb) {
         int result = 0;
         int sign = 1;
