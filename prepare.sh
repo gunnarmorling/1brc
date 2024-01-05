@@ -15,9 +15,22 @@
 #  limitations under the License.
 #
 
-# Uncomment below to use sdk
-# source "$HOME/.sdkman/bin/sdkman-init.sh"
-# sdk use java 21.0.1-graal 1>&2
+set -x
 
-JAVA_OPTS=""
-time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage
+if [ -z "$1" ]
+  then
+    echo "Usage: prepare.sh <fork name>:<branch name>"
+    exit 1
+fi
+
+parts=(${1//:/ })
+echo "  User: ${parts[0]}"
+echo "Branch: ${parts[1]}"
+
+git branch -D ${parts[0]} &>/dev/null
+
+git checkout -b ${parts[0]}
+git fetch https://github.com/${parts[0]}/1brc.git ${parts[1]}
+# git fetch git@github.com:${parts[0]}/1brc.git ${parts[1]}
+git reset --hard FETCH_HEAD
+git rebase main

@@ -21,13 +21,17 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Changelog:
@@ -44,6 +48,8 @@ import java.util.stream.Collectors;
  * Improved String skip:        3250 ms
  * Segmenting files:            3150 ms (based on spullara's code)
  * Not using SWAR for EOL:      2850 ms
+ * Inlining hash calculation:   2450 ms
+ * Replacing branchless code:   2200 ms (sometimes we need to kill the things we love)
  *
  * Best performing JVM on MacBook M2 Pro: 21.0.1-graal
  * `sdk use java 21.0.1-graal`
@@ -52,15 +58,15 @@ import java.util.stream.Collectors;
 public class CalculateAverage_royvanrijn {
 
     private static final String FILE = "./measurements.txt";
+    // private static final String FILE = "./src/test/resources/samples/measurements-10000-unique-keys.txt";
 
-    // mutable state now instead of records, ugh, less instantiation.
     static final class Measurement {
         int min, max, count;
         long sum;
 
         public Measurement() {
-            this.min = 10000;
-            this.max = -10000;
+            this.min = 1000;
+            this.max = -1000;
         }
 
         public Measurement updateWith(int measurement) {
@@ -88,8 +94,9 @@ public class CalculateAverage_royvanrijn {
         }
     }
 
-    public static final void main(String[] args) throws Exception {
+    public static void main(String[] args) throws Exception {
         new CalculateAverage_royvanrijn().run();
+        // new CalculateAverage_royvanrijn().runTests();
     }
 
     private void run() throws Exception {
@@ -99,52 +106,68 @@ public class CalculateAverage_royvanrijn {
             long segmentEnd = segment.end();
             try (var fileChannel = (FileChannel) Files.newByteChannel(Path.of(FILE), StandardOpenOption.READ)) {
                 var bb = fileChannel.map(FileChannel.MapMode.READ_ONLY, segment.start(), segmentEnd - segment.start());
-                var buffer = new byte[64];
 
-                // Force little endian:
-                bb.order(ByteOrder.LITTLE_ENDIAN);
+                // Work with any UTF-8 city name, up to 100 in length:
+                var cityNameAsLongArray = new long[16];
+                var delimiterPointerAndHash = new int[2];
 
-                BitTwiddledMap measurements = new BitTwiddledMap();
+                // Calculate using native ordering (fastest?):
+                bb.order(ByteOrder.nativeOrder());
+
+                // Record the order it is and calculate accordingly:
+                final boolean bufferIsBigEndian = bb.order().equals(ByteOrder.BIG_ENDIAN);
+                MeasurementRepository measurements = new MeasurementRepository();
 
                 int startPointer;
                 int limit = bb.limit();
                 while ((startPointer = bb.position()) < limit) {
 
-                    // SWAR is faster for ';'
-                    int separatorPointer = findNextSWAR(bb, SEPARATOR_PATTERN, startPointer + 3, limit);
+                    int delimiterPointer, endPointer;
 
-                    // Simple is faster for '\n' (just three options)
-                    int endPointer;
-                    if (bb.get(separatorPointer + 4) == '\n') {
-                        endPointer = separatorPointer + 4;
+                    // SWAR method to find delimiter *and* record the cityname as long[] *and* calculate a hash:
+                    findNextDelimiterAndCalculateHash(bb, SEPARATOR_PATTERN, startPointer, limit, delimiterPointerAndHash, cityNameAsLongArray, bufferIsBigEndian);
+                    delimiterPointer = delimiterPointerAndHash[0];
+
+                    // Simple lookup is faster for '\n' (just three options)
+                    if (delimiterPointer >= limit) {
+                        return measurements;
                     }
-                    else if (bb.get(separatorPointer + 5) == '\n') {
-                        endPointer = separatorPointer + 5;
+                    // Extract the measurement value (10x):
+                    final int cityNameLength = delimiterPointer - startPointer;
+
+                    int measuredValue;
+                    int neg = 1;
+                    if (bb.get(++delimiterPointer) == '-') {
+                        neg = -1;
+                        delimiterPointer++;
+                    }
+                    byte dot;
+                    if ((dot = (bb.get(delimiterPointer + 1))) == '.') {
+                        measuredValue = neg * ((bb.get(delimiterPointer)) * 10 + (bb.get(delimiterPointer + 2)) - 528);
+                        endPointer = delimiterPointer + 3;
                     }
                     else {
-                        endPointer = separatorPointer + 6;
+                        measuredValue = neg * (bb.get(delimiterPointer) * 100 + dot * 10 + bb.get(delimiterPointer + 3) - 5328);
+                        endPointer = delimiterPointer + 4;
                     }
 
-                    // Read the entry in a single get():
-                    bb.get(buffer, 0, endPointer - startPointer);
-                    bb.position(endPointer + 1); // skip to next line.
+                    // Store everything in a custom hashtable:
+                    measurements.update(cityNameAsLongArray, bb, cityNameLength, delimiterPointerAndHash[1]).updateWith(measuredValue);
 
-                    // Extract the measurement value (10x):
-                    final int nameLength = separatorPointer - startPointer;
-                    final int valueLength = endPointer - separatorPointer - 1;
-                    final int measured = branchlessParseInt(buffer, nameLength + 1, valueLength);
-                    measurements.getOrCreate(buffer, nameLength).updateWith(measured);
+                    bb.position(endPointer + 1); // skip to next line.
                 }
                 return measurements;
             }
             catch (IOException e) {
                 throw new RuntimeException(e);
             }
-        }).parallel().flatMap(v -> v.values.stream())
-                .collect(Collectors.toMap(e -> new String(e.key), BitTwiddledMap.Entry::measurement, (m1, m2) -> m1.updateWith(m2), TreeMap::new));
+        }).parallel()
+                .flatMap(v -> v.get())
+                .collect(Collectors.toMap(e -> e.cityName, MeasurementRepository.Entry::measurement, Measurement::updateWith, TreeMap::new));
 
-        // Seems to perform better than actually using a TreeMap:
         System.out.println(results);
+
+        // System.out.println("Processed: " + results.entrySet().stream().mapToLong(e -> e.getValue().count).sum());
     }
 
     /**
@@ -152,91 +175,93 @@ public class CalculateAverage_royvanrijn {
      */
     private static final long SEPARATOR_PATTERN = compilePattern((byte) ';');
 
-    private int findNextSWAR(ByteBuffer bb, long pattern, int start, int limit) {
+    /**
+     * Already looping the longs here, lets shoehorn in making a hash
+     */
+    private void findNextDelimiterAndCalculateHash(final ByteBuffer bb, final long pattern, final int start, final int limit, final int[] output,
+                                                   final long[] asLong, final boolean bufferBigEndian) {
+        int hash = 1;
         int i;
+        int lCnt = 0;
         for (i = start; i <= limit - 8; i += 8) {
             long word = bb.getLong(i);
-            int index = firstAnyPattern(word, pattern);
-            if (index < Long.BYTES) {
-                return i + index;
+            if (bufferBigEndian) {
+                word = Long.reverseBytes(word); // Reversing the bytes is the cheapest way to do this
             }
+            final long match = word ^ pattern;
+            long mask = ((match - 0x0101010101010101L) & ~match) & 0x8080808080808080L;
+
+            if (mask != 0) {
+                final int index = Long.numberOfTrailingZeros(mask) >> 3;
+                output[0] = (i + index);
+
+                final long partialHash = word & ((mask >> 7) - 1);
+                asLong[lCnt] = partialHash;
+                output[1] = longHashStep(hash, partialHash);
+                return;
+            }
+            asLong[lCnt++] = word;
+            hash = longHashStep(hash, word);
         }
-        // Handle remaining bytes
+        // Handle remaining bytes near the limit of the buffer:
+        long partialHash = 0;
+        int len = 0;
         for (; i < limit; i++) {
-            if (bb.get(i) == (byte) pattern) {
-                return i;
+            byte read;
+            if ((read = bb.get(i)) == (byte) pattern) {
+                asLong[lCnt] = partialHash;
+                output[0] = i;
+                output[1] = longHashStep(hash, partialHash);
+                return;
             }
+            partialHash = partialHash | ((long) read << (len << 3));
+            len++;
         }
-        return limit; // delimiter not found
+        output[0] = limit; // delimiter not found
     }
 
-    private static long compilePattern(byte value) {
+    private static int longHashStep(final int hash, final long word) {
+        return 31 * hash + (int) (word ^ (word >>> 32));
+    }
+
+    private static long compilePattern(final byte value) {
         return ((long) value << 56) | ((long) value << 48) | ((long) value << 40) | ((long) value << 32) |
                 ((long) value << 24) | ((long) value << 16) | ((long) value << 8) | (long) value;
-    }
-
-    private static int firstAnyPattern(long word, long pattern) {
-        final long match = word ^ pattern;
-        long mask = match - 0x0101010101010101L;
-        mask &= ~match;
-        mask &= 0x8080808080808080L;
-        return Long.numberOfTrailingZeros(mask) >>> 3;
     }
 
     record FileSegment(long start, long end) {
     }
 
-    /** Using this way to segment the file is much prettier, from spullara */
-    private static List<FileSegment> getFileSegments(File file) throws IOException {
+    private static List<FileSegment> getFileSegments(final File file) throws IOException {
         final int numberOfSegments = Runtime.getRuntime().availableProcessors();
         final long fileSize = file.length();
         final long segmentSize = fileSize / numberOfSegments;
         final List<FileSegment> segments = new ArrayList<>();
+        if (segmentSize < 1000) {
+            segments.add(new FileSegment(0, fileSize));
+            return segments;
+        }
         try (RandomAccessFile randomAccessFile = new RandomAccessFile(file, "r")) {
-            for (int i = 0; i < numberOfSegments; i++) {
-                long segStart = i * segmentSize;
-                long segEnd = (i == numberOfSegments - 1) ? fileSize : segStart + segmentSize;
-                segStart = findSegment(i, 0, randomAccessFile, segStart, segEnd);
-                segEnd = findSegment(i, numberOfSegments - 1, randomAccessFile, segEnd, fileSize);
-
+            long segStart = 0;
+            long segEnd = segmentSize;
+            while (segStart < fileSize) {
+                segEnd = findSegment(randomAccessFile, segEnd, fileSize);
                 segments.add(new FileSegment(segStart, segEnd));
+                segStart = segEnd; // Just re-use the end and go from there.
+                segEnd = Math.min(fileSize, segEnd + segmentSize);
             }
         }
         return segments;
     }
 
-    private static long findSegment(int i, int skipSegment, RandomAccessFile raf, long location, long fileSize) throws IOException {
-        if (i != skipSegment) {
-            raf.seek(location);
-            while (location < fileSize) {
-                location++;
-                if (raf.read() == '\n')
-                    return location;
-            }
+    private static long findSegment(RandomAccessFile raf, long location, final long fileSize) throws IOException {
+        raf.seek(location);
+        while (location < fileSize) {
+            location++;
+            if (raf.read() == '\n')
+                return location;
         }
         return location;
-    }
-
-    /**
-     * Branchless parser, goes from String to int (10x):
-     * "-1.2" to -12
-     * "40.1" to 401
-     * etc.
-     *
-     * @param input
-     * @return int value x10
-     */
-    private static int branchlessParseInt(final byte[] input, int start, int length) {
-        // 0 if positive, 1 if negative
-        final int negative = ~(input[start] >> 4) & 1;
-        // 0 if nr length is 3, 1 if length is 4
-        final int has4 = ((length - negative) >> 2) & 1;
-
-        final int digit1 = input[start + negative] - '0';
-        final int digit2 = input[start + negative + has4];
-        final int digit3 = input[start + negative + has4 + 2];
-
-        return (-negative ^ (has4 * (digit1 * 100) + digit2 * 10 + digit3 - 528) - negative); // 528 == ('0' * 10 + '0')
     }
 
     // branchless max (unprecise for large numbers, but good enough)
@@ -258,66 +283,138 @@ public class CalculateAverage_royvanrijn {
      *
      * So I've written an extremely simple linear probing hashmap that should work well enough.
      */
-    class BitTwiddledMap {
-        private static final int SIZE = 16384; // A bit larger than the number of keys, needs power of two
-        private int[] indices = new int[SIZE]; // Hashtable is just an int[]
+    class MeasurementRepository {
+        private int tableSize = 1 << 20; // can grow in theory, made large enough not to (this is faster)
+        private int tableMask = (tableSize - 1);
+        private int tableLimit = (int) (tableSize * LOAD_FACTOR);
+        private int tableFilled = 0;
+        private static final float LOAD_FACTOR = 0.8f;
 
-        BitTwiddledMap() {
-            // Optimized fill with -1, fastest method:
-            int len = indices.length;
-            if (len > 0) {
-                indices[0] = -1;
-            }
-            // Value of i will be [1, 2, 4, 8, 16, 32, ..., len]
-            for (int i = 1; i < len; i += i) {
-                System.arraycopy(indices, 0, indices, i, i);
-            }
-        }
+        private Entry[] table = new Entry[tableSize];
 
-        private List<Entry> values = new ArrayList<>(512);
-
-        record Entry(int hash, byte[] key, Measurement measurement) {
+        record Entry(int hash, long[] nameBytesInLong, String cityName, Measurement measurement) {
             @Override
             public String toString() {
-                return new String(key) + "=" + measurement;
+                return cityName + "=" + measurement;
             }
         }
 
-        /**
-         * Who needs methods like add(), merge(), compute() etc, we need one, getOrCreate.
-         * @param key
-         * @return
-         */
-        public Measurement getOrCreate(byte[] key, int length) {
-            int inHash;
-            int index = (SIZE - 1) & (inHash = hashCode(key, length));
-            int valueIndex;
-            Entry retrievedEntry = null;
-            while ((valueIndex = indices[index]) != -1 && (retrievedEntry = values.get(valueIndex)).hash != inHash) {
-                index = (index + 1) % SIZE;
-            }
-            if (valueIndex >= 0) {
-                return retrievedEntry.measurement;
-            }
-            // New entry, insert into table and return.
-            indices[index] = values.size();
+        public Measurement update(long[] nameBytesInLong, ByteBuffer bb, int length, int calculatedHash) {
 
-            // Only parse this once:
-            byte[] actualKey = new byte[length];
-            System.arraycopy(key, 0, actualKey, 0, length);
+            final int nameBytesInLongLength = 1 + (length >>> 3);
 
-            Entry toAdd = new Entry(inHash, actualKey, new Measurement());
-            values.add(toAdd);
+            int index = calculatedHash & tableMask;
+            Entry tableEntry;
+            while ((tableEntry = table[index]) != null
+                    && (tableEntry.hash != calculatedHash || !arrayEquals(tableEntry.nameBytesInLong, nameBytesInLong, nameBytesInLongLength))) { // search for the right spot
+                index = (index + 1) & tableMask;
+            }
+
+            if (tableEntry != null) {
+                return tableEntry.measurement;
+            }
+
+            // --- This is a brand new entry, insert into the hashtable and do the extra calculations (once!) do slower calculations here.
+            Measurement measurement = new Measurement();
+
+            // Now create a string:
+            byte[] buffer = new byte[length];
+            bb.get(buffer, 0, length);
+            String cityName = new String(buffer, 0, length);
+
+            // Store the long[] for faster equals:
+            long[] nameBytesInLongCopy = new long[nameBytesInLongLength];
+            System.arraycopy(nameBytesInLong, 0, nameBytesInLongCopy, 0, nameBytesInLongLength);
+
+            // And add entry:
+            Entry toAdd = new Entry(calculatedHash, nameBytesInLongCopy, cityName, measurement);
+            table[index] = toAdd;
+
+            // Resize the table if filled too much:
+            if (++tableFilled > tableLimit) {
+                resizeTable();
+            }
+
             return toAdd.measurement;
         }
 
-        private static int hashCode(byte[] a, int length) {
-            int result = 1;
-            for (int i = 0; i < length; i++) {
-                result = 31 * result + a[i];
+        private void resizeTable() {
+            // Resize the table:
+            Entry[] oldEntries = table;
+            table = new Entry[tableSize <<= 2]; // x2
+            tableMask = (tableSize - 1);
+            tableLimit = (int) (tableSize * LOAD_FACTOR);
+
+            for (Entry entry : oldEntries) {
+                if (entry != null) {
+                    int updatedTableIndex = entry.hash & tableMask;
+                    while (table[updatedTableIndex] != null) {
+                        updatedTableIndex = (updatedTableIndex + 1) & tableMask;
+                    }
+                    table[updatedTableIndex] = entry;
+                }
             }
-            return result;
+        }
+
+        public Stream<Entry> get() {
+            return Arrays.stream(table).filter(Objects::nonNull);
         }
     }
 
+    /**
+     * For case multiple hashes are equal (however unlikely) check the actual key (using longs)
+     */
+    private boolean arrayEquals(final long[] a, final long[] b, final int length) {
+        for (int i = 0; i < length; i++) {
+            if (a[i] != b[i])
+                return false;
+        }
+        return true;
+    }
+
+    public void runTests() {
+        // Method used for debugging purposes, easy to make mistakes with all the bit hacking.
+
+        // These all have the same hashes:
+        testInput("Delft;-12.4", 0, true, new int[]{ 5, 1718384401 }, new long[]{ 499934586180L });
+        testInput("aDelft;-12.4", 1, true, new int[]{ 6, 1718384401 }, new long[]{ 499934586180L });
+
+        testInput("Delft;-12.4", 0, false, new int[]{ 5, 1718384401 }, new long[]{ 499934586180L });
+        testInput("aDelft;-12.4", 1, false, new int[]{ 6, 1718384401 }, new long[]{ 499934586180L });
+
+        testInput("Rotterdam;-12.4", 0, true, new int[]{ 9, -784321989 }, new long[]{ 7017859899421126482L, 109L });
+        testInput("abcdefghijklmnpoqrstuvwxyzRotterdam;-12.4", 26, true, new int[]{ 35, -784321989 }, new long[]{ 7017859899421126482L, 109L });
+        testInput("abcdefghijklmnpoqrstuvwxyzARotterdam;-12.4", 27, true, new int[]{ 36, -784321989 }, new long[]{ 7017859899421126482L, 109L });
+
+        testInput("Rotterdam;-12.4", 0, false, new int[]{ 9, -784321989 }, new long[]{ 7017859899421126482L, 109L });
+        testInput("abcdefghijklmnpoqrstuvwxyzRotterdam;-12.4", 26, false, new int[]{ 35, -784321989 }, new long[]{ 7017859899421126482L, 109L });
+        testInput("abcdefghijklmnpoqrstuvwxyzARotterdam;-12.4", 27, false, new int[]{ 36, -784321989 }, new long[]{ 7017859899421126482L, 109L });
+
+        // These have different hashes from the strings above:
+        testInput("abcdefghijklmnpoqrstuvwxyzAROtterdam;-12.4", 27, true, new int[]{ 36, -792194501 }, new long[]{ 7017859899421118290L, 109L });
+        testInput("abcdefghijklmnpoqrstuvwxyzAROtterdam;-12.4", 27, false, new int[]{ 36, -792194501 }, new long[]{ 7017859899421118290L, 109L });
+    }
+
+    private void testInput(final String inputString, final int start, final boolean bigEndian, final int[] expectedDelimiterAndHash, final long[] expectedCityNameLong) {
+
+        byte[] input = inputString.getBytes(StandardCharsets.UTF_8);
+
+        ByteBuffer buffer = ByteBuffer.wrap(input).order(bigEndian ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN);
+
+        int[] output = new int[2];
+        long[] cityName = new long[128];
+        findNextDelimiterAndCalculateHash(buffer, SEPARATOR_PATTERN, start, buffer.limit(), output, cityName, bigEndian);
+
+        if (!Arrays.equals(output, expectedDelimiterAndHash)) {
+            System.out.println("Error in delimiter or hash");
+            System.out.println("Expected: " + Arrays.toString(expectedDelimiterAndHash));
+            System.out.println("Received: " + Arrays.toString(output));
+        }
+        int amountLong = 1 + ((output[0] - start) >>> 3);
+        if (!Arrays.equals(cityName, 0, amountLong, expectedCityNameLong, 0, amountLong)) {
+            System.out.println("Error in long array");
+            System.out.println("Expected: " + Arrays.toString(expectedCityNameLong));
+            System.out.println("Received: " + Arrays.toString(cityName));
+        }
+    }
 }
