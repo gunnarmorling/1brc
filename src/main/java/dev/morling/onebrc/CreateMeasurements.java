@@ -23,6 +23,8 @@ import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.Random;
 
+import org.rschwietzke.FastRandom;
+
 public class CreateMeasurements {
 
     private static final Path MEASUREMENT_FILE = Path.of("./measurements.txt");
@@ -60,7 +62,7 @@ public class CreateMeasurements {
 
         List<WeatherStation> stations = WeatherStationFactory.getWeatherStationsList(seed);
 
-        Random random = new Random(seed);
+        FastRandom random = new FastRandom(seed);
         try (BufferedWriter bw = Files.newBufferedWriter(MEASUREMENT_FILE)) {
             for (int i = 0; i < size; i++) {
                 if (i > 0 && i % 50_000_000 == 0) {

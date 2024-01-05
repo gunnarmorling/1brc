@@ -21,6 +21,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 
 import org.rschwietzke.CheaperCharBuffer;
@@ -37,8 +38,8 @@ public class CreateMeasurements2 {
     public static void main(String[] args) throws Exception {
         long start = System.currentTimeMillis();
 
-        if (args.length != 1) {
-            System.out.println("Usage: create_measurements.sh <number of records to create>");
+        if (args.length < 1) {
+            System.out.println("Usage: create_measurements2.sh <number of records to create> [seed]");
             System.exit(1);
         }
 
@@ -48,11 +49,24 @@ public class CreateMeasurements2 {
         }
         catch (NumberFormatException e) {
             System.out.println("Invalid value for <number of records to create>");
-            System.out.println("Usage: CreateMeasurements <number of records to create>");
+            System.out.println("Usage: CreateMeasurements2 <number of records to create> [seed]");
             System.exit(1);
         }
 
-        final List<WeatherStation> stations = WeatherStation.getRandomWeatherStationsList();
+        // Default seed is 1brc1brc converted to hexadecimal
+        long seed = 0x3162726331627263L;
+        if (args.length == 2) {
+            try {
+                seed = Long.parseLong(args[1]);
+            }
+            catch (NumberFormatException e) {
+                System.out.println("Invalid value for [seed]");
+                System.out.println("Usage: CreateMeasurements2 <number of records to create> [seed]");
+                System.exit(1);
+            }
+        }
+
+        final List<WeatherStation> stations = WeatherStationFactory.getWeatherStationsList(seed);
 
         File file = new File(FILE);
 
@@ -60,16 +74,17 @@ public class CreateMeasurements2 {
         int strideSize = 50_000_000;
         int outer = size / strideSize;
         int remainder = size - (outer * strideSize);
+        FastRandom random = new FastRandom(seed);
 
         try (final BufferedWriter bw = new BufferedWriter(new FileWriter(file))) {
             for (int i = 0; i < outer; i++) {
-                produce(bw, stations, strideSize);
+                produce(random, bw, stations, strideSize);
 
                 // we avoid a modulo if here and use the stride size to print and update
                 System.out.println("Wrote %,d measurements in %s ms".formatted((i + 1) * strideSize, System.currentTimeMillis() - start));
             }
             // there might be a rest
-            produce(bw, stations, remainder);
+            produce(random, bw, stations, remainder);
 
             // write fully before taking measurements
             bw.flush();
@@ -77,16 +92,9 @@ public class CreateMeasurements2 {
         }
     }
 
-    private static void produce(BufferedWriter bw, List<WeatherStation> stations, int count) throws IOException {
+    private static void produce(FastRandom random, BufferedWriter bw, List<WeatherStation> stations, int count) throws IOException {
         final int stationCount = stations.size();
         final int rest = count % 8;
-
-        // use a fast ranodm impl without atomics to be able to utilize the cpu better
-        // and avoid sideeffects, FastRandom is very fake random and does not have a state
-        final FastRandom r1 = new FastRandom(ThreadLocalRandom.current().nextLong());
-        final FastRandom r2 = new FastRandom(ThreadLocalRandom.current().nextLong());
-        final FastRandom r3 = new FastRandom(ThreadLocalRandom.current().nextLong());
-        final FastRandom r4 = new FastRandom(ThreadLocalRandom.current().nextLong());
 
         // write to a fix buffer first, don't create strings ever
         // reuse buffer
@@ -97,35 +105,58 @@ public class CreateMeasurements2 {
             {
                 // try to fill teh cpu pipeline as much as possible with
                 // independent operations
-                int s1 = r1.nextInt(stationCount);
-                int s2 = r2.nextInt(stationCount);
-                int s3 = r3.nextInt(stationCount);
-                int s4 = r4.nextInt(stationCount);
+                int s1 = random.nextInt(stationCount);
+                int s2 = random.nextInt(stationCount);
+                int s3 = random.nextInt(stationCount);
+                int s4 = random.nextInt(stationCount);
                 // get us the ojects one after the other to have the array
                 // in our L1 cache and not push it out with other data
                 var w1 = stations.get(s1);
                 var w2 = stations.get(s2);
                 var w3 = stations.get(s3);
                 var w4 = stations.get(s4);
+
                 // write our data to our buffer
+                sb.append(w1.idChars, 0, w1.idChars.length).append(';');
                 w1.measurement(sb);
+                sb.append('\n');
+
+                sb.append(w2.idChars, 0, w2.idChars.length).append(';');
                 w2.measurement(sb);
+                sb.append('\n');
+
+                sb.append(w3.idChars, 0, w3.idChars.length).append(';');
                 w3.measurement(sb);
+                sb.append('\n');
+
+                sb.append(w4.idChars, 0, w4.idChars.length).append(';');
                 w4.measurement(sb);
+                sb.append('\n');
             }
             {
-                int s1 = r1.nextInt(stationCount);
-                int s2 = r2.nextInt(stationCount);
-                int s3 = r3.nextInt(stationCount);
-                int s4 = r4.nextInt(stationCount);
+                int s1 = random.nextInt(stationCount);
+                int s2 = random.nextInt(stationCount);
+                int s3 = random.nextInt(stationCount);
+                int s4 = random.nextInt(stationCount);
                 var w1 = stations.get(s1);
                 var w2 = stations.get(s2);
                 var w3 = stations.get(s3);
                 var w4 = stations.get(s4);
+                sb.append(w1.idChars, 0, w1.idChars.length).append(';');
                 w1.measurement(sb);
+                sb.append('\n');
+
+                sb.append(w2.idChars, 0, w2.idChars.length).append(';');
                 w2.measurement(sb);
+                sb.append('\n');
+
+                sb.append(w3.idChars, 0, w3.idChars.length).append(';');
                 w3.measurement(sb);
+                sb.append('\n');
+
+                sb.append(w4.idChars, 0, w4.idChars.length).append(';');
                 w4.measurement(sb);
+                sb.append('\n');
             }
             // write the buffer directly, no intermediate string copy
             bw.write(sb.data_, 0, sb.length_);
@@ -138,9 +169,11 @@ public class CreateMeasurements2 {
         for (int i = 0; i < rest; i++) {
             sb.clear();
 
-            int s = r1.nextInt(stationCount);
+            int s = random.nextInt(stationCount);
             var w = stations.get(s);
+            sb.append(w.idChars, 0, w.idChars.length).append(';');
             w.measurement(sb);
+            sb.append('\n');
 
             bw.write(sb.data_, 0, sb.length_);
         }
