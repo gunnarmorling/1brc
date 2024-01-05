@@ -38,6 +38,7 @@ public class CalculateAverage_artpar {
     private static final Map<Integer, String> tempStringMap = new ConcurrentHashMap<>(1024 * 1024);
     private static final Map<Integer, Double> hashToDouble = new ConcurrentHashMap<>(1024 * 1024);
     private static final VectorSpecies<Double> SPECIES = DoubleVector.SPECIES_PREFERRED;
+    final int SIZE = 1024 * 128;
 
     public CalculateAverage_artpar() throws IOException {
         long start = Instant.now().toEpochMilli();
@@ -109,31 +110,13 @@ public class CalculateAverage_artpar {
         Map<String, ResultRow> measurements = new TreeMap<>(results);
 
         System.out.println(measurements);
-//        long end = Instant.now().toEpochMilli();
-//        System.out.println((end - start) / 1000);
+        // long end = Instant.now().toEpochMilli();
+        // System.out.println((end - start) / 1000);
 
     }
 
     public static void main(String[] args) throws IOException {
         new CalculateAverage_artpar();
-    }
-
-    public static double sum(double[] array) {
-        int i = 0;
-        double sum = 0.0;
-
-        // Vectorized loop
-        for (; i < SPECIES.loopBound(array.length); i += SPECIES.length()) {
-            var v = DoubleVector.fromArray(SPECIES, array, i);
-            sum += v.reduceLanes(VectorOperators.ADD);
-        }
-
-        // Scalar loop for remaining elements
-        for (; i < array.length; i++) {
-            sum += array[i];
-        }
-
-        return sum;
     }
 
     public static double parseDouble(byte[] str, int length) {
@@ -168,6 +151,19 @@ public class CalculateAverage_artpar {
         }
 
         return negative ? -result : result;
+    }
+
+    public static int hashCode(byte[] array, int length) {
+        if (array == null) {
+            return 0;
+        }
+
+        int result = 1;
+        for (int i = 0; i < length; i++) {
+            result = 31 * result + array[i];
+        }
+
+        return result;
     }
 
     private record Measurement(String station, double value) {
@@ -232,8 +228,9 @@ public class CalculateAverage_artpar {
         private final long chunkStartPosition;
         private final long chunkSize;
         private final Map<String, ResultRow> results;
-        Map<String, double[]> stationValueMap = new HashMap<>();
-        Map<String, Integer> stationIndexMap = new HashMap<>();
+        // Map<String, Integer> stationIndexMap = new HashMap<>();
+        StationNameMap stationNameMap = new StationNameMap();
+        double[][] stationValueMap = new double[SIZE][];
 
         private ReaderRunnable(MappedByteBuffer mappedByteBuffer, OpenOption openOptions, long chunkStartPosition, long chunkSize) {
             this.mappedByteBuffer = mappedByteBuffer;
@@ -246,14 +243,14 @@ public class CalculateAverage_artpar {
         public Map<String, MeasurementAggregator> run() {
             long start = Date.from(Instant.now()).getTime();
             int totalBytesRead = 0;
-            Map<String, MeasurementAggregator> groupedMeasurements = new HashMap<>();
+            MeasurementAggregator[] groupedMeasurements = new MeasurementAggregator[SIZE];
 
             final int VECTOR_SIZE = 512;
             final int VECTOR_SIZE_1 = VECTOR_SIZE - 1;
             // ByteBuffer nameBuffer = ByteBuffer.allocate(128);
             byte[] rawBuffer = new byte[128];
             int bufferIndex = 0;
-            String matchedStation = "";
+            StationName matchedStation = null;
             boolean readUntilSemiColon = true;
 
             while (mappedByteBuffer.hasRemaining()) {
@@ -269,7 +266,7 @@ public class CalculateAverage_artpar {
                         readUntilSemiColon = false;
                         // Integer bufferHash = hashCode(rawBuffer, bufferIndex);
                         // int finalBufferIndex = bufferIndex;
-                        matchedStation = new String(rawBuffer, 0, bufferIndex, StandardCharsets.UTF_8);
+                        matchedStation = stationNameMap.getOrCreate(rawBuffer, bufferIndex);
                         // matchedStation = new String(rawBuffer, 0, bufferIndex, StandardCharsets.UTF_8);
                         bufferIndex = 0;
                         continue;
@@ -292,11 +289,13 @@ public class CalculateAverage_artpar {
                     bufferIndex = 0;
 
                     // Measurement measurement = new Measurement(matchedStation, doubleValue);
-                    double[] array = stationValueMap.computeIfAbsent(matchedStation, (k) -> {
-                        stationIndexMap.put(k, 0);
-                        return new double[VECTOR_SIZE];
-                    });
-                    int index = stationIndexMap.get(matchedStation);
+                    double[] array = stationValueMap[matchedStation.index];
+                    if (array == null) {
+                        array = new double[VECTOR_SIZE];
+                        stationValueMap[matchedStation.index] = array;
+                    }
+
+                    int index = matchedStation.count;
                     array[index] = doubleValue;
                     if (index == VECTOR_SIZE_1) {
 
@@ -327,32 +326,39 @@ public class CalculateAverage_artpar {
                         }
                         MeasurementAggregator ma = new MeasurementAggregator(min, max, sum, count);
                         // System.out.println("Sum ma [" + ma + "]");
-                        groupedMeasurements.computeIfAbsent(matchedStation, k -> new MeasurementAggregator())
-                                .combine(ma);
+                        if (groupedMeasurements[matchedStation.index] == null) {
+                            groupedMeasurements[matchedStation.index] = new MeasurementAggregator();
+                        }
+                        groupedMeasurements[matchedStation.index].combine(ma);
 
-                        stationIndexMap.put(matchedStation, 0);
+                        matchedStation.count = 0;
                         continue;
                     }
-                    stationIndexMap.put(matchedStation, index + 1);
+                    matchedStation.count++;
                 }
             }
 
             VectorSpecies<Double> species = DoubleVector.SPECIES_PREFERRED;
-            for (String stationName : stationIndexMap.keySet()) {
+            for (StationName stationName : stationNameMap.names) {
+                if (stationName == null) {
+                    continue;
+                }
 
-                int count = stationIndexMap.get(stationName);
+                int count = stationName.count;
                 if (count < 1) {
                     continue;
                 }
                 else if (count == 1) {
-                    double[] array = stationValueMap.get(stationName);
+                    double[] array = stationValueMap[stationName.index];
                     double val = array[0];
                     MeasurementAggregator ma = new MeasurementAggregator(val, val, val, 1);
-                    groupedMeasurements.computeIfAbsent(stationName, k -> new MeasurementAggregator())
-                            .combine(ma);
+                    if (groupedMeasurements[stationName.index] == null) {
+                        groupedMeasurements[stationName.index] = new MeasurementAggregator();
+                    }
+                    groupedMeasurements[stationName.index].combine(ma);
                 }
                 else {
-                    double[] array = stationValueMap.get(stationName);
+                    double[] array = stationValueMap[stationName.index];
                     double[] subArray = new double[count];
                     System.arraycopy(array, 0, subArray, 0, count);
                     // Creating a DoubleVector from the array
@@ -362,35 +368,28 @@ public class CalculateAverage_artpar {
                     double max = doubleVector.reduceLanes(VectorOperators.MAX);
                     double sum = doubleVector.reduceLanes(VectorOperators.ADD);
                     MeasurementAggregator ma = new MeasurementAggregator(min, max, sum, count);
-                    groupedMeasurements.computeIfAbsent(stationName, k -> new MeasurementAggregator())
-                            .combine(ma);
+                    if (groupedMeasurements[stationName.index] == null) {
+                        groupedMeasurements[stationName.index] = new MeasurementAggregator();
+                    }
+                    groupedMeasurements[stationName.index].combine(ma);
                 }
 
-                stationIndexMap.put(matchedStation, 0);
+                stationName.count = 0;
             }
 
             long end = Date.from(Instant.now()).getTime();
             // System.out.println("Took [" + ((end - start) / 1000) + "s for " + totalBytesRead / 1024 + " kb");
 
-            return groupedMeasurements;
-        }
-
-        private int hashCode(byte[] array, int length) {
-            if (array == null) {
-                return 0;
-            }
-
-            int result = 1;
-            for (int i = 0; i < length; i++) {
-                result = 31 * result + array[i];
-            }
-
-            return result;
+            return Arrays.stream(stationNameMap.names)
+                    .filter(Objects::nonNull)
+                    .filter(e -> groupedMeasurements[e.index] != null)
+                    .collect(Collectors.toMap(e -> e.name, e -> groupedMeasurements[e.index]));
+            // return groupedMeasurements;
         }
 
         private String getTempStringFromBufferUsingBuffer(byte[] array, int length) {
 
-            int byteArrayHashCode = hashCode(array, length);
+            int byteArrayHashCode = CalculateAverage_artpar.hashCode(array, length);
             if (!tempStringMap.containsKey(byteArrayHashCode)) {
                 String value = new String(array, 0, length, StandardCharsets.UTF_8);
                 tempStringMap.put(byteArrayHashCode, value);
@@ -398,6 +397,46 @@ public class CalculateAverage_artpar {
             }
 
             return tempStringMap.get(byteArrayHashCode);
+        }
+    }
+
+    class StationName {
+        private final String name;
+        private final int index;
+        public int count = 0;
+        public final int hash;
+
+        public StationName(String name, int index, int hash) {
+            this.name = name;
+            this.index = index;
+            this.hash = hash;
+        }
+
+    }
+
+    class StationNameMap {
+        int[] indexes = new int[SIZE];
+        StationName[] names = new StationName[SIZE];
+        int currentIndex = 0;
+
+        public StationName getOrCreate(byte[] stationNameBytes, int length) {
+            int hash = CalculateAverage_artpar.hashCode(stationNameBytes, length);
+            int position = Math.abs(hash) % SIZE;
+            while (indexes[position] != 0 &&
+                    names[indexes[position]].hash != hash &&
+                    !Objects.equals(names[indexes[position]].name, new String(stationNameBytes, 0, length,
+                            StandardCharsets.UTF_8))) {
+                position++;
+                position = position % SIZE;
+            }
+            if (indexes[position] != 0) {
+                return names[indexes[position]];
+            }
+            StationName stationName = new StationName(
+                    new String(stationNameBytes, 0, length, StandardCharsets.UTF_8), position, hash);
+            indexes[position] = ++currentIndex;
+            names[indexes[position]] = stationName;
+            return stationName;
         }
     }
 
