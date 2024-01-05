@@ -145,10 +145,12 @@ public class CalculateAverage_iziamos {
     private static long parseId(final ByteBuffer buffer) {
         long ret = 0;
         final byte[] name = THREAD_LOCAL_NAME_BUFFER.get();
-        for (byte b = buffer.get(), i = 0; b != ';'; b = buffer.get(), ++i, name[i] = '\0') {
+        int i = 0;
+        for (byte b = buffer.get(); b != ';'; b = buffer.get(), ++i) {
             name[i] = b;
             ret = 31 * ret + b;
         }
+        name[i] = '\0';
 
         return ret;
     }
