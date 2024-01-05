@@ -47,12 +47,11 @@ public class CalculateAverage_twobiers {
     private static class FastAveragingCollector implements Collector<Measurement, double[], String> {
         @Override
         public Supplier<double[]> supplier() {
-            // 0: parsed value
-            // 1: current sum
-            // 2: count
-            // 4: current max
-            // 5: current min
-            return () -> new double[6];
+            // 0: current sum
+            // 1: count
+            // 2: current max
+            // 3: current min
+            return () -> new double[4];
         }
 
         @Override
@@ -60,15 +59,14 @@ public class CalculateAverage_twobiers {
             return (a, t) -> {
                 double val = t.value();
 
-                a[0] = val;
-                a[1] += val;
-                a[2]++;
+                a[0] += val;
+                a[1]++;
 
-                if (val > a[4]) {
-                    a[4] = val;
+                if (val > a[2] || a[1] == 1) {
+                    a[2] = val;
                 }
-                if (val < a[5]) {
-                    a[5] = val;
+                if (val < a[3] || a[1] == 1) {
+                    a[3] = val;
                 }
             };
         }
@@ -76,13 +74,13 @@ public class CalculateAverage_twobiers {
         @Override
         public BinaryOperator<double[]> combiner() {
             return (a, b) -> {
-                a[2] += b[2];
+                a[0] += b[0];
                 a[1] += b[1];
-                if (b[4] > a[4]) {
-                    a[4] = b[4];
+                if (b[2] > a[2]) {
+                    a[2] = b[2];
                 }
-                if (b[5] < a[5]) {
-                    a[5] = b[5];
+                if (b[3] < a[3]) {
+                    a[3] = b[3];
                 }
                 return a;
             };
@@ -91,9 +89,9 @@ public class CalculateAverage_twobiers {
         @Override
         public Function<double[], String> finisher() {
             return a -> {
-                var mean = (a[2] == 0) ? 0.0d : Math.round(((a[0] + a[1]) / a[2]) * 10.0) / 10.0;
-                var max = a[4];
-                var min = a[5];
+                var mean = (a[1] == 0) ? 0.0d : Math.round((a[0] / a[1]) * 10.0) / 10.0;
+                var max = a[2];
+                var min = a[3];
                 return min + "/" + mean + "/" + max;
             };
         }
