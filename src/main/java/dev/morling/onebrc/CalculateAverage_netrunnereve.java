@@ -26,9 +26,9 @@ public class CalculateAverage_netrunnereve {
     private static final String FILE = "./measurements.txt";
 
     private static class MeasurementAggregator {
-        private double min = Double.POSITIVE_INFINITY;
-        private double max = Double.NEGATIVE_INFINITY;
-        private double sum = 0;
+        private int min = Integer.MAX_VALUE;
+        private int max = Integer.MIN_VALUE;
+        private int sum = 0;
         private int count = 0;
     }
 
@@ -49,7 +49,7 @@ public class CalculateAverage_netrunnereve {
                     staHash.put(station, ma);
                 }
 
-                double tempa = Double.parseDouble(linSpl[1]);
+                int tempa = Integer.parseInt(linSpl[1].replace(".", "")); // x10
                 if (tempa < ma.min) {
                     ma.min = tempa;
                 }
@@ -73,8 +73,10 @@ public class CalculateAverage_netrunnereve {
             String out = "{";
             for (int i = 0; i < staHash.size(); i++) {
                 MeasurementAggregator ma = staHash.get(staArr[i]);
-                double avg = Math.round(ma.sum / ma.count * 10.0) / 10.0;
-                out += staArr[i] + "=" + ma.min + "/" + avg + "/" + ma.max + ", ";
+                double min = Math.round(Double.valueOf(ma.min) / 10.0);
+                double avg = Math.round(Double.valueOf(ma.sum) / Double.valueOf(ma.count) / 10.0);
+                double max = Math.round(Double.valueOf(ma.max) / 10.0);
+                out += staArr[i] + "=" + min + "/" + avg + "/" + max + ", ";
             }
             out = out.replaceAll(", $", "");
             out += "}\n";
