@@ -196,15 +196,16 @@ public class CalculateAverage_thomaswue {
             long[] chunks = new long[numberOfChunks + 1];
             long mappedAddress = fileChannel.map(MapMode.READ_ONLY, 0, fileSize, Arena.global()).address();
             chunks[0] = mappedAddress;
+            long endAddress = mappedAddress + fileSize;
             for (int i = 1; i < numberOfChunks; ++i) {
                 long chunkAddress = mappedAddress + i * segmentSize;
                 // Align to first row start.
-                while (UNSAFE.getByte(chunkAddress++) != '\n') {
+                while (chunkAddress < endAddress && UNSAFE.getByte(chunkAddress++) != '\n') {
                     // nop
                 }
-                chunks[i] = chunkAddress;
+                chunks[i] = Math.min(chunkAddress, endAddress);
             }
-            chunks[numberOfChunks] = mappedAddress + fileSize;
+            chunks[numberOfChunks] = endAddress;
             return chunks;
         }
     }
