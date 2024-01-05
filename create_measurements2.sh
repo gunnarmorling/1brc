@@ -15,20 +15,5 @@
 #  limitations under the License.
 #
 
-if [ -z "$1" ]
-  then
-    echo "Usage: evaluate.sh <fork name>"
-    exit 1
-fi
 
-java --version
-
-mvn clean verify
-
-rm -f measurements.txt
-ln -s measurements_1B.txt measurements.txt
-
-for i in {1..5}
-do
-    ./calculate_average_$1.sh
-done
+java --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CreateMeasurements2 $1

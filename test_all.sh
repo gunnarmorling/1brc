@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 #  Copyright 2023 The original authors
 #
@@ -15,20 +15,16 @@
 #  limitations under the License.
 #
 
-if [ -z "$1" ]
-  then
-    echo "Usage: evaluate.sh <fork name>"
-    exit 1
-fi
+set -euo pipefail
 
-java --version
+for impl in $(ls calculate_average_*.sh | sort); do
+  noext="${impl%%.sh}"
+  name=${noext##calculate_average_}
 
-mvn clean verify
-
-rm -f measurements.txt
-ln -s measurements_1B.txt measurements.txt
-
-for i in {1..5}
-do
-    ./calculate_average_$1.sh
+  if output=$(./test.sh "$name" 2>&1); then
+    echo "PASS $name"
+  else
+    echo "FAIL $name"
+    echo "$output" 1>&2
+  fi
 done

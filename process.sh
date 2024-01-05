@@ -17,18 +17,8 @@
 
 if [ -z "$1" ]
   then
-    echo "Usage: evaluate.sh <fork name>"
+    echo "Usage: process_output.sh <fork name>"
     exit 1
 fi
 
-java --version
-
-mvn clean verify
-
-rm -f measurements.txt
-ln -s measurements_1B.txt measurements.txt
-
-for i in {1..5}
-do
-    ./calculate_average_$1.sh
-done
+java --enable-preview --source=21 process_output.java out_expected.txt $1.out

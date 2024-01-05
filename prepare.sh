@@ -15,20 +15,22 @@
 #  limitations under the License.
 #
 
+set -x
+
 if [ -z "$1" ]
   then
-    echo "Usage: evaluate.sh <fork name>"
+    echo "Usage: prepare.sh <fork name>:<branch name>"
     exit 1
 fi
 
-java --version
+parts=(${1//:/ })
+echo "  User: ${parts[0]}"
+echo "Branch: ${parts[1]}"
 
-mvn clean verify
+git branch -D ${parts[0]} &>/dev/null
 
-rm -f measurements.txt
-ln -s measurements_1B.txt measurements.txt
-
-for i in {1..5}
-do
-    ./calculate_average_$1.sh
-done
+git checkout -b ${parts[0]}
+git fetch https://github.com/${parts[0]}/1brc.git ${parts[1]}
+# git fetch git@github.com:${parts[0]}/1brc.git ${parts[1]}
+git reset --hard FETCH_HEAD
+git rebase main
