@@ -15,68 +15,64 @@
  */
 package dev.morling.onebrc;
 
-import static java.util.stream.Collectors.*;
-
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.Map;
-import java.util.TreeMap;
-import java.util.stream.Collector;
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.util.HashMap;
 
 public class CalculateAverage_netrunnereve {
 
     private static final String FILE = "./measurements.txt";
 
-    private static record Measurement(String station, float value) {
-        private Measurement(String[] parts) {
-            this(parts[0], Float.parseFloat(parts[1]));
-        }
-    }
-
-    private static record ResultRow(float min, float mean, float max) {
-        public String toString() {
-            return round(min) + "/" + round(mean) + "/" + round(max);
-        }
-
-        private double round(double value) {
-            return Math.round(value * 10.0) / 10.0;
-        }
-    };
-
     private static class MeasurementAggregator {
         private float min = Float.POSITIVE_INFINITY;
         private float max = Float.NEGATIVE_INFINITY;
-        private float sum;
-        private long count;
+        private float sum = 0;
+        private int count = 0;
     }
+    public static void main(String[] args) {
+		try {
+			HashMap<String, MeasurementAggregator> staHash = new HashMap<String, MeasurementAggregator>();
 
-    public static void main(String[] args) throws IOException {
-        Collector<Measurement, MeasurementAggregator, ResultRow> collector = Collector.of(
-                MeasurementAggregator::new,
-                (a, m) -> {
-                    a.min = Math.min(a.min, m.value);
-                    a.max = Math.max(a.max, m.value);
-                    a.sum += m.value;
-                    a.count++;
-                },
-                (agg1, agg2) -> {
-                    var res = new MeasurementAggregator();
-                    res.min = Math.min(agg1.min, agg2.min);
-                    res.max = Math.max(agg1.max, agg2.max);
-                    res.sum = agg1.sum + agg2.sum;
-                    res.count = agg1.count + agg2.count;
+			BufferedReader filBuf = new BufferedReader(new FileReader(FILE));
+			String line = filBuf.readLine();
 
-                    return res;
-                },
-                agg -> {
-                    return new ResultRow(agg.min, agg.sum / agg.count, agg.max);
-                });
+			while (line != null) {
+				String[] linSpl = line.split(";", 2); // station, measurement
+				String station = linSpl[0];
 
-        Map<String, ResultRow> measurements = new TreeMap<>(Files.lines(Paths.get(FILE))
-                .map(l -> new Measurement(l.split(";")))
-                .collect(groupingBy(m -> m.station(), collector)));
+				MeasurementAggregator ma = staHash.get(station);
+				if (ma == null) {
+					ma = new MeasurementAggregator();
+				}
 
-        System.out.println(measurements);
+				float tempa = Float.parseFloat(linSpl[1]);
+				if (tempa < ma.min) {
+					ma.min = tempa;
+				}
+				if (tempa > ma.max) {
+					ma.max = tempa;
+				}
+				ma.sum += tempa;
+				ma.count++;
+
+				staHash.put(linSpl[0], ma);
+
+				line = filBuf.readLine();
+			}
+
+			System.out.print("{");
+			for (String i : staHash.keySet()) {
+				MeasurementAggregator ma = staHash.get(i);
+				float avg = ma.sum/ma.count;
+				System.out.print(i + "=" + ma.min + "/" + avg + "/" + ma.max + ", ");
+			}
+			System.out.print("}\n");
+
+			filBuf.close();
+        } catch (IOException ex) {
+			System.exit(1);
+		}
+		System.exit(0);
     }
 }
