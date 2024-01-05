@@ -16,7 +16,6 @@
 #
 
 
-source "$HOME/.sdkman/bin/sdkman-init.sh"
-sdk use java 21.0.1-graal 1>&2
-JAVA_OPTS=""
-time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_filiphr
+JAVA_OPTS="-Xnoclassgc -Xms16G -Xmx16G"
+
+time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_fatroom

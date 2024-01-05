@@ -105,9 +105,8 @@ public class CalculateAverage_truelive {
     }
 
     private static Map<String, Measurement> combineMaps(
-            final Map<String, Measurement> map1,
-            final Map<String, Measurement> map2
-    ) {
+                                                        final Map<String, Measurement> map1,
+                                                        final Map<String, Measurement> map2) {
         for (final var entry : map2.entrySet()) {
             map1.merge(entry.getKey(), entry.getValue(), Measurement::combineWith);
         }
@@ -116,7 +115,7 @@ public class CalculateAverage_truelive {
     }
 
     public static void main(final String[] args) throws IOException {
-        //long before = System.currentTimeMillis();
+        // long before = System.currentTimeMillis();
         /**
          * Shoutout to bjhara
          */
@@ -136,8 +135,7 @@ public class CalculateAverage_truelive {
                     final MappedByteBuffer mbb = in.map(
                             FileChannel.MapMode.READ_ONLY,
                             start,
-                            Math.min(CHUNK_SIZE, total - start)
-                    );
+                            Math.min(CHUNK_SIZE, total - start));
                     int realEnd = mbb.limit() - 1;
                     while (mbb.get(realEnd) != '\n') {
                         realEnd--;
@@ -148,16 +146,17 @@ public class CalculateAverage_truelive {
                     start += realEnd;
 
                     return mbb;
-                } catch (final IOException e) {
+                }
+                catch (final IOException e) {
                     throw new RuntimeException(e);
                 }
             }
         };
         final Map<String, Measurement> reduce = StreamSupport.stream(Spliterators.spliteratorUnknownSize(
-                                                               iterator, Spliterator.IMMUTABLE), true)
-                                                             .parallel()
-                                                             .map(CalculateAverage_truelive::parseBuffer)
-                                                             .reduce(CalculateAverage_truelive::combineMaps).get();
+                iterator, Spliterator.IMMUTABLE), true)
+                .parallel()
+                .map(CalculateAverage_truelive::parseBuffer)
+                .reduce(CalculateAverage_truelive::combineMaps).get();
 
         System.out.print("{");
         System.out.print(
@@ -169,7 +168,7 @@ public class CalculateAverage_truelive {
                         .collect(Collectors.joining(", ")));
         System.out.println("}");
 
-        //System.out.println("Took: " + (System.currentTimeMillis() - before));
+        // System.out.println("Took: " + (System.currentTimeMillis() - before));
 
     }
 
@@ -189,7 +188,8 @@ public class CalculateAverage_truelive {
                 name = new String(arr, 0, len);
                 bug.position(pos);
                 bug.mark();
-            } else if (c == '\n') {
+            }
+            else if (c == '\n') {
                 final int pos = bug.position();
                 bug.reset();
                 final int len = pos - bug.position();

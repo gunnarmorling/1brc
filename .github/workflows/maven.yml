@@ -46,4 +46,4 @@ jobs:
           restore-keys: ${{ runner.os }}-m2
 
       - name: 'Build project'
-        run: mvn -B clean verify
+        run: mvn -B clean verify -Pci

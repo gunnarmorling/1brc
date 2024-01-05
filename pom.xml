@@ -101,9 +101,14 @@
           <artifactId>maven-compiler-plugin</artifactId>
           <version>3.12.1</version>
           <configuration>
-            <enablePreview>true</enablePreview>
             <parameters>true</parameters>
             <compilerArgs>
+              <!--
+                IntelliJ does not yet support the enablePreview configuration option.
+                Therefore, we use a compiler argument.
+                See https://youtrack.jetbrains.com/issue/IDEA-296303
+              -->
+              <compilerArg>--enable-preview</compilerArg>
               <compilerArg>--add-modules</compilerArg>
               <compilerArg>java.base,jdk.incubator.vector</compilerArg>
             </compilerArgs>
@@ -160,6 +165,26 @@
   </build>
   <profiles>
     <profile>
+      <id>ci</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>net.revelc.code.formatter</groupId>
+            <artifactId>formatter-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>validate-format</id>
+                <goals>
+                  <goal>validate</goal>
+                </goals>
+                <phase>validate</phase>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+    <profile>
       <id>qa</id>
       <activation>
         <property>
@@ -178,7 +203,9 @@
               <excludes>
                 <exclude>LICENSE.txt</exclude>
                 <exclude>**/.dontdelete</exclude>
-                <exclude>measurements*.txt</exclude>
+                <exclude>**/measurements*.txt</exclude>
+                <exclude>**/measurements*.out</exclude>
+                <exclude>out_expected.txt</exclude>
               </excludes>
             </configuration>
             <executions>
