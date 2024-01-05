@@ -31,6 +31,20 @@ public class CalculateAverage_truelive {
     private static final String FILE = "./measurements.txt";
     private static final long CHUNK_SIZE = 1024 * 1024 * 10L;
 
+    private static double getDouble(final byte[] arr, int pos) {
+        final int negative = ~(arr[pos] >> 4) & 1;
+        int sig = 1;
+        sig -= 2 * negative;
+        pos += negative;
+        final int digit1 = arr[pos] - '0';
+        pos++;
+        if (arr[pos] == '.') {
+            return sig * (digit1  + (arr[pos + 1] - '0')/10.0 );
+        } else {
+            return sig * (digit1 * 10 + (arr[pos] - '0')  + (arr[pos + 2] - '0')/10.0 );
+        }
+    }
+
     private record Measurement(DoubleAccumulator min, DoubleAccumulator max, DoubleAccumulator sum, LongAdder count) {
         public static Measurement of(final Double initialMeasurement) {
             final Measurement measurement = new Measurement(
@@ -157,7 +171,8 @@ public class CalculateAverage_truelive {
                 bug.reset();
                 final int len = pos - bug.position();
                 bug.get(bug.position(), arr, 0, len);
-                final double temp = Double.parseDouble(new String(arr, 0, len));
+                //final double temp = Double.parseDouble(new String(arr, 0, len));
+                final double temp = getDouble(arr, 0);
                 resultMap.compute(name, (k, v) -> (v == null) ? Measurement.of(temp) : v.add(temp));
                 bug.position(pos);
                 bug.mark();
