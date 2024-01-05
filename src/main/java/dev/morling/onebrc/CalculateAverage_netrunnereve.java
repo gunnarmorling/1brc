@@ -46,7 +46,7 @@ public class CalculateAverage_netrunnereve {
                 MeasurementAggregator ma = staHash.get(station);
                 if (ma == null) {
                     ma = new MeasurementAggregator();
-                    staHash.put(linSpl[0], ma);
+                    staHash.put(station, ma);
                 }
 
                 double tempa = Double.parseDouble(linSpl[1]);
