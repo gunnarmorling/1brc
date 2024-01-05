@@ -69,10 +69,10 @@ public class CalculateAverage_truelive {
 
         public String toString() {
             return round(min.doubleValue()) +
-                   "/" +
-                   round(sum.doubleValue() / count.sum()) +
-                   "/" +
-                   round(max.doubleValue());
+                    "/" +
+                    round(sum.doubleValue() / count.sum()) +
+                    "/" +
+                    round(max.doubleValue());
         }
 
         private double round(final double value) {
