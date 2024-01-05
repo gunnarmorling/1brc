@@ -31,33 +31,6 @@ public class CalculateAverage_truelive {
     private static final String FILE = "./measurements.txt";
     private static final long CHUNK_SIZE = 1024 * 1024 * 10L;
 
-    private static int branchlessParseInt(final byte[] input, final int length) {
-        // 0 if positive, 1 if negative
-        final int negative = ~(input[0] >> 4) & 1;
-        // 0 if nr length is 3, 1 if length is 4
-        final int has4 = ((length - negative) >> 2) & 1;
-
-        final int digit1 = input[negative] - '0';
-        final int digit2 = input[negative + has4] - '0';
-        final int digit3 = input[2 + negative + has4] - '0';
-
-        return (-negative ^ (has4 * (digit1 * 100) + digit2 * 10 + digit3) - negative);
-    }
-
-    // branchless max (unprecise for large numbers, but good enough)
-    static int max(final int a, final int b) {
-        final int diff = a - b;
-        final int dsgn = diff >> 31;
-        return a - (diff & dsgn);
-    }
-
-    // branchless min (unprecise for large numbers, but good enough)
-    static int min(final int a, final int b) {
-        final int diff = a - b;
-        final int dsgn = diff >> 31;
-        return b + (diff & dsgn);
-    }
-
     private record Measurement(DoubleAccumulator min, DoubleAccumulator max, DoubleAccumulator sum, LongAdder count) {
         public static Measurement of(final Double initialMeasurement) {
             final Measurement measurement = new Measurement(
@@ -102,16 +75,6 @@ public class CalculateAverage_truelive {
                     m1.count
             );
         }
-    }
-
-    private static Map<String, Measurement> combineMaps(
-                                                        final Map<String, Measurement> map1,
-                                                        final Map<String, Measurement> map2) {
-        for (final var entry : map2.entrySet()) {
-            map1.merge(entry.getKey(), entry.getValue(), Measurement::combineWith);
-        }
-
-        return map1;
     }
 
     public static void main(final String[] args) throws IOException {
