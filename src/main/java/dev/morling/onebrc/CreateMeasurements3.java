@@ -21,6 +21,7 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.StringReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.concurrent.ThreadLocalRandom;
@@ -112,6 +113,9 @@ public class CreateMeasurements3 {
                 }
                 while (names.contains(name)) {
                     name = name.substring(1) + readNonSpace(nameSource);
+                }
+                while (name.getBytes(StandardCharsets.UTF_8).length > 100) {
+                    name = name.substring(0, name.length() - 1);
                 }
                 if (name.indexOf(';') != -1) {
                     throw new Exception("Station name contains a semicolon!");
