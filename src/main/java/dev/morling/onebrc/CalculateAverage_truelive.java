@@ -32,7 +32,6 @@ public class CalculateAverage_truelive {
     private static final String FILE = "./measurements.txt";
     private static final long CHUNK_SIZE = 1024 * 1024 * 10L;
 
-
     private static double getDouble(final byte[] arr, int pos) {
         final int negative = ~(arr[pos] >> 4) & 1;
         int sig = 1;
@@ -41,9 +40,10 @@ public class CalculateAverage_truelive {
         final int digit1 = arr[pos] - '0';
         pos++;
         if (arr[pos] == '.') {
-            return sig * (digit1  + (arr[pos + 1] - '0')/10.0 );
-        } else {
-            return sig * (digit1 * 10 + (arr[pos] - '0')  + (arr[pos + 2] - '0')/10.0 );
+            return sig * (digit1 + (arr[pos + 1] - '0') / 10.0);
+        }
+        else {
+            return sig * (digit1 * 10 + (arr[pos] - '0') + (arr[pos + 2] - '0') / 10.0);
         }
     }
 
@@ -131,23 +131,17 @@ public class CalculateAverage_truelive {
                 }
             }
         };
+
         final Map<String, Measurement> reduce = StreamSupport.stream(Spliterators.spliteratorUnknownSize(
                 iterator, Spliterator.IMMUTABLE), true)
-                .parallel()
                 .map(CalculateAverage_truelive::parseBuffer)
-                .reduce(CalculateAverage_truelive::combineMaps).get();
-
-        System.out.print("{");
-        System.out.print(
-                reduce
-                        .entrySet()
-                        .stream()
-                        .sorted(Map.Entry.comparingByKey())
-                        .map(Object::toString)
-                        .collect(Collectors.joining(", ")));
-        System.out.println("}");
-
-        // System.out.println("Took: " + (System.currentTimeMillis() - before));
+                .flatMap(map -> map.entrySet().stream())
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        Map.Entry::getValue,
+                        Measurement::combineWith,
+                        TreeMap::new));
+        System.out.println(reduce);
 
     }
 
