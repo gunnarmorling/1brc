@@ -122,7 +122,7 @@ public class CalculateAverage_isolgpus {
 
         try {
 
-            while (i < lengthOfChunk || !parsingName) {
+            while (i <= lengthOfChunk || !parsingName) {
                 byte aChar;
                 if (parsingName) {
 
@@ -248,7 +248,6 @@ public class CalculateAverage_isolgpus {
         private int count;
         private int min = Integer.MAX_VALUE;
         private int max = Integer.MIN_VALUE;
-        private boolean collected = false;
 
         public MeasurementCollector(byte[] name) {
 
@@ -267,7 +266,6 @@ public class CalculateAverage_isolgpus {
             this.count += measurementCollector.count;
             this.min = Math.min(measurementCollector.min, this.min);
             this.max = Math.max(measurementCollector.max, this.max);
-            measurementCollector.collected = true;
         }
     }
 
