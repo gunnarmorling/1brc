@@ -167,9 +167,11 @@ public class CalculateAverage_iziamos {
         final int sign = first == '-' ? -1 : 1;
         int value = sign * (digitCharToInt(first == '-' ? buffer.get() : first));
 
-        for (byte b = buffer.get(); b != '.'; b = buffer.get()) {
+        final byte second = buffer.get();
+        if (second != '.') {
             value *= 10;
-            value += digitCharToInt(b) * sign;
+            value += digitCharToInt(second) * sign;
+            buffer.get();
         }
 
         final byte decimal = buffer.get();
