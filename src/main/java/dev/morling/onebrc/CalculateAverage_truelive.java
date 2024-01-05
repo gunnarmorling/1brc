@@ -93,58 +93,6 @@ public class CalculateAverage_truelive {
         }
     }
 
-    static class Mes {
-        int min; int max; int sum; long count;
-
-        public Mes(int min, int max, int sum, long count) {
-            this.max = max;
-            this.min = min;
-            this.sum = sum;
-            this.count = count;
-
-        }
-
-        public static Mes of(final int mes) {
-            final Mes measurement = new Mes(
-                    mes,
-                    mes,
-                    mes,
-                    1
-            );
-            return measurement;
-        }
-
-        public Mes add(final int measurment) {
-            min = Math.min(min, measurment);
-            max = Math.max(max, measurment);
-            sum += measurment;
-            count++;
-            return this;
-        }
-
-        public String toString() {
-            return round(min) +
-                   "/" +
-                   round(((double) sum) / count) +
-                   "/" +
-                   round(max);
-        }
-
-        private double round(final double value) {
-            return Math.round(value) / 10.0;
-        }
-
-        public static Mes combineWith(final Mes m1, final Mes m2) {
-
-            return new Mes(
-                    Math.min(m1.min, m2.min),
-                    Math.max(m1.max, m2.max),
-                    m1.sum + m2.sum,
-                    m1.count + m2.count
-            );
-        }
-    }
-
     public static void main(final String[] args) throws IOException {
         // long before = System.currentTimeMillis();
         /**
