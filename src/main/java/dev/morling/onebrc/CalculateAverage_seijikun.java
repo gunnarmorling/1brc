@@ -18,7 +18,9 @@ package dev.morling.onebrc;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.VectorOperators;
 
-import java.io.*;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.io.RandomAccessFile;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
@@ -236,7 +238,8 @@ public class CalculateAverage_seijikun {
                     offset += 1;
                 }
                 chunkEndPtr += offset;
-            } else { // last chunk ends at file end
+            }
+            else { // last chunk ends at file end
                 chunkEndPtr = file.length();
             }
             chunks[i] = new ChunkReader(file, chunkStartPtr, chunkEndPtr);
