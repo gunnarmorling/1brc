@@ -17,11 +17,16 @@ package dev.morling.onebrc;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.nio.channels.FileChannel;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.TreeMap;
+import java.util.concurrent.ForkJoinPool;
+import java.util.stream.IntStream;
 
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.nio.channels.FileChannel.MapMode.READ_ONLY;
@@ -37,11 +42,18 @@ public class CalculateAverage_kgeri {
         private double max = Double.MIN_VALUE;
         private long count;
 
-        void append(double measurement) {
+        public void append(double measurement) {
             min = Math.min(min, measurement);
             max = Math.max(max, measurement);
             sum += measurement;
             count++;
+        }
+
+        public void merge(MeasurementAggregate other) {
+            min = Math.min(min, other.min);
+            max = Math.max(max, other.max);
+            sum += other.sum;
+            count += other.count;
         }
 
         @Override
@@ -121,70 +133,81 @@ public class CalculateAverage_kgeri {
         }
     }
 
-    private static class MeasurementFlyweight {
-        // Max name length is 100 UTF-8 chars + ';' + 5x UTF-8 chars = 206, rounding up
-        private final byte[] buf = new byte[256];
-        private final MutableStringSlice name = new MutableStringSlice(buf);
-        private double measurement;
+    private static Map<StringSlice, MeasurementAggregate> readChunk(FileChannel channel, long from, long chunkSize) {
+        MemorySegment data;
+        try {
+            long offset = Math.max(0, from - 1);
+            long size = Math.min(channel.size() - offset, chunkSize + 1024);
+            data = channel.map(READ_ONLY, offset, size, Arena.ofConfined());
+        }
+        catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
 
-        long readNext(MemorySegment data, long position) {
+        long start = 0;
+        if (from > 0) {
+            while (data.get(JAVA_BYTE, start++) != '\n') {
+            }
+        }
+
+        Map<StringSlice, MeasurementAggregate> results = new HashMap<>(1000);
+        byte[] buf = new byte[256];
+        MutableStringSlice name = new MutableStringSlice(buf);
+
+        for (long pos = start; pos < chunkSize;) {
             name.clear();
             for (int i = 0;; i++) {
-                byte b = data.get(JAVA_BYTE, position + i); // Will throw an IOOBE for malformed files
+                byte b = data.get(JAVA_BYTE, pos + i); // Will throw an IOOBE for malformed files
                 buf[i] = b;
                 if (b == ';') {
                     name.updateLength(i);
                 }
                 else if (b == '\n') {
-                    measurement = parseDoubleFrom(buf, name.length() + 1, i - name.length() - 1);
-                    return position + i + 1;
+                    double measurement = parseDoubleFrom(buf, name.length() + 1, i - name.length() - 1);
+                    MeasurementAggregate aggr = results.get(name);
+                    if (aggr == null) {
+                        aggr = new MeasurementAggregate();
+                        results.put(new StringSlice(name), aggr);
+                    }
+                    aggr.append(measurement);
+                    pos = pos + i + 1;
+                    break;
                 }
             }
         }
 
-        public MutableStringSlice name() {
-            return name;
-        }
+        return results;
+    }
 
-        public double measurement() {
-            return measurement;
-        }
-
-        // Note: based on java.lang.Integer.parseInt, surely missing some edge cases but avoids allocation
-        static double parseDoubleFrom(byte[] buf, int offset, int length) {
-            boolean negative = false;
-            int integer = 0;
-            for (int i = 0; i < length; i++) {
-                byte c = buf[offset + i];
-                if (c == '-') {
-                    negative = true;
-                }
-                else if (c != '.') {
-                    integer *= 10;
-                    integer -= c - '0';
-                }
+    // Note: based on java.lang.Integer.parseInt, surely missing some edge cases but avoids allocation
+    private static double parseDoubleFrom(byte[] buf, int offset, int length) {
+        boolean negative = false;
+        int integer = 0;
+        for (int i = 0; i < length; i++) {
+            byte c = buf[offset + i];
+            if (c == '-') {
+                negative = true;
             }
-            return (negative ? integer : -integer) / 10.0;
+            else if (c != '.') {
+                integer *= 10;
+                integer -= c - '0';
+            }
         }
+        return (negative ? integer : -integer) / 10.0;
     }
 
     public static void main(String[] args) throws IOException {
-        Map<StringSlice, MeasurementAggregate> measurements = new HashMap<>(10000);
+        Map<String, MeasurementAggregate> measurements = new TreeMap<>();
 
         try (RandomAccessFile raf = new RandomAccessFile(FILE, "r")) {
             long size = raf.length();
-            MemorySegment data = raf.getChannel().map(READ_ONLY, 0, size, Arena.ofConfined());
-            MeasurementFlyweight m = new MeasurementFlyweight();
+            int threads = ForkJoinPool.getCommonPoolParallelism();
+            long chunkSize = size / threads;
 
-            for (long position = 0L; position < size;) {
-                position = m.readNext(data, position);
-                MeasurementAggregate aggr = measurements.get(m.name());
-                if (aggr == null) {
-                    aggr = new MeasurementAggregate();
-                    measurements.put(new StringSlice(m.name()), aggr);
-                }
-                aggr.append(m.measurement());
-            }
+            IntStream.range(0, threads)
+                    .parallel()
+                    .mapToObj(i -> readChunk(raf.getChannel(), i * chunkSize, chunkSize))
+                    .forEach(r -> r.forEach((n, m) -> measurements.computeIfAbsent(n.toString(), x -> new MeasurementAggregate()).merge(m)));
         }
 
         System.out.println(measurements);
