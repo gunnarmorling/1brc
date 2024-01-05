@@ -49,7 +49,7 @@ public class CalculateAverage_yavuztas {
         }
 
         public String toString() {
-            return STR."\{round(this.min)}/\{round(this.sum / this.count)}/\{round(this.max)}";
+            return round(this.min) + "/" + round(this.sum / this.count) + "/" + round(this.max);
         }
 
         private double round(double value) {
@@ -57,15 +57,14 @@ public class CalculateAverage_yavuztas {
         }
     }
 
-    static class Key {
+    static class KeyBuffer {
 
+        ByteBuffer value;
         int hash;
 
-        String value;
-
-        public Key(String value) {
-            this.value = value;
-            this.hash = value.hashCode();
+        public KeyBuffer(ByteBuffer buffer) {
+            this.value = buffer;
+            this.hash = buffer.hashCode();
         }
 
         @Override
@@ -73,11 +72,11 @@ public class CalculateAverage_yavuztas {
             if (this == o)
                 return true;
 
-            final Key key = (Key) o;
-            if (o == null || getClass() != o.getClass() || this.hash != key.hash)
+            final KeyBuffer keyBuffer = (KeyBuffer) o;
+            if (o == null || getClass() != o.getClass() || this.hash != keyBuffer.hash)
                 return false;
 
-            return this.value.equals(key.value);
+            return this.value.equals(keyBuffer.value);
         }
 
         @Override
@@ -87,7 +86,10 @@ public class CalculateAverage_yavuztas {
 
         @Override
         public String toString() {
-            return this.value;
+            final int limit = this.value.limit();
+            final byte[] bytes = new byte[limit];
+            this.value.get(bytes);
+            return new String(bytes, 0, limit, StandardCharsets.UTF_8);
         }
     }
 
@@ -109,7 +111,7 @@ public class CalculateAverage_yavuztas {
             this.buffer = buffer;
         }
 
-        void traverse(BiConsumer<Key, Double> consumer) {
+        void traverse(BiConsumer<KeyBuffer, Double> consumer) {
 
             int semiColonPos = 0;
             int lineBreakPos = 0;
@@ -126,19 +128,20 @@ public class CalculateAverage_yavuztas {
                 this.buffer.position(this.position); // set back to line start
                 final int length1 = semiColonPos - this.position; // station length
                 final int length2 = lineBreakPos - semiColonPos; // temperature length
-                final String station = readString(length1); // read station
+
+                final ByteBuffer station = getRef(length1); // read station
                 final String temperature = readString(length2); // read temperature
 
                 this.position = lineBreakPos; // skip to line end
 
-                consumer.accept(new Key(station), Double.parseDouble(temperature));
+                consumer.accept(new KeyBuffer(station), Double.parseDouble(temperature));
             }
         }
 
-        Map<Key, Measurement> accumulate(Map<Key, Measurement> initial) {
+        Map<KeyBuffer, Measurement> accumulate(Map<KeyBuffer, Measurement> initial) {
 
             traverse((station, temperature) -> {
-                initial.compute(station, (_, m) -> {
+                initial.compute(station, (k, m) -> {
                     if (m == null) {
                         return new Measurement(temperature);
                     }
@@ -158,6 +161,17 @@ public class CalculateAverage_yavuztas {
             this.buffer.get(this.workBuffer, 0, length);
             return new String(this.workBuffer, 0, length - 1, // strip the last char
                     StandardCharsets.UTF_8);
+        }
+
+        ByteBuffer getRef(int length) {
+            final ByteBuffer slice = this.buffer.slice().limit(length - 1);
+            skip(this.buffer, length);
+            return slice;
+        }
+
+        static void skip(ByteBuffer buffer, int length) {
+            final int pos = buffer.position();
+            buffer.position(pos + length);
         }
 
     }
@@ -208,10 +222,10 @@ public class CalculateAverage_yavuztas {
             this.accessorPool = Executors.newFixedThreadPool(concurrency);
         }
 
-        void readAndCollect(Map<Key, Measurement> output) {
+        void readAndCollect(Map<KeyBuffer, Measurement> output) {
             for (final FixedRegionDataAccessor accessor : this.accessors) {
                 this.accessorPool.submit(() -> {
-                    final Map<Key, Measurement> partial = accessor.accumulate(new HashMap<>(1 << 10, 1)); // aka 1k
+                    final Map<KeyBuffer, Measurement> partial = accessor.accumulate(new HashMap<>(1 << 10, 1)); // aka 1k
                     this.mergerThread.submit(() -> mergeMaps(output, partial));
                 });
             }
@@ -243,7 +257,7 @@ public class CalculateAverage_yavuztas {
             return position;
         }
 
-        private static Map<Key, Measurement> mergeMaps(Map<Key, Measurement> map1, Map<Key, Measurement> map2) {
+        private static Map<KeyBuffer, Measurement> mergeMaps(Map<KeyBuffer, Measurement> map1, Map<KeyBuffer, Measurement> map2) {
             map2.forEach((s, measurement) -> {
                 map1.merge(s, measurement, (m1, m2) -> {
                     m1.min = Math.min(m1.min, m2.min);
@@ -260,14 +274,14 @@ public class CalculateAverage_yavuztas {
     }
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        final Map<Key, Measurement> output = new HashMap<>(1 << 10, 1); // aka 1k
+        final Map<KeyBuffer, Measurement> output = new HashMap<>(1 << 10, 1); // aka 1k
         try (final FastDataReader reader = new FastDataReader(FILE)) {
             reader.readAndCollect(output);
         }
 
         final TreeMap<String, Measurement> sorted = new TreeMap<>();
         output.forEach((s, measurement) -> {
-            sorted.put(s.value, measurement);
+            sorted.put(s.toString(), measurement);
         });
         System.out.println(sorted);
     }
