@@ -67,17 +67,6 @@ public class CalculateAverage_isolgpus {
         executorService.shutdown();
 
         Map<String, MeasurementCollector> measurementCollectorsByCity = mergeMeasurements(measurementCollectors);
-
-        List<MeasurementCollector> collect = measurementCollectors.stream().filter(c -> c != null)
-                .flatMap(Arrays::stream).flatMap(c -> {
-                    ArrayList<MeasurementCollector> links = new ArrayList<>();
-                    while (c != null) {
-                        links.add(c);
-                        c = c.link;
-                    }
-                    return links.stream();
-                }).filter(p -> !p.collected).collect(Collectors.toList());
-
         List<MeasurementResult> results = measurementCollectorsByCity.values().stream().map(MeasurementResult::from).toList();
 
         System.out.println("{" + results.stream().map(MeasurementResult::toString).collect(Collectors.joining(", ")) + "}");
