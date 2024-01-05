@@ -17,12 +17,8 @@
 
 if [ -z "$1" ]
   then
-    echo "Usage: prepare_evaluation.sh <fork name>"
+    echo "Usage: eval.sh <fork name>"
     exit 1
 fi
 
-
-git checkout -b $1
-
-git pull https://github.com/$1/1brc.git
-# git pull git@github.com:$1/1brc.git
+./evaluate.sh $1 2>&1 | tee $1.out
