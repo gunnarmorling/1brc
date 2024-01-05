@@ -37,8 +37,8 @@ Submit your implementation by Jan 31 2024 and become part of the leaderboard!
 
 | # | Result (m:s.ms) | Implementation     | JDK | Submitter     |
 |---|-----------------|--------------------|-----|---------------|
-| 1.|        00:12.063| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_spullara.java)| 21.0.1-graalce| [Sam Pullara](https://github.com/spullara)|
-| 2.|        00:12.685| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_royvanrijn.java)| 21.0.1-graalce   | [Roy van Rijn](https://github.com/royvanrijn)|
+| 1.|        00:12.063| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_spullara.java)| 21.0.1-graal| [Sam Pullara](https://github.com/spullara)|
+| 2.|        00:12.685| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_royvanrijn.java)| 21.0.1-graal   | [Roy van Rijn](https://github.com/royvanrijn)|
 | 3.|        00:14.251| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_artsiomkorzun.java)| 21.0.1-open| [Artsiom Korzun](https://github.com/artsiomkorzun)|
 | 4.|        00:14.476| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_ebarlas.java)| 21.0.1-graalce| [Elliot Barlas](https://github.com/ebarlas)|
 | 5.|        00:17.905| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_lawrey.java)| 21.0.1-open| [Peter Lawrey](https://github.com/peter-lawrey)|
