@@ -46,7 +46,7 @@ public class CalculateAverage_isolgpus {
 
         File file = Paths.get(FILE).toFile();
         long length = file.length();
-        long chunksCount = Math.max(THREAD_COUNT, length / MAX_CHUNK_SIZE);
+        long chunksCount = Math.max(THREAD_COUNT, (int) Math.ceil(length / (double) MAX_CHUNK_SIZE));
 
         long estimatedChunkSize = length / chunksCount;
 
@@ -157,8 +157,10 @@ public class CalculateAverage_isolgpus {
 
         }
         catch (BufferUnderflowException e) {
-            e.printStackTrace();
-            throw new RuntimeException(e);
+            if (i != maxLengthOfFile - seekStart) {
+                e.printStackTrace();
+                throw new RuntimeException(e);
+            }
         }
 
         return measurementCollectors;
@@ -182,7 +184,6 @@ public class CalculateAverage_isolgpus {
                 else {
                     measurementCollector = measurementCollector.link;
                 }
-
             }
 
         }
