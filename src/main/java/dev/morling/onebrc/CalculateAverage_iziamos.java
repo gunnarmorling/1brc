@@ -165,24 +165,25 @@ public class CalculateAverage_iziamos {
 
     private static int readValue(final ByteBuffer buffer) {
         final byte first = buffer.get();
-        final int sign = first == '-' ? -1 : 1;
-        int value = sign * (digitCharToInt(first == '-' ? buffer.get() : first));
+        final boolean isNegative = first == '-';
+
+        int value = digitCharToInt(isNegative ? buffer.get() : first);
 
         final byte second = buffer.get();
         if (second != '.') {
             value *= 10;
-            value += digitCharToInt(second) * sign;
+            value += digitCharToInt(second);
             buffer.get();
         }
 
         final byte decimal = buffer.get();
         value *= 10;
-        value += digitCharToInt(decimal) * sign;
+        value += digitCharToInt(decimal);
         if (buffer.hasRemaining()) {
             buffer.get();
         }
 
-        return value;
+        return isNegative ? -value : value;
     }
 
     private static int digitCharToInt(final byte b) {
