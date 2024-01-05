@@ -42,6 +42,7 @@ public class CalculateAverage_isolgpus {
     public static final byte NEW_LINE = 10;
 
     public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
+        ExecutorService executorService = Executors.newFixedThreadPool(THREAD_COUNT);
 
         File file = Paths.get(FILE).toFile();
         long length = file.length();
@@ -50,8 +51,6 @@ public class CalculateAverage_isolgpus {
         long estimatedChunkSize = length / chunksCount;
 
         FileChannel channel = new RandomAccessFile(file, "r").getChannel();
-
-        ExecutorService executorService = Executors.newFixedThreadPool(THREAD_COUNT);
 
         List<Future<MeasurementCollector[]>> futures = new ArrayList<>();
         for (int i = 0; i < chunksCount; i++) {
@@ -63,13 +62,13 @@ public class CalculateAverage_isolgpus {
         for (Future<MeasurementCollector[]> result : futures) {
             measurementCollectors.add(result.get());
         }
-
         executorService.shutdown();
 
         Map<String, MeasurementCollector> measurementCollectorsByCity = mergeMeasurements(measurementCollectors);
         List<MeasurementResult> results = measurementCollectorsByCity.values().stream().map(MeasurementResult::from).toList();
 
         System.out.println("{" + results.stream().map(MeasurementResult::toString).collect(Collectors.joining(", ")) + "}");
+
     }
 
     private static Map<String, MeasurementCollector> mergeMeasurements(List<MeasurementCollector[]> resultsFromAllChunk) {
@@ -109,6 +108,7 @@ public class CalculateAverage_isolgpus {
         MeasurementCollector[] measurementCollectors = new MeasurementCollector[HISTOGRAMS_LENGTH];
         int valueIndex = 0;
         int nameBufferIndex = 0;
+        int nameSum = 0;
         boolean parsingName = true;
         long i = 0;
 
@@ -126,7 +126,10 @@ public class CalculateAverage_isolgpus {
                 byte aChar;
                 if (parsingName) {
 
-                    nameBufferIndex = buildName(r, nameBuffer, nameBufferIndex);
+                    while ((aChar = r.get()) != SEPERATOR) {
+                        nameBuffer[nameBufferIndex++] = aChar;
+                        nameSum += aChar;
+                    }
                     parsingName = false;
                     i += nameBufferIndex + 1;
                 }
@@ -141,12 +144,13 @@ public class CalculateAverage_isolgpus {
                     r.get();
 
                     int hash = byteHashCode(nameBuffer, nameBufferIndex);
-                    MeasurementCollector measurementCollector = resolveMeasurementCollector(measurementCollectors, hash, nameBuffer, nameBufferIndex);
+                    MeasurementCollector measurementCollector = resolveMeasurementCollector(measurementCollectors, hash, nameBuffer, nameBufferIndex, nameSum);
 
                     measurementCollector.feed(value);
                     i += valueIndex + (isNegative ? 4 : 3);
                     valueIndex = 0;
                     nameBufferIndex = 0;
+                    nameSum = 0;
                     parsingName = true;
                 }
             }
@@ -160,7 +164,8 @@ public class CalculateAverage_isolgpus {
         return measurementCollectors;
     }
 
-    private static MeasurementCollector resolveMeasurementCollector(MeasurementCollector[] measurementCollectors, int hash, byte[] nameBuffer, int nameBufferIndex) {
+    private static MeasurementCollector resolveMeasurementCollector(MeasurementCollector[] measurementCollectors, int hash, byte[] nameBuffer, int nameBufferIndex,
+                                                                    int nameSum) {
         MeasurementCollector measurementCollector = measurementCollectors[hash & HISTOGRAMS_MASK];
         if (measurementCollector == null) {
             measurementCollector = new MeasurementCollector(Arrays.copyOf(nameBuffer, nameBufferIndex));
@@ -168,7 +173,7 @@ public class CalculateAverage_isolgpus {
         }
         else {
             // collision unhappy path, try to avoid
-            while (!nameEquals(measurementCollector.name, nameBuffer, nameBufferIndex)) {
+            while (!nameEquals(measurementCollector.name, measurementCollector.nameSum, nameSum, nameBufferIndex)) {
                 if (measurementCollector.link == null) {
                     measurementCollector.link = new MeasurementCollector(Arrays.copyOf(nameBuffer, nameBufferIndex));
                     measurementCollector = measurementCollector.link;
@@ -184,17 +189,13 @@ public class CalculateAverage_isolgpus {
         return measurementCollector;
     }
 
-    private static boolean nameEquals(byte[] existingName, byte[] newName, int nameBufferIndex) {
+    private static boolean nameEquals(byte[] existingName, int existingNameSum, int incomingNameSum, int nameBufferIndex) {
+
         if (existingName.length != nameBufferIndex) {
             return false;
         }
 
-        for (int i = 0; i < nameBufferIndex; i++) {
-            if (existingName[i] != newName[i]) {
-                return false;
-            }
-        }
-        return true;
+        return incomingNameSum == existingNameSum;
     }
 
     private static int resolveValue(int valueIndex, byte[] valueBuffer, byte decimalValue, boolean isNegative) {
@@ -225,14 +226,6 @@ public class CalculateAverage_isolgpus {
         return valueIndex;
     }
 
-    private static int buildName(MappedByteBuffer r, byte[] nameBuffer, int nameBufferIndex) {
-        byte aChar;
-        while ((aChar = r.get()) != SEPERATOR) {
-            nameBuffer[nameBufferIndex++] = aChar;
-        }
-        return nameBufferIndex;
-    }
-
     private static int byteHashCode(byte[] a, int length) {
         int result = 0;
         for (int i = 0; i < length; i++) {
@@ -243,6 +236,7 @@ public class CalculateAverage_isolgpus {
 
     private static class MeasurementCollector {
         private final byte[] name;
+        private final int nameSum;
         public MeasurementCollector link;
         private long sum;
         private int count;
@@ -252,6 +246,11 @@ public class CalculateAverage_isolgpus {
         public MeasurementCollector(byte[] name) {
 
             this.name = name;
+            int nameSum = 0;
+            for (int i = 0; i < name.length; i++) {
+                nameSum += name[i];
+            }
+            this.nameSum = nameSum;
         }
 
         public void feed(int value) {
