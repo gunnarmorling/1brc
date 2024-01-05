@@ -18,7 +18,7 @@ package dev.morling.onebrc;
 import java.io.IOException;
 import java.io.BufferedReader;
 import java.io.FileReader;
-import java.util.TreeMap;
+import java.util.HashMap;
 
 public class CalculateAverage_netrunnereve {
 
@@ -33,7 +33,7 @@ public class CalculateAverage_netrunnereve {
 
     public static void main(String[] args) {
         try {
-            TreeMap<String, MeasurementAggregator> staTree = new TreeMap<String, MeasurementAggregator>();
+            HashMap<String, MeasurementAggregator> staHash = new HashMap<String, MeasurementAggregator>();
 
             BufferedReader filBuf = new BufferedReader(new FileReader(FILE));
             String line = filBuf.readLine();
@@ -42,7 +42,7 @@ public class CalculateAverage_netrunnereve {
                 String[] linSpl = line.split(";", 2); // station, measurement
                 String station = linSpl[0];
 
-                MeasurementAggregator ma = staTree.get(station);
+                MeasurementAggregator ma = staHash.get(station);
                 if (ma == null) {
                     ma = new MeasurementAggregator();
                 }
@@ -57,14 +57,14 @@ public class CalculateAverage_netrunnereve {
                 ma.sum += tempa;
                 ma.count++;
 
-                staTree.put(linSpl[0], ma);
+                staHash.put(linSpl[0], ma);
 
                 line = filBuf.readLine();
             }
 
             String out = "{";
-            for (String i : staTree.keySet()) {
-                MeasurementAggregator ma = staTree.get(i);
+            for (String i : staHash.keySet()) {
+                MeasurementAggregator ma = staHash.get(i);
                 double avg = Math.round(ma.sum / ma.count * 10.0) / 10.0;
                 out += i + "=" + ma.min + "/" + avg + "/" + ma.max + ", ";
             }
