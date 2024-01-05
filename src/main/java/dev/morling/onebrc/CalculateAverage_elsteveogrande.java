@@ -18,7 +18,10 @@ package dev.morling.onebrc;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 
 public class CalculateAverage_elsteveogrande {
@@ -89,27 +92,70 @@ public class CalculateAverage_elsteveogrande {
 
     SortedMap<String, Bucket> allBuckets = new ConcurrentSkipListMap<>();
 
-    // final class Task extends Thread {
-    // final TreeMap<String, Bucket> buckets = new TreeMap<>();
-    // }
+    final class Task extends Thread {
+        final List<String> list = new LinkedList<>();
+        final TreeMap<String, Bucket> buckets = new TreeMap<>();
+
+        Bucket getBucket(String station) {
+            return buckets.computeIfAbsent(
+                    station,
+                    s -> {
+                        var ret = new Bucket(s);
+                        allBuckets.put(s, ret);
+                        return ret;
+                    });
+        }
+
+        void update(String station, float val) {
+            var bucket = getBucket(station);
+            bucket.update(val);
+        }
+
+        void update(String line) {
+            int semi = line.indexOf(';');
+            var station = line.substring(0, semi);
+            var val = Float.parseFloat(line.substring(semi + 1));
+            update(station, val);
+        }
+
+        @Override
+        public void run() {
+            for (var line : list) {
+                update(line);
+            }
+        }
+    }
 
     private void run() throws Exception {
+        Task[] tasks = new Task[8];
+        for (int i = 0; i < tasks.length; i++) {
+            tasks[i] = new Task();
+        }
+
         try (var lines = Files.lines(Paths.get(FILE))) {
             lines.forEach(line -> {
-                int semi = line.indexOf(';');
-                var station = line.substring(0, semi);
-                var val = Float.parseFloat(line.substring(semi + 1));
-                var bucket = allBuckets.computeIfAbsent(station, Bucket::new);
-                bucket.update(val);
+                var index = ((int) line.charAt(0)) % tasks.length;
+                var task = tasks[index];
+                task.list.add(line);
             });
         }
+
+        for (Task task : tasks) {
+            task.start();
+        }
+
+        for (Task task : tasks) {
+            task.join();
+        }
+
         final long firstHash = allBuckets.firstEntry().getValue().hash;
         System.out.print('{');
         allBuckets.values().forEach(b -> {
             if (b.hash != firstHash) {
                 System.out.print(", ");
             }
-            System.out.print(b);
+            System.out.println(b); ////////////////////////////////////////////////////////
+            // System.out.print(b);
         });
         System.out.println('}');
     }
