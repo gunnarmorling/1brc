@@ -104,7 +104,8 @@ public class CalculateAverage_lawrey_magic {
                 m.sample(temp / 10.0);
             }
 
-        } catch (IOException ioe) {
+        }
+        catch (IOException ioe) {
             throw new RuntimeException(ioe);
         }
         return array;
@@ -114,8 +115,7 @@ public class CalculateAverage_lawrey_magic {
     private static int readTemperatureFromBuffer(MappedByteBuffer mbb) {
         int temp = 0;
         boolean negative = false;
-        outer:
-        while (mbb.remaining() > 0) {
+        outer: while (mbb.remaining() > 0) {
             int b = mbb.get();
             switch (b) {
                 case '-':
@@ -155,13 +155,16 @@ public class CalculateAverage_lawrey_magic {
                 if ((s & 0xFF) == ';') {
                     rewind = 3;
                     s = ';';
-                } else if ((s & 0xFF00) == (';' << 8)) {
+                }
+                else if ((s & 0xFF00) == (';' << 8)) {
                     rewind = 2;
                     s &= 0xFFFF;
-                } else if ((s & 0xFF0000) == (';' << 16)) {
+                }
+                else if ((s & 0xFF0000) == (';' << 16)) {
                     rewind = 1;
                     s &= 0xFFFFFF;
-                } else if ((s & 0xFF000000) == (';' << 24)) {
+                }
+                else if ((s & 0xFF000000) == (';' << 24)) {
                     rewind = 0;
                 }
                 hash = hash * 21503 + s;
