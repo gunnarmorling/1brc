@@ -19,8 +19,10 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.FileReader;
 import java.io.FileWriter;
+import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.concurrent.ThreadLocalRandom;
 
 public class CreateMeasurements3 {
@@ -78,6 +80,7 @@ public class CreateMeasurements3 {
             }
         }
         final var weatherStations = new ArrayList<WeatherStation>();
+        final var names = new HashSet<String>();
         var minLen = Integer.MAX_VALUE;
         var maxLen = Integer.MIN_VALUE;
         try (var rows = new BufferedReader(new FileReader("data/weather_stations.csv"))) {
@@ -104,18 +107,15 @@ public class CreateMeasurements3 {
                 }
                 var name = new String(buf, 0, nameLen).trim();
                 while (name.length() < nameLen) {
-                    var n = nameSource.read();
-                    if (n == -1) {
-                        throw new Exception("Name source exhausted");
-                    }
-                    var ch = (char) n;
-                    if (ch != ' ') {
-                        name += ch;
-                    }
+                    name += readNonSpace(nameSource);
+                }
+                while (names.contains(name)) {
+                    name = name.substring(1) + readNonSpace(nameSource);
                 }
                 if (name.indexOf(';') != -1) {
                     throw new Exception("Station name contains a semicolon!");
                 }
+                names.add(name);
                 var lat = Float.parseFloat(row.substring(row.indexOf(';') + 1));
                 // Guesstimate mean temperature using cosine of latitude
                 var avgTemp = (float) (30 * Math.cos(Math.toRadians(lat))) - 10;
@@ -124,5 +124,18 @@ public class CreateMeasurements3 {
         }
         System.out.format("Generated %,d station names with length from %,d to %,d%n", KEYSET_SIZE, minLen, maxLen);
         return weatherStations;
+    }
+
+    private static char readNonSpace(StringReader nameSource) throws IOException {
+        while (true) {
+            var n = nameSource.read();
+            if (n == -1) {
+                throw new IOException("Name source exhausted");
+            }
+            var ch = (char) n;
+            if (ch != ' ') {
+                return ch;
+            }
+        }
     }
 }
