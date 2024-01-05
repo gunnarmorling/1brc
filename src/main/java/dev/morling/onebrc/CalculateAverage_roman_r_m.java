@@ -17,7 +17,9 @@ package dev.morling.onebrc;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.MappedByteBuffer;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
 import java.util.HashMap;
@@ -36,15 +38,11 @@ public class CalculateAverage_roman_r_m {
         var value = new ByteString();
         var parsingStation = true;
 
-        long chunkSize = 1024 * 1024 * 1024;
         long offset = 0;
         var channel = FileChannel.open(Paths.get(FILE));
-        MappedByteBuffer buf = channel.map(FileChannel.MapMode.READ_ONLY, offset, chunkSize);
+        MemorySegment ms = channel.map(FileChannel.MapMode.READ_ONLY, offset, fileSize, Arena.ofAuto());
         while (offset < fileSize) {
-            if (buf == null || !buf.hasRemaining()) {
-                buf = channel.map(FileChannel.MapMode.READ_ONLY, offset, Math.min(chunkSize, fileSize - offset));
-            }
-            byte c = buf.get();
+            byte c = ms.get(ValueLayout.JAVA_BYTE, offset);
             offset++;
             if (c == ';') {
                 value.reset();
