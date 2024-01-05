@@ -16,6 +16,7 @@
 package dev.morling.onebrc;
 
 import jdk.incubator.vector.DoubleVector;
+import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
 
@@ -39,7 +40,7 @@ public class CalculateAverage_artpar {
     private static final Map<Integer, String> nameStringMap = new ConcurrentHashMap<>(1024 * 1024);
     private static final Map<Integer, String> tempStringMap = new ConcurrentHashMap<>(1024 * 1024);
     private static final Map<Integer, Double> hashToDouble = new ConcurrentHashMap<>(1024 * 1024);
-    private static final VectorSpecies<Double> SPECIES = DoubleVector.SPECIES_MAX;
+    private static final VectorSpecies<Integer> SPECIES = IntVector.SPECIES_MAX;
     final int VECTOR_SIZE = 512;
     final int VECTOR_SIZE_1 = VECTOR_SIZE - 1;
     final int SIZE = 1024 * 128;
@@ -117,13 +118,13 @@ public class CalculateAverage_artpar {
         new CalculateAverage_artpar();
     }
 
-    public static double parseDouble(byte[] str, int length) {
+    public static int parseDouble(byte[] str, int length) {
 
         boolean negative = false;
 
         int start = 0;
         int decimalIndex = -1;
-        double result = 0;
+        int result = 0;
 
         // Check for negative numbers
         if (str[0] == '-') {
@@ -136,7 +137,7 @@ public class CalculateAverage_artpar {
             byte c = str[i];
 
             if (c == '.') {
-                decimalIndex = i;
+                continue;
             }
             else {
                 result = result * 10 + (c - '0');
@@ -144,21 +145,33 @@ public class CalculateAverage_artpar {
         }
 
         // Adjust for the decimal point
-        if (decimalIndex != -1) {
-            result /= 10;
-        }
+        // if (decimalIndex != -1) {
+        // result /= 10;
+        // }
 
         return negative ? -result : result;
     }
 
     public static int hashCode(byte[] array, int length) {
-        if (array == null) {
+        if (array == null || length == 0) {
             return 0;
         }
 
         int result = 1;
-        for (int i = 0; i < length; i++) {
-            result = 31 * result + array[i];
+        int i = 0;
+
+        // Loop unrolling for every 4 elements
+        for (; i <= length - 4; i += 4) {
+            result = result
+                    + (array[i] * 31 * 31 * 31)
+                    + (array[i + 1] * 31 * 31)
+                    + (array[i + 2] * 31)
+                    + array[i + 3];
+        }
+
+        // Process remaining elements
+        for (; i < length; i++) {
+            result = result * 31 + array[i];
         }
 
         return result;
@@ -169,7 +182,7 @@ public class CalculateAverage_artpar {
 
     private record ResultRow(double min, double mean, double max, long count, double sum) {
         public String toString() {
-            return round(min) + "/" + round(mean) + "/" + round(max);
+            return round(min / 10) + "/" + round(mean / 10) + "/" + round(max / 10);
         }
 
         private double round(double value) {
@@ -275,11 +288,11 @@ public class CalculateAverage_artpar {
                     // if (!hashToDouble.containsKey(tempValueHashCode)) {
                     // hashToDouble.put(tempValueHashCode, parseDouble(tempValue));
                     // }
-                    double doubleValue = parseDouble(rawBuffer, bufferIndex);
+                    int doubleValue = parseDouble(rawBuffer, bufferIndex);
                     bufferIndex = 0;
 
                     // Measurement measurement = new Measurement(matchedStation, doubleValue);
-                    double[] array = matchedStation.values;
+                    int[] array = matchedStation.values;
                     int index = matchedStation.count;
                     array[index] = doubleValue;
                     if (index == VECTOR_SIZE_1) {
@@ -291,7 +304,7 @@ public class CalculateAverage_artpar {
                         long count = 0;
                         for (; i < SPECIES.loopBound(array.length); i += SPECIES.length()) {
                             // Vector operations
-                            DoubleVector vector = DoubleVector.fromArray(SPECIES, array, i);
+                            IntVector vector = IntVector.fromArray(SPECIES, array, i);
                             min = Math.min(min, vector.reduceLanes(VectorOperators.MIN));
                             max = Math.max(max, vector.reduceLanes(VectorOperators.MAX));
                             sum += vector.reduceLanes(VectorOperators.ADD);
@@ -325,14 +338,14 @@ public class CalculateAverage_artpar {
                             return;
                         }
                         else if (count == 1) {
-                            double[] array = stationName.values;
+                            int[] array = stationName.values;
                             double val = array[0];
                             MeasurementAggregator ma = new MeasurementAggregator(val, val, val, 1);
                             stationName.measurementAggregator.combine(ma);
                         }
                         else {
-                            double[] array = stationName.values;
-                            double[] subArray = new double[count];
+                            int[] array = stationName.values;
+                            int[] subArray = new int[count];
                             System.arraycopy(array, 0, subArray, 0, count);
                             // Creating a DoubleVector from the array
                             // System.out.println("Create vector from [" + count + "] -> " + subArray.length);
@@ -345,7 +358,7 @@ public class CalculateAverage_artpar {
 
                             for (; i < SPECIES.loopBound(subArray.length); i += SPECIES.length()) {
                                 // Vector operations
-                                DoubleVector vector = DoubleVector.fromArray(SPECIES, subArray, i);
+                                IntVector vector = IntVector.fromArray(SPECIES, subArray, i);
                                 min = Math.min(min, vector.reduceLanes(VectorOperators.MIN));
                                 max = Math.max(max, vector.reduceLanes(VectorOperators.MAX));
                                 sum += vector.reduceLanes(VectorOperators.ADD);
@@ -401,7 +414,7 @@ public class CalculateAverage_artpar {
         private final String name;
         private final int index;
         public int count = 0;
-        public double[] values = new double[VECTOR_SIZE];
+        public int[] values = new int[VECTOR_SIZE];
         public MeasurementAggregator measurementAggregator = new MeasurementAggregator();
 
         public StationName(String name, int index, int hash) {
