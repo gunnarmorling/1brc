@@ -30,49 +30,53 @@ public class CalculateAverage_netrunnereve {
         private float sum = 0;
         private int count = 0;
     }
+
     public static void main(String[] args) {
-		try {
-			HashMap<String, MeasurementAggregator> staHash = new HashMap<String, MeasurementAggregator>();
+        try {
+            HashMap<String, MeasurementAggregator> staHash = new HashMap<String, MeasurementAggregator>();
 
-			BufferedReader filBuf = new BufferedReader(new FileReader(FILE));
-			String line = filBuf.readLine();
+            BufferedReader filBuf = new BufferedReader(new FileReader(FILE));
+            String line = filBuf.readLine();
 
-			while (line != null) {
-				String[] linSpl = line.split(";", 2); // station, measurement
-				String station = linSpl[0];
+            while (line != null) {
+                String[] linSpl = line.split(";", 2); // station, measurement
+                String station = linSpl[0];
 
-				MeasurementAggregator ma = staHash.get(station);
-				if (ma == null) {
-					ma = new MeasurementAggregator();
-				}
+                MeasurementAggregator ma = staHash.get(station);
+                if (ma == null) {
+                    ma = new MeasurementAggregator();
+                }
 
-				float tempa = Float.parseFloat(linSpl[1]);
-				if (tempa < ma.min) {
-					ma.min = tempa;
-				}
-				if (tempa > ma.max) {
-					ma.max = tempa;
-				}
-				ma.sum += tempa;
-				ma.count++;
+                float tempa = Float.parseFloat(linSpl[1]);
+                if (tempa < ma.min) {
+                    ma.min = tempa;
+                }
+                if (tempa > ma.max) {
+                    ma.max = tempa;
+                }
+                ma.sum += tempa;
+                ma.count++;
 
-				staHash.put(linSpl[0], ma);
+                staHash.put(linSpl[0], ma);
 
-				line = filBuf.readLine();
-			}
+                line = filBuf.readLine();
+            }
 
-			System.out.print("{");
-			for (String i : staHash.keySet()) {
-				MeasurementAggregator ma = staHash.get(i);
-				float avg = ma.sum/ma.count;
-				System.out.print(i + "=" + ma.min + "/" + avg + "/" + ma.max + ", ");
-			}
-			System.out.print("}\n");
+            /*
+             * System.out.print("{");
+             * for (String i : staHash.keySet()) {
+             * MeasurementAggregator ma = staHash.get(i);
+             * float avg = ma.sum/ma.count;
+             * System.out.print(i + "=" + ma.min + "/" + avg + "/" + ma.max + ", ");
+             * }
+             * System.out.print("}\n");
+             */
 
-			filBuf.close();
-        } catch (IOException ex) {
-			System.exit(1);
-		}
-		System.exit(0);
+            filBuf.close();
+        }
+        catch (IOException ex) {
+            System.exit(1);
+        }
+        System.exit(0);
     }
 }
