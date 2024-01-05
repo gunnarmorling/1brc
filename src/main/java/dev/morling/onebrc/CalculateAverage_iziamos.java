@@ -62,7 +62,7 @@ public class CalculateAverage_iziamos {
         aggregate.forEach((name, max, min, sum, count) -> output.put(bytesToString(name), new ResultRow(min, (double) sum / count, max)));
 
         System.out.println(output);
-//        System.out.println(Arrays.stream(aggregate.counts).sum());
+        // System.out.println(Arrays.stream(aggregate.counts).sum());
     }
 
     private static void mergeResults(final PartialResult aggregate, final PartialResult result) {
@@ -178,14 +178,16 @@ public class CalculateAverage_iziamos {
 
         final byte second = buffer.get();
         value = addSecondDigitIfPresent(buffer, second, value);
-
         value = addDecimal(buffer, value);
 
+        consumeNewLine(buffer);
+        return isNegative ? -value : value;
+    }
+
+    private static void consumeNewLine(final ByteBuffer buffer) {
         if (buffer.hasRemaining()) {
             buffer.get();
         }
-
-        return isNegative ? -value : value;
     }
 
     private static int addDecimal(final ByteBuffer buffer, int value) {
