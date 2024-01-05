@@ -16,6 +16,7 @@
 package dev.morling.onebrc;
 
 import java.io.IOException;
+import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
@@ -27,7 +28,7 @@ import java.util.TreeMap;
 
 public class CalculateAverage_ebarlas {
 
-    private static final int MAX_KEY_SIZE = 100;
+    private static final int MAX_KEY_SIZE = 100 * 4; // max 4 bytes per UTF-8 char
     private static final int HASH_FACTOR = 433;
     private static final int HASH_TBL_SIZE = 16_383; // range of allowed hash values, inclusive
 
@@ -140,57 +141,63 @@ public class CalculateAverage_ebarlas {
 
     private static Partition doProcessBuffer(ByteBuffer buffer, boolean first, Stats[] stats) {
         var header = first ? null : readHeader(buffer);
-        var readingKey = true; // reading key or value?
+        var keyStart = reallyDoProcessBuffer(buffer, stats);
+        var footer = keyStart < buffer.position() ? readFooter(buffer, keyStart) : null;
+        return new Partition(header, footer, stats);
+    }
+
+    private static int reallyDoProcessBuffer(ByteBuffer buffer, Stats[] stats) {
         var keyBuf = new byte[MAX_KEY_SIZE]; // buffer for key
         var keyPos = 0; // current position in key buffer
         var keyHash = 0; // accumulating hash of key
         var keyStart = buffer.position(); // start of key in buffer used for footer calc
-        var negative = false; // is value negative?
-        var val = 0; // accumulating value
-        Stats st = null;
-        while (buffer.hasRemaining()) {
-            var b = buffer.get();
-            if (readingKey) {
+        try { // abort with exception to avoid hasRemaining() calls
+            while (true) {
+                var b = buffer.get();
                 if (b != ';') {
                     keyHash = HASH_FACTOR * keyHash + b;
                     keyBuf[keyPos++] = b;
                 }
                 else {
                     var idx = keyHash & HASH_TBL_SIZE;
-                    st = stats[idx];
+                    var st = stats[idx];
                     if (st == null) { // nothing in table, eagerly claim spot
                         st = stats[idx] = newStats(keyBuf, keyPos, keyHash);
                     }
                     else if (!Arrays.equals(st.key, 0, st.key.length, keyBuf, 0, keyPos)) {
                         st = findInTable(stats, keyHash, keyBuf, keyPos);
                     }
-                    readingKey = false;
-                }
-            }
-            else {
-                if (b == '\n') {
+                    var negative = false;
+                    b = buffer.get(); // digit or dash
+                    if (b == '-') {
+                        negative = true;
+                        b = buffer.get(); // digit after neg
+                    }
+                    var val = b - '0';
+                    b = buffer.get(); // second digit or decimal
+                    if (b != '.') {
+                        val = val * 10 + (b - '0');
+                        buffer.get(); // decimal
+                    }
+                    val = val * 10 + (buffer.get() - '0'); // digit after decimal
+                    buffer.get(); // newline
                     var v = negative ? -val : val;
                     st.min = Math.min(st.min, v);
                     st.max = Math.max(st.max, v);
                     st.sum += v;
                     st.count++;
-                    readingKey = true;
-                    keyHash = 0;
-                    val = 0;
-                    negative = false;
-                    keyStart = buffer.position();
-                    keyPos = 0;
-                }
-                else if (b == '-') {
-                    negative = true;
-                }
-                else if (b != '.') { // skip '.' since fractional tenth unit after decimal point is assumed
-                    val = val * 10 + (b - '0');
+                    keyStart = buffer.position(); // preserve line start
+                    b = buffer.get(); // first byte of key
+                    keyHash = b;
+                    keyBuf[0] = b;
+                    keyPos = 1;
                 }
             }
         }
-        var footer = keyStart < buffer.position() ? readFooter(buffer, keyStart) : null;
-        return new Partition(header, footer, stats);
+        catch (BufferUnderflowException ignore) {
+
+        }
+        return keyStart;
     }
 
     private static Stats findInTable(Stats[] stats, int hash, byte[] key, int len) { // open-addressing scan
