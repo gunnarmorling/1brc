@@ -15,6 +15,5 @@
 #  limitations under the License.
 #
 
-./mvnw clean verify
 JAVA_OPTS=""
 time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_muditsaxena -Xmx8192m
