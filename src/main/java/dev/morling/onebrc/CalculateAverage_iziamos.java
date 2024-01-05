@@ -147,12 +147,16 @@ public class CalculateAverage_iziamos {
         final byte[] name = THREAD_LOCAL_NAME_BUFFER.get();
         int i = 0;
         for (byte b = buffer.get(); b != ';'; b = buffer.get(), ++i) {
-            name[i] = b;
+            writeByte(name, i, b);
             ret = 31 * ret + b;
         }
         name[i] = '\0';
 
         return ret;
+    }
+
+    private static void writeByte(final byte[] name, final int i, final byte b) {
+        name[i] = b;
     }
 
     private static long parseId(final byte[] name) {
@@ -172,20 +176,30 @@ public class CalculateAverage_iziamos {
         int value = digitCharToInt(isNegative ? buffer.get() : first);
 
         final byte second = buffer.get();
-        if (second != '.') {
-            value *= 10;
-            value += digitCharToInt(second);
-            buffer.get();
-        }
+        value = addSecondDigitIfPresent(buffer, second, value);
 
-        final byte decimal = buffer.get();
-        value *= 10;
-        value += digitCharToInt(decimal);
+        value = addDecimal(buffer, value);
+
         if (buffer.hasRemaining()) {
             buffer.get();
         }
 
         return isNegative ? -value : value;
+    }
+
+    private static int addDecimal(final ByteBuffer buffer, int value) {
+        value *= 10;
+        value += digitCharToInt(buffer.get());
+        return value;
+    }
+
+    private static int addSecondDigitIfPresent(final ByteBuffer buffer, final byte second, int value) {
+        if (second != '.') {
+            value *= 10;
+            value += digitCharToInt(second);
+            buffer.get();
+        }
+        return value;
     }
 
     private static int digitCharToInt(final byte b) {
