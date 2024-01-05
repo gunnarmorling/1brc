@@ -25,7 +25,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class CalculateAverage_deemkeen {
     private static final String FILE = "./measurements.txt";
@@ -34,7 +33,7 @@ public class CalculateAverage_deemkeen {
 
         File file = new File(FILE);
         long fileSize = file.length();
-        int numberOfSegments = 500;
+        int numberOfSegments = 400;
         long segmentSize = fileSize / numberOfSegments;
 
         if (segmentSize < 100) {
@@ -42,7 +41,6 @@ public class CalculateAverage_deemkeen {
             segmentSize = fileSize;
         }
 
-        Map<String, Result> resultMap = new TreeMap<>();
         List<SegmentPair> segments = new ArrayList<>();
 
         try (
@@ -75,61 +73,54 @@ public class CalculateAverage_deemkeen {
 
             try (ExecutorService es = Executors.newVirtualThreadPerTaskExecutor()) {
                 var partitions = Collections.synchronizedList(new ArrayList<ByteArrayToResultMap>());
-                AtomicInteger totalLines = new AtomicInteger();
                 for (var segment : segments) {
+                    var segmentResultMap = segment.value;
                     es.execute(() -> {
-                        var segmentResultMap = segment.value();
                         MappedByteBuffer bb;
                         try {
-                            bb = fileChannel.map(FileChannel.MapMode.READ_ONLY, segment.key().start(), segment.key().end - segment.key().start());
+                            bb = fileChannel.map(FileChannel.MapMode.READ_ONLY, segment.key.start, segment.key.end - segment.key.start);
                         }
                         catch (IOException e) {
                             throw new RuntimeException(e);
                         }
-                        byte[] buffer = new byte[64];
-                        int lines = 0;
+                        byte[] buffer = new byte[100];
                         int startLine;
                         while ((startLine = bb.position()) < bb.limit()) {
                             int currentPosition = startLine;
                             byte b;
                             int offset = 0;
-                            while (currentPosition != segment.key().end && (b = bb.get(currentPosition++)) != ';') {
+                            int hash = 0;
+                            while (currentPosition != segment.key.end && (b = bb.get(currentPosition++)) != ';') {
                                 buffer[offset++] = b;
+                                hash = 31 * hash + b;
                             }
-                            int temp = 0;
+                            int temp;
                             int negative = 1;
-                            while (currentPosition != segment.key().end && (b = bb.get(currentPosition++)) != '\n') {
-                                if (b == '-') {
-                                    negative = -1;
-                                    continue;
-                                }
-                                if (b == '.') {
-                                    continue;
-                                }
-                                if (b == '\r') {
-                                    break;
-                                }
-                                temp = 10 * temp + (b - '0');
+                            // Inspired by @yemreinci to unroll this even further
+                            if (bb.get(currentPosition) == '-') {
+                                negative = -1;
+                                currentPosition++;
                             }
-                            temp *= negative;
-                            double finalTemp = temp / 10.0;
-                            Result measurement = segmentResultMap.get(buffer, 0, offset);
-                            if (measurement == null) {
-                                measurement = new Result(finalTemp);
-                                segmentResultMap.put(buffer, 0, offset, measurement);
+                            if (bb.get(currentPosition + 1) == '.') {
+                                temp = negative * ((bb.get(currentPosition) - '0') * 10 + (bb.get(currentPosition + 2) - '0'));
+                                currentPosition += 3;
                             }
                             else {
-                                measurement.min = Math.min(measurement.min, finalTemp);
-                                measurement.max = Math.max(measurement.max, finalTemp);
-                                measurement.sum += finalTemp;
-                                measurement.count += 1;
+                                temp = negative
+                                        * ((bb.get(currentPosition) - '0') * 100 + ((bb.get(currentPosition + 1) - '0') * 10 + (bb.get(currentPosition + 3) - '0')));
+                                currentPosition += 4;
                             }
-                            lines++;
+                            if (bb.get(currentPosition) == '\r') {
+                                currentPosition++;
+                            }
+                            currentPosition++;
+                            segmentResultMap.putOrMerge(buffer, 0, offset, temp / 10.0, hash);
                             bb.position(currentPosition);
                         }
-                        totalLines.addAndGet(lines);
-                        partitions.add(segmentResultMap);
+
                     });
+
+                    partitions.add(segmentResultMap);
 
                 }
 
@@ -143,25 +134,28 @@ public class CalculateAverage_deemkeen {
                     // do nothing
                 }
 
+                TreeMap<String, Result> resultMap = new TreeMap<>();
                 for (ByteArrayToResultMap partition : partitions) {
-                    for (var entry : partition.getAll()) {
-                        String key = new String(entry.key());
-                        resultMap.compute(key, (k, v) -> {
-                            if (v == null)
-                                return entry.value();
-                            Result value = entry.value();
-                            v.min = Math.min(v.min, value.min);
-                            v.max = Math.max(v.max, value.max);
-                            v.sum += value.sum;
-                            v.count += value.count;
-                            return v;
-                        });
+                    for (Entry e : partition.getAll()) {
+                        resultMap.merge(new String(e.key()), e.value(), CalculateAverage_deemkeen::merge);
                     }
                 }
 
                 System.out.println(resultMap);
             }
         }
+    }
+
+    private static Result merge(Result v, Result value) {
+        return merge(v, value.min, value.max, value.sum, value.count);
+    }
+
+    private static Result merge(Result v, double value, double value1, double value2, long value3) {
+        v.min = Math.min(v.min, value);
+        v.max = Math.max(v.max, value1);
+        v.sum += value2;
+        v.count += value3;
+        return v;
     }
 
     record Pair(int slot, Result slotValue) {
@@ -180,7 +174,7 @@ public class CalculateAverage_deemkeen {
         double min;
         double max;
         double sum;
-        double count;
+        long count;
 
         Result(double value) {
             this.min = value;
@@ -203,23 +197,30 @@ public class CalculateAverage_deemkeen {
     }
 
     static class ByteArrayToResultMap {
-        public static final int MAPSIZE = 4096;
+        public static final int MAPSIZE = 1024 * 128;
         Result[] slots = new Result[MAPSIZE];
         byte[][] keys = new byte[MAPSIZE][];
 
-        public void put(byte[] key, int offset, int size, Result value) {
-            Pair result = getPair(key, offset, size);
-            if (result.slotValue() == null) {
-                slots[result.slot()] = value;
+        public void putOrMerge(byte[] key, int offset, int size, double temp, int hash) {
+            int slot = hash & (slots.length - 1);
+            var slotValue = slots[slot];
+            // Linear probe for open slot
+            while (slotValue != null && (keys[slot].length != size || !Arrays.equals(keys[slot], 0, size, key, offset, size))) {
+                slot = (slot + 1) & (slots.length - 1);
+                slotValue = slots[slot];
+            }
+            Result value = slotValue;
+            if (value == null) {
+                slots[slot] = new Result(temp);
                 byte[] bytes = new byte[size];
                 System.arraycopy(key, offset, bytes, 0, size);
-                keys[result.slot()] = bytes;
+                keys[slot] = bytes;
             }
             else {
-                result.slotValue().min = Math.min(result.slotValue().min, value.min);
-                result.slotValue().max = Math.max(result.slotValue().max, value.max);
-                result.slotValue().sum += value.sum;
-                result.slotValue().count += value.count;
+                value.min = Math.min(value.min, temp);
+                value.max = Math.max(value.max, temp);
+                value.sum += temp;
+                value.count += 1;
             }
         }
 
