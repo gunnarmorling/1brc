@@ -15,7 +15,9 @@
  */
 package dev.morling.onebrc;
 
+import java.io.BufferedOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.io.RandomAccessFile;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -38,14 +40,14 @@ public class CalculateAverage_artpar {
     // private static final VectorSpecies<Integer> SPECIES = IntVector.SPECIES_PREFERRED;
     // final int VECTOR_SIZE = 512;
     // final int VECTOR_SIZE_1 = VECTOR_SIZE - 1;
-    final int SIZE = 1024 * 128;
+    final int SIZE = 1024 * 1024;
 
     public CalculateAverage_artpar() throws IOException {
         long start = Instant.now().toEpochMilli();
         Path measurementFile = Paths.get(FILE);
         long fileSize = Files.size(measurementFile);
 
-        long expectedChunkSize = fileSize / N_THREADS;
+        long expectedChunkSize = Math.max(fileSize / 8, 1024);
 
         ExecutorService threadPool = Executors.newFixedThreadPool(N_THREADS);
 
@@ -55,7 +57,7 @@ public class CalculateAverage_artpar {
         long bytesReadCurrent = 0;
 
         try (FileChannel fileChannel = FileChannel.open(measurementFile, StandardOpenOption.READ)) {
-            for (int i = 0; i < N_THREADS; i++) {
+            for (int i = 0; i < 8; i++) {
 
                 long chunkSize = expectedChunkSize;
                 chunkSize = fis.skipBytes(Math.toIntExact(chunkSize));
@@ -69,6 +71,9 @@ public class CalculateAverage_artpar {
                 // System.out.println("[" + chunkStartPosition + "] - [" + (chunkStartPosition + chunkSize) + " bytes");
                 if (chunkStartPosition + chunkSize >= fileSize) {
                     chunkSize = fileSize - chunkStartPosition;
+                }
+                if (chunkSize < 1) {
+                    break;
                 }
                 if (chunkSize > Integer.MAX_VALUE) {
                     chunkSize = Integer.MAX_VALUE;
@@ -104,7 +109,28 @@ public class CalculateAverage_artpar {
         threadPool.shutdown();
         Map<String, ResultRow> measurements = new TreeMap<>(results);
 
-        System.out.println(measurements);
+        PrintStream printStream = new PrintStream(new BufferedOutputStream(System.out));
+        // PrintStream printStream = System.out;
+        printStream.print("{");
+
+        boolean isFirst = true;
+        for (Map.Entry<String, ResultRow> stringResultRowEntry : measurements.entrySet()) {
+            if (!isFirst) {
+                printStream.print(", ");
+                printStream.flush();
+            }
+            printStream.flush();
+            printStream.print(stringResultRowEntry.getKey());
+            printStream.flush();
+            printStream.print("=");
+            printStream.flush();
+            stringResultRowEntry.getValue().printTo(printStream);
+            printStream.flush();
+            isFirst = false;
+        }
+
+        System.out.print("}\n");
+
         // long end = Instant.now().toEpochMilli();
         // System.out.println((end - start) / 1000);
 
@@ -112,30 +138,6 @@ public class CalculateAverage_artpar {
 
     public static void main(String[] args) throws IOException {
         new CalculateAverage_artpar();
-    }
-
-    public static int parseDouble(byte[] str, int length) {
-
-        boolean negative = false;
-
-        int start = 0;
-        int result = 0;
-
-        // Check for negative numbers
-        if (str[0] == '-') {
-            negative = true;
-            start++;
-        }
-
-        for (int i = start; i < length; i++) {
-            byte c = str[i];
-
-            if (c != '.') {
-                result = result * 10 + (c - '0');
-            }
-        }
-
-        return negative ? -result : result;
     }
 
     public static int hashCode(byte[] array, int length) {
@@ -163,13 +165,17 @@ public class CalculateAverage_artpar {
         return h;
     }
 
-    private record ResultRow(double min, double mean, double max, long count, double sum) {
+    private record ResultRow(double min, double mean, double max) {
         public String toString() {
             return round(min / 10) + "/" + round(mean / 10) + "/" + round(max / 10);
         }
 
         private double round(double value) {
             return Math.round(value * 10.0) / 10.0;
+        }
+
+        public void printTo(PrintStream out) {
+            out.printf("%.1f/%.1f/%.1f", min / 10, mean / 10, max / 10);
         }
     }
 
@@ -215,7 +221,7 @@ public class CalculateAverage_artpar {
 
         ResultRow finish() {
             double mean = (count > 0) ? sum / count : 0;
-            return new ResultRow(min, mean, max, count, sum);
+            return new ResultRow(min, mean, max);
         }
     }
 
@@ -252,63 +258,84 @@ public class CalculateAverage_artpar {
             // int totalBytesRead = 0;
 
             // ByteBuffer nameBuffer = ByteBuffer.allocate(128);
-            byte[] rawBuffer = new byte[128];
-            int bufferIndex = 0;
+            int MAPPED_BYTE_BUFFER_SIZE = 8192;
+            byte[] rawBuffer = new byte[32];
+            int rawBufferReadIndex = 0;
             StationName matchedStation = null;
-            boolean readUntilSemiColon = true;
+            boolean expectedName = true;
 
-            int MAPPED_BYTE_BUFFER_SIZE = 1024;
             byte[] mappedBytes = new byte[MAPPED_BYTE_BUFFER_SIZE];
-            int i1;
+            int mappedBytesReadIndex;
+            boolean negative = false;
+            int start1 = 0;
+            int result = 0;
+
             while (mappedByteBuffer.hasRemaining()) {
                 int remaining = mappedByteBuffer.remaining();
                 int bytesToRead = Math.min(remaining, MAPPED_BYTE_BUFFER_SIZE);
                 mappedByteBuffer.get(mappedBytes, 0, bytesToRead);
-                i1 = 0;
-                while (i1 < remaining && i1 < MAPPED_BYTE_BUFFER_SIZE) {
-                    byte b = mappedBytes[i1];
-                    i1++;
-                    if (readUntilSemiColon) {
+                remaining = mappedByteBuffer.remaining();
+                mappedBytesReadIndex = 0;
+
+                while (mappedBytesReadIndex < bytesToRead) {
+                    byte b = mappedBytes[mappedBytesReadIndex];
+                    mappedBytesReadIndex++;
+
+                    if (expectedName) {
                         if (b != ';') {
-                            rawBuffer[bufferIndex] = b;
-                            bufferIndex++;
+                            rawBuffer[rawBufferReadIndex] = b;
+                            rawBufferReadIndex++;
+                            continue;
                         }
                         else {
-                            readUntilSemiColon = false;
-                            matchedStation = stationNameMap.getOrCreate(rawBuffer, bufferIndex);
-                            bufferIndex = 0;
+                            expectedName = false;
+                            matchedStation = stationNameMap.getOrCreate(rawBuffer, rawBufferReadIndex);
+                            rawBufferReadIndex = 0;
+                            negative = false;
+                            start1 = 0;
+                            result = 0;
+                            continue;
                         }
                     }
-                    else if (b != '\n') {
-                        rawBuffer[bufferIndex] = b;
-                        bufferIndex++;
-                    }
-                    else {
-                        readUntilSemiColon = true;
 
-                        boolean negative = false;
+                    while (b != '\n') {
+                        rawBuffer[rawBufferReadIndex] = b;
+                        rawBufferReadIndex++;
 
-                        int start1 = 0;
-                        int result = 0;
-
-                        // Check for negative numbers
-                        if (rawBuffer[0] == '-') {
-                            negative = true;
-                            start1++;
+                        if (mappedBytesReadIndex < bytesToRead) {
+                            b = mappedBytes[mappedBytesReadIndex];
+                            mappedBytesReadIndex++;
                         }
-
-                        for (int i = start1; i < bufferIndex; i++) {
-                            byte c = rawBuffer[i];
-                            if (c != '.') {
-                                result = result * 10 + (c - '0');
-                            }
+                        else {
+                            break;
                         }
-
-                        doubleValue = negative ? -result : result;
-                        bufferIndex = 0;
-                        matchedStation.measurementAggregator.combine(doubleValue);
-                        matchedStation.count++;
                     }
+
+                    if (b != '\n') {
+                        if (mappedBytesReadIndex == bytesToRead && remaining > 0) {
+                            continue;
+                        }
+                    }
+
+                    // Check for negative numbers
+                    if (rawBuffer[0] == '-') {
+                        negative = true;
+                        start1++;
+                    }
+
+                    for (int i = start1; i < rawBufferReadIndex; i++) {
+                        byte c = rawBuffer[i];
+                        if (c != '.') {
+                            result = result * 10 + (c - '0');
+                        }
+                    }
+
+                    doubleValue = negative ? -result : result;
+                    rawBufferReadIndex = 0;
+                    matchedStation.measurementAggregator.combine(doubleValue);
+                    matchedStation.count++;
+                    expectedName = true;
+
                 }
 
             }
@@ -328,7 +355,9 @@ public class CalculateAverage_artpar {
         int currentIndex = 0;
 
         public StationName getOrCreate(byte[] stationNameBytes, int length) {
+
             int hash = CalculateAverage_artpar.hashCode(stationNameBytes, length);
+
             int position = Math.abs(hash) % SIZE;
             while (indexes[position] != 0 && names[indexes[position]].hash != hash) {
                 position = ++position % SIZE;
