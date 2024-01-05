@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.util.HashMap;
+import java.util.Arrays;
 
 public class CalculateAverage_netrunnereve {
 
@@ -62,11 +63,19 @@ public class CalculateAverage_netrunnereve {
                 line = filBuf.readLine();
             }
 
-            String out = "{";
+            String[] staArr = new String[staHash.size()];
+            int j = 0;
             for (String i : staHash.keySet()) {
-                MeasurementAggregator ma = staHash.get(i);
+                staArr[j] = i;
+                j++;
+            }
+            Arrays.sort(staArr);
+
+            String out = "{";
+            for (int i = 0; i < staHash.size(); i++) {
+                MeasurementAggregator ma = staHash.get(staArr[i]);
                 double avg = Math.round(ma.sum / ma.count * 10.0) / 10.0;
-                out += i + "=" + ma.min + "/" + avg + "/" + ma.max + ", ";
+                out += staArr[i] + "=" + ma.min + "/" + avg + "/" + ma.max + ", ";
             }
             out = out.replaceAll(", $", "");
             out += "}\n";
