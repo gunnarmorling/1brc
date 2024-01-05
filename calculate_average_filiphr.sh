@@ -15,6 +15,8 @@
 #  limitations under the License.
 #
 
-sdk use java 21.0.1-graalce
+
+sdk use java 21.0.1-graal
+java -version
 JAVA_OPTS=""
-time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_ebarlas measurements.txt 8
+time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_filiphr
