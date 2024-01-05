@@ -69,8 +69,8 @@ public class CreateMeasurements3 {
         // Use a public list of city names and concatenate them all into a long string,
         // which we'll use as a "source of city name randomness"
         var bigName = new StringBuilder(1 << 20);
-        // Source: https://simplemaps.com/data/world-cities
         try (var rows = new BufferedReader(new FileReader("data/weather_stations.csv"));) {
+            rows.readLine(); // Skip the attribution line
             while (true) {
                 var row = rows.readLine();
                 if (row == null) {
@@ -84,6 +84,7 @@ public class CreateMeasurements3 {
         var minLen = Integer.MAX_VALUE;
         var maxLen = Integer.MIN_VALUE;
         try (var rows = new BufferedReader(new FileReader("data/weather_stations.csv"))) {
+            rows.readLine(); // Skip the attribution line
             final var nameSource = new StringReader(bigName.toString());
             final var buf = new char[MAX_NAME_LEN];
             final var rnd = ThreadLocalRandom.current();
