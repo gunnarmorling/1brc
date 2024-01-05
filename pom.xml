@@ -201,6 +201,8 @@
               <strictCheck>true</strictCheck>
               <aggregate>true</aggregate>
               <excludes>
+                <exclude>*.html</exclude>
+                <exclude>*.jfr</exclude>
                 <exclude>LICENSE.txt</exclude>
                 <exclude>**/.dontdelete</exclude>
                 <exclude>**/measurements*.txt</exclude>
