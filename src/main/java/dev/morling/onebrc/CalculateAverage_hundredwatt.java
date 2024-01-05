@@ -56,10 +56,16 @@ public class CalculateAverage_hundredwatt {
                 int startLine;
                 int limit = bb.limit();
                 while ((startLine = bb.position()) < limit) {
-                    int currentPosition = startLine;
                     byte b;
-                    int offset = 0;
-                    int hash = 0;
+                    int hash, offset, currentPosition;
+
+                    // first character
+                    buffer[0] = bb.get(startLine);
+                    hash = buffer[0]; // 31 * 0 + b == b
+                    offset = 1;
+                    currentPosition = startLine + 1;
+
+                    // rest of city name characters until ';'
                     while (currentPosition != segmentEnd && (b = bb.get(currentPosition++)) != ';') {
                         buffer[offset++] = b;
                         hash = 31 * hash + b;
