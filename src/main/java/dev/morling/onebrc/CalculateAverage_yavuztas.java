@@ -98,7 +98,7 @@ public class CalculateAverage_yavuztas {
         static final byte SEMI_COLON = 59; // ';'
         static final byte LINE_BREAK = 10; // '\n'
 
-        final byte[] workBuffer = new byte[128]; // assuming max 128 bytes for a row is enough
+        final byte[] workBuffer = new byte[256]; // assuming max 256 bytes for a row is enough
 
         long startPos;
         long size;
