@@ -111,6 +111,7 @@ public class CalculateAverage_isolgpus {
         int nameSum = 0;
         boolean parsingName = true;
         long i = 0;
+        int hashResult = 0;
 
         // seek to the start of the next message
         if (estimatedStart != 0) {
@@ -129,6 +130,7 @@ public class CalculateAverage_isolgpus {
                     while ((aChar = r.get()) != SEPERATOR) {
                         nameBuffer[nameBufferIndex++] = aChar;
                         nameSum += aChar;
+                        hashResult = 31 * hashResult + aChar;
                     }
                     parsingName = false;
                     i += nameBufferIndex + 1;
@@ -143,8 +145,7 @@ public class CalculateAverage_isolgpus {
                     // new line character
                     r.get();
 
-                    int hash = byteHashCode(nameBuffer, nameBufferIndex);
-                    MeasurementCollector measurementCollector = resolveMeasurementCollector(measurementCollectors, hash, nameBuffer, nameBufferIndex, nameSum);
+                    MeasurementCollector measurementCollector = resolveMeasurementCollector(measurementCollectors, hashResult, nameBuffer, nameBufferIndex, nameSum);
 
                     measurementCollector.feed(value);
                     i += valueIndex + (isNegative ? 4 : 3);
@@ -152,6 +153,7 @@ public class CalculateAverage_isolgpus {
                     nameBufferIndex = 0;
                     nameSum = 0;
                     parsingName = true;
+                    hashResult = 0;
                 }
             }
 
@@ -225,14 +227,6 @@ public class CalculateAverage_isolgpus {
             valueBuffer[valueIndex++] = aChar;
         }
         return valueIndex;
-    }
-
-    private static int byteHashCode(byte[] a, int length) {
-        int result = 0;
-        for (int i = 0; i < length; i++) {
-            result = 31 * result + a[i];
-        }
-        return result;
     }
 
     private static class MeasurementCollector {
