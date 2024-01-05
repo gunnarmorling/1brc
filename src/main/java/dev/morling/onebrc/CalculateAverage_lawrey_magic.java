@@ -170,8 +170,7 @@ public class CalculateAverage_lawrey_magic {
         hash += hash >>> 1;
         mbb.position(mbb.position() - rewind);
 
-        int abs = (int) Math.abs(hash % 6121);
-        return abs;
+        return (int) Math.abs(hash % 6121);
     }
 
     static String peek(MappedByteBuffer mbb) {
