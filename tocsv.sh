@@ -15,20 +15,18 @@
 #  limitations under the License.
 #
 
-if [ -z "$1" ]
-  then
-    echo "Usage: evaluate.sh <fork name>"
-    exit 1
-fi
+exec sed '
+#
+# Transform calculate_average*.sh output into semicolon-separated values, one per line.
+#
 
-java --version
+# 1. remove "{" and "}"
+s/[{}]//g;
 
-mvn clean verify
+# 2. replace "=" and "/" with semicolon
+s/[=/]/;/g;
 
-rm -f measurements.txt
-ln -s measurements_1B.txt measurements.txt
-
-for i in {1..5}
-do
-    ./calculate_average_$1.sh
-done
+# 3. id may contain comma, e.g. "Washington, D.C.;-15.1;14.8;44.8, Wau;-2.1;27.4;53.4"
+# so replace ", " with a newline only if it is preceded by a digit
+s/\([0-9]\), /\1\n/g
+'

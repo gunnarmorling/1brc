@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 #  Copyright 2023 The original authors
 #
@@ -15,20 +15,19 @@
 #  limitations under the License.
 #
 
-if [ -z "$1" ]
-  then
-    echo "Usage: evaluate.sh <fork name>"
-    exit 1
+set -euo pipefail
+
+if [ -z "$1" ]; then
+  echo "Usage: test.sh <fork name>"
+  exit 1
 fi
 
-java --version
+for sample in $(ls src/test/resources/samples/*.txt); do
+  echo "Validating calculate_average_$1.sh -- $sample"
 
-mvn clean verify
+  rm -f measurements.txt
+  ln -s $sample measurements.txt
 
-rm -f measurements.txt
-ln -s measurements_1B.txt measurements.txt
-
-for i in {1..5}
-do
-    ./calculate_average_$1.sh
+  diff <("./calculate_average_$1.sh") ${sample%.txt}.out
 done
+rm measurements.txt
