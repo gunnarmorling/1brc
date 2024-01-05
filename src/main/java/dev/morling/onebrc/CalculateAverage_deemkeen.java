@@ -24,10 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class CalculateAverage_deemkeen {
@@ -37,18 +34,17 @@ public class CalculateAverage_deemkeen {
 
         File file = new File(FILE);
         long fileSize = file.length();
-        int numberOfSegments = 996; // good integer divisor
+        int numberOfSegments = 500;
         long segmentSize = fileSize / numberOfSegments;
 
-        if (segmentSize < 1000) {
+        if (segmentSize < 100) {
             numberOfSegments = 1;
             segmentSize = fileSize;
         }
 
-        long start = System.currentTimeMillis();
-
         Map<String, Result> resultMap = new TreeMap<>();
-        List<FileSegment> segments = new ArrayList<>();
+        List<SegmentPair> segments = new ArrayList<>();
+
         try (
                 var randomAccessFile = new RandomAccessFile(file, "r");
                 var fileChannel = (FileChannel) Files.newByteChannel(Path.of(FILE), StandardOpenOption.READ)) {
@@ -74,18 +70,18 @@ public class CalculateAverage_deemkeen {
                     }
                 }
 
-                segments.add(new FileSegment(segStart, segEnd));
+                segments.add(new SegmentPair(new FileSegment(segStart, segEnd), new ByteArrayToResultMap()));
             }
 
             try (ExecutorService es = Executors.newVirtualThreadPerTaskExecutor()) {
-                List<ByteArrayToResultMap> partitions = new ArrayList<>();
+                var partitions = Collections.synchronizedList(new ArrayList<ByteArrayToResultMap>());
                 AtomicInteger totalLines = new AtomicInteger();
-                for (FileSegment segment : segments) {
+                for (var segment : segments) {
                     es.execute(() -> {
-                        var segmentResultMap = new ByteArrayToResultMap();
+                        var segmentResultMap = segment.value();
                         MappedByteBuffer bb;
                         try {
-                            bb = fileChannel.map(FileChannel.MapMode.READ_ONLY, segment.start, segment.end - segment.start);
+                            bb = fileChannel.map(FileChannel.MapMode.READ_ONLY, segment.key().start(), segment.key().end - segment.key().start());
                         }
                         catch (IOException e) {
                             throw new RuntimeException(e);
@@ -97,12 +93,12 @@ public class CalculateAverage_deemkeen {
                             int currentPosition = startLine;
                             byte b;
                             int offset = 0;
-                            while (currentPosition != segment.end && (b = bb.get(currentPosition++)) != ';') {
+                            while (currentPosition != segment.key().end && (b = bb.get(currentPosition++)) != ';') {
                                 buffer[offset++] = b;
                             }
                             int temp = 0;
                             int negative = 1;
-                            while (currentPosition != segment.end && (b = bb.get(currentPosition++)) != '\n') {
+                            while (currentPosition != segment.key().end && (b = bb.get(currentPosition++)) != '\n') {
                                 if (b == '-') {
                                     negative = -1;
                                     continue;
@@ -163,14 +159,15 @@ public class CalculateAverage_deemkeen {
                     }
                 }
 
-                System.out.println("Time: " + (System.currentTimeMillis() - start) + "ms");
-                System.out.println("Lines processed: " + totalLines);
                 System.out.println(resultMap);
             }
         }
     }
 
     record Pair(int slot, Result slotValue) {
+    }
+
+    record SegmentPair(FileSegment key, ByteArrayToResultMap value) {
     }
 
     record Entry(byte[] key, Result value) {
@@ -237,7 +234,6 @@ public class CalculateAverage_deemkeen {
 
         private Pair getPair(byte[] key, int offset, int size) {
             int hash = hashCode(key, offset, size);
-            ;
             int slot = hash & (slots.length - 1);
             Result slotValue = slots[slot];
             // Linear probe for open slot
