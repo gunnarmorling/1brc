@@ -19,7 +19,6 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.TreeMap;
@@ -42,6 +41,7 @@ public class CalculateAverage_iziamos {
     private final static ReentrantLock mergeLock = new ReentrantLock();
 
     public static void main(String[] args) throws Exception {
+        // Thread.sleep(10000);
         final var raf = new RandomAccessFile(FILE, "r");
         final var fileSize = raf.length();
 
@@ -299,7 +299,7 @@ public class CalculateAverage_iziamos {
     }
 
     private static class LongToIntMap {
-        private static final int MAP_SIZE = 32768;
+        private static final int MAP_SIZE = 16384;
         private static final int MASK = MAP_SIZE - 1;
         final long[] keys = new long[MAP_SIZE];
         final int[] values = new int[MAP_SIZE];
