@@ -23,6 +23,7 @@ import java.lang.foreign.ValueLayout;
 import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.TreeMap;
 
 public class CalculateAverage_roman_r_m {
@@ -40,6 +41,7 @@ public class CalculateAverage_roman_r_m {
 
         long offset = 0;
         var channel = FileChannel.open(Paths.get(FILE));
+        var stringCache = new StringCache();
         MemorySegment ms = channel.map(FileChannel.MapMode.READ_ONLY, offset, fileSize, Arena.ofAuto());
         while (offset < fileSize) {
             byte c = ms.get(ValueLayout.JAVA_BYTE, offset);
@@ -51,7 +53,7 @@ public class CalculateAverage_roman_r_m {
             else if (c == '\r') {
             }
             else if (c == '\n') {
-                String name = station.toString();
+                String name = stringCache.get(station);
                 double val = value.parseDouble();
 
                 var a = measurements.computeIfAbsent(name, x -> new ResultRow());
@@ -79,6 +81,7 @@ public class CalculateAverage_roman_r_m {
 
         private byte[] buf = new byte[128];
         private int len = 0;
+        private int hash = 0;
 
         void append(byte b) {
             if (buf.length == len) {
@@ -87,10 +90,12 @@ public class CalculateAverage_roman_r_m {
                 this.buf = newBuf;
             }
             buf[len++] = b;
+            hash = 31 * hash + (b & 255);
         }
 
         void reset() {
             len = 0;
+            hash = 0;
         }
 
         @Override
@@ -107,6 +112,43 @@ public class CalculateAverage_roman_r_m {
             res = res + (buf[len - 1] - '0') / 10.0;
             return negate ? -res : res;
         }
+
+        public ByteString copy() {
+            var copy = new ByteString();
+            copy.len = this.len;
+            copy.hash = this.hash;
+            if (copy.buf.length < this.buf.length) {
+                copy.buf = new byte[this.buf.length];
+            }
+            System.arraycopy(this.buf, 0, copy.buf, 0, this.len);
+            return copy;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o)
+                return true;
+            if (o == null || getClass() != o.getClass())
+                return false;
+
+            ByteString that = (ByteString) o;
+
+            if (len != that.len)
+                return false;
+
+            for (int i = 0; i < len; i++) {
+                if (buf[i] != that.buf[i]) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        @Override
+        public int hashCode() {
+            return hash;
+        }
     }
 
     private static final class ResultRow {
@@ -121,6 +163,22 @@ public class CalculateAverage_roman_r_m {
 
         private double round(double value) {
             return Math.round(value * 10.0) / 10.0;
+        }
+    }
+
+    static class StringCache {
+        private final Map<ByteString, String> cache = new HashMap<>(1000);
+
+        String get(ByteString s) {
+            var v = cache.get(s);
+            if (v != null) {
+                return v;
+            }
+            else {
+                String str = s.toString();
+                cache.put(s.copy(), str);
+                return str;
+            }
         }
     }
 }
