@@ -32,7 +32,7 @@ public class CalculateAverage_isolgpus {
 
     public static final int HISTOGRAMS_LENGTH = 1024 * 32;
     public static final int HISTOGRAMS_MASK = HISTOGRAMS_LENGTH - 1;
-    public static final int THREAD_COUNT = Runtime.getRuntime().availableProcessors();
+    public static final int THREAD_COUNT = 8;
     private static final String FILE = "./measurements.txt";
     public static final byte SEPERATOR = 59;
     public static final byte OFFSET = 48;
