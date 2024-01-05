@@ -246,7 +246,7 @@ class ChunkProcessor implements Consumer<ByteBuffer> {
 }
 
 class Scanner {
-    private static final int MAX_MAPPED_MEMORY = 4 * 1024 * 1024;
+    private static final int MAX_MAPPED_MEMORY = 1 * 1024 * 1024;
 
     public void scan(String fileName, Consumer<ByteBuffer> consumer, long offset, long len) throws IOException {
         try (var file = new RandomAccessFile(fileName, "r"); FileChannel channel = file.getChannel()) {
