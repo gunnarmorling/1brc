@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.TreeMap;
@@ -272,8 +273,8 @@ public class CalculateAverage_iziamos {
                 break;
             }
         }
-        final byte[] bytes = Arrays.copyOf(name, l);
-        return new String(bytes, UTF_8);
+
+        return new String(name, 0, l, UTF_8);
     }
 
     private interface ResultConsumer {
