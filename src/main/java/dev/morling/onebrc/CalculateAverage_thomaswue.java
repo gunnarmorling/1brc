@@ -145,16 +145,20 @@ public class CalculateAverage_thomaswue {
             byte sign = UNSAFE.getByte(scanPtr++);
             if (sign == '-') {
                 number = UNSAFE.getByte(scanPtr++) - '0';
+                if ((b = UNSAFE.getByte(scanPtr++)) != '.') {
+                    number = number * 10 + (b - '0');
+                    scanPtr++;
+                }
+                number = number * 10 + (UNSAFE.getByte(scanPtr++) - '0');
+                number = -number;
             }
             else {
                 number = sign - '0';
-            }
-            while ((b = UNSAFE.getByte(scanPtr++)) != '.') {
-                number = number * 10 + b - '0';
-            }
-            number = number * 10 + UNSAFE.getByte(scanPtr++) - '0';
-            if (sign == '-') {
-                number = -number;
+                if ((b = UNSAFE.getByte(scanPtr++)) != '.') {
+                    number = number * 10 + (b - '0');
+                    scanPtr++;
+                }
+                number = number * 10 + (UNSAFE.getByte(scanPtr++) - '0');
             }
 
             while (true) {
