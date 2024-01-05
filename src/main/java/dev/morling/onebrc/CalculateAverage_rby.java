@@ -35,6 +35,9 @@ public class CalculateAverage_rby {
         var channel = (FileChannel) Files.newByteChannel(p, EnumSet.of(StandardOpenOption.READ));
         final long size = channel.size();
 
+        if (size < 10000l) {
+            return new long[]{ 0l, size };
+        }
         long chunk = size / workers;
         long position = size - chunk;
 
@@ -108,17 +111,19 @@ public class CalculateAverage_rby {
             if (iter.hasNext()) {
                 var e = iter.next();
                 var ix = e.getValue().intValue() * 4;
+                var avg = Math.round(stats[ix + 2]/((double)stats[ix+3]))/10.0;
                 System.out.print(e.getKey() + "="
                         + (stats[ix]/10.0) + "/"
-                        + (Math.round(stats[ix + 2]/((double)stats[ix+3]))/10.0) + "/"
+                        + avg + "/"
                         + (stats[ix + 1]/10.0));
             }
             while(iter.hasNext()) {
                 var e = iter.next();
                 var ix = e.getValue().intValue() * 4;
+                var avg = Math.round(stats[ix + 2]/((double)stats[ix+3]))/10.0;
                 System.out.print(", " + e.getKey() + "="
                         + (stats[ix]/10.0) + "/"
-                        + (Math.round(stats[ix + 2]/((double)stats[ix+3]))/10.0) + "/"
+                        + avg + "/"
                         + (stats[ix + 1]/10.0)) ;
             }
             System.out.println("}");
@@ -176,11 +181,18 @@ public class CalculateAverage_rby {
                                     if (mbCityIx == null) {
                                         cityIndex = nextCityIx;
                                         cityIndexes.put(str, nextCityIx++);
+                                        if (nextCityIx * 4 >= stats.length) {
+                                            var newStats = Arrays.copyOf(stats, stats.length * 2);
+                                            for (int j = stats.length; j < newStats.length; j += 4) {
+                                                newStats[j] = Integer.MAX_VALUE;
+                                                newStats[j + 1] = Integer.MIN_VALUE;
+                                            }
+                                            stats = newStats;
+                                        }
                                     }
                                     else {
                                         cityIndex = mbCityIx.intValue();
                                     }
-                                    // TODO check nextCityIx for overflow.
                                     break;
                                 case '\n':
                                     nextChar = ';';
@@ -188,9 +200,8 @@ public class CalculateAverage_rby {
                                     var ix = cityIndex * 4;
                                     if (temp < stats[ix])
                                         stats[ix] = temp;
-                                    else if (temp > stats[ix + 1]) {
+                                    if (temp > stats[ix + 1])
                                         stats[ix + 1] = temp;
-                                    }
                                     stats[ix + 2] += temp;
                                     stats[ix + 3]++;
 
