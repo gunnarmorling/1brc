@@ -15,6 +15,13 @@
 #  limitations under the License.
 #
 
-sdk use java 21.0.1-graalce
-JAVA_OPTS=""
-time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_ebarlas measurements.txt 8
+if [ -z "$1" ]
+  then
+    echo "Usage: cleanup.sh <fork name>"
+    exit 1
+fi
+
+git checkout .
+git checkout main
+git branch -D $1
+git pull upstream main
