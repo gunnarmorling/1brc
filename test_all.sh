@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 #  Copyright 2023 The original authors
 #
@@ -15,6 +15,16 @@
 #  limitations under the License.
 #
 
+set -euo pipefail
 
-JAVA_OPTS=""
-time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_itaske
+for impl in $(ls calculate_average_*.sh | sort); do
+  noext="${impl%%.sh}"
+  name=${noext##calculate_average_}
+
+  if output=$(./test.sh "$name" 2>&1); then
+    echo "PASS $name"
+  else
+    echo "FAIL $name"
+    echo "$output" 1>&2
+  fi
+done

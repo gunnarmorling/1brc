@@ -15,6 +15,10 @@
 #  limitations under the License.
 #
 
+if [ -z "$1" ]
+  then
+    echo "Usage: eval.sh <fork name>"
+    exit 1
+fi
 
-JAVA_OPTS=""
-time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_itaske
+./evaluate.sh $1 2>&1 | tee $1.out

@@ -15,6 +15,10 @@
 #  limitations under the License.
 #
 
+if [ -z "$1" ]
+  then
+    echo "Usage: process_output.sh <fork name>"
+    exit 1
+fi
 
-JAVA_OPTS=""
-time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_itaske
+java --enable-preview --source=21 process_output.java out_expected.txt $1.out
