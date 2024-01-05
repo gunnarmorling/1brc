@@ -257,8 +257,8 @@ public class CalculateAverage_isolgpus {
         public MeasurementCollector link;
         private long sum;
         private int count;
-        private int min;
-        private int max;
+        private int min = Integer.MAX_VALUE;
+        private int max = Integer.MIN_VALUE;
         private boolean collected = false;
 
         public MeasurementCollector(byte[] name) {
