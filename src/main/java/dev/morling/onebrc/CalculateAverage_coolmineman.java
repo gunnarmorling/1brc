@@ -23,10 +23,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.Future;
 
 public class CalculateAverage_coolmineman {
@@ -246,6 +243,11 @@ public class CalculateAverage_coolmineman {
                 }
             }
 
+            for (Future t : tasks) {
+                if (t != null)
+                    t.get();
+            }
+
             for (int i = 1; i < maps.length; i++) {
                 merge(maps[0], maps[i]);
             }
@@ -260,7 +262,7 @@ public class CalculateAverage_coolmineman {
                 firstE[0] = false;
                 System.out.print(e.toString());
             });
-            System.out.print('}');
+            System.out.println('}');
             System.exit(0);
         }
     }
