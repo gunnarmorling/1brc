@@ -11,6 +11,7 @@ rhamDera Ghazi KhanMiyazakiBhātpār;21.3
 igButeboJuršinciKoaniImdinaNova VasDestrnikVarvarinSkopunGornji PetrovciRibnicaKon TumŠavnikPodl;11.5
 igButeboJuršinciKoaniImdinaNova VasDestrnikVarvarinSkopunGornji PetrovciRibnicaKon TumŠavnikPoul;18.5
 igButeboJuršinciKoaniImdinaNova VasDestrnikVarvarinSkomunGornji PetrovciRibnicaKon TumŠavnikPoul;22.5
+ixButeboJuršinciKoaniImdinaNova VasDestrnikVarvarinSkomunGornji PetrovciRibnicaKon TumŠavnikPoul;0.1
 B;8.9
 C;38.9
 nt-A;9.2
