@@ -99,7 +99,6 @@ public class CalculateAverage_imrafaelmerino {
 
     public static void main(String[] args) throws IOException {
         var chunkSize = Long.parseLong(args[0].trim());
-        System.out.println("Chunk size (bytes): " + chunkSize);
         var result = calculateStats(FILE, chunkSize);
         System.out.println(result);
     }
