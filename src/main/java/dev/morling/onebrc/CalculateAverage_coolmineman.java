@@ -23,6 +23,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
@@ -61,8 +62,9 @@ public class CalculateAverage_coolmineman {
         }
     }
 
-    static class BytesKey {
+    static class BytesKey implements Comparable<BytesKey> {
         byte[] value;
+        int hashcode;
 
         BytesKey(byte[] value) {
             this.value = value;
@@ -84,6 +86,11 @@ public class CalculateAverage_coolmineman {
                 return Arrays.equals(value, bk.value);
             }
             return false;
+        }
+
+        @Override
+        public int compareTo(BytesKey o) {
+            return Arrays.compare(value, o.value);
         }
 
     }
@@ -110,7 +117,10 @@ public class CalculateAverage_coolmineman {
 
                     BytesKey station = new BytesKey(Arrays.copyOfRange(aa, nameStart, nameEnd));
                     double value = parseDouble(aa, doubleStart, doubleEnd);
-                    map.computeIfAbsent(station, k -> new MeasurementAggregator()).add(value);
+                    MeasurementAggregator ma = map.get(station);
+                    if (ma == null)
+                        map.put(station, ma = new MeasurementAggregator());
+                    ma.add(value);
 
                     parseDouble = false;
                     nameStart = pos + 1;
@@ -193,7 +203,7 @@ public class CalculateAverage_coolmineman {
         int pageSize = 819200;
         long pos = 0;
         try (AsynchronousFileChannel fc = AsynchronousFileChannel.open(Paths.get(FILE), Set.of(StandardOpenOption.READ), Executors.newCachedThreadPool())) {
-            var cp = ForkJoinPool.commonPool();
+            var cp = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
 
             var bbs = new ByteBuffer[Runtime.getRuntime().availableProcessors() * 8];
             for (int i = 0; i < bbs.length; i++) {
@@ -202,7 +212,7 @@ public class CalculateAverage_coolmineman {
 
             Future<Integer>[] futures = new Future[bbs.length];
             HashMap<BytesKey, MeasurementAggregator>[] maps = new HashMap[bbs.length];
-            ForkJoinTask[] tasks = new ForkJoinTask[bbs.length];
+            Future[] tasks = new Future[bbs.length];
 
             for (int i = 0; i < futures.length; i++) {
                 futures[i] = fc.read(bbs[i], pos);
@@ -215,7 +225,7 @@ public class CalculateAverage_coolmineman {
                 for (int i = 0; i < bbs.length; i++) {
                     int nextIndex = (i + 1) % bbs.length;
                     if (tasks[nextIndex] != null) {
-                        tasks[nextIndex].join();
+                        tasks[nextIndex].get();
                         bbs[nextIndex].position(0);
                         futures[nextIndex] = fc.read(bbs[nextIndex], pos);
                         pos += pageSize;
