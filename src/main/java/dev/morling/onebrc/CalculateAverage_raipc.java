@@ -7,8 +7,6 @@ import java.lang.invoke.MethodType;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.RecursiveTask;
 
 public class CalculateAverage_raipc {
@@ -16,7 +14,7 @@ public class CalculateAverage_raipc {
     private static final int BUFFER_SIZE = 16 * 1024;
 
     private static final class AggregatedMeasurement {
-        private final ByteArrayWrapper station;
+        final ByteArrayWrapper station;
         private String stationStringCached;
         private int min = Integer.MAX_VALUE;
         private int max = Integer.MIN_VALUE;
@@ -61,7 +59,7 @@ public class CalculateAverage_raipc {
     public static void main(String[] args) throws InterruptedException {
         File inputFile = new File(FILE);
         ParsingTask parsingTask = new ParsingTask(inputFile, 0, inputFile.length());
-        AggregatedMeasurement[] results = parsingTask.fork().join().values().toArray(AggregatedMeasurement[]::new);
+        AggregatedMeasurement[] results = parsingTask.fork().join().toArray();
         System.out.println(formatResult(results));
     }
 
@@ -72,11 +70,13 @@ public class CalculateAverage_raipc {
             item.format(out);
             out.append(", ");
         }
-        out.setLength(out.length() - 2);
+        if (out.length() > 2) {
+            out.setLength(out.length() - 2);
+        }
         return out.append('}').toString();
     }
 
-    private static class ParsingTask extends RecursiveTask<Map<ByteArrayWrapper, AggregatedMeasurement>> {
+    private static class ParsingTask extends RecursiveTask<MyHashMap> {
         private static final int SPLIT_FACTOR = 10;
         private final File file;
         private final long startPosition;
@@ -89,7 +89,7 @@ public class CalculateAverage_raipc {
         }
 
         @Override
-        protected Map<ByteArrayWrapper, AggregatedMeasurement> compute() {
+        protected MyHashMap compute() {
             long size = endPosition - startPosition;
             if (size <= BUFFER_SIZE || size < +file.length() / Runtime.getRuntime().availableProcessors() / SPLIT_FACTOR) {
                 return doCompute();
@@ -98,13 +98,11 @@ public class CalculateAverage_raipc {
             var secondHalf = new ParsingTask(file, (startPosition + endPosition) / 2, endPosition).fork();
             var firstHalfResults = firstHalf.join();
             var secondHalfResults = secondHalf.join();
-            secondHalfResults.forEach((k, v) -> {
-                firstHalfResults.merge(k, v, AggregatedMeasurement::merge);
-            });
+            firstHalfResults.merge(secondHalfResults);
             return firstHalfResults;
         }
 
-        private Map<ByteArrayWrapper, AggregatedMeasurement> doCompute() {
+        private MyHashMap doCompute() {
             try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
                 return new ParsingRoutine(startPosition, endPosition).parse(raf);
             }
@@ -115,7 +113,7 @@ public class CalculateAverage_raipc {
     }
 
     private static class ParsingRoutine {
-        private final MyHashMap result = new MyHashMap();
+        private final MyHashMap result = new MyHashMap(2048);
         private final byte[] partialContentBuff = new byte[128];
         private final ByteArrayWrapper reusableWrapper = new ByteArrayWrapper(partialContentBuff, 0, 0, 0);
         private int partialSize;
@@ -286,8 +284,8 @@ public class CalculateAverage_raipc {
             this.hashCodeCached = hashCodeCached;
         }
 
-        void calculateHashCode() {
-            this.hashCodeCached = vectorizedHashCode(content, start, length);
+        int calculateHashCode() {
+            return this.hashCodeCached = vectorizedHashCode(content, start, length);
         }
 
         @Override
@@ -313,15 +311,126 @@ public class CalculateAverage_raipc {
 
     }
 
-    private static class MyHashMap extends HashMap<ByteArrayWrapper, AggregatedMeasurement> {
-        AggregatedMeasurement getOrCreate(ByteArrayWrapper key) {
-            key.calculateHashCode();
-            var aggregatedMeasurement = get(key);
-            if (aggregatedMeasurement == null) {
-                var keyCopy = key.copy();
-                put(keyCopy, aggregatedMeasurement = new AggregatedMeasurement(keyCopy));
+    private static class MyHashMap {
+        private static final int INVERSE_LOAD_FACTOR = 2;
+        private AggregatedMeasurement[] data;
+        private int size;
+
+        MyHashMap(int initialCapacity) {
+            this.data = new AggregatedMeasurement[initialCapacity];
+        }
+
+        private void grow() {
+            AggregatedMeasurement[] oldData = data;
+            AggregatedMeasurement[] newData = new AggregatedMeasurement[oldData.length * 2];
+            for (AggregatedMeasurement measurement : oldData) {
+                if (measurement != null) {
+                    put(measurement, newData);
+                }
             }
-            return aggregatedMeasurement;
+            this.data = newData;
+        }
+
+        private void put(AggregatedMeasurement value, AggregatedMeasurement[] data) {
+            int length = data.length;
+            int hashCode = value.hashCode();
+            int idx = length & (hashCode ^ (hashCode >> 16));
+            for (int i = idx; i < length; ++i) {
+                if (data[i] == null) {
+                    data[i] = value;
+                    return;
+                }
+            }
+            for (int i = 0; i < idx; ++i) {
+                if (data[i] == null) {
+                    data[i] = value;
+                    return;
+                }
+            }
+        }
+
+        AggregatedMeasurement getOrCreate(ByteArrayWrapper key) {
+            AggregatedMeasurement[] data = this.data;
+            int length = data.length;
+            int hashCode = key.calculateHashCode();
+            int idx = (length - 1) & (hashCode ^ (hashCode >> 16));
+            AggregatedMeasurement result = doGetOrCreate(key, idx, length, data);
+            return result != null ? result : doGetOrCreate(key, 0, idx, data);
+        }
+
+        private AggregatedMeasurement doGetOrCreate(ByteArrayWrapper key, int from, int to, AggregatedMeasurement[] data) {
+            for (int i = from; i < to; ++i) {
+                AggregatedMeasurement item = data[i];
+                if (item != null) {
+                    if (item.station.equals(key)) {
+                        return item;
+                    }
+                }
+                else {
+                    AggregatedMeasurement result = new AggregatedMeasurement(key.copy());
+                    ++size;
+                    if (size * INVERSE_LOAD_FACTOR >= data.length) {
+                        grow();
+                        put(result, this.data);
+                    }
+                    else {
+                        return data[i] = result;
+                    }
+                }
+            }
+            return null;
+        }
+
+        void merge(MyHashMap other) {
+            for (AggregatedMeasurement measurement : other.data) {
+                if (measurement != null) {
+                    merge(measurement);
+                }
+            }
+        }
+
+        private boolean merge(AggregatedMeasurement value) {
+            AggregatedMeasurement[] data = this.data;
+            int length = data.length;
+            ByteArrayWrapper key = value.station;
+            int hashCode = key.hashCode();
+            int idx = length & (hashCode ^ (hashCode >> 16));
+            return doMerge(key, value, idx, length, data) || doMerge(key, value, 0, idx, data);
+        }
+
+        private boolean doMerge(ByteArrayWrapper key, AggregatedMeasurement value, int from, int to, AggregatedMeasurement[] data) {
+            for (int i = from; i < to; ++i) {
+                AggregatedMeasurement item = data[i];
+                if (item != null) {
+                    if (item.station.equals(key)) {
+                        item.merge(value);
+                        return true;
+                    }
+                }
+                else {
+                    ++size;
+                    if (size * INVERSE_LOAD_FACTOR >= data.length) {
+                        grow();
+                        put(value, this.data);
+                    }
+                    else {
+                        data[i] = value;
+                    }
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        AggregatedMeasurement[] toArray() {
+            AggregatedMeasurement[] result = new AggregatedMeasurement[size];
+            int i = 0;
+            for (AggregatedMeasurement measurement : data) {
+                if (measurement != null) {
+                    result[i++] = measurement;
+                }
+            }
+            return result;
         }
     }
 
