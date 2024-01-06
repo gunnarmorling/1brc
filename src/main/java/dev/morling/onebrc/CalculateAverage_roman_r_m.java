@@ -77,7 +77,7 @@ public class CalculateAverage_roman_r_m {
 
     static final class ByteString {
 
-        private byte[] buf = new byte[128];
+        private byte[] buf = new byte[100];
         private int len = 0;
         private int hash = 0;
 
