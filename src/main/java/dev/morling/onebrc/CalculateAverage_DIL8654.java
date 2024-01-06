@@ -58,8 +58,8 @@ public class CalculateAverage_DIL8654 {
             Map<String, Measurement> results = mergeAllPartitionResults();
             long endTime = System.currentTimeMillis();
             long duration = endTime - startTime;
-            System.out.println("Execution completed in " + duration + " milliseconds");
             printResults(results);
+            System.out.println("Execution completed in " + duration + " milliseconds");
         }
         else {
             System.out.println("Execution did not complete within the specified time");
@@ -147,14 +147,6 @@ public class CalculateAverage_DIL8654 {
             this.count = 1;
         }
 
-        public Measurement updateTemperature(double temperature) {
-            min = Math.min(min, temperature);
-            max = Math.max(max, temperature);
-            sum += temperature;
-            count++;
-            return this;
-        }
-
         public Measurement merge(Measurement other) {
             this.min = Math.min(this.min, other.min);
             this.max = Math.max(this.max, other.max);
@@ -192,16 +184,6 @@ public class CalculateAverage_DIL8654 {
             }
         }
         return segments;
-    }
-
-    private static long findNextLineBreak(RandomAccessFile raf, long start) throws IOException {
-        raf.seek(start);
-        while (raf.getFilePointer() < raf.length()) {
-            if (raf.readByte() == '\n') {
-                return raf.getFilePointer();
-            }
-        }
-        return raf.length();
     }
 
     static class FilePartition {
