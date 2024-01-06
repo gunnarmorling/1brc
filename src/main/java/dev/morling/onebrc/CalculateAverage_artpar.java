@@ -21,7 +21,6 @@ import java.io.PrintStream;
 import java.io.RandomAccessFile;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -40,14 +39,16 @@ public class CalculateAverage_artpar {
     // private static final VectorSpecies<Integer> SPECIES = IntVector.SPECIES_PREFERRED;
     // final int VECTOR_SIZE = 512;
     // final int VECTOR_SIZE_1 = VECTOR_SIZE - 1;
-    final int SIZE = 1024 * 1024;
+    final int AVERAGE_CHUNK_SIZE = 1024 * 1024;
+    final int AVERAGE_CHUNK_SIZE_1 = AVERAGE_CHUNK_SIZE - 1;
 
     public CalculateAverage_artpar() throws IOException {
         long start = Instant.now().toEpochMilli();
         Path measurementFile = Paths.get(FILE);
         long fileSize = Files.size(measurementFile);
 
-        long expectedChunkSize = Math.max(fileSize / 8, 1024);
+        // System.out.println("File size - " + fileSize);
+        int expectedChunkSize = Math.toIntExact(Math.max(fileSize / N_THREADS, Integer.MAX_VALUE / 4));
 
         ExecutorService threadPool = Executors.newFixedThreadPool(N_THREADS);
 
@@ -56,39 +57,39 @@ public class CalculateAverage_artpar {
         List<Future<Map<String, MeasurementAggregator>>> futures = new ArrayList<>();
         long bytesReadCurrent = 0;
 
-        try (FileChannel fileChannel = FileChannel.open(measurementFile, StandardOpenOption.READ)) {
-            for (int i = 0; i < 8; i++) {
+        FileChannel fileChannel = FileChannel.open(measurementFile, StandardOpenOption.READ);
+        for (int i = 0; chunkStartPosition < fileSize; i++) {
 
-                long chunkSize = expectedChunkSize;
-                chunkSize = fis.skipBytes(Math.toIntExact(chunkSize));
+            int chunkSize = expectedChunkSize;
+            chunkSize = fis.skipBytes(chunkSize);
 
-                bytesReadCurrent += chunkSize;
-                while (((char) fis.read()) != '\n' && bytesReadCurrent < fileSize) {
-                    chunkSize++;
-                    bytesReadCurrent++;
-                }
-
-                // System.out.println("[" + chunkStartPosition + "] - [" + (chunkStartPosition + chunkSize) + " bytes");
-                if (chunkStartPosition + chunkSize >= fileSize) {
-                    chunkSize = fileSize - chunkStartPosition;
-                }
-                if (chunkSize < 1) {
-                    break;
-                }
-                if (chunkSize > Integer.MAX_VALUE) {
-                    chunkSize = Integer.MAX_VALUE;
-                }
-
-                MappedByteBuffer mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, chunkStartPosition,
-                        chunkSize);
-
-                ReaderRunnable readerRunnable = new ReaderRunnable(mappedByteBuffer);
-                Future<Map<String, MeasurementAggregator>> future = threadPool.submit(readerRunnable::run);
-                // System.out.println("Added future [" + chunkStartPosition + "][" + chunkSize + "]");
-                futures.add(future);
-                chunkStartPosition = chunkStartPosition + chunkSize + 1;
+            bytesReadCurrent += chunkSize;
+            while (((char) fis.read()) != '\n' && bytesReadCurrent < fileSize) {
+                chunkSize++;
+                bytesReadCurrent++;
             }
+
+            // System.out.println("[" + chunkStartPosition + "] - [" + (chunkStartPosition + chunkSize) + " bytes");
+            if (chunkStartPosition + chunkSize >= fileSize) {
+                chunkSize = (int) Math.min(fileSize - chunkStartPosition, Integer.MAX_VALUE);
+            }
+            if (chunkSize < 1) {
+                break;
+            }
+            if (chunkSize >= Integer.MAX_VALUE) {
+                chunkSize = Integer.MAX_VALUE / 8;
+            }
+
+            // MappedByteBuffer mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, chunkStartPosition,
+            // chunkSize);
+
+            ReaderRunnable readerRunnable = new ReaderRunnable(chunkStartPosition, chunkSize, fileChannel);
+            Future<Map<String, MeasurementAggregator>> future = threadPool.submit(readerRunnable::run);
+            // System.out.println("Added future [" + chunkStartPosition + "][" + chunkSize + "]");
+            futures.add(future);
+            chunkStartPosition = chunkStartPosition + chunkSize + 1;
         }
+
         fis.close();
 
         Map<String, MeasurementAggregator> globalMap = futures.parallelStream()
@@ -102,6 +103,7 @@ public class CalculateAverage_artpar {
                 }).parallel().collect(Collectors.toMap(
                         Map.Entry::getKey, Map.Entry::getValue,
                         MeasurementAggregator::combine));
+        fileChannel.close();
 
         Map<String, ResultRow> results = globalMap.entrySet().stream().parallel()
                 .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().finish()));
@@ -227,14 +229,14 @@ public class CalculateAverage_artpar {
 
     static class StationName {
         public final int hash;
-        private final String name;
+        private final byte[] nameBytes;
         // private final int index;
         public int count = 0;
         // public int[] values = new int[VECTOR_SIZE];
         public MeasurementAggregator measurementAggregator = new MeasurementAggregator();
 
-        public StationName(String name, int hash) {
-            this.name = name;
+        public StationName(byte[] nameBytes, int hash) {
+            this.nameBytes = nameBytes;
             // this.index = index;
             this.hash = hash;
         }
@@ -242,134 +244,99 @@ public class CalculateAverage_artpar {
     }
 
     private class ReaderRunnable {
-        private final MappedByteBuffer mappedByteBuffer;
+        private final long startPosition;
+        private final int chunkSize;
+        private final FileChannel fileChannel;
         StationNameMap stationNameMap = new StationNameMap();
-        // double[][] stationValueMap = new double[SIZE][];
 
-        private ReaderRunnable(MappedByteBuffer mappedByteBuffer) {
-            this.mappedByteBuffer = mappedByteBuffer;
+        private ReaderRunnable(long startPosition, int chunkSize, FileChannel fileChannel) {
+            this.startPosition = startPosition;
+            this.chunkSize = chunkSize;
+            this.fileChannel = fileChannel;
         }
 
-        public Map<String, MeasurementAggregator> run() {
-            // System.out.println("Started future - " + mappedByteBuffer.position());
+        public Map<String, MeasurementAggregator> run() throws IOException {
+            MappedByteBuffer mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, startPosition,
+                    chunkSize);
 
-            int doubleValue;
-            long start = Date.from(Instant.now()).getTime();
-            // int totalBytesRead = 0;
-
-            // ByteBuffer nameBuffer = ByteBuffer.allocate(128);
-            int MAPPED_BYTE_BUFFER_SIZE = 8192;
-            byte[] rawBuffer = new byte[32];
+            byte[] rawBuffer = new byte[100];
             int rawBufferReadIndex = 0;
-            StationName matchedStation = null;
-            boolean expectedName = true;
+            boolean negative;
+            int result;
+            int position = 0;
+            byte b;
+            int hash;
+            while (position < chunkSize) {
+                hash = 0;
+                while ((rawBuffer[rawBufferReadIndex++] = mappedByteBuffer.get(position++)) != ';') {
+                    hash = hash * 31 + rawBuffer[rawBufferReadIndex - 1];
+                }
 
-            byte[] mappedBytes = new byte[MAPPED_BYTE_BUFFER_SIZE];
-            int mappedBytesReadIndex;
-            boolean negative = false;
-            int start1 = 0;
-            int result = 0;
+                negative = false;
+                result = 0;
 
-            while (mappedByteBuffer.hasRemaining()) {
-                int remaining = mappedByteBuffer.remaining();
-                int bytesToRead = Math.min(remaining, MAPPED_BYTE_BUFFER_SIZE);
-                mappedByteBuffer.get(mappedBytes, 0, bytesToRead);
-                remaining = mappedByteBuffer.remaining();
-                mappedBytesReadIndex = 0;
-
-                while (mappedBytesReadIndex < bytesToRead) {
-                    byte b = mappedBytes[mappedBytesReadIndex];
-                    mappedBytesReadIndex++;
-
-                    if (expectedName) {
-                        if (b != ';') {
-                            rawBuffer[rawBufferReadIndex] = b;
-                            rawBufferReadIndex++;
-                            continue;
-                        }
-                        else {
-                            expectedName = false;
-                            matchedStation = stationNameMap.getOrCreate(rawBuffer, rawBufferReadIndex);
-                            rawBufferReadIndex = 0;
-                            negative = false;
-                            start1 = 0;
-                            result = 0;
-                            continue;
-                        }
+                b = mappedByteBuffer.get(position++);
+                if (b == '-') {
+                    byte one = mappedByteBuffer.get(position);
+                    byte two = mappedByteBuffer.get(position + 1);
+                    byte three = mappedByteBuffer.get(position + 2);
+                    if (two == '.') {
+                        result = -1 * (((one - '0') * 10 + (three - '0')));
+                        position = position + 4;
                     }
-
-                    while (b != '\n') {
-                        rawBuffer[rawBufferReadIndex] = b;
-                        rawBufferReadIndex++;
-
-                        if (mappedBytesReadIndex < bytesToRead) {
-                            b = mappedBytes[mappedBytesReadIndex];
-                            mappedBytesReadIndex++;
-                        }
-                        else {
-                            break;
-                        }
+                    else if (three == '.') {
+                        result = -1 * ((((one - '0') * 10 * 10) + ((two - '0') * 10) + mappedByteBuffer.get(
+                                position + 3)) - '0');
+                        position = position + 5;
                     }
-
-                    if (b != '\n') {
-                        if (mappedBytesReadIndex == bytesToRead && remaining > 0) {
-                            continue;
-                        }
+                }
+                else {
+                    byte two = mappedByteBuffer.get(position);
+                    byte three = mappedByteBuffer.get(position + 1);
+                    if (two == '.') {
+                        result = (b - '0') * 10 + (three - '0');
+                        position = position + 3;
                     }
-
-                    // Check for negative numbers
-                    if (rawBuffer[0] == '-') {
-                        negative = true;
-                        start1++;
+                    else if (three == '.') {
+                        result = ((b - '0') * 10 * 10) + ((two - '0') * 10) + mappedByteBuffer.get(position + 2) - '0';
+                        position = position + 4;
                     }
-
-                    for (int i = start1; i < rawBufferReadIndex; i++) {
-                        byte c = rawBuffer[i];
-                        if (c != '.') {
-                            result = result * 10 + (c - '0');
-                        }
-                    }
-
-                    doubleValue = negative ? -result : result;
-                    rawBufferReadIndex = 0;
-                    matchedStation.measurementAggregator.combine(doubleValue);
-                    matchedStation.count++;
-                    expectedName = true;
 
                 }
 
+                stationNameMap.getOrCreate(rawBuffer, rawBufferReadIndex - 1, negative ? -result : result, hash);
+                rawBufferReadIndex = 0;
             }
-
-            long end = Date.from(Instant.now()).getTime();
-            // System.out.println("Took [" + ((end - start) / 1000) + "s for " + totalBytesRead / 1024 + " kb");
-
             return Arrays.stream(stationNameMap.names).parallel().filter(Objects::nonNull)
-                    .collect(Collectors.toMap(e -> e.name, e -> e.measurementAggregator));
-            // return groupedMeasurements;
+                    .collect(Collectors.toMap(e -> new String(e.nameBytes), e -> e.measurementAggregator));
         }
     }
 
     class StationNameMap {
-        int[] indexes = new int[SIZE];
-        StationName[] names = new StationName[SIZE];
+        int[] indexes = new int[AVERAGE_CHUNK_SIZE];
+        StationName[] names = new StationName[AVERAGE_CHUNK_SIZE];
         int currentIndex = 0;
 
-        public StationName getOrCreate(byte[] stationNameBytes, int length) {
-
-            int hash = CalculateAverage_artpar.hashCode(stationNameBytes, length);
-
-            int position = Math.abs(hash) % SIZE;
+        public void getOrCreate(byte[] stationNameBytes, int length, int doubleValue, int hash) {
+            int position = hash & AVERAGE_CHUNK_SIZE_1;
             while (indexes[position] != 0 && names[indexes[position]].hash != hash) {
-                position = ++position % SIZE;
+                position = ++position & AVERAGE_CHUNK_SIZE_1;
             }
             if (indexes[position] != 0) {
-                return names[indexes[position]];
+                StationName stationName = names[indexes[position]];
+                stationName.measurementAggregator.combine(doubleValue);
+                stationName.count++;
             }
-            StationName stationName = new StationName(
-                    new String(stationNameBytes, 0, length, StandardCharsets.UTF_8), hash);
-            indexes[position] = ++currentIndex;
-            names[indexes[position]] = stationName;
-            return stationName;
+            else {
+                byte[] destination = new byte[length];
+                System.arraycopy(stationNameBytes, 0, destination, 0, length);
+                StationName stationName = new StationName(destination, hash);
+                indexes[position] = ++currentIndex;
+                names[indexes[position]] = stationName;
+
+                stationName.measurementAggregator.combine(doubleValue);
+                stationName.count++;
+            }
         }
     }
 
