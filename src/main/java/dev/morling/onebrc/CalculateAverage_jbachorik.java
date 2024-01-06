@@ -30,7 +30,109 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 
 public class CalculateAverage_jbachorik {
-    private static class Stats {
+    interface Sliceable {
+        void reset();
+
+        void get(byte[] bytes);
+
+        byte get();
+
+        int getInt();
+
+        short getShort();
+
+        long getLong();
+
+        int len();
+    }
+
+    private static final class ByteBufferSlice implements Sliceable {
+        private final ByteBuffer buffer;
+        private final int len;
+
+        public ByteBufferSlice(ByteBuffer buffer, int offset, int len) {
+            this.buffer = buffer.slice(offset, len);
+            this.len = len;
+        }
+
+        @Override
+        public void reset() {
+            buffer.rewind();
+        }
+
+        @Override
+        public void get(byte[] bytes) {
+            buffer.get(bytes);
+        }
+
+        @Override
+        public byte get() {
+            return buffer.get();
+        }
+
+        @Override
+        public int getInt() {
+            return buffer.getInt();
+        }
+
+        @Override
+        public long getLong() {
+            return buffer.getLong();
+        }
+
+        @Override
+        public int len() {
+            return len;
+        }
+
+        @Override
+        public short getShort() {
+            return buffer.getShort();
+        }
+    }
+
+    private static final class FastSlice implements Sliceable {
+        final ByteBuffer buffer;
+        final int offset;
+        final int len;
+
+        public FastSlice(ByteBuffer buffer, int offset, int len) {
+            this.buffer = buffer;
+            this.offset = offset;
+            this.len = len;
+        }
+
+        public void reset() {
+            buffer.position(offset);
+        }
+
+        public void get(byte[] bytes) {
+            buffer.get(bytes);
+        }
+
+        public byte get() {
+            return buffer.get();
+        }
+
+        public int getInt() {
+            return buffer.getInt();
+        }
+
+        public long getLong() {
+            return buffer.getLong();
+        }
+
+        public int len() {
+            return len;
+        }
+
+        @Override
+        public short getShort() {
+            return buffer.getShort();
+        }
+    }
+
+    private static final class Stats {
         long min;
         long max;
         long count;
@@ -67,12 +169,12 @@ public class CalculateAverage_jbachorik {
         }
     }
 
-    private static class StatsMap {
+    private static final class StatsMap {
         private static class StatsHolder {
-            private final ByteBuffer slice;
+            private final Sliceable slice;
             private final Stats stats;
 
-            StatsHolder(ByteBuffer slice, Stats stats) {
+            StatsHolder(Sliceable slice, Stats stats) {
                 this.slice = slice;
                 this.stats = stats;
             }
@@ -84,78 +186,105 @@ public class CalculateAverage_jbachorik {
 
         public Stats getOrInsert(ByteBuffer buffer, int len) {
             int idx = bucketIndex(buffer, len);
-            ByteBuffer slice = buffer.slice(buffer.position() - len, len);
-            StatsHolder[] bucket = map[idx];
-            if (bucket[0] == null) {
-                Stats stats = new Stats();
-                bucket[0] = new StatsHolder(slice, stats);
-                return stats;
-            }
-            int offset = 0;
-            while (offset < BUCKET_SIZE && bucket[offset] != null && !equals(bucket[offset].slice, slice)) {
-                offset++;
-            }
-            assert (offset <= BUCKET_SIZE);
-            if (bucket[offset] != null) {
-                return bucket[offset].stats;
-            }
-            else {
-                Stats stats = new Stats();
-                bucket[offset] = new StatsHolder(slice, stats);
-                return stats;
+            int target = buffer.position();
+            Sliceable slice = new FastSlice(buffer, buffer.position() - len, len);
+            try {
+                StatsHolder[] bucket = map[idx];
+                if (bucket[0] == null) {
+                    Stats stats = new Stats();
+                    bucket[0] = new StatsHolder(slice, stats);
+                    return stats;
+                }
+                int offset = 0;
+                while (offset < BUCKET_SIZE && bucket[offset] != null && !equals(bucket[offset].slice, slice)) {
+                    offset++;
+                }
+                assert (offset <= BUCKET_SIZE);
+                if (bucket[offset] != null) {
+                    return bucket[offset].stats;
+                } else {
+                    Stats stats = new Stats();
+                    bucket[offset] = new StatsHolder(slice, stats);
+                    return stats;
+                }
+            } finally {
+                buffer.position(target);
             }
         }
 
-        private static boolean equals(ByteBuffer leftSlice, ByteBuffer rightSlice) {
-            int pos = leftSlice.position();
+        private final long[] leftBuffer = new long[16]; // max 128 bytes
+        private final long[] rightBuffer = new long[16]; // max 128 bytes
 
-            int limit = leftSlice.limit();
-            if (limit != rightSlice.limit()) {
+        private boolean equals(Sliceable leftSlice, Sliceable rightSlice) {
+            if (leftSlice.len() != rightSlice.len()) {
                 return false;
             }
 
-            try {
-                int i = 0;
-                for (; i + 7 < limit; i += 8) {
-                    long l = leftSlice.getLong();
-                    long r = rightSlice.getLong();
-                    if (l != r) {
-                        return false;
-                    }
-                    pos += 8;
-                }
-                // else if (pos > 0) {
-                // int offset = 4 - remainder;
-                // int newpos = pos - offset;
-                // int offsetBits = 8 * offset;
-                // leftSlice.position(newpos);
-                // rightSlice.position(newpos);
-                // int l = leftSlice.getInt() >> offsetBits;
-                // int r = rightSlice.getInt() >> offsetBits;
-                // return l == r;
-                // }
-                // else {
-                // switch (remainder) {
-                // case 1:
-                // return leftSlice.get() == rightSlice.get();
-                // case 2:
-                // return leftSlice.getShort() == rightSlice.getShort();
-                // case 3:
-                // return leftSlice.getShort() == rightSlice.getShort()
-                // && leftSlice.get() == rightSlice.get();
-                // }
-                // }
-                for (; i < limit; i++) {
-                    if (leftSlice.get() != rightSlice.get()) {
-                        return false;
-                    }
-                }
-                return true;
+            int pos = 0;
+
+            int limit = leftSlice.len();
+            int lpos = pos;
+            int rpos = pos;
+            int bufPos = 0;
+            leftSlice.reset();
+            while (lpos < limit - 7) {
+                leftBuffer[bufPos] = leftSlice.getLong();
+                lpos += 8;
+                bufPos++;
             }
-            finally {
-                leftSlice.rewind();
-                rightSlice.rewind();
+            if (lpos < limit - 4) {
+                leftBuffer[bufPos] = (long)leftSlice.getInt() << 32;
+                lpos += 4;
             }
+            if (lpos < limit -2) {
+                leftBuffer[bufPos] |= (long)leftSlice.getShort() << 16;
+                lpos += 2;
+            }
+            if (lpos < limit) {
+                leftBuffer[bufPos] |= (long)leftSlice.get() << 8;
+            }
+            rightSlice.reset();
+            bufPos = 0;
+            while (rpos < limit - 7) {
+                rightBuffer[bufPos] = rightSlice.getLong();
+                rpos += 8;
+                bufPos++;
+            }
+            if (rpos < limit - 4) {
+                rightBuffer[bufPos] = (long)rightSlice.getInt() << 32;
+                rpos += 4;
+            }
+            if (rpos < limit -2) {
+                rightBuffer[bufPos] |= (long)rightSlice.getShort() << 16;
+                rpos += 2;
+            }
+            if (rpos < limit) {
+                rightBuffer[bufPos] |= (long)rightSlice.get() << 8;
+            }
+//
+//            long val = (((bufferMask[0] & leftBuffer[0]) ^ (bufferMask[0] & rightBuffer[0])) &
+//                        ((bufferMask[1] & leftBuffer[1]) ^ (bufferMask[1] & rightBuffer[1])) |
+//                        ((bufferMask[2] & leftBuffer[2]) ^ (bufferMask[2] & rightBuffer[2])) |
+//                        ((bufferMask[3] & leftBuffer[3]) ^ (bufferMask[3] & rightBuffer[3])) |
+//                        ((bufferMask[4] & leftBuffer[4]) ^ (bufferMask[4] & rightBuffer[4])) |
+//                        ((bufferMask[5] & leftBuffer[5]) ^ (bufferMask[5] & rightBuffer[5])) |
+//                        ((bufferMask[6] & leftBuffer[6]) ^ (bufferMask[6] & rightBuffer[6])) |
+//                        ((bufferMask[7] & leftBuffer[7]) ^ (bufferMask[7] & rightBuffer[7])) |
+//                        ((bufferMask[8] & leftBuffer[8]) ^ (bufferMask[8] & rightBuffer[8])) |
+//                        ((bufferMask[9] & leftBuffer[9]) ^ (bufferMask[9] & rightBuffer[9])) |
+//                        ((bufferMask[10] & leftBuffer[10]) ^ (bufferMask[10] & rightBuffer[10])) |
+//                        ((bufferMask[11] & leftBuffer[11]) ^ (bufferMask[11] & rightBuffer[11])) |
+//                        ((bufferMask[12] & leftBuffer[12]) ^ (bufferMask[12] & rightBuffer[12])) |
+//                        ((bufferMask[13] & leftBuffer[13]) ^ (bufferMask[13] & rightBuffer[13])) |
+//                        ((bufferMask[14] & leftBuffer[14]) ^ (bufferMask[14] & rightBuffer[14])) |
+//                        ((bufferMask[15] & leftBuffer[15]) ^ (bufferMask[15] & rightBuffer[15])));
+//            return val == 0;
+            for (int i = 0; i < bufPos; i++) {
+                if (leftBuffer[i] != rightBuffer[i]) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         private static int bucketIndex(ByteBuffer buffer, int len) {
@@ -185,7 +314,7 @@ public class CalculateAverage_jbachorik {
             return h & 0xFFFFFFFFL;
         }
 
-        public void forEach(BiConsumer<ByteBuffer, Stats> consumer) {
+        public void forEach(BiConsumer<Sliceable, Stats> consumer) {
             for (StatsHolder[] bucket : map) {
                 for (StatsHolder statsHolder : bucket) {
                     if (statsHolder != null) {
@@ -245,12 +374,10 @@ public class CalculateAverage_jbachorik {
         }
     }
 
-    private static String stringFromBuffer(ByteBuffer bb) {
-        bb.rewind();
-        int pos = bb.position();
-        int limit = bb.limit();
-        byte[] bytes = new byte[limit - pos];
-        bb.get(bytes);
+    private static String stringFromBuffer(Sliceable slice) {
+        slice.reset();
+        byte[] bytes = new byte[slice.len()];
+        slice.get(bytes);
         return new String(bytes);
     }
 
