@@ -35,7 +35,7 @@ public class CalculateAverage_roman_r_m {
         long fileSize = new File(FILE).length();
 
         var station = new ByteString();
-        var value = new ByteString();
+        var value = new ValueDecoder();
         var parsingStation = true;
 
         long offset = 0;
@@ -52,7 +52,7 @@ public class CalculateAverage_roman_r_m {
             else if (c == '\r') {
             }
             else if (c == '\n') {
-                double val = value.parseDouble();
+                long val = value.get();
                 var a = resultStore.get(station);
 
                 a.min = Math.min(a.min, val);
@@ -62,17 +62,52 @@ public class CalculateAverage_roman_r_m {
 
                 parsingStation = true;
                 station.reset();
-
+                value.reset();
             }
             else if (parsingStation) {
                 station.append(c);
             }
             else {
-                value.append(c);
+                value.add(c);
             }
         }
 
         System.out.println(resultStore.toMap());
+    }
+
+    static final class ValueDecoder {
+        private boolean negative;
+        private final byte[] buf = new byte[3];
+        private int len;
+
+        void reset() {
+            negative = false;
+            len = 0;
+        }
+
+        void add(byte b) {
+            if (b == '-') {
+                negative = true;
+            }
+            else if (b == '.') {
+
+            }
+            else {
+                buf[len++] = (byte) (b - '0');
+            }
+        }
+
+        long get() {
+            long res;
+            if (len == 3) {
+                res = buf[2] + buf[1] * 10 + buf[0] * 100;
+            } else if (len == 2) {
+                res = buf[1] + buf[0] * 10;
+            } else {
+                throw new IllegalStateException(STR."buf=\{buf}, len=\{len}");
+            }
+            return negative ? -res : res;
+        }
     }
 
     static final class ByteString {
@@ -99,16 +134,6 @@ public class CalculateAverage_roman_r_m {
         @Override
         public String toString() {
             return new String(buf, 0, len);
-        }
-
-        public double parseDouble() {
-            double res = 0;
-            boolean negate = buf[0] == '-';
-            for (int i = negate ? 1 : 0; i < len - 2; i++) {
-                res = res * 10 + (buf[i] - '0');
-            }
-            res = res + (buf[len - 1] - '0') / 10.0;
-            return negate ? -res : res;
         }
 
         public ByteString copy() {
@@ -151,13 +176,13 @@ public class CalculateAverage_roman_r_m {
     }
 
     private static final class ResultRow {
-        double min = 0.0;
-        double sum = 0.0;
-        double max = 0.0;
+        long min = 100;
+        long sum = 0;
+        long max = -100;
         int count = 0;
 
         public String toString() {
-            return round(min) + "/" + round(sum / count) + "/" + round(max);
+            return round(min / 10.0) + "/" + round(sum / 10.0 / count) + "/" + round(max / 10.0);
         }
 
         private double round(double value) {
@@ -184,9 +209,7 @@ public class CalculateAverage_roman_r_m {
 
         TreeMap<String, ResultRow> toMap() {
             var result = new TreeMap<String, ResultRow>();
-            indices.forEach((name, idx) -> {
-                result.put(name.toString(), results.get(idx));
-            });
+            indices.forEach((name, idx) -> result.put(name.toString(), results.get(idx)));
             return result;
         }
     }
