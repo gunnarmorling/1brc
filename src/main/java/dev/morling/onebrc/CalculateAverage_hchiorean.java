@@ -108,8 +108,6 @@ public class CalculateAverage_hchiorean {
 
         int bufferCapacity = 10 * 1024 * 1024;
 
-        System.out.println("Using decoder for charset " + defaultCharset);
-
         long len = file.length();
         int idCounter = 0;
         try (
@@ -201,13 +199,8 @@ public class CalculateAverage_hchiorean {
     }
 
     public static void main(String[] args) throws Exception {
-        long t0 = System.currentTimeMillis();
-
         File file = new File("./measurements.txt");
         Map<String, double[]> data = readFile(file);
         print(data);
-
-        long t1 = System.currentTimeMillis();
-        System.out.println("took: " + (t1 - t0) / 1000d + "s to process file");
     }
 }
