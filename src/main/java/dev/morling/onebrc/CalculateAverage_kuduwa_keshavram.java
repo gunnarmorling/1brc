@@ -52,42 +52,7 @@ public class CalculateAverage_kuduwa_keshavram {
                                 MappedByteBuffer byteBuffer = fileChannel.map(
                                         MapMode.READ_ONLY, segment.start, segment.end - segment.start);
                                 byteBuffer.order(ByteOrder.nativeOrder());
-                                Iterator<Measurement> iterator = new Iterator<>() {
-                                    @Override
-                                    public boolean hasNext() {
-                                        return byteBuffer.hasRemaining();
-                                    }
-
-                                    @Override
-                                    public Measurement next() {
-                                        int initialPosition = byteBuffer.position();
-                                        int i = 0;
-                                        while (true) {
-                                            byte b = byteBuffer.get();
-                                            if (b == 59) {
-                                                break;
-                                            }
-                                            i++;
-                                        }
-                                        byteBuffer.position(initialPosition);
-
-                                        byte[] city = new byte[i];
-                                        for (int j = 0; j < i; j++) {
-                                            city[j] = byteBuffer.get();
-                                        }
-
-                                        byteBuffer.get();
-                                        String temp = "";
-                                        while (true) {
-                                            char c = (char) byteBuffer.get();
-                                            if (c == '\n') {
-                                                break;
-                                            }
-                                            temp += c;
-                                        }
-                                        return new Measurement(new String(city), toDouble(temp));
-                                    }
-                                };
+                                Iterator<Measurement> iterator = getMeasurementIterator(byteBuffer);
                                 return StreamSupport.stream(
                                         Spliterators.spliteratorUnknownSize(iterator, Spliterator.NONNULL), true);
                             }
@@ -109,6 +74,54 @@ public class CalculateAverage_kuduwa_keshavram {
                                         entry.getValue().getAverage(),
                                         entry.getValue().getMax()))
                         .collect(Collectors.joining(", ", "{", "}")));
+    }
+
+    private static Iterator<Measurement> getMeasurementIterator(MappedByteBuffer byteBuffer) {
+        return new Iterator<>() {
+
+            private int initialPosition;
+
+            private int delimiterIndex;
+
+            @Override
+            public boolean hasNext() {
+                boolean hasRemaining = byteBuffer.hasRemaining();
+                if (hasRemaining) {
+                    initialPosition = byteBuffer.position();
+                    delimiterIndex = 0;
+                    while (true) {
+                        byte b = byteBuffer.get();
+                        if (b == 59) {
+                            break;
+                        }
+                        delimiterIndex++;
+                    }
+                    return true;
+                }
+                return false;
+            }
+
+            @Override
+            public Measurement next() {
+                byteBuffer.position(initialPosition);
+
+                byte[] city = new byte[delimiterIndex];
+                for (int j = 0; j < delimiterIndex; j++) {
+                    city[j] = byteBuffer.get();
+                }
+
+                byteBuffer.get();
+                String temp = "";
+                while (true) {
+                    char c = (char) byteBuffer.get();
+                    if (c == '\n') {
+                        break;
+                    }
+                    temp += c;
+                }
+                return new Measurement(new String(city), toDouble(temp));
+            }
+        };
     }
 
     private record FileSegment(long start, long end) {
