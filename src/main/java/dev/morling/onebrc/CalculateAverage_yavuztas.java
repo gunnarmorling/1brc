@@ -126,6 +126,7 @@ public class CalculateAverage_yavuztas {
                 while ((b = this.buffer.get()) != '\n') {
                     if (b == ';') { // save semicolon pos
                         semiColonPos = this.buffer.position(); // semicolon exclusive
+                        skip(3);
                     }
                 }
                 // found linebreak
