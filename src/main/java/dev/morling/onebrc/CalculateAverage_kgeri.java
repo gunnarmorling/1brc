@@ -136,10 +136,11 @@ public class CalculateAverage_kgeri {
 
     private static Map<StringSlice, MeasurementAggregate> readChunk(FileChannel channel, long from, long chunkSize) {
         MemorySegment data;
+        long remaining;
         try {
             long offset = Math.max(0, from - 1);
-            long size = Math.min(channel.size() - offset, chunkSize + 256);
-            data = channel.map(READ_ONLY, offset, size, Arena.ofConfined());
+            remaining = channel.size() - offset;
+            data = channel.map(READ_ONLY, offset, Math.min(remaining, chunkSize + 256), Arena.ofConfined()); // +256 to allow for reading records that are split by the chunk
         }
         catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -155,7 +156,8 @@ public class CalculateAverage_kgeri {
         byte[] buf = new byte[256];
         MutableStringSlice name = new MutableStringSlice(buf);
 
-        for (long pos = start; pos < chunkSize;) {
+        long until = Math.min(remaining, chunkSize); // Records may end (slightly) after the chunk boundary, but must not start after it
+        for (long pos = start; pos < until;) {
             name.clear();
             int i = 0;
             for (;; i++) {
