@@ -95,15 +95,15 @@ public class CalculateAverage_ddimtirov {
             try (var raf = new RandomAccessFile(file.toFile(), "r")) {
                 var segments = new ArrayList<FileSegment>();
                 var fileSize = raf.length();
-                var segmentSize = Math.min(1024 * 1024, fileSize / desiredSegmentsCount);
+                var segmentSize = Math.max(1024 * 1024, fileSize / desiredSegmentsCount);
 
                 var i = 1;
                 var prevEnd = 0L;
                 while (prevEnd < fileSize-1) {
                     var start = prevEnd;
                     var end = findNewLineAfter(raf, prevEnd + segmentSize, fileSize);
-                    prevEnd = end;
                     segments.add(new FileSegment(i, start, end - start));
+                    prevEnd = end;
                 }
                 return segments;
             }
