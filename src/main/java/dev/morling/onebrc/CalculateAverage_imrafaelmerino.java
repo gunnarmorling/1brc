@@ -104,12 +104,11 @@ public class CalculateAverage_imrafaelmerino {
     }
 
     private static Map<String, Stat> calculateStats(String file,
-                                                    long chunkSize
-                                                   )
+                                                    long chunkSize)
             throws IOException {
 
         try (var fileChannel = FileChannel.open(Paths.get(file),
-                                                StandardOpenOption.READ)) {
+                StandardOpenOption.READ)) {
             var stats = fileMemoryStream(fileChannel, chunkSize)
                     .parallel()
                     .map(p -> ManagedComputation.compute(() -> parse(p)))
@@ -122,8 +121,7 @@ public class CalculateAverage_imrafaelmerino {
     }
 
     private static Map<String, Stat> combine(Map<String, Stat> xs,
-                                             Map<String, Stat> ys
-                                            ) {
+                                             Map<String, Stat> ys) {
 
         Map<String, Stat> result = new HashMap<>();
 
@@ -165,23 +163,22 @@ public class CalculateAverage_imrafaelmerino {
                     number = number * 10 + (numberByte - '0');
             }
             stats.computeIfAbsent(fieldStr,
-                                  k -> new Stat())
-                 .update(sign * number);
+                    k -> new Stat())
+                    .update(sign * number);
         }
 
         return stats;
     }
 
     private static Stream<ByteBuffer> fileMemoryStream(FileChannel fileChannel,
-                                                       long chunkSize
-                                                      )
+                                                       long chunkSize)
             throws IOException {
 
         var spliterator = Spliterators.spliteratorUnknownSize(fileMemoryIterator(fileChannel,
-                                                                                 chunkSize),
-                                                              Spliterator.IMMUTABLE);
+                chunkSize),
+                Spliterator.IMMUTABLE);
         return StreamSupport.stream(spliterator,
-                                    false);
+                false);
     }
 
     private static Iterator<ByteBuffer> fileMemoryIterator(FileChannel fileChannel, long chunkSize) throws IOException {
@@ -199,16 +196,18 @@ public class CalculateAverage_imrafaelmerino {
             public ByteBuffer next() {
                 try {
                     var buffer = fileChannel.map(MapMode.READ_ONLY,
-                                                 start,
-                                                 Math.min(chunkSize,
-                                                          size - start));
+                            start,
+                            Math.min(chunkSize,
+                                    size - start));
                     var limmit = buffer.limit() - 1;
-                    while (buffer.get(limmit) != '\n') limmit--;
+                    while (buffer.get(limmit) != '\n')
+                        limmit--;
                     limmit++;
                     buffer.limit(limmit);
                     start += limmit;
                     return buffer;
-                } catch (IOException ex) {
+                }
+                catch (IOException ex) {
                     throw new UncheckedIOException(ex);
                 }
             }
@@ -223,8 +222,7 @@ public class CalculateAverage_imrafaelmerino {
         private long count = 0L;
 
         public static Stat combine(Stat m1,
-                                   Stat m2
-                                  ) {
+                                   Stat m2) {
             var stat = new Stat();
             stat.min = Math.min(m1.min, m2.min);
             stat.max = Math.max(m1.max, m2.max);
@@ -256,7 +254,8 @@ public class CalculateAverage_imrafaelmerino {
             try {
                 ForkJoinPool.managedBlock(managedBlocker);
                 return managedBlocker.getResult();
-            } catch (InterruptedException e) {
+            }
+            catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new RuntimeException(e);
             }
