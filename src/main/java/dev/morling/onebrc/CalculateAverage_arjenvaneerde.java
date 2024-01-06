@@ -66,7 +66,7 @@ public class CalculateAverage_arjenvaneerde {
   }
 
   static class Measures {
-    static final int HASH_TABLE_SIZE = 2048;
+    static final int HASH_TABLE_SIZE = 4 * 2048;
 
     Measure[][] measureHashTable;
 
@@ -75,13 +75,11 @@ public class CalculateAverage_arjenvaneerde {
     }
 
     void add(byte[] bytes, int startPos, int endPos, int temp) {
-      int len       = endPos - startPos;
-      int lenBits   = (len - 2) & 0x1f;
-      int char0Bits = bytes[startPos + 0] & 0x1f;
-      int char1Bits = bytes[startPos + 1] & 0x1f;
-      int index = (lenBits |                 // 4 bits of the length
-                   (char0Bits << 4) |   // 5 bits of first char
-                   (char1Bits << 9)     // 5 bits of second char
+      int len = endPos - startPos;
+      int index = ((len - 2) & 0x1f |                      // 4 bits of the length
+                   ((bytes[startPos + 0] & 0x1f) << 4) |   // 5 bits of first char
+                   ((bytes[startPos + 1] & 0x1f) << 9) |   // 5 bits of second char
+                   ((bytes[startPos + 2] & 0x1f) << 14)    // 5 bits of third char
                   ) & (HASH_TABLE_SIZE - 1);
       Measure[] arr   = this.measureHashTable[index];
       int       i     = 0;
@@ -95,6 +93,8 @@ public class CalculateAverage_arjenvaneerde {
         }
         if (m.station.length == len) {
           switch (len) {
+            case 0:
+              break;
             case 1:
               if (m.station[0] == bytes[startPos + 0]) {
                 found = true;
@@ -110,6 +110,44 @@ public class CalculateAverage_arjenvaneerde {
               if (m.station[0] == bytes[startPos + 0] &&
                   m.station[1] == bytes[startPos + 1] &&
                   m.station[2] == bytes[startPos + 2]) {
+                found = true;
+              }
+              break;
+            case 4:
+              if ((int) m.station[0] == (int) bytes[startPos + 0] /*&&
+                  m.station[1] == bytes[startPos + 1] &&
+                  m.station[2] == bytes[startPos + 2] &&
+                  m.station[3] == bytes[startPos + 3]*/) {
+                found = true;
+              }
+              break;
+            case 5:
+              if ((int) m.station[0] == (int) bytes[startPos + 0] /*&&
+                  m.station[1] == bytes[startPos + 1] &&
+                  m.station[2] == bytes[startPos + 2] &&
+                  m.station[3] == bytes[startPos + 3]*/ &&
+                  m.station[4] == bytes[startPos + 4]) {
+                found = true;
+              }
+              break;
+            case 6:
+              if ((int) m.station[0] == (int) bytes[startPos + 0] /*&&
+                  m.station[1] == bytes[startPos + 1] &&
+                  m.station[2] == bytes[startPos + 2] &&
+                  m.station[3] == bytes[startPos + 3]*/ &&
+                  m.station[4] == bytes[startPos + 4] &&
+                  m.station[5] == bytes[startPos + 5]) {
+                found = true;
+              }
+              break;
+            case 7:
+              if ((int) m.station[0] == (int) bytes[startPos + 0] /*&&
+                  m.station[1] == bytes[startPos + 1] &&
+                  m.station[2] == bytes[startPos + 2] &&
+                  m.station[3] == bytes[startPos + 3]*/ &&
+                  m.station[4] == bytes[startPos + 4] &&
+                  m.station[5] == bytes[startPos + 5] &&
+                  m.station[6] == bytes[startPos + 6]) {
                 found = true;
               }
               break;
@@ -167,26 +205,21 @@ public class CalculateAverage_arjenvaneerde {
           endOfLinePos++;
         }
         sepPos = endOfLinePos;
-        while (buffer[endOfLinePos] != 0x0A) {
-          endOfLinePos++;
-        }
-        if (endOfLinePos < endPos) {
-          int  temperature = 0;
-          int  sign        = 1;
-          int  digitPos    = sepPos + 1;
-          byte lineByte;
-          while (digitPos < endOfLinePos) {
-            lineByte = buffer[digitPos];
-            if (lineByte >= '0' && lineByte <= '9') {
-              temperature = temperature * 10 + (lineByte - '0');
-            } else if (lineByte == '-') {
-              sign = -1;
-            }
-            digitPos++;
+        int  temperature = 0;
+        byte lineByte;
+        endOfLinePos++;
+        lineByte = buffer[endOfLinePos];
+        while (lineByte != 0x0A) {
+          if (lineByte >= '0' && lineByte <= '9') {
+            temperature = temperature * 10 + (lineByte - '0');
           }
-          measures.add(buffer, startOfLinePos, sepPos, sign * temperature);
-          startOfLinePos = ++endOfLinePos;
+          lineByte = buffer[++endOfLinePos];
         }
+        if (buffer[sepPos + 1] == '-') {
+          temperature = -temperature;
+        }
+        measures.add(buffer, startOfLinePos, sepPos, temperature);
+        startOfLinePos = ++endOfLinePos;
       }
     }
   }

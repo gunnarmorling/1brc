@@ -52,6 +52,7 @@ public class CalculateAverage {
     }
 
     public static void main(String[] args) throws IOException {
+        long startTime = System.currentTimeMillis();
         // Map<String, Double> measurements1 = Files.lines(Paths.get(FILE))
         // .map(l -> l.split(";"))
         // .collect(groupingBy(m -> m[0], averagingDouble(m -> Double.parseDouble(m[1]))));
@@ -87,5 +88,7 @@ public class CalculateAverage {
                 .collect(groupingBy(m -> m.station(), collector)));
 
         System.out.println(measurements);
+        long endTime = System.currentTimeMillis();
+        System.out.printf("Duration : %.3f\n%n", (endTime - startTime) / 1000.0);
     }
 }

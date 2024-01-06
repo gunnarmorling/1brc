@@ -34,6 +34,7 @@ public class CreateMeasurements {
 
     public static void main(String[] args) throws Exception {
         long start = System.currentTimeMillis();
+        System.setProperty("line.separator", "\n");
 
         if (args.length != 1) {
             System.out.println("Usage: create_measurements.sh <number of records to create>");
