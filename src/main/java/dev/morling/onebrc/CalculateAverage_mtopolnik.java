@@ -181,11 +181,11 @@ public class CalculateAverage_mtopolnik {
                 stats.gotoIndex(tableIndex);
                 long foundHash = stats.hash();
                 if (foundHash == 0) {
-                    stats.hash(hash);
-                    stats.sum(temperature);
-                    stats.count(1);
-                    stats.min(temperature);
-                    stats.max(temperature);
+                    stats.setHash(hash);
+                    stats.setSum(temperature);
+                    stats.setCount(1);
+                    stats.setMin(temperature);
+                    stats.setMax(temperature);
                     var nameBlock = namesMem.asSlice(tableIndex * NAME_SLOT_SIZE, NAME_SLOT_SIZE);
                     nameBlock.copyFrom(nameSlice);
                     nameBlock.set(JAVA_BYTE, nameLen, (byte) 0);
@@ -195,10 +195,10 @@ public class CalculateAverage_mtopolnik {
                     tableIndex = (tableIndex + 1) % STATS_TABLE_SIZE;
                     continue;
                 }
-                stats.sum(stats.sum() + temperature);
-                stats.count(stats.count() + 1);
-                stats.min(Integer.min(stats.min(), temperature));
-                stats.max(Integer.max(stats.max(), temperature));
+                stats.setSum(stats.sum() + temperature);
+                stats.setCount(stats.count() + 1);
+                stats.setMin(Integer.min(stats.min(), temperature));
+                stats.setMax(Integer.max(stats.max(), temperature));
                 break;
             }
         }
@@ -334,23 +334,23 @@ public class CalculateAverage_mtopolnik {
             return memSeg.get(JAVA_INT, base + MAX_OFFSET);
         }
 
-        void hash(long hash) {
+        void setHash(long hash) {
             memSeg.set(JAVA_LONG, base + HASH_OFFSET, hash);
         }
 
-        void sum(int sum) {
+        void setSum(int sum) {
             memSeg.set(JAVA_INT, base + SUM_OFFSET, sum);
         }
 
-        void count(int count) {
+        void setCount(int count) {
             memSeg.set(JAVA_INT, base + COUNT_OFFSET, count);
         }
 
-        void min(int min) {
+        void setMin(int min) {
             memSeg.set(JAVA_INT, base + MIN_OFFSET, min);
         }
 
-        void max(int max) {
+        void setMax(int max) {
             memSeg.set(JAVA_INT, base + MAX_OFFSET, max);
         }
     }
