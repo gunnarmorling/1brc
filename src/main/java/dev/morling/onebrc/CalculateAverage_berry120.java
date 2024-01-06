@@ -242,8 +242,6 @@ public class CalculateAverage_berry120 {
             }
         }
 
-        // System.out.println("TIME WITHOUT PRINT: " + (System.currentTimeMillis() - time));
-
         boolean first = true;
         StringBuilder output = new StringBuilder(16_000);
         output.append("{");
@@ -260,8 +258,6 @@ public class CalculateAverage_berry120 {
         output.append("}");
 
         System.out.println(output);
-
-//        System.out.println("TIME: " + (System.currentTimeMillis() - time));
     }
 
 }
