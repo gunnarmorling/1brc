@@ -18,7 +18,6 @@ package dev.morling.onebrc;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
@@ -86,39 +85,43 @@ public class CalculateAverage_muditsaxena {
             inputList = null;
             return null;
         }
-
     }
 
     static ConcurrentMap<String, MeasurementAggregator> map = new ConcurrentHashMap<>();
     static final int TASK_LIST_CAPACITY = 100;
 
     public static void main(String[] args) throws IOException {
-        ExecutorService virtualThreadExecutors = Executors.newVirtualThreadPerTaskExecutor();
+        try (ExecutorService virtualThreadExecutors = Executors.newVirtualThreadPerTaskExecutor()) {
 
-        List<String> taskList = new ArrayList<>(TASK_LIST_CAPACITY);
-        List<CompletableFuture<Void>> tasks = new ArrayList<>();
+            List<String> taskList = new ArrayList<>(TASK_LIST_CAPACITY);
+            List<CompletableFuture<Void>> tasks = new ArrayList<>();
 
-        try (BufferedReader br = Files.newBufferedReader(Paths.get(FILE))) {
-            while (br.readLine() != null) {
+            try (BufferedReader br = Files.newBufferedReader(Paths.get(FILE))) {
                 String line = br.readLine();
-
-                taskList.add(line);
-                if (taskList.size() >= TASK_LIST_CAPACITY) {
-                    tasks.add(CompletableFuture.runAsync(new FutureTask<>(new TaskRunner<>(taskList)), virtualThreadExecutors));
-                    taskList = null;
-                    taskList = new ArrayList<>(TASK_LIST_CAPACITY);
+                while (line != null) {
+                    taskList.add(line);
+                    if (taskList.size() >= TASK_LIST_CAPACITY) {
+                        tasks.add(CompletableFuture.runAsync(new FutureTask<>(new TaskRunner<>(taskList)), virtualThreadExecutors));
+                        taskList = null;
+                        taskList = new ArrayList<>(TASK_LIST_CAPACITY);
+                    }
+                    line = br.readLine();
                 }
             }
-        }
 
-        for (CompletableFuture<Void> task : tasks) {
-            if (task != null) {
-                task.join();
+            if (!taskList.isEmpty()) {
+                tasks.add(CompletableFuture.runAsync(new FutureTask<>(new TaskRunner<>(taskList)), virtualThreadExecutors));
             }
-        }
 
-        Map<String, ResultRow> resultRowMap = new TreeMap<>();
-        map.forEach((key, value) -> resultRowMap.put(key, new ResultRow(value.min, value.sum / value.count, value.max)));
-        System.out.println(resultRowMap);
+            for (CompletableFuture<Void> task : tasks) {
+                if (task != null) {
+                    task.join();
+                }
+            }
+
+            Map<String, ResultRow> resultRowMap = new TreeMap<>();
+            map.forEach((key, value) -> resultRowMap.put(key, new ResultRow(value.min, value.sum / value.count, value.max)));
+            System.out.println(resultRowMap);
+        }
     }
 }
