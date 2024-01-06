@@ -28,6 +28,15 @@ import java.util.function.Supplier;
 
 public class CalculateAverage_shipilev {
 
+    // This might not be the fastest implementation one can do.
+    // When working on this implementation, I set the bar like this:
+    //
+    //  1. Using only vanilla Java, without Unsafe tricks;
+    //  2. Using only standard Java, without preview features like FFM;
+    //  3. Leaving out hard-to-understand hacks, the correctness of which is not obvious;
+    //  4. PARALLELISM, to feed my hungry TR 3970X.
+    //
+
     // ========================= Tunables =========================
 
     // Workload data file.
