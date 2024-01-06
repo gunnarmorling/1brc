@@ -18,10 +18,7 @@ package dev.morling.onebrc;
 import java.io.BufferedWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.Random;
 
 import org.rschwietzke.FastRandom;
 
