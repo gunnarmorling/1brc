@@ -17,10 +17,19 @@ package dev.morling.onebrc;
 
 import static java.util.stream.Collectors.*;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayDeque;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -28,9 +37,14 @@ public class CalculateAverage_coolmineman {
 
     private static final String FILE = "./measurements.txt";
 
-    private static record Measurement(String station, double value) {
-        private Measurement(String[] parts) {
-            this(parts[0], Double.parseDouble(parts[1]));
+    // TODO maybe just write a byte arraylist
+    static class ByteArrayOutputStreamEx extends ByteArrayOutputStream {
+        byte[] buf() {
+            return buf;
+        }
+
+        void shrink(int i) {
+            count -= i;
         }
     }
 
@@ -40,10 +54,10 @@ public class CalculateAverage_coolmineman {
         private double sum;
         private long count;
 
-        void add(Measurement m) {
-            min = Math.min(min, m.value);
-            max = Math.max(max, m.value);
-            sum += m.value;
+        void add(double value) {
+            min = Math.min(min, value);
+            max = Math.max(max, value);
+            sum += value;
             count++;
         }
 
@@ -56,17 +70,87 @@ public class CalculateAverage_coolmineman {
         }
     }
 
-    public static void main(String[] args) throws IOException {
-        Map<String, MeasurementAggregator> measurements = new TreeMap<>();
+    private static class TrieNode {
+        TrieNode[] next;
+        MeasurementAggregator leaf;
 
-        try (BufferedReader r = Files.newBufferedReader(Paths.get(FILE))) {
-            String line;
-            while ((line = r.readLine()) != null) {
-                var m = new Measurement(line.split(";"));
-                measurements.computeIfAbsent(m.station, k -> new MeasurementAggregator()).add(m);
+        TrieNode get(int c) {
+            if (next == null)
+                next = new TrieNode[256];
+            var n = next[c];
+            if (n == null) {
+                n = next[c] = new TrieNode();
+            }
+            return n;
+        }
+
+        MeasurementAggregator leaf() {
+            if (leaf == null)
+                leaf = new MeasurementAggregator();
+            return leaf;
+        }
+
+        void write(OutputStream os) throws IOException {
+            os.write('{' & 0xFF);
+            write(os, new ByteArrayOutputStreamEx(), true);
+            os.write('}' & 0xFF);
+        }
+
+        boolean write(OutputStream os, ByteArrayOutputStreamEx namestack, boolean first) throws IOException {
+            if (leaf != null) {
+                if (!first) {
+                    os.write(',' & 0xFF);
+                    os.write(' ' & 0xFF);
+                }
+                os.write(namestack.buf(), 0, namestack.size());
+                os.write('=');
+                os.write(leaf.toString().getBytes(StandardCharsets.UTF_8));
+                first = false;
+            }
+            if (next != null) {
+                for (int i = 0; i < 256; i++) {
+                    var n = next[i];
+                    if (n != null) {
+                        namestack.write(i);
+                        first = n.write(os, namestack, first);
+                        namestack.shrink(1);
+                    }
+                }
+            }
+            return first;
+        }
+    }
+
+    public static void main(String[] args) throws IOException {
+        TrieNode measurements = new TrieNode();
+
+        try (InputStream in = new BufferedInputStream(Files.newInputStream(Paths.get(FILE)))) {
+            ByteArrayOutputStreamEx os = new ByteArrayOutputStreamEx();
+            TrieNode node = measurements;
+            boolean parsingDouble = false;
+            int r;
+            while ((r = in.read()) > 0) {
+                if (parsingDouble) {
+                    if (((char) r) == '\n') {
+                        node.leaf().add(Double.parseDouble(new String(os.buf(), 0, os.size(), StandardCharsets.UTF_8)));
+                        os.reset();
+                        node = measurements;
+                        parsingDouble = false;
+                    } else {
+                        os.write(r);
+                    }
+                } else {
+                    if (((char) r) == ';') {
+                        parsingDouble = true;
+                    } else {
+                        node = node.get(r);
+                    }
+                }
             }
         }
 
-        System.out.println(measurements);
+        try (OutputStream os = new BufferedOutputStream(System.out)) {
+            measurements.write(os);
+        }
     }
 }
