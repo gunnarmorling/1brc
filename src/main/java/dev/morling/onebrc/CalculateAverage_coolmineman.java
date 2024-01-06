@@ -26,12 +26,16 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintWriter;
+import java.nio.ByteBuffer;
+import java.nio.channels.AsynchronousFileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayDeque;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.Future;
 
 public class CalculateAverage_coolmineman {
 
@@ -121,32 +125,65 @@ public class CalculateAverage_coolmineman {
         }
     }
 
-    public static void main(String[] args) throws IOException {
-        TrieNode measurements = new TrieNode();
+    static TrieNode measurements = new TrieNode();
+    static ByteArrayOutputStreamEx os = new ByteArrayOutputStreamEx();
+    static TrieNode node = measurements;
+    static boolean parsingDouble = false;
 
-        try (InputStream in = new BufferedInputStream(Files.newInputStream(Paths.get(FILE)))) {
-            ByteArrayOutputStreamEx os = new ByteArrayOutputStreamEx();
-            TrieNode node = measurements;
-            boolean parsingDouble = false;
-            int r;
-            while ((r = in.read()) > 0) {
-                if (parsingDouble) {
-                    if (((char) r) == '\n') {
-                        node.leaf().add(Double.parseDouble(new String(os.buf(), 0, os.size(), StandardCharsets.UTF_8)));
-                        os.reset();
-                        node = measurements;
-                        parsingDouble = false;
-                    } else {
-                        os.write(r);
-                    }
-                } else {
-                    if (((char) r) == ';') {
-                        parsingDouble = true;
-                    } else {
-                        node = node.get(r);
-                    }
+    static void parse(ByteBuffer b, int size) {
+        var a = b.array();
+        for (int i = 0; i < size; i++) {
+            byte r = a[i];
+            if (parsingDouble) {
+                if (r == (byte) '\n') {
+                    node.leaf().add(Double.parseDouble(new String(os.buf(), 0, os.size(), StandardCharsets.UTF_8)));
+                    os.reset();
+                    node = measurements;
+                    parsingDouble = false;
+                }
+                else {
+                    os.write(r);
                 }
             }
+            else {
+                if (r == (byte) ';') {
+                    parsingDouble = true;
+                }
+                else {
+                    node = node.get(r & 0xFF);
+                }
+            }
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        int pageSize = 8192;
+        long pos = 0;
+        try (AsynchronousFileChannel fc = AsynchronousFileChannel.open(Paths.get(FILE), StandardOpenOption.READ)) {
+            var bbs = new ByteBuffer[4];
+            for (int i = 0; i < bbs.length; i++) {
+                bbs[i] = ByteBuffer.allocate(pageSize);
+            }
+
+            Future<Integer>[] futures = new Future[bbs.length];
+
+            for (int i = 0; i < futures.length; i++) {
+                futures[i] = fc.read(bbs[i], pos);
+                pos += pageSize;
+            }
+
+            l: for (;;) {
+                for (int i = 0; i < bbs.length; i++) {
+                    int ra = futures[i].get();
+                    if (ra < 0)
+                        break l;
+                    parse(bbs[i], ra);
+                    bbs[i].position(0);
+                    futures[i] = fc.read(bbs[i], pos);
+                    pos += pageSize;
+                }
+            }
+
         }
 
         try (OutputStream os = new BufferedOutputStream(System.out)) {
