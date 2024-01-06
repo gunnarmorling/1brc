@@ -37,7 +37,9 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
 public class CalculateAverage_mtopolnik {
     public static final int MAX_NAME_LEN = 100;
     public static final int NAME_SLOT_SIZE = 128;
-    private static final int STATS_TABLE_SIZE = 1 << 15;
+    private static final int STATS_TABLE_SIZE = 1 << 16;
+    private static final long NATIVE_MEM_PER_THREAD = (NAME_SLOT_SIZE + StatsAccessor.SIZEOF) * STATS_TABLE_SIZE;
+    private static final long NATIVE_MEM_ON_8_THREADS = 8 * NATIVE_MEM_PER_THREAD;
     public static final String MEASUREMENTS_TXT = "measurements.txt";
 
     static class StationStats {
