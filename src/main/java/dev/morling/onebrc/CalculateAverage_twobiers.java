@@ -178,7 +178,7 @@ public class CalculateAverage_twobiers {
         var measurements = new ArrayList<Measurement>(100_000);
 
         final int limit = byteBuffer.limit();
-        final byte[] buffer = new byte[64];
+        final byte[] buffer = new byte[128];
 
         while (byteBuffer.position() < limit) {
             final int start = byteBuffer.position();
