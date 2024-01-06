@@ -28,22 +28,18 @@ import java.util.concurrent.*;
 
 public class CalculateAverage_DIL8654 {
 
-    private static final String FILE_PATH = "./measurements.txt"; // Path to your file
+    private static final String FILE_PATH = "./measurements.txt";
     private static final int MAX_STATION_NAME_LENGTH = 100;
-    private static final ConcurrentHashMap<String, Measurement> results = new ConcurrentHashMap<>(10000);
-    private static ThreadLocal<Map<String, Measurement>> localResults = ThreadLocal.withInitial(HashMap::new);
-    private static ConcurrentLinkedQueue<Map<String, Measurement>> partitionResultsQueue = new ConcurrentLinkedQueue<>();
+    private static final ConcurrentLinkedQueue<Map<String, Measurement>> partitionResultsQueue = new ConcurrentLinkedQueue<>();
 
     public static void main(String[] args) throws Exception {
-        long startTime = System.currentTimeMillis(); // Start time measurement
+        long startTime = System.currentTimeMillis();
 
         File file = new File(FILE_PATH);
         int processors = Runtime.getRuntime().availableProcessors();
-        System.out.println("Number of processors: " + processors);
         final List<FilePartition> partitions = partitionFile(file, processors);
 
         ExecutorService executorService = Executors.newFixedThreadPool(processors);
-        System.out.println("Number of partitions: " + partitions.size());
         for (FilePartition partition : partitions) {
             executorService.submit(() -> {
                 try {
@@ -58,20 +54,29 @@ public class CalculateAverage_DIL8654 {
         executorService.shutdown();
         boolean finished = executorService.awaitTermination(10, TimeUnit.MINUTES);
 
-        final long endTime = System.currentTimeMillis(); // End time measurement
-        final long duration = endTime - startTime; // Compute the time difference
-
         if (finished) {
-            mergeAllPartitionResults();
+            Map<String, Measurement> results = mergeAllPartitionResults();
+            long endTime = System.currentTimeMillis();
+            long duration = endTime - startTime;
             System.out.println("Execution completed in " + duration + " milliseconds");
-            printResults();
+            printResults(results);
         }
         else {
             System.out.println("Execution did not complete within the specified time");
         }
     }
 
-    private static void printResults() {
+    private static Map<String, Measurement> mergeAllPartitionResults() {
+        Map<String, Measurement> results = new HashMap<>();
+        for (Map<String, Measurement> partitionResults : partitionResultsQueue) {
+            for (Map.Entry<String, Measurement> entry : partitionResults.entrySet()) {
+                results.merge(entry.getKey(), entry.getValue(), Measurement::merge);
+            }
+        }
+        return results;
+    }
+
+    private static void printResults(Map<String, Measurement> results) {
         results.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(entry -> System.out.println(entry.getKey() + " = " + entry.getValue()));
@@ -79,11 +84,9 @@ public class CalculateAverage_DIL8654 {
 
     private static void processPartition(FilePartition partition) throws IOException {
         Map<String, Measurement> partitionResults = new HashMap<>();
-
         try (FileChannel channel = new RandomAccessFile(new File(FILE_PATH), "r").getChannel()) {
             MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_ONLY, partition.start, partition.end - partition.start);
             StringBuilder sb = new StringBuilder(MAX_STATION_NAME_LENGTH);
-
             while (buffer.hasRemaining()) {
                 byte b = buffer.get();
                 if (b == '\n') {
@@ -94,42 +97,49 @@ public class CalculateAverage_DIL8654 {
                     sb.append((char) b);
                 }
             }
-
             if (sb.length() > 0) {
                 processLine(sb.toString(), partitionResults);
             }
         }
-
         partitionResultsQueue.add(partitionResults);
-    }
-
-    private static void mergeAllPartitionResults() {
-        for (Map<String, Measurement> partitionResults : partitionResultsQueue) {
-            for (Map.Entry<String, Measurement> entry : partitionResults.entrySet()) {
-                results.merge(entry.getKey(), entry.getValue(), Measurement::merge);
-            }
-        }
     }
 
     private static void processLine(String line, Map<String, Measurement> partitionResults) {
         final String[] parts = line.split(";");
         if (parts.length == 2) {
             String station = parts[0];
-            double temperature = Double.parseDouble(parts[1]);
-            partitionResults.merge(station, new Measurement(temperature), (currentMeasurement, newMeasurement) -> {
-                return currentMeasurement.updateTemperature(temperature);
-            });
+            double temperature = parseTemperature(parts[1]);
+            partitionResults.merge(station, new Measurement(temperature), Measurement::updateTemperature);
         }
     }
 
-    // Define the Measurement class with appropriate methods for aggregation
-    // This class should be thread-safe if necessary
+    private static double parseTemperature(String tempStr) {
+        boolean isNegative = tempStr.charAt(0) == '-';
+        int startIndex = isNegative ? 1 : 0;
+        int intValue = 0;
+        int decimalValue = 0;
+        boolean decimalFound = false;
+        for (int i = startIndex; i < tempStr.length(); i++) {
+            char c = tempStr.charAt(i);
+            if (c == '.') {
+                decimalFound = true;
+                continue;
+            }
+            if (decimalFound) {
+                decimalValue = c - '0';
+                break;
+            }
+            else {
+                intValue = intValue * 10 + (c - '0');
+            }
+        }
+        return (isNegative ? -1 : 1) * (intValue + decimalValue / 10.0);
+    }
+
     static class Measurement {
         double min, max, sum;
         int count;
 
-        // Constructor for the Measurement class
-        // Constructor for a new Measurement with a single temperature value
         public Measurement(double temperature) {
             this.min = temperature;
             this.max = temperature;
@@ -137,7 +147,6 @@ public class CalculateAverage_DIL8654 {
             this.count = 1;
         }
 
-        // Method to update the measurement with a new temperature
         public Measurement updateTemperature(double temperature) {
             min = Math.min(min, temperature);
             max = Math.max(max, temperature);
@@ -154,7 +163,15 @@ public class CalculateAverage_DIL8654 {
             return this;
         }
 
-        // Method to calculate mean and format output
+        // Static method to merge two Measurement objects
+        public static Measurement updateTemperature(Measurement m1, Measurement m2) {
+            m1.min = Math.min(m1.min, m2.min);
+            m1.max = Math.max(m1.max, m2.max);
+            m1.sum += m2.sum;
+            m1.count += m2.count;
+            return m1;
+        }
+
         @Override
         public String toString() {
             double mean = sum / count;
@@ -164,18 +181,16 @@ public class CalculateAverage_DIL8654 {
 
     private static List<FilePartition> partitionFile(File file, int numberOfPartitions) throws IOException {
         long fileSize = file.length();
-        long segmentSize = fileSize / numberOfPartitions;
+        long segmentSize = (fileSize + numberOfPartitions - 1) / numberOfPartitions;
         List<FilePartition> segments = new ArrayList<>();
-
         try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
             long start = 0;
             for (int i = 0; i < numberOfPartitions; i++) {
-                long end = (i == numberOfPartitions - 1) ? fileSize : findNextLineBreak(raf, start + segmentSize);
+                long end = (i == numberOfPartitions - 1) ? fileSize : Math.min(fileSize, start + segmentSize);
                 segments.add(new FilePartition(start, end));
                 start = end;
             }
         }
-
         return segments;
     }
 
@@ -196,11 +211,5 @@ public class CalculateAverage_DIL8654 {
             this.start = start;
             this.end = end;
         }
-    }
-
-    private static double parseTemperature(String tempStr) {
-        // Custom parsing logic for the temperature string
-        // This can be optimized knowing the format is always one digit after the decimal
-        return Double.parseDouble(tempStr); // Replace with a more efficient parsing if necessary
     }
 }
