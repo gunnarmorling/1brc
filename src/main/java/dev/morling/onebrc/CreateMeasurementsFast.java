@@ -503,8 +503,11 @@ public class CreateMeasurementsFast {
                 new WeatherStation("Zanzibar City", 26.0),
                 new WeatherStation("Zürich", 9.3));
 
-        int chunkSize = 10_000_000;
+        int chunkSize = (size / 10_000_000) == 0 ? size : 10_000_000;
         int numberOfFutures = size / chunkSize;
+        if (numberOfFutures == 0) {
+            numberOfFutures = 1;
+        }
         CompletableFuture<?>[] futures = new CompletableFuture[numberOfFutures];
 
         for (int n = 0; n < numberOfFutures; n++) {
