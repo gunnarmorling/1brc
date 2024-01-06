@@ -19,8 +19,6 @@ import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.VarHandle;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
@@ -39,10 +37,9 @@ public class CalculateAverage_merykitty {
     private static final String FILE = "./measurements.txt";
     private static final VectorSpecies<Byte> BYTE_SPECIES = ByteVector.SPECIES_PREFERRED;
     private static final ValueLayout.OfLong JAVA_LONG_LT = ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
-    private static final VarHandle PREFETCH_HANDLE = MethodHandles.memorySegmentViewVarHandle(ValueLayout.JAVA_BYTE);
     private static final long KEY_MAX_SIZE = 100;
 
-    private static record ResultRow(double min, double mean, double max) {
+    private record ResultRow(double min, double mean, double max) {
         public String toString() {
             return round(min) + "/" + round(mean) + "/" + round(max);
         }
@@ -50,12 +47,12 @@ public class CalculateAverage_merykitty {
         private double round(double value) {
             return Math.round(value * 10.0) / 10.0;
         }
-    };
+    }
 
     private static class Aggregator {
-        private int min = Integer.MAX_VALUE;
-        private int max = Integer.MIN_VALUE;
-        private int sum;
+        private long min = Integer.MAX_VALUE;
+        private long max = Integer.MIN_VALUE;
+        private long sum;
         private long count;
     }
 
@@ -151,17 +148,25 @@ public class CalculateAverage_merykitty {
         }
     }
 
+    // Parse a number that may/may not contain a minus sign followed by a decimal with
+    // 1 - 2 digits to the left and 1 digits to the right of the separator to a
+    // fix-precision format. It returns the offset of the next line (presumably followed
+    // the final digit and a '\n'
     private static long parseDataPoint(Aggregator aggr, MemorySegment data, long offset) {
         long word = data.get(JAVA_LONG_LT, offset);
-        // This can be 12, 20, 28
+        // The 4th binary digit of the ascii of a digit is 1 while
+        // that of the '.' is 0. This finds the decimal separator
+        // The value can be 12, 20, 28
         int decimalSepPos = Long.numberOfTrailingZeros(~word & 0x10101000);
         int shift = 28 - decimalSepPos;
         // signed is -1 if negative, 0 otherwise
         long signed = (~word << 59) >> 63;
         long designMask = ~(signed & 0xFF);
+        // Align the number to a specific position and transform the ascii code
+        // to actual digit value in each byte
         long digits = ((word & designMask) << shift) & 0x0F000F0F00L;
 
-        // Now digits is in the form 0xUU00TTHH00
+        // Now digits is in the form 0xUU00TTHH00 (UU: units digit, TT: tens digit, HH: hundreds digit)
         // 0xUU00TTHH00 * (100 * 0x1000000 + 10 * 0x10000 + 1) =
         // 0x000000UU00TTHH00 +
         // 0x00UU00TTHH000000 * 10 +
@@ -169,15 +174,16 @@ public class CalculateAverage_merykitty {
         // Now TT * 100 has 2 trailing zeroes and HH * 100 + TT * 10 + UU < 0x400
         // This results in our value lies in the bit 32 to 41 of this product
         // That was close :)
-        long value = ((digits * 0x640a0001) >>> 32) & 0x3FF;
-        int point = (int) ((value ^ signed) - signed);
-        aggr.min = Math.min(point, aggr.min);
-        aggr.max = Math.max(point, aggr.max);
-        aggr.sum += point;
+        long absValue = ((digits * 0x640a0001) >>> 32) & 0x3FF;
+        long value = (absValue ^ signed) - signed;
+        aggr.min = Math.min(value, aggr.min);
+        aggr.max = Math.max(value, aggr.max);
+        aggr.sum += value;
         aggr.count++;
         return offset + (decimalSepPos >>> 3) + 3;
     }
 
+    // Tail processing version of the above, do not over-fetch and be simple
     private static long parseDataPointTail(Aggregator aggr, MemorySegment data, long offset) {
         int point = 0;
         boolean negative = false;
@@ -204,9 +210,20 @@ public class CalculateAverage_merykitty {
         return offset;
     }
 
+    // An iteration of the main parse loop, parse some lines starting from offset.
+    // This requires offset to be the start of a line and there is spare space so
+    // that we have relative freedom in processing
+    // It returns the offset of the next line that it needs to be processed
     private static long iterate(PoorManMap aggrMap, MemorySegment data, long offset) {
+        // This method fetches a segment of the file starting from offset and returns after
+        // finishing processing that segment
         var line = ByteVector.fromMemorySegment(BYTE_SPECIES, data, offset, ByteOrder.nativeOrder());
+
+        // Find the delimiter ';'
         long semicolons = line.compare(VectorOperators.EQ, ';').toLong();
+
+        // If we cannot find the delimiter in the current segment, that means the key is
+        // longer than the segment, fall back to scalar processing
         if (semicolons == 0) {
             long semicolonPos = BYTE_SPECIES.vectorByteSize();
             for (; data.get(ValueLayout.JAVA_BYTE, offset + semicolonPos) != ';'; semicolonPos++) {
@@ -218,13 +235,19 @@ public class CalculateAverage_merykitty {
 
         long currOffset = offset;
         while (true) {
+            // Process line by line, currOffset is the offset of the current line in
+            // the file, localOffset is the offset of the current line with respect
+            // to the start of the iteration segment
             int localOffset = (int) (currOffset - offset);
+
+            // The key length
             long semicolonPos = Long.numberOfTrailingZeros(semicolons) - localOffset;
             int hash = data.get(ValueLayout.JAVA_INT_UNALIGNED, currOffset);
             if (semicolonPos < Integer.BYTES) {
                 hash = (byte) hash;
             }
 
+            // We inline the searching of the value in the hash map
             Aggregator aggr;
             hash = PoorManMap.rehash(hash);
             int bucketMask = aggrMap.nodes.length - 1;
@@ -249,6 +272,8 @@ public class CalculateAverage_merykitty {
                     continue;
                 }
 
+                // The technique here is to align the key in both vectors so that we can do an
+                // element-wise comparison and check if all characters match
                 var nodeKey = ByteVector.fromArray(BYTE_SPECIES, node.data, BYTE_SPECIES.length() - localOffset);
                 var eqMask = line.compare(VectorOperators.EQ, nodeKey).toLong();
                 long validMask = (-1L >>> -semicolonPos) << localOffset;
@@ -270,6 +295,7 @@ public class CalculateAverage_merykitty {
     // Process all lines that start in [offset, limit)
     private static PoorManMap processFile(MemorySegment data, long offset, long limit) {
         var aggrMap = new PoorManMap(data);
+        // Find the start of a new line
         if (offset != 0) {
             offset--;
             for (; offset < limit;) {
@@ -278,10 +304,13 @@ public class CalculateAverage_merykitty {
                 }
             }
         }
+
+        // If there is no line starting in this segment, just return
         if (offset == limit) {
             return aggrMap;
         }
 
+        // The main loop, optimized for speed
         while (offset < limit - Math.max(BYTE_SPECIES.vectorByteSize(),
                 Long.BYTES + 1 + KEY_MAX_SIZE)) {
             offset = iterate(aggrMap, data, offset);
@@ -319,12 +348,6 @@ public class CalculateAverage_merykitty {
                 int index = i;
                 long offset = i * chunkSize;
                 long limit = Math.min((i + 1) * chunkSize, data.byteSize());
-                var prefetch = new Thread(() -> {
-                    for (long o = offset; o < limit; o += 1024) {
-                        byte x = (byte) PREFETCH_HANDLE.getOpaque(data, o);
-                    }
-                });
-                prefetch.start();
                 var thread = new Thread(() -> {
                     resultList[index] = processFile(data, offset, limit);
                 });
