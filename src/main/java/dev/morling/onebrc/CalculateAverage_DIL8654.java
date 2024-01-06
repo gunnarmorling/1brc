@@ -21,6 +21,7 @@ import java.io.RandomAccessFile;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,7 +32,9 @@ import java.util.concurrent.TimeUnit;
 public class CalculateAverage_DIL8654 {
 
     private static final String FILE_PATH = "./measurements.txt"; // Path to your file
-    private static final ConcurrentHashMap<String, Measurement> results = new ConcurrentHashMap<>();
+    private static final int MAX_STATION_NAME_LENGTH = 100;
+    private static final ConcurrentHashMap<String, Measurement> results = new ConcurrentHashMap<>(10000);
+    private static ThreadLocal<Map<String, Measurement>> localResults = ThreadLocal.withInitial(HashMap::new);
 
     public static void main(String[] args) throws Exception {
         long startTime = System.currentTimeMillis(); // Start time measurement
@@ -76,17 +79,21 @@ public class CalculateAverage_DIL8654 {
     }
 
     private static void processPartition(FilePartition partition) throws IOException {
+        Map<String, Measurement> partitionResults = new HashMap<>();
+        localResults.set(partitionResults);
+
         try (FileChannel channel = new RandomAccessFile(new File(FILE_PATH), "r").getChannel()) {
             MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_ONLY, partition.start, partition.end - partition.start);
-            StringBuilder sb = new StringBuilder();
+            StringBuilder sb = new StringBuilder(MAX_STATION_NAME_LENGTH);
 
             while (buffer.hasRemaining()) {
-                char c = (char) buffer.get();
-                if (c == '\n') {
+                byte b = buffer.get();
+                if (b == '\n') {
                     processLine(sb.toString());
-                    sb.setLength(0); // Clear the builder for the next line
-                } else {
-                    sb.append(c);
+                    sb.setLength(0);
+                }
+                else {
+                    sb.append((char) b); // Assuming ASCII encoding for efficiency
                 }
             }
 
@@ -95,22 +102,27 @@ public class CalculateAverage_DIL8654 {
                 processLine(sb.toString());
             }
         }
+
+        mergeLocalResults(partitionResults);
     }
 
-    private static Measurement processLine(String line) {
-       final String[] parts = line.split(";");
+    private static synchronized void mergeLocalResults(Map<String, Measurement> localMap) {
+        for (Map.Entry<String, Measurement> entry : localMap.entrySet()) {
+            results.merge(entry.getKey(), entry.getValue(), Measurement::merge);
+        }
+    }
+
+    private static void processLine(String line) {
+        final String[] parts = line.split(";");
         if (parts.length == 2) {
             String station = parts[0];
             double temperature = Double.parseDouble(parts[1]);
-            return results.compute(station, (key, currentMeasurement) -> {
-                if (currentMeasurement == null) {
-                    return new Measurement(temperature);
-                } else {
-                    return currentMeasurement.updateTemperature(temperature);
-                }
+
+            Map<String, Measurement> partitionResults = localResults.get();
+            partitionResults.merge(station, new Measurement(temperature), (currentMeasurement, newMeasurement) -> {
+                return currentMeasurement.updateTemperature(temperature);
             });
         }
-        return null;
     }
 
     // Define the Measurement class with appropriate methods for aggregation
@@ -127,12 +139,21 @@ public class CalculateAverage_DIL8654 {
             this.sum = temperature;
             this.count = 1;
         }
+
         // Method to update the measurement with a new temperature
         public Measurement updateTemperature(double temperature) {
             min = Math.min(min, temperature);
             max = Math.max(max, temperature);
             sum += temperature;
             count++;
+            return this;
+        }
+
+        public Measurement merge(Measurement other) {
+            this.min = Math.min(this.min, other.min);
+            this.max = Math.max(this.max, other.max);
+            this.sum += other.sum;
+            this.count += other.count;
             return this;
         }
 
@@ -178,5 +199,11 @@ public class CalculateAverage_DIL8654 {
             this.start = start;
             this.end = end;
         }
+    }
+
+    private static double parseTemperature(String tempStr) {
+        // Custom parsing logic for the temperature string
+        // This can be optimized knowing the format is always one digit after the decimal
+        return Double.parseDouble(tempStr); // Replace with a more efficient parsing if necessary
     }
 }
