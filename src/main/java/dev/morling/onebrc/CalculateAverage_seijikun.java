@@ -62,10 +62,6 @@ public class CalculateAverage_seijikun {
 
         public StationIdent(byte[] name, int nameHash) {
             this.name = name;
-            // TODO: DEBUG
-            // if(Arrays.asList(this.name).contains(';')) {
-            // throw new RuntimeException();
-            // }
             this.nameHash = nameHash;
         }
 
@@ -122,7 +118,7 @@ public class CalculateAverage_seijikun {
         private StationIdent readStationName() {
             final var VECTOR_SPECIES = ByteVector.SPECIES_256;
 
-            if (chunkSize - ptr < VECTOR_SPECIES.length()) { // fallback
+            if (chunkSize - ptr - 100 < VECTOR_SPECIES.length()) { // fallback
                 int startPtr = ptr;
                 while (buffer.get(ptr++) != ';') {
                 }
