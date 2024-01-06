@@ -118,13 +118,35 @@ public class CalculateAverage_jbachorik {
 
             try {
                 int i = 0;
-                for (; i + 3 < limit; i += 4) {
-                    int l = leftSlice.getInt();
-                    int r = rightSlice.getInt();
+                for (; i + 7 < limit; i += 8) {
+                    long l = leftSlice.getLong();
+                    long r = rightSlice.getLong();
                     if (l != r) {
                         return false;
                     }
+                    pos += 8;
                 }
+//                else if (pos > 0) {
+//                    int offset = 4 - remainder;
+//                    int newpos = pos - offset;
+//                    int offsetBits = 8 * offset;
+//                    leftSlice.position(newpos);
+//                    rightSlice.position(newpos);
+//                    int l = leftSlice.getInt() >> offsetBits;
+//                    int r = rightSlice.getInt() >> offsetBits;
+//                    return l == r;
+//                }
+//                else {
+//                    switch (remainder) {
+//                        case 1:
+//                            return leftSlice.get() == rightSlice.get();
+//                        case 2:
+//                            return leftSlice.getShort() == rightSlice.getShort();
+//                        case 3:
+//                            return leftSlice.getShort() == rightSlice.getShort()
+//                                    && leftSlice.get() == rightSlice.get();
+//                    }
+//                }
                 for (; i < limit; i++) {
                     if (leftSlice.get() != rightSlice.get()) {
                         return false;
