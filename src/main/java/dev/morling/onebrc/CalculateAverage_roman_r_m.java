@@ -117,11 +117,6 @@ public class CalculateAverage_roman_r_m {
         private int hash = 0;
 
         void append(byte b) {
-            if (buf.length == len) {
-                var newBuf = new byte[(int) (buf.length * 1.5)];
-                System.arraycopy(this.buf, 0, newBuf, 0, len);
-                this.buf = newBuf;
-            }
             buf[len++] = b;
             hash = 31 * hash + (b & 255);
         }
