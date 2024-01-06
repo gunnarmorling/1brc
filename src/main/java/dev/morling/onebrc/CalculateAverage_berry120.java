@@ -261,7 +261,7 @@ public class CalculateAverage_berry120 {
 
         System.out.println(output);
 
-        System.out.println("TIME: " + (System.currentTimeMillis() - time));
+//        System.out.println("TIME: " + (System.currentTimeMillis() - time));
     }
 
 }
