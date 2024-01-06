@@ -24,6 +24,7 @@ import java.io.Reader;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Spliterator;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -63,6 +64,13 @@ public class CalculateAverage_kevinmcmurtrie implements AutoCloseable {
     private final LineAlignedInput in; // Must synchronize on this when multiple threads are reading. Use fillFromFile().
 
     public static class Accumulator {
+        private static final Comparator<Element> cityComparator = new Comparator<>() {
+            @Override
+            public int compare(Element a, Element b) {
+                return Arrays.compare(a.line, b.line);
+            }
+        };
+
         private final Element buckets[];
 
         public Accumulator(final int bucketCount) {
@@ -501,7 +509,7 @@ public class CalculateAverage_kevinmcmurtrie implements AutoCloseable {
             acc = c.collectParallel(THREADS);
         }
 
-        System.out.println(acc.toStream().map(String::valueOf).sorted().collect(Collectors.joining(", ", "{", "}")));
+        System.out.println(acc.toStream().sorted(Accumulator.cityComparator).map(String::valueOf).collect(Collectors.joining(", ", "{", "}")));
         // System.out.println((System.currentTimeMillis() - startMillis) / 1000f);
     }
 
