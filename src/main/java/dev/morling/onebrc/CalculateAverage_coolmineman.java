@@ -15,44 +15,22 @@
  */
 package dev.morling.onebrc;
 
-import static java.util.stream.Collectors.*;
-
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.PrintWriter;
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousFileChannel;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
-import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.Map;
-import java.util.TreeMap;
+import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.Future;
 
 public class CalculateAverage_coolmineman {
 
     private static final String FILE = "./measurements.txt";
-
-    // TODO maybe just write a byte arraylist
-    static class ByteArrayOutputStreamEx extends ByteArrayOutputStream {
-        byte[] buf() {
-            return buf;
-        }
-
-        void shrink(int i) {
-            count -= i;
-        }
-    }
 
     private static class MeasurementAggregator {
         private double min = Double.POSITIVE_INFINITY;
@@ -67,6 +45,13 @@ public class CalculateAverage_coolmineman {
             count++;
         }
 
+        void merge(MeasurementAggregator o) {
+            min = Math.min(min, o.min);
+            max = Math.max(max, o.max);
+            sum += o.sum;
+            count += o.count;
+        }
+
         public String toString() {
             return round(min) + "/" + round(sum / count) + "/" + round(max);
         }
@@ -75,8 +60,6 @@ public class CalculateAverage_coolmineman {
             return Math.round(value * 10.0) / 10.0;
         }
     }
-
-    static HashMap<BytesKey, MeasurementAggregator> back2basics = new HashMap<>();
 
     static class BytesKey {
         byte[] value;
@@ -105,7 +88,7 @@ public class CalculateAverage_coolmineman {
 
     }
 
-    static void parse(ByteBuffer a, int as, ByteBuffer b, int bs, boolean isFirst) {
+    static void parse(ByteBuffer a, int as, ByteBuffer b, int bs, boolean isFirst, HashMap<BytesKey, MeasurementAggregator> map) {
         var aa = a.array();
         var ba = b.array();
         int pos = 0;
@@ -127,7 +110,7 @@ public class CalculateAverage_coolmineman {
 
                     BytesKey station = new BytesKey(Arrays.copyOfRange(aa, nameStart, nameEnd));
                     double value = Double.parseDouble(new String(aa, doubleStart, doubleEnd - doubleStart, StandardCharsets.UTF_8));
-                    back2basics.computeIfAbsent(station, k -> new MeasurementAggregator()).add(value);
+                    map.computeIfAbsent(station, k -> new MeasurementAggregator()).add(value);
 
                     parseDouble = false;
                     nameStart = pos + 1;
@@ -148,17 +131,14 @@ public class CalculateAverage_coolmineman {
         }
         if (bs <= 0)
             return;
-        // TODO fix boundry case
         for (;;) {
             if (parseDouble) {
                 if (ba[pos - as] == '\n') {
                     doubleEnd = pos;
 
                     BytesKey station = new BytesKey(ofRange(a, as, b, bs, nameStart, nameEnd));
-                    // System.out.println(new String(station.value, StandardCharsets.UTF_8));
                     double value = Double.parseDouble(new String(ofRange(a, as, b, bs, doubleStart, doubleEnd), StandardCharsets.UTF_8));
-                    // System.out.println(value);
-                    back2basics.computeIfAbsent(station, k -> new MeasurementAggregator()).add(value);
+                    map.computeIfAbsent(station, k -> new MeasurementAggregator()).add(value);
 
                     return;
                 }
@@ -192,49 +172,79 @@ public class CalculateAverage_coolmineman {
     }
 
     public static void main(String[] args) throws Exception {
-        int pageSize = 80000;
+        int pageSize = 800000;
         long pos = 0;
-        try (AsynchronousFileChannel fc = AsynchronousFileChannel.open(Paths.get(FILE), StandardOpenOption.READ)) {
-            var bbs = new ByteBuffer[4];
+        try (AsynchronousFileChannel fc = AsynchronousFileChannel.open(Paths.get(FILE), Set.of(StandardOpenOption.READ), Executors.newCachedThreadPool())) {
+            var cp = ForkJoinPool.commonPool();
+
+            var bbs = new ByteBuffer[Runtime.getRuntime().availableProcessors() * 8];
             for (int i = 0; i < bbs.length; i++) {
                 bbs[i] = ByteBuffer.allocate(pageSize);
             }
 
             Future<Integer>[] futures = new Future[bbs.length];
+            HashMap<BytesKey, MeasurementAggregator>[] maps = new HashMap[bbs.length];
+            ForkJoinTask[] tasks = new ForkJoinTask[bbs.length];
 
             for (int i = 0; i < futures.length; i++) {
                 futures[i] = fc.read(bbs[i], pos);
+                maps[i] = new HashMap<>();
                 pos += pageSize;
             }
 
             boolean first = true;
             l: for (;;) {
                 for (int i = 0; i < bbs.length; i++) {
-                    int ra = futures[i].get();
+                    int nextIndex = (i + 1) % bbs.length;
+                    if (tasks[nextIndex] != null) {
+                        tasks[nextIndex].join();
+                        bbs[nextIndex].position(0);
+                        futures[nextIndex] = fc.read(bbs[nextIndex], pos);
+                        pos += pageSize;
+                    }
+                    var fa = futures[i];
+                    var fb = futures[(i + 1) % futures.length];
+                    var isFirst = first;
+                    int ra = fa.get();
                     if (ra < 0)
                         break l;
-                    int rb = futures[(i + 1) % futures.length].get();
-                    if (rb < 0)
-                        rb = 0;
-                    parse(bbs[i], ra, bbs[(i + 1) % bbs.length], rb, first);
+                    int rb = Math.max(0, fb.get());
+                    var iLol = i;
+                    tasks[i] = cp.submit(() -> {
+                        parse(bbs[iLol], ra, bbs[nextIndex], rb, isFirst, maps[iLol]);
+                    });
+
                     first = false;
-                    bbs[i].position(0);
-                    futures[i] = fc.read(bbs[i], pos);
-                    pos += pageSize;
                 }
             }
-        }
 
-        System.out.print('{');
-        boolean[] first = new boolean[]{ true };
-        back2basics.entrySet().stream().sorted((a, b) -> a.getKey().toString().compareTo(b.getKey().toString())).forEach(e -> {
-            if (!first[0]) {
-                System.out.print(',');
-                System.out.print(' ');
+            for (int i = 1; i < maps.length; i++) {
+                merge(maps[0], maps[i]);
             }
-            first[0] = false;
-            System.out.print(e.toString());
-        });
-        System.out.print('}');
+
+            System.out.print('{');
+            boolean[] firstE = new boolean[]{ true };
+            maps[0].entrySet().stream().sorted((a, b) -> a.getKey().toString().compareTo(b.getKey().toString())).forEach(e -> {
+                if (!firstE[0]) {
+                    System.out.print(',');
+                    System.out.print(' ');
+                }
+                firstE[0] = false;
+                System.out.print(e.toString());
+            });
+            System.out.print('}');
+            System.exit(0);
+        }
+    }
+
+    static void merge(HashMap<BytesKey, MeasurementAggregator> a, HashMap<BytesKey, MeasurementAggregator> b) {
+        for (var e : b.entrySet()) {
+            if (a.containsKey(e.getKey())) {
+                a.get(e.getKey()).merge(e.getValue());
+            }
+            else {
+                a.put(e.getKey(), e.getValue());
+            }
+        }
     }
 }
