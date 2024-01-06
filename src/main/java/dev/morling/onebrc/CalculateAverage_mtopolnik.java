@@ -138,13 +138,7 @@ public class CalculateAverage_mtopolnik {
                 long broadcastNewline = broadcastByte(newline);
                 while (offset < inputMem.byteSize()) {
                     final long semicolonPos = bytePos(inputMem, semicolon, broadcastSemicolon, offset);
-                    if (semicolonPos == -1) {
-                        break;
-                    }
                     final long newlinePos = bytePos(inputMem, newline, broadcastNewline, semicolonPos + 1);
-                    if (newlinePos == -1) {
-                        throw new RuntimeException("No newline after a semicolon!");
-                    }
                     recordMeasurement(offset, semicolonPos, newlinePos);
                     offset = newlinePos + 1;
                 }
@@ -245,7 +239,6 @@ public class CalculateAverage_mtopolnik {
     }
 
     static long bytePos(MemorySegment haystack, byte needle, long broadcastNeedle, long start) {
-        // return simpleSearch(haystack, needle, start);
         return ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN
                 ? bytePosLittleEndian(haystack, start, needle, broadcastNeedle)
                 : bytePosBigEndian(haystack, start, needle, broadcastNeedle);
