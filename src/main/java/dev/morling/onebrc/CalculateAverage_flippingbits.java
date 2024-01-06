@@ -170,8 +170,8 @@ public class CalculateAverage_flippingbits {
 
             // Once lane is full, use SIMD instructions to calculate aggregates
             if (count % lane.length == 0) {
-                var firstVector = ShortVector.fromArray(ShortVector.SPECIES_128, lane, 0);
-                var secondVector = ShortVector.fromArray(ShortVector.SPECIES_128, lane, SIMD_LANE_LENGTH);
+                var firstVector = ShortVector.fromArray(ShortVector.SPECIES_MAX, lane, 0);
+                var secondVector = ShortVector.fromArray(ShortVector.SPECIES_MAX, lane, SIMD_LANE_LENGTH);
 
                 var simdMin = firstVector.min(secondVector).reduceLanes(VectorOperators.MIN);
                 min = (short) Math.min(min, simdMin);
