@@ -157,24 +157,30 @@ public class CalculateAverage_kgeri {
 
         for (long pos = start; pos < chunkSize;) {
             name.clear();
-            for (int i = 0;; i++) {
-                byte b = data.get(JAVA_BYTE, pos + i); // Will throw an IOOBE for malformed files
+            int i = 0;
+            for (;; i++) {
+                if (pos + i >= data.byteSize()) { // Guard against malformed data (typically a missing newline at the end of the input)
+                    pos = chunkSize;
+                    break;
+                }
+                byte b = data.get(JAVA_BYTE, pos + i);
                 buf[i] = b;
                 if (b == ';') {
                     name.updateLength(i);
                 }
                 else if (b == '\n') {
-                    double measurement = parseDoubleFrom(buf, name.length() + 1, i - name.length() - 1);
-                    MeasurementAggregate aggr = results.get(name);
-                    if (aggr == null) {
-                        aggr = new MeasurementAggregate();
-                        results.put(new StringSlice(name), aggr);
-                    }
-                    aggr.append(measurement);
                     pos = pos + i + 1;
                     break;
                 }
             }
+
+            double measurement = parseDoubleFrom(buf, name.length() + 1, i - name.length() - 1);
+            MeasurementAggregate aggr = results.get(name);
+            if (aggr == null) {
+                aggr = new MeasurementAggregate();
+                results.put(new StringSlice(name), aggr);
+            }
+            aggr.append(measurement);
         }
 
         return results;
