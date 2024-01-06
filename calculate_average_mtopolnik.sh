@@ -18,9 +18,4 @@
 
 source "$HOME/.sdkman/bin/sdkman-init.sh"
 sdk use java 21.0.1-graal 1>&2
-if [ -f "target/calculate_average_mtopolnik.jsa" ]; then
-    JAVA_OPTS="-XX:SharedArchiveFile=target/calculate_average_mtopolnik.jsa -Xshare:on"
-else
-    JAVA_OPTS="-XX:ArchiveClassesAtExit=target/calculate_average_mtopolnik.jsa"
-fi
-time java $JAVA_OPTS --enable-preview --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_mtopolnik
+time java -Xmx256m --enable-preview --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_mtopolnik
