@@ -10,5 +10,5 @@ mvnw            text eol=lf
 *.cmd           text eol=crlf
 *.jar           binary
 
-test/resources/samples/*.txt text eol=lf
-test/resources/samples/*.out text eol=lf
+src/test/resources/samples/*.txt text eol=lf
+src/test/resources/samples/*.out text eol=lf
