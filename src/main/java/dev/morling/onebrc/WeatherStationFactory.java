@@ -141,7 +141,7 @@ public class WeatherStationFactory {
                 throw new Exception("Name source exhausted");
             }
             c = (char) n;
-        } while (c == ' ');
+        } while (Character.isWhitespace(c));
 
         return c;
     }
