@@ -24,10 +24,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 public class CalculateAverage_DIL8654 {
 
@@ -35,6 +32,7 @@ public class CalculateAverage_DIL8654 {
     private static final int MAX_STATION_NAME_LENGTH = 100;
     private static final ConcurrentHashMap<String, Measurement> results = new ConcurrentHashMap<>(10000);
     private static ThreadLocal<Map<String, Measurement>> localResults = ThreadLocal.withInitial(HashMap::new);
+    private static ConcurrentLinkedQueue<Map<String, Measurement>> partitionResultsQueue = new ConcurrentLinkedQueue<>();
 
     public static void main(String[] args) throws Exception {
         long startTime = System.currentTimeMillis(); // Start time measurement
@@ -64,6 +62,7 @@ public class CalculateAverage_DIL8654 {
         final long duration = endTime - startTime; // Compute the time difference
 
         if (finished) {
+            mergeAllPartitionResults();
             System.out.println("Execution completed in " + duration + " milliseconds");
             printResults();
         }
@@ -80,7 +79,6 @@ public class CalculateAverage_DIL8654 {
 
     private static void processPartition(FilePartition partition) throws IOException {
         Map<String, Measurement> partitionResults = new HashMap<>();
-        localResults.set(partitionResults);
 
         try (FileChannel channel = new RandomAccessFile(new File(FILE_PATH), "r").getChannel()) {
             MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_ONLY, partition.start, partition.end - partition.start);
@@ -89,36 +87,35 @@ public class CalculateAverage_DIL8654 {
             while (buffer.hasRemaining()) {
                 byte b = buffer.get();
                 if (b == '\n') {
-                    processLine(sb.toString());
+                    processLine(sb.toString(), partitionResults);
                     sb.setLength(0);
                 }
                 else {
-                    sb.append((char) b); // Assuming ASCII encoding for efficiency
+                    sb.append((char) b);
                 }
             }
 
-            // Process any remaining data if the last line doesn't end with a newline character
             if (sb.length() > 0) {
-                processLine(sb.toString());
+                processLine(sb.toString(), partitionResults);
             }
         }
 
-        mergeLocalResults(partitionResults);
+        partitionResultsQueue.add(partitionResults);
     }
 
-    private static synchronized void mergeLocalResults(Map<String, Measurement> localMap) {
-        for (Map.Entry<String, Measurement> entry : localMap.entrySet()) {
-            results.merge(entry.getKey(), entry.getValue(), Measurement::merge);
+    private static void mergeAllPartitionResults() {
+        for (Map<String, Measurement> partitionResults : partitionResultsQueue) {
+            for (Map.Entry<String, Measurement> entry : partitionResults.entrySet()) {
+                results.merge(entry.getKey(), entry.getValue(), Measurement::merge);
+            }
         }
     }
 
-    private static void processLine(String line) {
+    private static void processLine(String line, Map<String, Measurement> partitionResults) {
         final String[] parts = line.split(";");
         if (parts.length == 2) {
             String station = parts[0];
             double temperature = Double.parseDouble(parts[1]);
-
-            Map<String, Measurement> partitionResults = localResults.get();
             partitionResults.merge(station, new Measurement(temperature), (currentMeasurement, newMeasurement) -> {
                 return currentMeasurement.updateTemperature(temperature);
             });
