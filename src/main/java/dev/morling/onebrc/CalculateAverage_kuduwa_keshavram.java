@@ -31,8 +31,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Spliterator;
 import java.util.Spliterators;
-import java.util.function.Function;
-import java.util.function.ToDoubleFunction;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.StreamSupport;
@@ -40,14 +38,6 @@ import java.util.stream.StreamSupport;
 public class CalculateAverage_kuduwa_keshavram {
 
     private static final String FILE = "./measurements.txt";
-    private static final Function<String, String> KEY_MAPPER = line -> {
-        int pivot = line.indexOf(";");
-        return line.substring(0, pivot);
-    };
-    private static final ToDoubleFunction<String> VALUE_MAPPER = line -> {
-        int pivot = line.indexOf(";");
-        return toDouble(line.substring(pivot + 1));
-    };
     private static final long LEFT_SHIFT_EIGHT = Long.MAX_VALUE / (1L << 8);
     private static final long LEFT_SHIFT_FOUR = Long.MAX_VALUE / (1L << 4);
     private static final long LEFT_SHIFT_TWO = Long.MAX_VALUE / (1L << 2);
@@ -70,15 +60,24 @@ public class CalculateAverage_kuduwa_keshavram {
 
                                     @Override
                                     public Measurement next() {
-                                        String city = "";
-                                        String temp = "";
+                                        int initialPosition = byteBuffer.position();
+                                        int i = 0;
                                         while (true) {
-                                            char c = (char) byteBuffer.get();
-                                            if (c == ';') {
+                                            byte b = byteBuffer.get();
+                                            if (b == 59) {
                                                 break;
                                             }
-                                            city += c;
+                                            i++;
                                         }
+                                        byteBuffer.position(initialPosition);
+
+                                        byte[] city = new byte[i];
+                                        for (int j = 0; j < i; j++) {
+                                            city[j] = byteBuffer.get();
+                                        }
+
+                                        byteBuffer.get();
+                                        String temp = "";
                                         while (true) {
                                             char c = (char) byteBuffer.get();
                                             if (c == '\n') {
@@ -86,7 +85,7 @@ public class CalculateAverage_kuduwa_keshavram {
                                             }
                                             temp += c;
                                         }
-                                        return new Measurement(city, toDouble(temp));
+                                        return new Measurement(new String(city), toDouble(temp));
                                     }
                                 };
                                 return StreamSupport.stream(
