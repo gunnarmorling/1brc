@@ -111,15 +111,26 @@ public class CalculateAverage_JamalMulla {
         return chunks;
     }
 
+    private static int fnv(byte[] bytes, int length) {
+        int hash = 0x811c9dc5;
+        for (int i = 0; i < length; i++) {
+            hash ^= bytes[i];
+            hash *= 0x01000193;
+        }
+        return hash;
+    }
+
     private static class CalculateTask implements Runnable {
 
         private final FileChannel channel;
         private final Map<String, ResultRow> results;
+        private final Map<String, ResultRow> global;
         private final Chunk chunk;
 
-        public CalculateTask(FileChannel fileChannel, Map<String, ResultRow> results, Chunk chunk) {
+        public CalculateTask(FileChannel fileChannel, Map<String, ResultRow> global, Chunk chunk) {
             this.channel = fileChannel;
-            this.results = results;
+            this.results = new HashMap<>();
+            this.global = global;
             this.chunk = chunk;
         }
 
@@ -127,7 +138,6 @@ public class CalculateAverage_JamalMulla {
         public void run() {
             // no names bigger than this
             byte[] nameBytes = new byte[127];
-            byte[] valBytes = new byte[127];
             boolean inName = true;
             MappedByteBuffer mappedByteBuffer;
             try {
@@ -137,7 +147,7 @@ public class CalculateAverage_JamalMulla {
                 throw new RuntimeException(e);
             }
             short nameIndex = 0;
-            short valIndex = 0;
+            double ot = 0;
             while (mappedByteBuffer.hasRemaining()) {
                 byte c = mappedByteBuffer.get();
                 if (c == 0x3B /* Semicolon */) {
@@ -147,28 +157,78 @@ public class CalculateAverage_JamalMulla {
                 else if (c == 0xA /* Newline */) {
                     // back to name and reset buffers at end
                     String name = new String(nameBytes, 0, nameIndex, StandardCharsets.UTF_8);
-                    double t = Double.parseDouble(new String(valBytes, 0, valIndex, StandardCharsets.UTF_8));
-                    if (results.containsKey(name)) {
-                        ResultRow rr = results.get(name);
-                        rr.min = Math.min(rr.min, t);
-                        rr.max = Math.max(rr.max, t);
+                    // int nameHash = fnv(nameBytes, nameIndex);
+                    ResultRow rr;
+                    if ((rr = results.get(name)) != null) {
+                        rr.min = Math.min(rr.min, ot);
+                        rr.max = Math.max(rr.max, ot);
                         rr.count++;
-                        rr.sum += t;
+                        rr.sum += ot;
                     }
                     else {
-                        results.put(name, new ResultRow(t));
+                        results.put(name, new ResultRow(ot));
                     }
                     inName = true;
                     nameIndex = 0;
-                    valIndex = 0;
                 }
                 else if (inName) {
                     nameBytes[nameIndex++] = c;
                 }
                 else {
-                    valBytes[valIndex++] = c;
+                    // we know the val has to be between -99.9 and 99.8
+                    // always with a single fractional digit
+                    // represented as a byte array of either 4 or 5 characters
+                    if (c == 0x2D /* minus sign */) {
+                        // minus sign so number will be negative
+
+                        // could be either n.x or nn.x
+                        // char 3
+                        // skip dot
+                        if (mappedByteBuffer.get(mappedByteBuffer.position() + 3) == 0xA) {
+                            ot = (mappedByteBuffer.get() - 48) * 10; // char 1
+                        }
+                        else {
+                            ot = (mappedByteBuffer.get() - 48) * 100; // char 1
+                            ot += (mappedByteBuffer.get() - 48) * 10; // char 2
+                        }
+                        mappedByteBuffer.get(); // skip dot
+                        ot += (mappedByteBuffer.get() - 48); // char 2
+                        ot = -(ot / 10f);
+                    }
+                    else {
+
+                        // could be either n.x or nn.x
+                        // char 3
+                        // skip dot
+                        if (mappedByteBuffer.get(mappedByteBuffer.position() + 2) == 0xA) {
+                            ot = (c - 48) * 10; // char 1
+                        }
+                        else {
+                            ot = (c - 48) * 100; // char 1
+                            ot += (mappedByteBuffer.get() - 48) * 10; // char 2
+                        }
+                        mappedByteBuffer.get(); // skip dot
+                        ot += (mappedByteBuffer.get() - 48); // char 3
+                        ot = ot / 10f;
+                    }
                 }
             }
+
+            // merge my results with overall results
+            for (String k : results.keySet()) {
+                ResultRow rr;
+                ResultRow lr = results.get(k);
+                if ((rr = global.get(k)) != null) {
+                    rr.min = Math.min(rr.min, lr.min);
+                    rr.max = Math.max(rr.max, lr.max);
+                    rr.count += lr.count;
+                    rr.sum += lr.sum;
+                }
+                else {
+                    global.put(k, lr);
+                }
+            }
+
         }
     }
 
@@ -178,11 +238,13 @@ public class CalculateAverage_JamalMulla {
         RandomAccessFile raFile = new RandomAccessFile(FILE, "r");
         FileChannel channel = raFile.getChannel();
 
-        int numThreads = 64;
+        int numThreads = Runtime.getRuntime().availableProcessors();
         List<Chunk> chunks = getChunks(numThreads, channel);
         List<Thread> threads = new ArrayList<>();
         for (Chunk chunk : chunks) {
-            Thread t = Thread.ofVirtual().name(chunk.toString()).start(new CalculateTask(channel, results, chunk));
+            // Thread t = Thread.ofVirtual().name(chunk.toString()).start(new CalculateTask(channel, results, chunk));
+            Thread t = new Thread(new CalculateTask(channel, results, chunk));
+            t.start();
             threads.add(t);
         }
 
