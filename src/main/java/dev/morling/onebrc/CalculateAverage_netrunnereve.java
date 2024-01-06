@@ -32,7 +32,7 @@ public class CalculateAverage_netrunnereve {
         private int count = 0;
     }
 
-    public static void main(String[] args) {
+    public static void main() {
         try {
             BufferedReader filBuf = new BufferedReader(new FileReader(FILE));
             String line = filBuf.readLine();
