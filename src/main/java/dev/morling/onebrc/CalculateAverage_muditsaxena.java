@@ -71,16 +71,39 @@ public class CalculateAverage_muditsaxena {
             this.input = input;
         }
 
+        String[] readInput(String inputTask) {
+            StringBuilder stationName = new StringBuilder();
+            String[] values = new String[2];
+            int index = 0;
+            char ch = inputTask.charAt(index);
+            while (ch != ';') {
+                stationName.append(ch);
+                ch = inputTask.charAt(++index);
+            }
+            index++;
+
+            values[0] = stationName.toString();
+            values[1] = inputTask.substring(index);
+
+            return values;
+        }
+
         @Override
-        public V call() throws Exception {
+        public V call() {
             for (String inputTask : inputList) {
-                Measurement measurement = new Measurement(inputTask.split(";"));
-                MeasurementAggregator measurementAggregator = map.getOrDefault(measurement.station(), new MeasurementAggregator());
+
+                if (inputTask.isEmpty()) {
+                    continue;
+                }
+
+                String[] values = readInput(inputTask);
+                double value = Double.parseDouble(values[1]);
+                MeasurementAggregator measurementAggregator = map.getOrDefault(values[0], new MeasurementAggregator());
                 measurementAggregator.count += 1;
-                measurementAggregator.sum += measurement.value;
-                measurementAggregator.max = Math.max(measurementAggregator.max, measurement.value);
-                measurementAggregator.min = Math.min(measurementAggregator.min, measurement.value);
-                map.put(measurement.station(), measurementAggregator);
+                measurementAggregator.sum += value;
+                measurementAggregator.max = Math.max(measurementAggregator.max, value);
+                measurementAggregator.min = Math.min(measurementAggregator.min, value);
+                map.put(values[0], measurementAggregator);
             }
             inputList = null;
             return null;
@@ -88,7 +111,14 @@ public class CalculateAverage_muditsaxena {
     }
 
     static ConcurrentMap<String, MeasurementAggregator> map = new ConcurrentHashMap<>();
-    static final int TASK_LIST_CAPACITY = 100;
+    static final int TASK_LIST_CAPACITY = 10000;
+    // 100000 - 1:23
+    // 10000 - 1:10
+    // 1000 - 1:21
+
+    // Optimising split
+    // 10000 - 1:15, 1:12, 1:11
+    // 1000 - 1:18, 1:23
 
     public static void main(String[] args) throws IOException {
         try (ExecutorService virtualThreadExecutors = Executors.newVirtualThreadPerTaskExecutor()) {
