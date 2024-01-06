@@ -102,7 +102,7 @@ public class CalculateAverage_mtopolnik {
     }
 
     private static class ChunkProcessor implements Runnable {
-        private static final long HASHBUF_SIZE = 16;
+        private static final long HASHBUF_SIZE = 8;
 
         private final long chunkStart;
         private final long chunkLimit;
@@ -228,18 +228,18 @@ public class CalculateAverage_mtopolnik {
 
         private long hash(MemorySegment inputMem, long start, long limit) {
             hashBuf.set(JAVA_LONG, 0, 0);
-            hashBuf.set(JAVA_LONG, 8, 0);
+            // hashBuf.set(JAVA_LONG, 8, 0);
             hashBuf.copyFrom(inputMem.asSlice(start, Long.min(HASHBUF_SIZE, limit - start)));
             long n1 = hashBuf.get(JAVA_LONG, 0);
-            long n2 = hashBuf.get(JAVA_LONG, 8);
+            // long n2 = hashBuf.get(JAVA_LONG, 8);
             long seed = 0x51_7c_c1_b7_27_22_0a_95L;
             int rotDist = 19;
             long hash = n1;
             hash *= seed;
             hash = Long.rotateLeft(hash, rotDist);
-            hash ^= n2;
-            hash *= seed;
-            hash = Long.rotateLeft(hash, rotDist);
+            // hash ^= n2;
+            // hash *= seed;
+            // hash = Long.rotateLeft(hash, rotDist);
             return hash != 0 ? hash & (~Long.MIN_VALUE) : 1;
         }
     }
