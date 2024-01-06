@@ -132,8 +132,9 @@ public class CalculateAverage_berry120 {
                         if (b == ';') {
                             breakIdx = bi + 1;
                             bi += 4;
-                        } else if (breakIdx == -1) {
-//                            name[nameidx++] = b;
+                        }
+                        else if (breakIdx == -1) {
+                            // name[nameidx++] = b;
                             // 1M constrained djb2 should be good enough for our purposes
                             rollingHash = (((rollingHash << 5) + rollingHash) + b) & 0xFFFFF;
 
@@ -141,7 +142,8 @@ public class CalculateAverage_berry120 {
                             if (bi >= bytesDataLength)
                                 break;
 
-                        } else if (b == '\n') {
+                        }
+                        else if (b == '\n') {
                             int numArrLen = bi - breakIdx;
                             int num = 0;
                             for (int mI = breakIdx + numArrLen - 1, m = 1; mI >= breakIdx; mI--, m *= 10) {
@@ -149,9 +151,11 @@ public class CalculateAverage_berry120 {
                                 byte d = bytes[mI];
                                 if (d == '.') {
                                     m /= 10;
-                                } else if (d == '-') {
+                                }
+                                else if (d == '-') {
                                     num = -num;
-                                } else {
+                                }
+                                else {
                                     num += (d & 0xF) * m;
                                 }
                             }
@@ -163,14 +167,16 @@ public class CalculateAverage_berry120 {
                             if (entry == null) {
                                 entry = new TemperatureSummary(place, num, num, num, 1);
                                 arr[rollingHash][0] = entry;
-                            } else {
+                            }
+                            else {
                                 if (Arrays.equals(place, entry.name)) {
                                     entry.max = (Math.max(num, entry.max));
                                     entry.min = (Math.min(num, entry.min));
                                     entry.total += num;
                                     entry.sampleCount++;
-                                } else {
-                                    TemperatureSummary[] growth = new TemperatureSummary[arr[rollingHash].length+1];
+                                }
+                                else {
+                                    TemperatureSummary[] growth = new TemperatureSummary[arr[rollingHash].length + 1];
                                     System.arraycopy(arr[rollingHash], 0, growth, 0, growth.length);
                                     arr[rollingHash] = growth;
                                 }
@@ -195,17 +201,19 @@ public class CalculateAverage_berry120 {
                             if (bi >= bytesDataLength)
                                 break;
 
-                        } else {
+                        }
+                        else {
                             bi++;
                         }
 
                     }
 
-                } catch (Exception ex) {
+                }
+                catch (Exception ex) {
                     ex.printStackTrace();
                 }
             });
-//             break;
+            // break;
         }
 
         tp.close();
@@ -224,7 +232,8 @@ public class CalculateAverage_berry120 {
 
                     if (t2 == null) {
                         mergedMap.put(new String(t1.name), t1);
-                    } else {
+                    }
+                    else {
                         var merged = new TemperatureSummary(t1.name, Math.min(t1.min, t2.min), Math.max(t1.max, t2.max), t1.total + t2.total,
                                 t1.sampleCount + t2.sampleCount);
                         mergedMap.put(new String(t1.name), merged);
@@ -233,7 +242,7 @@ public class CalculateAverage_berry120 {
             }
         }
 
-//         System.out.println("TIME WITHOUT PRINT: " + (System.currentTimeMillis() - time));
+        // System.out.println("TIME WITHOUT PRINT: " + (System.currentTimeMillis() - time));
 
         boolean first = true;
         StringBuilder output = new StringBuilder(16_000);
@@ -241,7 +250,8 @@ public class CalculateAverage_berry120 {
         for (var value : new TreeSet<>(mergedMap.values())) {
             if (first) {
                 first = false;
-            } else {
+            }
+            else {
                 output.append(", ");
             }
             output.append(new String(value.name)).append("=").append((double) value.min / 10).append("/")
