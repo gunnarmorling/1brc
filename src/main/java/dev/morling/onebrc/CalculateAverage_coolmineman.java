@@ -109,7 +109,7 @@ public class CalculateAverage_coolmineman {
                     doubleEnd = pos;
 
                     BytesKey station = new BytesKey(Arrays.copyOfRange(aa, nameStart, nameEnd));
-                    double value = Double.parseDouble(new String(aa, doubleStart, doubleEnd - doubleStart, StandardCharsets.UTF_8));
+                    double value = parseDouble(aa, doubleStart, doubleEnd);
                     map.computeIfAbsent(station, k -> new MeasurementAggregator()).add(value);
 
                     parseDouble = false;
@@ -137,7 +137,7 @@ public class CalculateAverage_coolmineman {
                     doubleEnd = pos;
 
                     BytesKey station = new BytesKey(ofRange(a, as, b, bs, nameStart, nameEnd));
-                    double value = Double.parseDouble(new String(ofRange(a, as, b, bs, doubleStart, doubleEnd), StandardCharsets.UTF_8));
+                    double value = parseDouble(ofRange(a, as, b, bs, doubleStart, doubleEnd), 0, doubleEnd - doubleStart);
                     map.computeIfAbsent(station, k -> new MeasurementAggregator()).add(value);
 
                     return;
@@ -171,8 +171,26 @@ public class CalculateAverage_coolmineman {
         return r;
     }
 
+    static double parseDouble(byte[] b, int start, int end) {
+        boolean negative = false;
+        if (b[start] == (byte) '-') {
+            negative = true;
+            start += 1;
+        }
+        double result = 0;
+        for (int i = start; i < end; i++) {
+            if (b[i] != (byte) '.') {
+                result *= 10;
+                result += (b[i] & 0xFF) - '0';
+            }
+        }
+        if (negative)
+            result *= -1;
+        return result * .1;
+    }
+
     public static void main(String[] args) throws Exception {
-        int pageSize = 800000;
+        int pageSize = 819200;
         long pos = 0;
         try (AsynchronousFileChannel fc = AsynchronousFileChannel.open(Paths.get(FILE), Set.of(StandardOpenOption.READ), Executors.newCachedThreadPool())) {
             var cp = ForkJoinPool.commonPool();
