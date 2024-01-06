@@ -15,19 +15,16 @@
 #  limitations under the License.
 #
 
-if [ -z "$1" ]
-  then
-    echo "Usage: test.sh <fork name>"
-    exit 1
+set -euo pipefail
+
+if [ -z "$1" ]; then
+  echo "Usage: test.sh <fork name>"
+  exit 1
 fi
 
-java --version
-
-mvn clean verify
-
-for sample in $(ls src/test/resources/samples/*.txt)
-do
+for sample in $(ls src/test/resources/samples/*.txt); do
   echo "Validating calculate_average_$1.sh -- $sample"
+
   rm -f measurements.txt
   ln -s $sample measurements.txt
 

@@ -17,4 +17,4 @@
 
 
 JAVA_OPTS=""
-time java $JAVA_OPTS -verbose:gc -Xmx99m --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_lawrey
+time java $JAVA_OPTS -Xmx99m --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_lawrey
