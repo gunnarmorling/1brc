@@ -307,7 +307,7 @@ public class CalculateAverage_shipilev {
 
         private void internalCompute() throws Exception {
             if (end - start > UNIT_SLICE_SIZE) {
-                // Split in half
+                // Split in half.
                 long mid = start + (end - start) / 2;
 
                 // Read a little chunk into a little buffer.
@@ -419,7 +419,7 @@ public class CalculateAverage_shipilev {
     public static void main(String[] args) throws IOException {
         try (RandomAccessFile file = new RandomAccessFile(FILE, "r");
                 FileChannel fc = file.getChannel()) {
-            // Still little line carries the whole world.
+            // This little line carries the whole world.
             new ParsingTask(fc, 0, fc.size()).invoke();
 
             // Merge all results from thread-local maps...
