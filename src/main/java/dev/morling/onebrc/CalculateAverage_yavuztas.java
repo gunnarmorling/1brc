@@ -72,9 +72,9 @@ public class CalculateAverage_yavuztas {
         ByteBuffer value;
         int hash;
 
-        public KeyBuffer(ByteBuffer buffer) {
+        public KeyBuffer(ByteBuffer buffer, int hash) {
             this.value = buffer;
-            this.hash = buffer.hashCode();
+            this.hash = hash;
         }
 
         @Override
@@ -122,17 +122,17 @@ public class CalculateAverage_yavuztas {
             int semiColonPos;
             while (this.buffer.hasRemaining()) {
 
-                while (true) {
-                    if (this.buffer.get() == ';') // read until semicolon
-                        break;
+                int b;
+                int keyHash = 0;
+                while ((b = this.buffer.get()) != ';') { // read until semicolon
+                    keyHash = 31 * keyHash + b; // calculate key hash ahead, eleminates one more loop later
                 }
 
                 semiColonPos = this.buffer.position(); // semicolon pos, exclusive
                 skip(3); // skip more since minimum temperature length is 3
 
-                while (true) {
-                    if (this.buffer.get() == '\n') // read until linebreak
-                        break;
+                while (this.buffer.get() != '\n') {
+                    // read until linebreak
                 }
                 lineBreakPos = this.buffer.position(); // found linebreak, exclusive
 
@@ -145,7 +145,7 @@ public class CalculateAverage_yavuztas {
 
                 this.position = lineBreakPos; // skip to line end
 
-                consumer.accept(new KeyBuffer(station), temperature);
+                consumer.accept(new KeyBuffer(station, keyHash), temperature);
             }
         }
 
