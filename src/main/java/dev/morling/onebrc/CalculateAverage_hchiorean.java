@@ -29,45 +29,40 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.TreeMap;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.stream.Collectors;
 
 public class CalculateAverage_hchiorean {
 
-    private static Map<String, double[]> processLines(Integer key, CharBuffer chars, ConcurrentMap<Integer, String> leftoversMap) {
-        Map<String, double[]> data = parseLines(key, chars, leftoversMap);
+    private static Map<String, double[]> parseLines(Integer key, CharBuffer chars, ConcurrentMap<Integer, String> leftoversMap) {
+        Map<String, double[]> data = new HashMap<>();
+
+        int startIdx = 0;
+        int endIdx = chars.length() - 1;
+        while (chars.charAt(startIdx) != '\n') {
+            ++startIdx;
+        }
+        while (chars.charAt(endIdx) != '\n') {
+            --endIdx;
+        }
+        if (startIdx < endIdx) {
+            parseSanitizedCharBuffer(chars, data, startIdx, endIdx);
+        }
+        String firstPartBeforeDelim = chars.subSequence(0, startIdx + 1).toString();
+        String lastPartBeforeDelim = chars.subSequence(endIdx + 1, chars.length()).toString();
+        leftoversMap.put(key, firstPartBeforeDelim + lastPartBeforeDelim);
         chars = null;
         return data;
     }
 
-    private static Map<String, double[]> parseLines(Integer key, CharBuffer buffer, ConcurrentMap<Integer, String> leftoversMap) {
-        Map<String, double[]> data = new HashMap<>();
-
-        int startIdx = 0;
-        int endIdx = buffer.length() - 1;
-        while (buffer.charAt(startIdx) != '\n') {
-            ++startIdx;
-        }
-        while (buffer.charAt(endIdx) != '\n') {
-            --endIdx;
-        }
-        processCharBuffer(buffer, data, startIdx, endIdx);
-        String firstPart = buffer.subSequence(0, startIdx + 1).toString();
-        String lastPart = buffer.subSequence(endIdx + 1, buffer.length()).toString();
-        leftoversMap.put(key, firstPart + lastPart);
-        return data;
-    }
-
-    private static void processCharBuffer(CharSequence sequence, Map<String, double[]> data, int startIdx, int endIdx) {
+    private static void parseSanitizedCharBuffer(CharSequence sequence, Map<String, double[]> data, int startIdx, int endIdx) {
         StringBuilder parseBuffer = new StringBuilder();
         String name = null;
-        for (int i = startIdx + 1; i < endIdx; ++i) {
+        for (int i = startIdx; i < endIdx; ++i) {
             char c = sequence.charAt(i);
             if (c == '\r') {
                 continue;
@@ -76,15 +71,7 @@ public class CalculateAverage_hchiorean {
                 if (parseBuffer.isEmpty()) {
                     continue;
                 }
-                String value = parseBuffer.toString();
-                double valueNum = Double.parseDouble(value);
-                double[] existingMeasurements = data.putIfAbsent(name, new double[]{ valueNum, valueNum, 1, valueNum });
-                if (existingMeasurements != null) {
-                    existingMeasurements[0] = Math.min(existingMeasurements[0], valueNum);
-                    existingMeasurements[1] = Math.max(existingMeasurements[1], valueNum);
-                    ++existingMeasurements[2];
-                    existingMeasurements[3] += valueNum;
-                }
+                addParsedDataToMap(data, parseBuffer, name);
                 parseBuffer.setLength(0);
                 continue;
             }
@@ -95,13 +82,29 @@ public class CalculateAverage_hchiorean {
             }
             parseBuffer.append(c);
         }
+        if (!parseBuffer.isEmpty()) {
+            assert name != null;
+            addParsedDataToMap(data, parseBuffer, name);
+        }
     }
 
-    private static Map<String, double[]> readFile(File file) throws Exception {
+    private static void addParsedDataToMap(Map<String, double[]> data, StringBuilder parseBuffer, String name) {
+        String value = parseBuffer.toString();
+        double valueNum = Double.parseDouble(value);
+        double[] existingMeasurements = data.putIfAbsent(name, new double[]{ valueNum, valueNum, 1, valueNum });
+        if (existingMeasurements != null) {
+            existingMeasurements[0] = Math.min(existingMeasurements[0], valueNum);
+            existingMeasurements[1] = Math.max(existingMeasurements[1], valueNum);
+            ++existingMeasurements[2];
+            existingMeasurements[3] += valueNum;
+        }
+    }
+
+    static Map<String, double[]> readFile(File file) throws Exception {
 
         Map<String, double[]> aggregate = new TreeMap<>(Comparator.naturalOrder());
         List<Future<Map<String, double[]>>> futures = new ArrayList<>();
-        ConcurrentMap<Integer, String> leftoversMap = new ConcurrentHashMap<>();
+        ConcurrentMap<Integer, String> leftoversMap = new ConcurrentSkipListMap<>();
 
         Charset defaultCharset = Charset.defaultCharset();
         CharsetDecoder decoder = defaultCharset.newDecoder();
@@ -143,19 +146,15 @@ public class CalculateAverage_hchiorean {
                 int nextId = idCounter++;
                 CharBuffer finalChars = chars;
                 futures.add(
-                        executor.submit(() -> processLines(Integer.valueOf(nextId), finalChars, leftoversMap)));
+                        executor.submit(() -> parseLines(Integer.valueOf(nextId), finalChars, leftoversMap)));
             }
         }
         for (Future<Map<String, double[]>> future : futures) {
             Map<String, double[]> chunk = future.get();
             aggregate(chunk, aggregate);
         }
-        String leftovers = leftoversMap.entrySet()
-                .stream()
-                .sorted(Map.Entry.comparingByKey())
-                .map(Entry::getValue)
-                .collect(Collectors.joining());
-        processCharBuffer(leftovers, aggregate, 0, leftovers.length());
+        String leftovers = String.join("", leftoversMap.values());
+        parseSanitizedCharBuffer(leftovers, aggregate, 0, leftovers.length());
 
         return aggregate;
     }
@@ -174,7 +173,7 @@ public class CalculateAverage_hchiorean {
         }
     }
 
-    private static void print(Map<String, double[]> dataMap) {
+    static void print(Map<String, double[]> dataMap) {
         System.out.print("{");
         for (Iterator<Map.Entry<String, double[]>> dataEntryIt = dataMap.entrySet().iterator(); dataEntryIt.hasNext();) {
             String entryOutput = format(dataEntryIt.next());
