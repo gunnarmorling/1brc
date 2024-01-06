@@ -19,6 +19,8 @@ import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
@@ -37,6 +39,7 @@ public class CalculateAverage_merykitty {
     private static final String FILE = "./measurements.txt";
     private static final VectorSpecies<Byte> BYTE_SPECIES = ByteVector.SPECIES_PREFERRED;
     private static final ValueLayout.OfLong JAVA_LONG_LT = ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
+    private static final VarHandle PREFETCH_HANDLE = MethodHandles.memorySegmentViewVarHandle(ValueLayout.JAVA_BYTE);
     private static final long KEY_MAX_SIZE = 100;
 
     private static record ResultRow(double min, double mean, double max) {
@@ -316,6 +319,12 @@ public class CalculateAverage_merykitty {
                 int index = i;
                 long offset = i * chunkSize;
                 long limit = Math.min((i + 1) * chunkSize, data.byteSize());
+                var prefetch = new Thread(() -> {
+                    for (long o = offset; o < limit; o += 1024) {
+                        byte x = (byte) PREFETCH_HANDLE.getOpaque(data, o);
+                    }
+                });
+                prefetch.start();
                 var thread = new Thread(() -> {
                     resultList[index] = processFile(data, offset, limit);
                 });
