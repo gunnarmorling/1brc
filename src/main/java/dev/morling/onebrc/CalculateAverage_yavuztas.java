@@ -37,10 +37,14 @@ public class CalculateAverage_yavuztas {
     private static final Path FILE = Path.of("./measurements.txt");
 
     static class Measurement {
+
+        // Only accessed by a single thread, so it is safe to share
+        private static final StringBuilder STRING_BUILDER = new StringBuilder(14);
+
         private int min; // calculations over int is faster than double, we convert to double in the end only once
         private int max;
-        private int sum;
-        private int count = 1;
+        private long sum;
+        private long count = 1;
 
         public Measurement(int initial) {
             this.min = initial;
@@ -48,12 +52,14 @@ public class CalculateAverage_yavuztas {
             this.sum = initial;
         }
 
-        public String toString() { // convert to double while generating the string output
-            return valueOf(this.min) + "/" + round(valueOf(this.sum) / this.count) + "/" + valueOf(this.max);
-        }
-
-        private double valueOf(int value) {
-            return value / 10.0;
+        public String toString() {
+            STRING_BUILDER.setLength(0); // clear the builder to reuse
+            STRING_BUILDER.append(this.min / 10.0); // convert to double while generating the string output
+            STRING_BUILDER.append("/");
+            STRING_BUILDER.append(round((this.sum / 10.0) / this.count));
+            STRING_BUILDER.append("/");
+            STRING_BUILDER.append(this.max / 10.0);
+            return STRING_BUILDER.toString();
         }
 
         private double round(double value) {
