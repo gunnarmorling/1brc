@@ -71,7 +71,7 @@ public class CreateMeasurements3 {
         // which we'll use as a "source of city name randomness"
         var bigName = new StringBuilder(1 << 20);
         try (var rows = new BufferedReader(new FileReader("data/weather_stations.csv"));) {
-            rows.readLine(); // Skip the attribution line
+            skipComments(rows);
             while (true) {
                 var row = rows.readLine();
                 if (row == null) {
@@ -85,7 +85,7 @@ public class CreateMeasurements3 {
         var minLen = Integer.MAX_VALUE;
         var maxLen = Integer.MIN_VALUE;
         try (var rows = new BufferedReader(new FileReader("data/weather_stations.csv"))) {
-            rows.readLine(); // Skip the attribution line
+            skipComments(rows);
             final var nameSource = new StringReader(bigName.toString());
             final var buf = new char[MAX_NAME_LEN];
             final var rnd = ThreadLocalRandom.current();
@@ -144,6 +144,11 @@ public class CreateMeasurements3 {
         }
         System.out.format("Generated %,d station names with length from %,d to %,d%n", KEYSET_SIZE, minLen, maxLen);
         return weatherStations;
+    }
+
+    private static void skipComments(BufferedReader rows) throws IOException {
+        while (rows.readLine().startsWith("#")) {
+        }
     }
 
     private static char readNonSpace(StringReader nameSource) throws IOException {
