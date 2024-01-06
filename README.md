@@ -44,10 +44,12 @@ Submit your implementation by Jan 31 2024 and become part of the leaderboard!
 |   |        00:10.613| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_spullara.java)| 21.0.1-graal | [Sam Pullara](https://github.com/spullara)|
 |   |        00:10.870| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_ebarlas.java)| 21.0.1-graalce| [Elliot Barlas](https://github.com/ebarlas)|
 |   |        00:12.988| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_isolgpus.java)| 21.0.1-open| [Jamie Stansfield](https://github.com/isolgpus)|
+|   |        00:13.277| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_yavuztas.java)| 21.0.1-graal   | [Yavuz Tas](https://github.com/yavuztas)|
 |   |        00:13.430| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_jotschi.java)| 21.0.1-open| [Johannes Schüth](https://github.com/Jotschi)|
 |   |        00:13.463| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_yemreinci.java)| 21.0.1-open| [yemreinci](https://github.com/yemreinci)|
 |   |        00:13.857| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_filiphr.java)| 21.0.1-graal| [Filip Hrisafov](https://github.com/filiphr)|
 |   |        00:14.411| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_deemkeen.java)| 21.0.1-open| [deemkeen](https://github.com/deemkeen)|
+|   |        00:15.956| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_ddimtirov.java)| 21.0.1-open| [Dimitar Dimitrov](https://github.com/ddimtirov)|
 |   |        00:16.196| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_artpar.java)| 21.0.1-open| [Parth Mudgal](https://github.com/artpar)|
 |   |        00:16.823| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_arjenvaneerde.java)| 21.0.1-open| [arjenvaneerde](https://github.com/arjenvaneerde)|
 |   |        00:17.905| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_lawrey.java)| 21.0.1-open| [Peter Lawrey](https://github.com/peter-lawrey)|
@@ -56,7 +58,6 @@ Submit your implementation by Jan 31 2024 and become part of the leaderboard!
 |   |        00:19.561| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_gabrielreid.java)| 21.0.1-open| [Gabriel Reid](https://github.com/gabrielreid)|
 |   |        00:22.709| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_seijikun.java)| 21.0.1-graal  | [Markus Ebner](https://github.com/seijikun)|
 |   |        00:23.078| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_richardstartin.java)| 21.0.1-open   | [Richard Startin](https://github.com/richardstartin)|
-|   |        00:24.351| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_yavuztas.java)| 21.0.1-graal   | [Yavuz Tas](https://github.com/yavuztas)|
 |   |        00:24.879| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_davecom.java)| 21.0.1-open   | [David Kopec](https://github.com/davecom)|
 |   |        00:26.253| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_flippingbits.java)| 21.0.1-graal   | [Stefan Sprenger](https://github.com/flippingbits)|
 |   |        00:26.576| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_fatroom.java)| 21.0.1-open   | [Roman Romanchuk](https://github.com/fatroom)|
@@ -72,6 +73,7 @@ Submit your implementation by Jan 31 2024 and become part of the leaderboard!
 |   |        00:59.377| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_hchiorean.java)| 21.0.1-open   | [Horia Chiorean](https://github.com/hchiorean)|
 |   |        01:24.721| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_Ujjwalbharti.java)| 21.0.1-open   | [Ujjwal Bharti](https://github.com/Ujjwalbharti)|
 |   |        01:27.912| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_jgrateron.java)| 21.0.1-open   | [Jairo Graterón](https://github.com/jgrateron)|
+|   |        01:39.360| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_mudit-saxena.java)| 21.0.1-open   | [Mudit Saxena](https://github.com/mudit-saxena)|
 |   |        01:58.536| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_kuduwa_keshavram.java)| 21.0.1-open   | [Kuduwa Keshavram](https://github.com/kuduwa_keshavram)|
 |   |        02:00.101| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_khmarbaise.java)| 21.0.1-open   | [khmarbaise](https://github.com/khmarbaise)|
 |   |        02:08.315| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_itaske.java)| 21.0.1-open   | [itaske](https://github.com/itaske)|
