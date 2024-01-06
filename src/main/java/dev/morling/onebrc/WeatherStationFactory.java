@@ -91,19 +91,23 @@ public class WeatherStationFactory {
                 }
 
                 var name = nameBuf.toString();
-                int actualLen = name.getBytes(StandardCharsets.UTF_8).length;
-                while (actualLen > 100) {
-                    nameBuf.deleteCharAt(nameBuf.length() - 1);
-                    if (Character.isWhitespace(nameBuf.charAt(nameBuf.length() - 1))) {
-                        nameBuf.setCharAt(nameBuf.length() - 1, readNonSpace(nameSource));
-                    }
-                    name = nameBuf.toString();
-                    actualLen = name.getBytes(StandardCharsets.UTF_8).length;
-                }
+                int nameByteLen = name.getBytes(StandardCharsets.UTF_8).length;
 
-                while (names.contains(name)) {
-                    nameBuf.setCharAt(rnd.nextInt(nameBuf.length()), readNonSpace(nameSource));
+                while (names.contains(name) || nameByteLen > 100) {
+                    // If the character length is over 100
+                    if (nameByteLen > 100) {
+                        nameBuf.deleteCharAt(nameBuf.length() - 1);
+                        if (Character.isWhitespace(nameBuf.charAt(nameBuf.length() - 1))) {
+                            nameBuf.setCharAt(nameBuf.length() - 1, readNonSpace(nameSource));
+                        }
+                    }
+                    // Else: name is not unique
+                    else {
+                        nameBuf.setCharAt(rnd.nextInt(nameBuf.length()), readNonSpace(nameSource));
+                    }
+
                     name = nameBuf.toString();
+                    nameByteLen = name.getBytes(StandardCharsets.UTF_8).length;
                 }
 
                 if (name.indexOf(';') != -1) {
@@ -111,8 +115,8 @@ public class WeatherStationFactory {
                 }
 
                 names.add(name);
-                minLen = Integer.min(minLen, actualLen);
-                maxLen = Integer.max(maxLen, actualLen);
+                minLen = Integer.min(minLen, nameByteLen);
+                maxLen = Integer.max(maxLen, nameByteLen);
                 var lat = Double.parseDouble(row.substring(row.indexOf(';') + 1));
                 // Guesstimate mean temperature using cosine of latitude
                 var avgTemp = (double) (30 * Math.cos(Math.toRadians(lat))) - 10;
