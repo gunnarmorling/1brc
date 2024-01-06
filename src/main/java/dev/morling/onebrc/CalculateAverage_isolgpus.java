@@ -118,25 +118,33 @@ public class CalculateAverage_isolgpus {
         try {
 
             while (i <= lengthOfChunk) {
-                int nameSum;
-                int hashResult;
+                int nameSum = 0;
+                int hashResult = 0;
                 int nameStart;
                 byte aChar;
                 nameStart = i;
                 int nameBufferIndex = 0;
                 int valueIndex = 0;
 
-                // evilly assume a station name is at least 2 bytes
-                short firstShort = r.getShort();
-                nameBufferIndex += 2;
-                nameSum = firstShort;
-                hashResult = 31 * firstShort;
+                // optimistically assume that the name is at least 4 bytes
+                int firstInt = r.getInt();
+                nameBufferIndex = 4;
+                nameSum = firstInt;
+                hashResult = 31 * firstInt;
 
                 while ((aChar = r.get()) != SEPERATOR) {
                     nameSum += aChar;
                     // hash as we go, stolen after a discussion with palmr
                     hashResult = 31 * hashResult + aChar;
                     nameBufferIndex++;
+
+                    // oh no we read too much, do it the byte for byte way instead
+                    if (aChar == NEW_LINE) {
+                        r.position(i);
+                        nameBufferIndex = 0;
+                        nameSum = 0;
+                        hashResult = 0;
+                    }
                 }
 
                 i += nameBufferIndex + 1;
@@ -144,11 +152,9 @@ public class CalculateAverage_isolgpus {
                 isNegative = (aChar = r.get()) == NEGATIVE;
                 valueIndex = readNumber(isNegative, valueBuffer, valueIndex, aChar, r);
 
-                byte decimalValue = r.get();
+                int decimalValue = r.getShort() >> 8;
 
                 int value = resolveValue(valueIndex, valueBuffer, decimalValue, isNegative);
-                // new line character
-                r.get();
 
                 MeasurementCollector measurementCollector = resolveMeasurementCollector(measurementCollectors, hashResult, nameStart, nameBufferIndex, nameSum, r);
 
@@ -204,7 +210,7 @@ public class CalculateAverage_isolgpus {
         return incomingNameSum == existingNameSum;
     }
 
-    private static int resolveValue(int valueIndex, byte[] valueBuffer, byte decimalValue, boolean isNegative) {
+    private static int resolveValue(int valueIndex, byte[] valueBuffer, int decimalValue, boolean isNegative) {
         int value;
         if (valueIndex == 1) {
             value = ((valueBuffer[0] - OFFSET) * 10) + (decimalValue - OFFSET);
