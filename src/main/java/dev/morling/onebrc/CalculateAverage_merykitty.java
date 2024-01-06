@@ -151,7 +151,7 @@ public class CalculateAverage_merykitty {
     // Parse a number that may/may not contain a minus sign followed by a decimal with
     // 1 - 2 digits to the left and 1 digits to the right of the separator to a
     // fix-precision format. It returns the offset of the next line (presumably followed
-    // the final digit and a '\n'
+    // the final digit and a '\n')
     private static long parseDataPoint(Aggregator aggr, MemorySegment data, long offset) {
         long word = data.get(JAVA_LONG_LT, offset);
         // The 4th binary digit of the ascii of a digit is 1 while
