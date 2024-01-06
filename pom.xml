@@ -111,6 +111,8 @@
               <compilerArg>--enable-preview</compilerArg>
               <compilerArg>--add-modules</compilerArg>
               <compilerArg>java.base,jdk.incubator.vector</compilerArg>
+              <compilerArg>--add-opens=java.base/java.lang=ALL-UNNAMED</compilerArg>
+              <compilerArg>--add-opens=java.base/jdk.internal.util=ALL-UNNAMED</compilerArg>
             </compilerArgs>
           </configuration>
         </plugin>
