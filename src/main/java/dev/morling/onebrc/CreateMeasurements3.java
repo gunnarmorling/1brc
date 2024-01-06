@@ -101,26 +101,41 @@ public class CreateMeasurements3 {
                 // Use a 7th-order curve to simulate the name length distribution.
                 // It gives us mostly short names, but with large outliers.
                 var nameLen = (int) (yOffset + factor * Math.pow(rnd.nextDouble() - xOffset, power));
-                minLen = Integer.min(minLen, nameLen);
-                maxLen = Integer.max(maxLen, nameLen);
                 var count = nameSource.read(buf, 0, nameLen);
                 if (count == -1) {
                     throw new Exception("Name source exhausted");
                 }
-                var name = new String(buf, 0, nameLen).trim();
-                while (name.length() < nameLen) {
-                    name += readNonSpace(nameSource);
+                var nameBuf = new StringBuilder(nameLen);
+                nameBuf.append(buf, 0, nameLen);
+                if (Character.isWhitespace(nameBuf.charAt(0))) {
+                    nameBuf.setCharAt(0, readNonSpace(nameSource));
                 }
+                if (Character.isWhitespace(nameBuf.charAt(nameBuf.length() - 1))) {
+                    nameBuf.setCharAt(nameBuf.length() - 1, readNonSpace(nameSource));
+                }
+                var name = nameBuf.toString();
                 while (names.contains(name)) {
-                    name = name.substring(1) + readNonSpace(nameSource);
+                    nameBuf.setCharAt(rnd.nextInt(nameBuf.length()), readNonSpace(nameSource));
+                    name = nameBuf.toString();
                 }
-                while (name.getBytes(StandardCharsets.UTF_8).length > 100) {
-                    name = name.substring(0, name.length() - 1);
+                int actualLen;
+                while (true) {
+                    actualLen = name.getBytes(StandardCharsets.UTF_8).length;
+                    if (actualLen <= 100) {
+                        break;
+                    }
+                    nameBuf.deleteCharAt(nameBuf.length() - 1);
+                    if (Character.isWhitespace(nameBuf.charAt(nameBuf.length() - 1))) {
+                        nameBuf.setCharAt(nameBuf.length() - 1, readNonSpace(nameSource));
+                    }
+                    name = nameBuf.toString();
                 }
                 if (name.indexOf(';') != -1) {
                     throw new Exception("Station name contains a semicolon!");
                 }
                 names.add(name);
+                minLen = Integer.min(minLen, actualLen);
+                maxLen = Integer.max(maxLen, actualLen);
                 var lat = Float.parseFloat(row.substring(row.indexOf(';') + 1));
                 // Guesstimate mean temperature using cosine of latitude
                 var avgTemp = (float) (30 * Math.cos(Math.toRadians(lat))) - 10;
