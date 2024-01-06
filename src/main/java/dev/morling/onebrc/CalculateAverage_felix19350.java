@@ -169,7 +169,12 @@ public class CalculateAverage_felix19350 {
             var chunkSize = fileSize / numChunks;
 
             for (int i = 0; i < numChunks; i++) {
-                var previousChunkEnd = i == 0 ? 0L : chunks.get(i - 1)[1] + 1;
+                var previousChunkEnd = i == 0 ? 0L : chunks.get(i - 1)[1];
+                if (previousChunkEnd >= fileSize) {
+                    // There is a scenario for very small files where the number of chunks may be greater than
+                    // the number of lines.
+                    break;
+                }
                 var chunk = new long[]{ previousChunkEnd, 0 };
                 if (i == (numChunks - 1)) {
                     // ensure the last chunk covers the full file
@@ -184,14 +189,12 @@ public class CalculateAverage_felix19350 {
 
                     var newLineOffset = 0;
                     for (byte b : buffer) {
+                        newLineOffset += 1;
                         if ((char) b == '\n') {
                             break;
                         }
-                        else {
-                            newLineOffset += 1;
-                        }
                     }
-                    chunk[1] = theoreticalEnd + newLineOffset;
+                    chunk[1] = Math.min(fileSize, theoreticalEnd + newLineOffset);
                 }
 
                 assert (chunk[0] >= 0L);
@@ -202,7 +205,6 @@ public class CalculateAverage_felix19350 {
                 var memMappedFile = raf.getChannel()
                         .map(FileChannel.MapMode.READ_ONLY, chunk[0], (chunk[1] - chunk[0]), Arena.ofAuto());
                 memMappedFile.load();
-
                 chunks.add(chunk);
                 result.add(memMappedFile);
             }
