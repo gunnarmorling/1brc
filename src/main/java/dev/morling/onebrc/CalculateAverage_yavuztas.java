@@ -118,19 +118,23 @@ public class CalculateAverage_yavuztas {
 
         void traverse(BiConsumer<KeyBuffer, Integer> consumer) {
 
-            int lineBreakPos = 0;
-            int semiColonPos = 0;
+            int lineBreakPos;
+            int semiColonPos;
             while (this.buffer.hasRemaining()) {
 
-                byte b;
-                while ((b = this.buffer.get()) != '\n') {
-                    if (b == ';') { // save semicolon pos
-                        semiColonPos = this.buffer.position(); // semicolon exclusive
-                        skip(3);
-                    }
+                while (true) {
+                    if (this.buffer.get() == ';') // read until semicolon
+                        break;
                 }
-                // found linebreak
-                lineBreakPos = this.buffer.position();
+
+                semiColonPos = this.buffer.position(); // semicolon pos, exclusive
+                skip(3); // skip more since minimum temperature length is 3
+
+                while (true) {
+                    if (this.buffer.get() == '\n') // read until linebreak
+                        break;
+                }
+                lineBreakPos = this.buffer.position(); // found linebreak, exclusive
 
                 this.buffer.position(this.position); // set back to line start
                 final int length1 = semiColonPos - this.position; // station length
