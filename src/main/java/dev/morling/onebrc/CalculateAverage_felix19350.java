@@ -38,19 +38,19 @@ public class CalculateAverage_felix19350 {
 
     private static class ResultRow {
 
-        private double min;
-        private double max;
-        private double sum;
+        private int min;
+        private int max;
+        private int sum;
         private int count;
 
-        public ResultRow(double initialValue) {
+        public ResultRow(int initialValue) {
             this.min = initialValue;
             this.max = initialValue;
             this.sum = initialValue;
             this.count = 1;
         }
 
-        public void mergeValue(double value) {
+        public void mergeValue(int value) {
             this.min = Math.min(this.min, value);
             this.max = Math.max(this.max, value);
             this.sum += value;
@@ -58,7 +58,7 @@ public class CalculateAverage_felix19350 {
         }
 
         public String toString() {
-            return round(min) + "/" + round(sum / count) + "/" + round(max);
+            return round(min / 10.0) + "/" + round(sum / 10.0 / count) + "/" + round(max / 10.0);
         }
 
         private double round(double value) {
@@ -113,7 +113,7 @@ public class CalculateAverage_felix19350 {
       lineBytes.get(separatorIdx + 1, valueBytes);
 
       var city = new String(cityBytes, StandardCharsets.UTF_8);
-      var value = Double.parseDouble(new String(valueBytes, StandardCharsets.UTF_8));
+      var value = parseInt(valueBytes);
 
       var latestValue = result.get(city);
       if (latestValue != null) {
@@ -121,6 +121,29 @@ public class CalculateAverage_felix19350 {
       } else {
         result.put(city, new ResultRow(value));
       }
+    }
+
+    private static int parseInt(byte[] valueBytes) {
+      int multiplier = 1;
+      int digitValue = 0;
+      var numDigits = valueBytes.length-1; // there is always one decimal place
+      var ds = new int[]{1,10,100};
+
+      for (byte valueByte : valueBytes) {
+        switch ((char) valueByte) {
+          case '-':
+            multiplier = -1;
+            numDigits -= 1;
+            break;
+          case '.':
+            break;
+          default:
+            digitValue += ((int) valueByte - 48) * (ds[numDigits - 1]);
+            numDigits -= 1;
+            break;// TODO continue here
+        }
+      }
+      return multiplier*digitValue;
     }
   }
 
