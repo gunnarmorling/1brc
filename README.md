@@ -186,6 +186,8 @@ The mean value of the remaining three runs is the result for that contender and 
 The exact same _measurements.txt_ file is used for evaluating all contenders.
 
 If you'd like to spin up your own box for testing on Hetzner Cloud, you may find these [set-up scripts](https://github.com/gunnarmorling/cloud-boxes/) (based on Terraform and Ansible) useful.
+It has been reported that instances of the CCX33 machine class can significantly vary in terms of performance,
+so results are only comparable when obtained from one and the same instance.
 Note this will incur cost you are responsible for, I am not going to pay your cloud bill :)
 
 ## Prize
@@ -219,6 +221,9 @@ A: Yes, you can. The primary focus of the challenge is about learning something 
 
 _Q: Which operating system is used for evaluation?_\
 A: Fedora 39.
+
+_Q: My solution runs on 2 sec on my machine. Am I the fastest 1BRC-er in the world?_\
+A: Probably not :) 1BRC results are reported in wallclock time, thus results of different implementations are only comparable when obtained on the same machine. If for instance an implementation is faster on a 32 core workstation than on the 8 core evaluation instance, this doesn't allow for any conclusions. When sharing 1BRC results, you should also always share the result of running the baseline implementation on the same hardware.
 
 _Q: Why_ 1️⃣🐝🏎️ _?_\
 A: It's the abbreviation of the project name: **One** **B**illion **R**ow **C**hallenge.
