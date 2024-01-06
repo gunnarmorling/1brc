@@ -15,7 +15,8 @@
 #  limitations under the License.
 #
 
-sdk use java 21.0.1-graal
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+sdk use java 21.0.1-graal 1>&2
 java -version
 JAVA_OPTS=""
 CHUNK_SIZE=$((8 * 1024 * 1024))
