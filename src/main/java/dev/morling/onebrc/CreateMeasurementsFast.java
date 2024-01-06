@@ -57,6 +57,7 @@ public class CreateMeasurementsFast {
         }
 
         try {
+            Files.deleteIfExists(MEASUREMENT_FILE);
             Files.createFile(MEASUREMENT_FILE);
         }
         catch (Exception e) {
@@ -510,7 +511,7 @@ public class CreateMeasurementsFast {
             int finalN = n;
             futures[n] = CompletableFuture.runAsync(() -> {
                 StringBuilder builder = new StringBuilder();
-                for (int i = finalN * chunkSize; i < (finalN + 1) * chunkSize - 1; i++) {
+                for (int i = finalN * chunkSize; i <= (finalN + 1) * chunkSize - 1; i++) {
                     WeatherStation station = stations.get(ThreadLocalRandom.current().nextInt(stations.size()));
                     builder.append(station.id())
                             .append(";")
