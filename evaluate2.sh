@@ -61,13 +61,13 @@ hyperfine $HYPERFINE_OPTS "${forks[@]}"
 # The slowest and the fastest runs are discarded
 # The mean value of the remaining three runs is the result for that contender
 echo ""
-echo "command,trimmed_mean"
+echo "fork,trimmed_mean"
 jq -r '.results[] | [ .command, ((.times | sort) | .[1:-1] | add / length) ] | join(",")' $TEMP_FILE \
   | perl -pe 's/^[.]\/calculate_average_(\w+).*,/$1,/'
 
 # Output the raw times for each command
 echo ""
-echo "command,raw_times"
+echo "fork,raw_times"
 jq -r '.results[] | [.command, (.times | join(","))] | join(",")' $TEMP_FILE \
   | perl -pe 's/^[.]\/calculate_average_(\w+).*?,/$1,/'
 
