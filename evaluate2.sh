@@ -65,4 +65,10 @@ echo "command,trimmed_mean"
 jq -r '.results[] | [ .command, ((.times | sort) | .[1:-1] | add / length) ] | join(",")' $TEMP_FILE \
   | perl -pe 's/^[.]\/calculate_average_(\w+).*,/$1,/'
 
+# Output the raw times for each command
+echo ""
+echo "command,raw_times"
+jq -r '.results[] | [.command, (.times | join(","))] | join(",")' $TEMP_FILE \
+  | perl -pe 's/^[.]\/calculate_average_(\w+).*?,/$1,/'
+
 rm $TEMP_FILE
