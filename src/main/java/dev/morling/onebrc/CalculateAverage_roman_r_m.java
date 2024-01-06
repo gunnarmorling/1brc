@@ -22,6 +22,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
@@ -33,15 +34,13 @@ public class CalculateAverage_roman_r_m {
     public static void main(String[] args) throws IOException {
         long fileSize = new File(FILE).length();
 
-        var measurements = new HashMap<String, ResultRow>();
-
         var station = new ByteString();
         var value = new ByteString();
         var parsingStation = true;
 
         long offset = 0;
         var channel = FileChannel.open(Paths.get(FILE));
-        var stringCache = new StringCache();
+        var resultStore = new ResultStore();
         MemorySegment ms = channel.map(FileChannel.MapMode.READ_ONLY, offset, fileSize, Arena.ofAuto());
         while (offset < fileSize) {
             byte c = ms.get(ValueLayout.JAVA_BYTE, offset);
@@ -53,10 +52,9 @@ public class CalculateAverage_roman_r_m {
             else if (c == '\r') {
             }
             else if (c == '\n') {
-                String name = stringCache.get(station);
                 double val = value.parseDouble();
+                var a = resultStore.get(station);
 
-                var a = measurements.computeIfAbsent(name, x -> new ResultRow());
                 a.min = Math.min(a.min, val);
                 a.max = Math.max(a.max, val);
                 a.sum += val;
@@ -74,7 +72,7 @@ public class CalculateAverage_roman_r_m {
             }
         }
 
-        System.out.println(new TreeMap<>(measurements));
+        System.out.println(resultStore.toMap());
     }
 
     static final class ByteString {
@@ -136,6 +134,7 @@ public class CalculateAverage_roman_r_m {
             if (len != that.len)
                 return false;
 
+            // TODO use Vector
             for (int i = 0; i < len; i++) {
                 if (buf[i] != that.buf[i]) {
                     return false;
@@ -166,19 +165,29 @@ public class CalculateAverage_roman_r_m {
         }
     }
 
-    static class StringCache {
-        private final Map<ByteString, String> cache = new HashMap<>(1000);
+    static class ResultStore {
+        private final ArrayList<ResultRow> results = new ArrayList<>(10000);
+        private final Map<ByteString, Integer> indices = new HashMap<>(10000);
 
-        String get(ByteString s) {
-            var v = cache.get(s);
-            if (v != null) {
-                return v;
+        ResultRow get(ByteString s) {
+            var idx = indices.get(s);
+            if (idx != null) {
+                return results.get(idx);
             }
             else {
-                String str = s.toString();
-                cache.put(s.copy(), str);
-                return str;
+                ResultRow next = new ResultRow();
+                results.add(next);
+                indices.put(s.copy(), results.size() - 1);
+                return next;
             }
+        }
+
+        TreeMap<String, ResultRow> toMap() {
+            var result = new TreeMap<String, ResultRow>();
+            indices.forEach((name, idx) -> {
+                result.put(name.toString(), results.get(idx));
+            });
+            return result;
         }
     }
 }
