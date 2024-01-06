@@ -197,10 +197,10 @@ public class CalculateAverage_coolmineman {
     }
 
     public static void main(String[] args) throws Exception {
-        int pageSize = 819200;
+        int pageSize = 1600000;
         long pos = 0;
         try (AsynchronousFileChannel fc = AsynchronousFileChannel.open(Paths.get(FILE), Set.of(StandardOpenOption.READ), Executors.newCachedThreadPool())) {
-            var cp = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
+            var cp = Executors.newWorkStealingPool(Runtime.getRuntime().availableProcessors());
 
             var bbs = new ByteBuffer[Runtime.getRuntime().availableProcessors() * 8];
             for (int i = 0; i < bbs.length; i++) {
