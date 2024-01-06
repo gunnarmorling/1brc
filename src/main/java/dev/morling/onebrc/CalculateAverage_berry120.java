@@ -21,6 +21,7 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.TreeMap;
@@ -31,7 +32,7 @@ import java.util.concurrent.TimeUnit;
 public class CalculateAverage_berry120 {
 
     private static final String FILE = "./measurements.txt";
-    public static final int SPLIT_SIZE = Runtime.getRuntime().availableProcessors();
+    public static final int SPLIT_SIZE = 8;
 
     static class TemperatureSummary implements Comparable<TemperatureSummary> {
         byte[] name;
@@ -67,7 +68,7 @@ public class CalculateAverage_berry120 {
 
     public static void main(String[] args) throws Exception {
 
-        // long time = System.currentTimeMillis();
+        long time = System.currentTimeMillis();
 
         Path path = Path.of(FILE);
         RandomAccessFile file = new RandomAccessFile(path.toFile(), "r");
@@ -94,7 +95,7 @@ public class CalculateAverage_berry120 {
         }
         positions.add(size);
 
-        List<TemperatureSummary[]> arrs = Collections.synchronizedList(new ArrayList<>());
+        List<TemperatureSummary[][]> arrs = Collections.synchronizedList(new ArrayList<>());
 
         var tp = Executors.newFixedThreadPool(splitSize);
 
@@ -103,7 +104,7 @@ public class CalculateAverage_berry120 {
         for (int i = 1; i < positions.size(); i++) {
             final int idx = i;
             tp.submit(() -> {
-                TemperatureSummary[] arr = new TemperatureSummary[0xFFFFF];
+                TemperatureSummary[][] arr = new TemperatureSummary[0xFFFFF][1];
                 arrs.add(arr);
                 try {
                     long startPos = positions.get(idx - 1);
@@ -112,6 +113,8 @@ public class CalculateAverage_berry120 {
                     MappedByteBuffer bb = channel.map(FileChannel.MapMode.READ_ONLY, startPos, bSize);
 
                     byte[] bytes = new byte[0xFFFFF];
+                    byte[] name = new byte[100];
+                    int nameidx = 0;
                     int bytesDataLength;
 
                     int breakIdx = -1;
@@ -129,8 +132,8 @@ public class CalculateAverage_berry120 {
                         if (b == ';') {
                             breakIdx = bi + 1;
                             bi += 4;
-                        }
-                        else if (breakIdx == -1) {
+                        } else if (breakIdx == -1) {
+//                            name[nameidx++] = b;
                             // 1M constrained djb2 should be good enough for our purposes
                             rollingHash = (((rollingHash << 5) + rollingHash) + b) & 0xFFFFF;
 
@@ -138,74 +141,71 @@ public class CalculateAverage_berry120 {
                             if (bi >= bytesDataLength)
                                 break;
 
-                        }
-                        else if (b == '\n') {
+                        } else if (b == '\n') {
                             int numArrLen = bi - breakIdx;
                             int num = 0;
                             for (int mI = breakIdx + numArrLen - 1, m = 1; mI >= breakIdx; mI--, m *= 10) {
 
                                 byte d = bytes[mI];
-                                /* NEEDED IF RUNNING WINDOWS LINE ENDINGS INSTEAD OF THE BELOW LINE: if(d=='.' || d==10 || d==13) { */
                                 if (d == '.') {
                                     m /= 10;
-                                }
-                                else if (d == '-') {
+                                } else if (d == '-') {
                                     num = -num;
-                                }
-                                else {
-                                    /* NEEDED IF RUNNING WINDOWS LINE ENDINGS: if(m==0) m=1; */
+                                } else {
                                     num += (d & 0xF) * m;
                                 }
                             }
 
-                            var entry = arr[rollingHash];
+                            byte[] place = new byte[breakIdx - 1 - startReadingIdx];
+                            System.arraycopy(bytes, startReadingIdx, place, 0, breakIdx - 1 - startReadingIdx);
+                            var entry = arr[rollingHash][0];
 
                             if (entry == null) {
-                                byte[] place = new byte[breakIdx - 1 - startReadingIdx];
-
-                                System.arraycopy(bytes, startReadingIdx, place, 0, breakIdx - 1 - startReadingIdx);
                                 entry = new TemperatureSummary(place, num, num, num, 1);
-                                arr[rollingHash] = entry;
-                            }
-                            else {
-                                entry.max = (Math.max(num, entry.max));
-                                entry.min = (Math.min(num, entry.min));
-                                entry.total += num;
-                                entry.sampleCount++;
+                                arr[rollingHash][0] = entry;
+                            } else {
+                                if (Arrays.equals(place, entry.name)) {
+                                    entry.max = (Math.max(num, entry.max));
+                                    entry.min = (Math.min(num, entry.min));
+                                    entry.total += num;
+                                    entry.sampleCount++;
+                                } else {
+                                    TemperatureSummary[] growth = new TemperatureSummary[arr[rollingHash].length+1];
+                                    System.arraycopy(arr[rollingHash], 0, growth, 0, growth.length);
+                                    arr[rollingHash] = growth;
+                                }
                             }
 
                             startReadingIdx = bi + 1;
                             breakIdx = -1;
                             rollingHash = 5381;
 
-                            if (bi > bytes.length - 64) {
+                            if (bi > bytes.length - 128) {
                                 sourceIdx += bi;
                                 int remaining = bSize - sourceIdx;
                                 bb.get(sourceIdx, bytes, 0, bytesDataLength = Math.min(bytes.length, remaining));
                                 bi = -1;
-                                /* NEEDED IF RUNNING WINDOWS LINE ENDINGS INSTEAD OF THE BELOW LINE: if (bytes[0] == 10 || bytes[0] == 13) { */
                                 if (bytes[0] == 10) {
                                     bi = 0;
                                 }
+                                startReadingIdx = 1;
                             }
 
                             bi++;
                             if (bi >= bytesDataLength)
                                 break;
 
-                        }
-                        else {
+                        } else {
                             bi++;
                         }
 
                     }
 
-                }
-                catch (Exception ex) {
+                } catch (Exception ex) {
                     ex.printStackTrace();
                 }
             });
-            // break;
+//             break;
         }
 
         tp.close();
@@ -215,25 +215,25 @@ public class CalculateAverage_berry120 {
         // System.out.println("TIME WITHOUT MERGE: " + (System.currentTimeMillis() - time));
 
         for (var arr : arrs) {
-            for (TemperatureSummary t1 : arr) {
-                if (t1 == null)
-                    continue;
+            for (TemperatureSummary[] innerArr : arr) {
+                for (TemperatureSummary t1 : innerArr) {
+                    if (t1 == null)
+                        continue;
 
-                var t2 = mergedMap.get(new String(t1.name));
+                    var t2 = mergedMap.get(new String(t1.name));
 
-                if (t2 == null) {
-                    mergedMap.put(new String(t1.name), t1);
+                    if (t2 == null) {
+                        mergedMap.put(new String(t1.name), t1);
+                    } else {
+                        var merged = new TemperatureSummary(t1.name, Math.min(t1.min, t2.min), Math.max(t1.max, t2.max), t1.total + t2.total,
+                                t1.sampleCount + t2.sampleCount);
+                        mergedMap.put(new String(t1.name), merged);
+                    }
                 }
-                else {
-                    var merged = new TemperatureSummary(t1.name, Math.min(t1.min, t2.min), Math.max(t1.max, t2.max), t1.total + t2.total,
-                            t1.sampleCount + t2.sampleCount);
-                    mergedMap.put(new String(t1.name), merged);
-                }
-
             }
         }
 
-        // System.out.println("TIME WITHOUT PRINT: " + (System.currentTimeMillis() - time));
+//         System.out.println("TIME WITHOUT PRINT: " + (System.currentTimeMillis() - time));
 
         boolean first = true;
         StringBuilder output = new StringBuilder(16_000);
@@ -241,8 +241,7 @@ public class CalculateAverage_berry120 {
         for (var value : new TreeSet<>(mergedMap.values())) {
             if (first) {
                 first = false;
-            }
-            else {
+            } else {
                 output.append(", ");
             }
             output.append(new String(value.name)).append("=").append((double) value.min / 10).append("/")
@@ -251,6 +250,8 @@ public class CalculateAverage_berry120 {
         output.append("}");
 
         System.out.println(output);
+
+        System.out.println("TIME: " + (System.currentTimeMillis() - time));
     }
 
 }
