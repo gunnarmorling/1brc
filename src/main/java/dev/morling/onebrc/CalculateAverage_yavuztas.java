@@ -118,8 +118,8 @@ public class CalculateAverage_yavuztas {
 
         void traverse(BiConsumer<KeyBuffer, Integer> consumer) {
 
-            int semiColonPos = 0;
             int lineBreakPos = 0;
+            int semiColonPos = 0;
             while (this.buffer.hasRemaining()) {
 
                 byte b;
@@ -163,34 +163,40 @@ public class CalculateAverage_yavuztas {
             return initial;
         }
 
+        // caching Math.pow calculation improves a lot!
+        // interestingly, instance field access is much faster than static field access
+        final int[] powerOfTenCache = new int[]{ 1, 10, 100 };
+
         int readTemperature(int length) {
             int temp = 0;
-            boolean negative = false;
-            int digits = length - 3;
-            byte b;
-            while ((b = this.buffer.get()) != '\n') {
-                if (b == '-') {
-                    negative = true;
-                    digits--;
-                    continue;
-                }
-                if (b == '.') {
-                    continue;
-                }
-                temp += (int) (Math.pow(10, digits--) * (b - 48));
+            final byte b1 = this.buffer.get(); // get first byte
+
+            int digits = length - 4; // digit position
+            final boolean negative = b1 == '-';
+            if (!negative) {
+                temp += this.powerOfTenCache[digits + 1] * (b1 - 48); // add first digit ahead
             }
+
+            byte b;
+            while ((b = this.buffer.get()) != '.') { // read until dot
+                temp += this.powerOfTenCache[digits--] * (b - 48);
+            }
+            b = this.buffer.get(); // read after dot, only one digit no loop
+            temp += this.powerOfTenCache[digits] * (b - 48);
+            this.buffer.get(); // skip line break
+
             return (negative) ? -temp : temp;
         }
 
         ByteBuffer getKeyRef(int length) {
             final ByteBuffer slice = this.buffer.slice().limit(length - 1);
-            skip(this.buffer, length);
+            skip(length);
             return slice;
         }
 
-        static void skip(ByteBuffer buffer, int length) {
-            final int pos = buffer.position();
-            buffer.position(pos + length);
+        void skip(int length) {
+            final int pos = this.buffer.position();
+            this.buffer.position(pos + length);
         }
 
     }
