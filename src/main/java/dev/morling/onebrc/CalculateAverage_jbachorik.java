@@ -31,19 +31,15 @@ import java.util.function.BiConsumer;
 
 public class CalculateAverage_jbachorik {
     interface Sliceable {
-        void reset();
+        Sliceable reset();
 
         void get(byte[] bytes);
-
-        byte get();
-
-        int getInt();
-
-        short getShort();
 
         long getLong();
 
         int len();
+
+        boolean hasAvailable();
     }
 
     private static final class ByteBufferSlice implements Sliceable {
@@ -56,23 +52,14 @@ public class CalculateAverage_jbachorik {
         }
 
         @Override
-        public void reset() {
+        public Sliceable reset() {
             buffer.rewind();
+            return this;
         }
 
         @Override
         public void get(byte[] bytes) {
             buffer.get(bytes);
-        }
-
-        @Override
-        public byte get() {
-            return buffer.get();
-        }
-
-        @Override
-        public int getInt() {
-            return buffer.getInt();
         }
 
         @Override
@@ -86,8 +73,8 @@ public class CalculateAverage_jbachorik {
         }
 
         @Override
-        public short getShort() {
-            return buffer.getShort();
+        public boolean hasAvailable() {
+            return buffer.remaining() > 0;
         }
     }
 
@@ -95,31 +82,44 @@ public class CalculateAverage_jbachorik {
         final ByteBuffer buffer;
         final int offset;
         final int len;
+        final int limit;
+        final int softLimit;
+        private int pos;
 
         public FastSlice(ByteBuffer buffer, int offset, int len) {
             this.buffer = buffer;
             this.offset = offset;
             this.len = len;
+            this.limit = offset + len;
+            this.softLimit = limit - 8;
+            this.pos = offset;
         }
 
-        public void reset() {
-            buffer.position(offset);
+        public Sliceable reset() {
+            pos = offset;
+            return this;
         }
 
         public void get(byte[] bytes) {
-            buffer.get(bytes);
-        }
-
-        public byte get() {
-            return buffer.get();
-        }
-
-        public int getInt() {
-            return buffer.getInt();
+            buffer.get(pos, bytes);
         }
 
         public long getLong() {
-            return buffer.getLong();
+            if (pos < softLimit) {
+                int p = pos;
+                pos += 8;
+                return buffer.getLong(p);
+            }
+            else if (softLimit >= 0) {
+                long mask = 0xFFFFFFFFFFFFFFFFL >>> ((8 - len % 8) * 8);
+                pos = limit;
+                return buffer.getLong(softLimit) & mask;
+            }
+            else {
+                long mask = 0xFFFFFFFFFFFFFFFFL << (-softLimit * 8);
+                pos = len;
+                return buffer.getLong(0) & mask;
+            }
         }
 
         public int len() {
@@ -127,8 +127,8 @@ public class CalculateAverage_jbachorik {
         }
 
         @Override
-        public short getShort() {
-            return buffer.getShort();
+        public boolean hasAvailable() {
+            return pos < limit;
         }
     }
 
@@ -185,106 +185,82 @@ public class CalculateAverage_jbachorik {
         private final StatsHolder[][] map = new StatsHolder[BUCKETS][BUCKET_SIZE];
 
         public Stats getOrInsert(ByteBuffer buffer, int len) {
+            buffer.mark();
+            int pos = buffer.position();
             int idx = bucketIndex(buffer, len);
-            int target = buffer.position();
-            Sliceable slice = new FastSlice(buffer, buffer.position() - len, len);
+            int target = pos + len;
+            buffer.reset();
+
             try {
                 StatsHolder[] bucket = map[idx];
                 if (bucket[0] == null) {
                     Stats stats = new Stats();
-                    bucket[0] = new StatsHolder(slice, stats);
+                    bucket[0] = new StatsHolder(new FastSlice(buffer, pos, len), stats);
                     return stats;
                 }
                 int offset = 0;
-                while (offset < BUCKET_SIZE && bucket[offset] != null && !equals(bucket[offset].slice, slice)) {
+                while (offset < BUCKET_SIZE && bucket[offset] != null && !equals(bucket[offset].slice, buffer, len)) {
                     offset++;
                 }
                 assert (offset <= BUCKET_SIZE);
                 if (bucket[offset] != null) {
                     return bucket[offset].stats;
-                } else {
+                }
+                else {
                     Stats stats = new Stats();
-                    bucket[offset] = new StatsHolder(slice, stats);
+                    bucket[offset] = new StatsHolder(new FastSlice(buffer, pos, len), stats);
                     return stats;
                 }
-            } finally {
+            }
+            finally {
                 buffer.position(target);
             }
         }
 
-        private final long[] leftBuffer = new long[16]; // max 128 bytes
-        private final long[] rightBuffer = new long[16]; // max 128 bytes
-
-        private boolean equals(Sliceable leftSlice, Sliceable rightSlice) {
-            if (leftSlice.len() != rightSlice.len()) {
+        private static boolean equals(Sliceable leftSlice, ByteBuffer rightSlice, int len) {
+            int limit = leftSlice.len();
+            if (limit != len) {
                 return false;
             }
 
-            int pos = 0;
-
-            int limit = leftSlice.len();
-            int lpos = pos;
-            int rpos = pos;
-            int bufPos = 0;
             leftSlice.reset();
-            while (lpos < limit - 7) {
-                leftBuffer[bufPos] = leftSlice.getLong();
-                lpos += 8;
-                bufPos++;
-            }
-            if (lpos < limit - 4) {
-                leftBuffer[bufPos] = (long)leftSlice.getInt() << 32;
-                lpos += 4;
-            }
-            if (lpos < limit -2) {
-                leftBuffer[bufPos] |= (long)leftSlice.getShort() << 16;
-                lpos += 2;
-            }
-            if (lpos < limit) {
-                leftBuffer[bufPos] |= (long)leftSlice.get() << 8;
-            }
-            rightSlice.reset();
-            bufPos = 0;
-            while (rpos < limit - 7) {
-                rightBuffer[bufPos] = rightSlice.getLong();
-                rpos += 8;
-                bufPos++;
-            }
-            if (rpos < limit - 4) {
-                rightBuffer[bufPos] = (long)rightSlice.getInt() << 32;
-                rpos += 4;
-            }
-            if (rpos < limit -2) {
-                rightBuffer[bufPos] |= (long)rightSlice.getShort() << 16;
-                rpos += 2;
-            }
-            if (rpos < limit) {
-                rightBuffer[bufPos] |= (long)rightSlice.get() << 8;
-            }
-//
-//            long val = (((bufferMask[0] & leftBuffer[0]) ^ (bufferMask[0] & rightBuffer[0])) &
-//                        ((bufferMask[1] & leftBuffer[1]) ^ (bufferMask[1] & rightBuffer[1])) |
-//                        ((bufferMask[2] & leftBuffer[2]) ^ (bufferMask[2] & rightBuffer[2])) |
-//                        ((bufferMask[3] & leftBuffer[3]) ^ (bufferMask[3] & rightBuffer[3])) |
-//                        ((bufferMask[4] & leftBuffer[4]) ^ (bufferMask[4] & rightBuffer[4])) |
-//                        ((bufferMask[5] & leftBuffer[5]) ^ (bufferMask[5] & rightBuffer[5])) |
-//                        ((bufferMask[6] & leftBuffer[6]) ^ (bufferMask[6] & rightBuffer[6])) |
-//                        ((bufferMask[7] & leftBuffer[7]) ^ (bufferMask[7] & rightBuffer[7])) |
-//                        ((bufferMask[8] & leftBuffer[8]) ^ (bufferMask[8] & rightBuffer[8])) |
-//                        ((bufferMask[9] & leftBuffer[9]) ^ (bufferMask[9] & rightBuffer[9])) |
-//                        ((bufferMask[10] & leftBuffer[10]) ^ (bufferMask[10] & rightBuffer[10])) |
-//                        ((bufferMask[11] & leftBuffer[11]) ^ (bufferMask[11] & rightBuffer[11])) |
-//                        ((bufferMask[12] & leftBuffer[12]) ^ (bufferMask[12] & rightBuffer[12])) |
-//                        ((bufferMask[13] & leftBuffer[13]) ^ (bufferMask[13] & rightBuffer[13])) |
-//                        ((bufferMask[14] & leftBuffer[14]) ^ (bufferMask[14] & rightBuffer[14])) |
-//                        ((bufferMask[15] & leftBuffer[15]) ^ (bufferMask[15] & rightBuffer[15])));
-//            return val == 0;
-            for (int i = 0; i < bufPos; i++) {
-                if (leftBuffer[i] != rightBuffer[i]) {
-                    return false;
+
+            try {
+                int i = 0;
+                int bbpos = rightSlice.position();
+                int bblimit = bbpos + len - 8;
+                while (leftSlice.hasAvailable() && i++ < len) {
+                    long l = leftSlice.getLong();
+                    long mask = 0xFFFFFFFFFFFFFFFFL;
+                    if (bbpos > bblimit) {
+                        int remainder = bbpos - bblimit;
+                        mask = mask >>> (remainder * 8);
+                        bbpos = bblimit;
+                    }
+                    long r = rightSlice.getLong(bbpos) & mask;
+                    bbpos += 8;
+                    if (l != r) {
+                        return false;
+                    }
                 }
+                // for (; i + 7 < limit; i += 8) {
+                // long l = leftSlice.getLong();
+                // long r = rightSlice.getLong();
+                // if (l != r) {
+                // return false;
+                // }
+                // }
+                // for (; i < limit; i++) {
+                // if (leftSlice.get() != rightSlice.get()) {
+                // return false;
+                // }
+                // }
+                return true;
             }
-            return true;
+            finally {
+                leftSlice.reset();
+                rightSlice.reset();
+            }
         }
 
         private static int bucketIndex(ByteBuffer buffer, int len) {
@@ -308,8 +284,28 @@ public class CalculateAverage_jbachorik {
                         + 31 * ((l >> 8) & 0xFF)
                         + (l & 0xFF);
             }
-            for (; i < len; i++) {
-                h = 31 * h + buffer.get();
+            int pos = buffer.position();
+            if (pos + 8 < buffer.limit()) {
+                long l = buffer.getLong();
+                int maskShift = 7;
+                for (; i < len; i++) {
+                    h = 31 * h + ((l >> 8 * maskShift--) & 0xff);
+                }
+                // h = 31L * 31 * 31 * 31 * 31 * 31 * 31 * 31 * h
+                // + 31L * 31 * 31 * 31 * 31 * 31 * 31 * ((l >> 56 & 0xFF))
+                // + 31 * 31 * 31 * 31 * 31 * 31 * ((l >> 48 & 0xFF))
+                // + 31 * 31 * 31 * 31 * 31 * ((l >> 40 & 0xFF))
+                // + 31 * 31 * 31 * 31 * ((l >> 32 & 0xFF))
+                // + 31 * 31 * 31 * ((l >> 24 & 0xFF))
+                // + 31 * 31 * ((l >> 16) & 0xFF)
+                // + 31 * ((l >> 8) & 0xFF)
+                // + (l & 0xFF);
+                buffer.position(pos);
+            }
+            else {
+                for (; i < len; i++) {
+                    h = 31 * h + buffer.get();
+                }
             }
             return h & 0xFFFFFFFFL;
         }
@@ -471,50 +467,27 @@ public class CalculateAverage_jbachorik {
 
     private static short fastParse(ByteBuffer bb, int len, boolean fast) {
         assert (len <= 5);
-        int targetPos = bb.position() + len;
-        long word;
-        if (!fast) {
-            byte[] bytes = new byte[8];
-            bb.get(bytes, 0, len);
-            word = ((long) bytes[0] << 56)
-                    | ((long) bytes[1] & 0xFF) << 48
-                    | ((long) bytes[2] & 0xFF) << 40
-                    | ((long) bytes[3] & 0xFF) << 32
-                    | ((long) bytes[4] & 0xFF) << 24
-                    | ((long) bytes[5] & 0xFF) << 16
-                    | ((long) bytes[6] & 0xFF) << 8
-                    | ((long) bytes[7] & 0xFF);
-        }
-        else {
-            word = bb.getLong();
-        }
-        word ^= fastParserMask;
+        int pos = bb.position();
+        int targetPos = pos + len - 8;
+        int shift = (8 - len) * 8;
+        long mask = 0xFFFFFFFFFFFFFFFFL >>> shift;
         bb.position(targetPos);
+        long word = bb.getLong() & mask;
 
-        short val = 0;
-        short multiplier = 1;
-        byte negative = 0;
+        // 1 when floating point at position len - 2; otherwise 10
+        int multiplier = (9 / ((int) ((word & 0x2e00) >> 10))) + 1;
+        int dotMultiplier = 1 - (multiplier / 9);
+        int negative = ((int) ((word >> (len * 8)) & 0xff) ^ 0x12) / 63;
+        word ^= fastParserMask >>> shift;
 
-        int negPos = firstInstance(word, minusPattern);
-        if (negPos == 0) {
-            negative = 1;
-        }
-        assert (negPos == 8);
+        word &= (mask >> 8 * negative) & ~((0xFF * dotMultiplier) << 8);
 
-        int dotPos = firstInstance(word, dotPattern);
-        if (dotPos == 8 || (dotPos + negative) >= len) {
-            multiplier = 10;
-        }
+        int v1 = (int) word & 0xff;
+        int v2 = 10 * ((int) (word >> 8) & 0xff);
+        int v3 = multiplier * 10 * ((int) (word >> 16) & 0xff);
+        int v4 = multiplier * 100 * ((int) (word >> 24) & 0xff);
 
-        for (int i = 0; i < len; i++) {
-            int digit = (int) ((word >>> (7 - i) * 8) & 0xFF);
-            if (digit > 9) {
-                continue;
-            }
-            val = (short) (val * 10 + digit);
-        }
-        short ret = (short) ((val * multiplier) * (negative == 1 ? -1 : 1));
-        return ret;
+        return (short) ((v1 + v2 + v3 + v4) * multiplier * (negative == 1 ? -1 : 1));
     }
 
     private static ByteBuffer[] mmap(FileChannel fc, int splitSize) throws Exception {
