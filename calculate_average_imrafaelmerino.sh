@@ -18,7 +18,7 @@
 source "$HOME/.sdkman/bin/sdkman-init.sh"
 sdk use java 21.0.1-graal 1>&2
 java -version
-JAVA_OPTS=""
-CHUNK_SIZE=$((100 * 1024 * 1024))
+JAVA_OPTS="-Xms512m"
+CHUNK_SIZE=$((20*1024*1024))
 time java  $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar \
 dev.morling.onebrc.CalculateAverage_imrafaelmerino $CHUNK_SIZE

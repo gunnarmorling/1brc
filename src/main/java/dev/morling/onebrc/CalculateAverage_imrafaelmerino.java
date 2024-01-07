@@ -14,11 +14,9 @@
  *  limitations under the License.
  */
 package dev.morling.onebrc;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.channels.FileChannel.MapMode;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
@@ -39,10 +37,9 @@ import java.util.function.Supplier;
  *  Executed 10 times in my machine with a chunk size of 20MB
  *
  *     21.0.1-graal
- *     avg: 15,366 sg | min: 14,878 sg | max: 15,937 sg | acc: 153,657 sg | times: 10
+  *     avg: 12,962 sg | min: 12,823 sg | max: 13,153 sg | acc: 64,808 sg | times: 5
+
  *
- *     21-oracle
- *     avg: 17,032 sg | min: 16,448 sg | max: 17,424 sg | acc: 170,325 sg | times: 10
  *
  *
  *
@@ -81,7 +78,7 @@ import java.util.function.Supplier;
  *
  *  - Commong guys! stop rolling the dice with fancy optimizations and reiventing hash maps structures and
  *   hash algorithms. This should be <a href="https://dailypapert.com/hard-fun/">hard fun</a>
- *   and not tedious. Dont get me wrong! just an opinion :)
+ *   and not tedious. Dont get me wrong! just an opinion :) I'
  *
  * - Last but not least, Gunnar Morling, you rock man! Thanks for your time and effort.
  *
@@ -106,7 +103,7 @@ public class CalculateAverage_imrafaelmerino {
 
         try (var fileChannel = FileChannel.open(Paths.get(file),
                 StandardOpenOption.READ)) {
-            var stats = fileMemoryList(fileChannel, chunkSize)
+            var stats = memoryBuffers(fileChannel, chunkSize)
                     .stream()
                     .parallel()
                     .map(p -> ManagedComputation.compute(() -> parse(p)))
@@ -120,109 +117,96 @@ public class CalculateAverage_imrafaelmerino {
 
     private static Map<String, Stat> combine(Map<String, Stat> xs,
                                              Map<String, Stat> ys) {
-
         Map<String, Stat> result = new HashMap<>();
-
         for (var key : xs.keySet()) {
             var m1 = xs.get(key);
             var m2 = ys.get(key);
             var combined = (m2 == null) ? m1 : (m1 == null) ? m2 : Stat.combine(m1, m2);
             result.put(key, combined);
         }
-
         for (var key : ys.keySet())
             result.putIfAbsent(key, ys.get(key));
         return result;
-
     }
 
     private static Map<String, Stat> parse(ByteBuffer bb) {
         Map<String, Stat> stats = new HashMap<>();
-        var limit = bb.limit();
         var field = new byte[FIELD_SIZE];
-        var number = 0;
-        var sign = 1;
-
-        while (bb.position() < limit) {
+        int number = 0;
+        int sign = 1;
+        while (bb.hasRemaining()) {
             int fieldCurrentIndex = 0;
-
-            while (bb.position() < limit) {
+            while (bb.hasRemaining()) {
                 byte fieldByte = bb.get();
-                if (fieldByte == ';')
+                if (fieldByte == ';' || fieldByte == '\n')
                     break;
                 field[fieldCurrentIndex++] = fieldByte;
             }
-
             String fieldStr = new String(field, 0, fieldCurrentIndex);
+            if (bb.hasRemaining() && bb.get() == '-')
+                sign = -1;
+            else
+                bb.position(bb.position() - 1);
 
-            while (bb.position() < limit) {
+            while (bb.hasRemaining()) {
                 byte numberByte = bb.get();
-                if (numberByte == '-')
-                    sign = -1;
-                else if (numberByte == '\n')
+                if (numberByte == '\n')
                     break;
                 else if (numberByte != '.')
                     number = number * 10 + (numberByte - '0');
             }
-
             stats.computeIfAbsent(fieldStr, k -> new Stat()).update(sign * number);
             number = 0;
             sign = 1;
         }
-
         return stats;
     }
 
-    private static List<ByteBuffer> fileMemoryList(FileChannel fileChannel, long chunkSize) throws IOException {
+    private static List<ByteBuffer> memoryBuffers(FileChannel fileChannel, long chunkSize) throws IOException {
         List<ByteBuffer> buffers = new ArrayList<>();
-        ByteBuffer reusableBuffer = ByteBuffer.allocateDirect((int) chunkSize);
-
+        var buffer = ByteBuffer.allocateDirect((int) chunkSize);
         long start = 0;
         long size = fileChannel.size();
-
         while (start < size) {
-            reusableBuffer.clear();
-            fileChannel.read(reusableBuffer, start);
-            reusableBuffer.flip();
-
-            while (reusableBuffer.get(reusableBuffer.limit() - 1) != '\n') {
-                reusableBuffer.limit(reusableBuffer.limit() - 1);
-            }
-
-            buffers.add(reusableBuffer.duplicate());
-            start += reusableBuffer.limit();
+            buffer.clear();
+            fileChannel.read(buffer, start);
+            buffer.flip();
+            while (buffer.get(buffer.limit() - 1) != '\n')
+                buffer.limit(buffer.limit() - 1);
+            buffers.add(buffer.duplicate());
+            start += buffer.limit();
         }
-
         return buffers;
     }
 
     private static final class Stat {
+        private short min = Short.MAX_VALUE;
+        private short max = Short.MIN_VALUE;
+        private int sum = 0;
+        private int count = 0;
 
-        private int min = Integer.MAX_VALUE;
-        private int max = Integer.MIN_VALUE;
-        private long sum = 0L;
-        private long count = 0L;
-
-        public static Stat combine(Stat m1,
-                                   Stat m2) {
+        public static Stat combine(Stat m1, Stat m2) {
             var stat = new Stat();
-            stat.min = Math.min(m1.min, m2.min);
-            stat.max = Math.max(m1.max, m2.max);
+            stat.min = (short) Math.min(m1.min, m2.min);
+            stat.max = (short) Math.max(m1.max, m2.max);
             stat.sum = m1.sum + m2.sum;
             stat.count = m1.count + m2.count;
             return stat;
         }
 
         private void update(int value) {
-            this.min = Math.min(this.min, value);
-            this.max = Math.max(this.max, value);
+            short shortValue = (short) value;
+            this.min = (short) Math.min(this.min, shortValue);
+            this.max = (short) Math.max(this.max, shortValue);
             this.sum += value;
             this.count++;
         }
 
         @Override
         public String toString() {
-            return round(min / 10.0) + "/" + round((sum / 10.0) / count) + "/" + round(max / 10.0);
+            StringBuilder result = new StringBuilder();
+            result.append(round(min / 10.0)).append("/").append(round((sum / 10.0) / count)).append("/").append(round(max / 10.0));
+            return result.toString();
         }
 
         private double round(double value) {
@@ -241,7 +225,6 @@ public class CalculateAverage_imrafaelmerino {
                 Thread.currentThread().interrupt();
                 throw new RuntimeException(e);
             }
-
         }
 
         private static class ManagedSupplier<T> implements ForkJoinPool.ManagedBlocker {
