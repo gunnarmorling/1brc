@@ -23,13 +23,18 @@ import java.nio.CharBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class CalculateAverage_eriklumme {
@@ -57,17 +62,15 @@ public class CalculateAverage_eriklumme {
         READ_VALUE
     }
 
-    public static class DataProcessor implements Callable<Void> {
+    public static class DataProcessor implements Callable<Map<String, StationMeasurement>> {
 
-        private final Map<String, StationMeasurement> stationMeasurementMap;
         private final int processorIndex;
         private final int size;
         private final FileChannel fileChannel;
         private final CountDownLatch countDownLatch;
 
-        public DataProcessor(Map<String, StationMeasurement> stationMeasurementMap, int processorIndex, int size, FileChannel fileChannel,
+        public DataProcessor(int processorIndex, int size, FileChannel fileChannel,
                              CountDownLatch countDownLatch) {
-            this.stationMeasurementMap = stationMeasurementMap;
             this.processorIndex = processorIndex;
             this.size = size;
             this.fileChannel = fileChannel;
@@ -75,7 +78,9 @@ public class CalculateAverage_eriklumme {
         }
 
         @Override
-        public Void call() throws Exception {
+        public Map<String, StationMeasurement> call() throws Exception {
+            Map<String, StationMeasurement> map = new ConcurrentSkipListMap<>();
+
             char[] stationBuffer = new char[40];
             int stationIndex = 0;
 
@@ -89,7 +94,7 @@ public class CalculateAverage_eriklumme {
 
             long offset = ((long) size) * processorIndex;
             // TODO: Don't use hardcoded index
-            long sizeWithOffset = processorIndex == 19 ? size : size + LINE_OVERHEAD;
+            long sizeWithOffset = processorIndex == 99 ? size : size + LINE_OVERHEAD;
 
             // System.out.println("[" + Thread.currentThread().getName() + "] " + "Starting...");
 
@@ -113,8 +118,7 @@ public class CalculateAverage_eriklumme {
 
                             double value = Double.parseDouble(String.valueOf(Arrays.copyOfRange(valueBuffer, 0, valueIndex)));
 
-                            // TODO: Synchronization or atomic fields
-                            StationMeasurement stationMeasurement = stationMeasurementMap.computeIfAbsent(stationName, StationMeasurement::new);
+                            StationMeasurement stationMeasurement = map.computeIfAbsent(stationName, StationMeasurement::new);
 
                             stationMeasurement.count++;
                             stationMeasurement.min = Math.min(value, stationMeasurement.min);
@@ -149,7 +153,7 @@ public class CalculateAverage_eriklumme {
                     String stationName = String.valueOf(Arrays.copyOfRange(stationBuffer, 0, stationIndex));
                     double value = Double.parseDouble(String.valueOf(Arrays.copyOfRange(valueBuffer, 0, valueIndex)));
 
-                    StationMeasurement stationMeasurement = stationMeasurementMap.computeIfAbsent(stationName, StationMeasurement::new);
+                    StationMeasurement stationMeasurement = map.computeIfAbsent(stationName, StationMeasurement::new);
 
                     stationMeasurement.count++;
                     stationMeasurement.min = Math.min(value, stationMeasurement.min);
@@ -170,13 +174,13 @@ public class CalculateAverage_eriklumme {
             finally {
                 countDownLatch.countDown();
             }
-            return null;
+            return map;
         }
     }
 
-    public static void main(String[] args) throws IOException, InterruptedException {
+    public static void main(String[] args) throws Exception {
         int numDividers = 100;
-        Map<String, StationMeasurement> map = new ConcurrentSkipListMap<>();
+        Map<String, StationMeasurement> map = new TreeMap<>();
         CountDownLatch countDownLatch = new CountDownLatch(numDividers);
 
         // try (BufferedReader reader = new BufferedReader(new FileReader(FILE))) {
@@ -196,14 +200,28 @@ public class CalculateAverage_eriklumme {
                 FileChannel channel = fileInputStream.getChannel()) {
 
             long fileSize = channel.size();
-            System.out.println("File is " + fileSize);
+            // System.out.println("File is " + fileSize);
 
             int fileSizePerThread = (int) (fileSize / numDividers);
 
+            List<Future<Map<String, StationMeasurement>>> futures = new ArrayList<>(numDividers);
             for (int i = 0; i < numDividers; i++) {
-                executorService.submit(new DataProcessor(map, i, fileSizePerThread, channel, countDownLatch));
+                futures.add(executorService.submit(new DataProcessor(i, fileSizePerThread, channel, countDownLatch)));
             }
             countDownLatch.await();
+
+            // TODO: Try using multiple threads, try freeing up memory quicker by merging as they complete
+            for (Future<Map<String, StationMeasurement>> future : futures) {
+                Map<String, StationMeasurement> futureMap = future.get();
+                futureMap.entrySet().forEach(entry -> map.merge(entry.getKey(), entry.getValue(),
+                        (st1, st2) -> {
+                            st1.sum += st2.sum;
+                            st1.count += st2.count;
+                            st1.min = Math.min(st1.min, st2.min);
+                            st1.max = Math.max(st1.max, st2.max);
+                            return st1;
+                        }));
+            }
         }
 
         StringBuilder result = new StringBuilder("{");
