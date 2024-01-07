@@ -33,7 +33,7 @@ public class CalculateAverage_flippingbits {
 
     private static final String FILE = "./measurements.txt";
 
-    private static final long CHUNK_SIZE = 100 * 1024 * 1024; // 100 MB
+    private static final long CHUNK_SIZE = 10 * 1024 * 1024; // 10 MB
 
     private static final int SIMD_LANE_LENGTH = ShortVector.SPECIES_MAX.length();
 
