@@ -43,6 +43,8 @@ public class CalculateAverage_mtopolnik {
     private static final long NATIVE_MEM_PER_THREAD = (NAME_SLOT_SIZE + StatsAccessor.SIZEOF) * STATS_TABLE_SIZE;
     private static final long NATIVE_MEM_ON_8_THREADS = 8 * NATIVE_MEM_PER_THREAD;
     public static final String MEASUREMENTS_TXT = "measurements.txt";
+    private static final byte SEMICOLON = (byte) ';';
+    private static final long BROADCAST_SEMICOLON = broadcastSemicolon();
 
     static class StationStats {
         String name;
@@ -106,8 +108,6 @@ public class CalculateAverage_mtopolnik {
 
     private static class ChunkProcessor implements Runnable {
         private static final long HASHBUF_SIZE = 8;
-        private static final byte SEMICOLON = (byte) ';';
-        private static final long BROADCAST_SEMICOLON = broadcastByte(SEMICOLON);
 
         private final long chunkStart;
         private final long chunkLimit;
@@ -129,7 +129,6 @@ public class CalculateAverage_mtopolnik {
             this.myIndex = myIndex;
         }
 
-
         @Override
         public void run() {
             try (Arena confinedArena = Arena.ofConfined()) {
@@ -140,7 +139,7 @@ public class CalculateAverage_mtopolnik {
                 namesMem.fill((byte) 0);
                 hashBuf = confinedArena.allocate(HASHBUF_SIZE);
                 while (cursor < inputMem.byteSize()) {
-                    recordMeasurementAndAdvanceCursor(bytePos(inputMem, SEMICOLON, BROADCAST_SEMICOLON, cursor));
+                    recordMeasurementAndAdvanceCursor(bytePosOfSemicolon(inputMem, cursor));
                 }
                 var exportedStats = new ArrayList<StationStats>(10_000);
                 for (int i = 0; i < STATS_TABLE_SIZE; i++) {
@@ -267,55 +266,55 @@ public class CalculateAverage_mtopolnik {
         }
     }
 
-    static long bytePos(MemorySegment haystack, byte needle, long broadcastNeedle, long start) {
+    static long bytePosOfSemicolon(MemorySegment haystack, long start) {
         return ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN
-                ? bytePosLittleEndian(haystack, start, needle, broadcastNeedle)
-                : bytePosBigEndian(haystack, start, needle, broadcastNeedle);
+                ? bytePosLittleEndian(haystack, start)
+                : bytePosBigEndian(haystack, start);
     }
 
     // Adapted from https://jameshfisher.com/2017/01/24/bitwise-check-for-zero-byte/
     // and https://github.com/ashvardanian/StringZilla/blob/14e7a78edcc16b031c06b375aac1f66d8f19d45a/stringzilla/stringzilla.h#L139-L169
-    static long bytePosLittleEndian(MemorySegment haystack, long start, byte needle, long broadcastNeedle) {
+    static long bytePosLittleEndian(MemorySegment haystack, long start) {
         long limit = haystack.byteSize() - Long.BYTES + 1;
         long offset = start;
         for (; offset < limit; offset += Long.BYTES) {
             var block = haystack.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
-            final long diff = block ^ broadcastNeedle;
+            final long diff = block ^ BROADCAST_SEMICOLON;
             long matchIndicators = (diff - 0x0101010101010101L) & ~diff & 0x8080808080808080L;
             if (matchIndicators != 0) {
                 return offset + Long.numberOfTrailingZeros(matchIndicators) / 8;
             }
         }
-        return simpleSearch(haystack, needle, offset);
+        return simpleSearch(haystack, offset);
     }
 
     // Adapted from https://richardstartin.github.io/posts/finding-bytes
-    static long bytePosBigEndian(MemorySegment haystack, long start, byte needle, long broadcastNeedle) {
+    static long bytePosBigEndian(MemorySegment haystack, long start) {
         long limit = haystack.byteSize() - Long.BYTES + 1;
         long offset = start;
         for (; offset < limit; offset += Long.BYTES) {
             var block = haystack.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
-            final long diff = block ^ broadcastNeedle;
+            final long diff = block ^ BROADCAST_SEMICOLON;
             long matchIndicators = (diff & 0x7F7F7F7F7F7F7F7FL) + 0x7F7F7F7F7F7F7F7FL;
             matchIndicators = ~(matchIndicators | diff | 0x7F7F7F7F7F7F7F7FL);
             if (matchIndicators != 0) {
                 return offset + Long.numberOfLeadingZeros(matchIndicators) / 8;
             }
         }
-        return simpleSearch(haystack, needle, offset);
+        return simpleSearch(haystack, offset);
     }
 
-    private static long broadcastByte(byte val) {
-        long broadcast = val;
-        broadcast |= broadcast << 8;
-        broadcast |= broadcast << 16;
-        broadcast |= broadcast << 32;
-        return broadcast;
+    private static long broadcastSemicolon() {
+        long nnnnnnnn = SEMICOLON;
+        nnnnnnnn |= nnnnnnnn << 8;
+        nnnnnnnn |= nnnnnnnn << 16;
+        nnnnnnnn |= nnnnnnnn << 32;
+        return nnnnnnnn;
     }
 
-    private static long simpleSearch(MemorySegment haystack, byte needle, long offset) {
+    private static long simpleSearch(MemorySegment haystack, long offset) {
         for (; offset < haystack.byteSize(); offset++) {
-            if (haystack.get(JAVA_BYTE, offset) == needle) {
+            if (haystack.get(JAVA_BYTE, offset) == SEMICOLON) {
                 return offset;
             }
         }
