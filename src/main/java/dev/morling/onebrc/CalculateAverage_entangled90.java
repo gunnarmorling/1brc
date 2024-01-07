@@ -88,7 +88,7 @@ class ProcessorMap {
     Map<BytesWrapper, AggregatedProcessor> processors = new HashMap<>(1024);
 
     public void printResults() {
-        System.out.println("Processed: " + processors.entrySet().stream().mapToLong(e -> e.getValue().count).sum());
+        // System.out.println("Processed: " + processors.entrySet().stream().mapToLong(e -> e.getValue().count).sum());
         System.out.print("{");
         System.out.print(
                 processors.entrySet().stream()
