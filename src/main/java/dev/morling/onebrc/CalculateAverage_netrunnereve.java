@@ -42,7 +42,7 @@ public class CalculateAverage_netrunnereve {
 
             HashMap<String, MeasurementAggregator> staHash = new HashMap<String, MeasurementAggregator>();
 
-            byte[] scratch = new byte[50]; // this will be auto-enlarged if necessary
+            byte[] scratch = new byte[100]; // <= 100 characters in station name
             MeasurementAggregator ma = null;
 
             long h = 0;
@@ -107,9 +107,6 @@ public class CalculateAverage_netrunnereve {
                     }
                     else if (cur == 59) { // ;
                         int len = i - head;
-                        if (scratch.length < len) { // enlarge scratch if it's too small for us
-                            scratch = new byte[scratch.length * 10];
-                        }
 
                         // this is faster than filling scratch immediately after each byte is read
                         mbuf.position(head);
