@@ -57,6 +57,7 @@ public class CalculateAverage_netrunnereve {
                         scratch = new byte[scratch.length * 10];
                     }
 
+                    // this is faster than filling scratch immediately after each byte is read
                     mbuf.position(head);
                     mbuf.get(scratch, 0, len);
                     String station = new String(scratch, 0, len, StandardCharsets.UTF_8);
@@ -108,7 +109,7 @@ public class CalculateAverage_netrunnereve {
                 }
             }
 
-            // this is actually faster than filling staArr during file read
+            // this is faster than filling staArr during file read
             String[] staArr = new String[staHash.size()];
             int j = 0;
             for (String i : staHash.keySet()) {
