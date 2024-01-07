@@ -19,6 +19,8 @@ import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.FileReader;
 import java.io.IOException;
+import java.lang.management.GarbageCollectorMXBean;
+import java.lang.management.ManagementFactory;
 import java.nio.CharBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -42,8 +44,8 @@ public class CalculateAverage_eriklumme {
 
     private static final String FILE = "./measurements.txt";
     private static final int NUM_CPUS = 8;
-    private static final int LINE_OVERHEAD = 100;
-    private static final int NUM_TASKS = 100;
+    private static final int LINE_OVERHEAD = 200;
+    private static final int NUM_TASKS = NUM_CPUS * 6;
 
     private static class StationMeasurement {
         private final String stationName;
@@ -55,7 +57,7 @@ public class CalculateAverage_eriklumme {
         private double min = Double.POSITIVE_INFINITY;
         private double max = Double.NEGATIVE_INFINITY;
         private double sum = 0;
-        private long count = 0;
+        private int count = 0;
     }
 
     private enum Mode {
@@ -92,13 +94,8 @@ public class CalculateAverage_eriklumme {
             Mode mode = processorIndex == 0 ? Mode.READ_STATION : Mode.UNINITIALIZED;
             byte c = 0;
 
-            String name = Thread.currentThread().getName();
-
             long offset = size * processorIndex;
             long sizeWithOverhead = Math.min(size + LINE_OVERHEAD, fileSize - offset);
-            // System.out.format("Process '%d' want to handle '%d' with overhead '%d' from offset '%d' but are limited to '%d' because of file size '%d'%n", processorIndex,
-            // size, (size + LINE_OVERHEAD),
-            // offset, fileSize - offset, fileSize);
 
             try {
                 MappedByteBuffer buffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, offset, sizeWithOverhead);
@@ -109,8 +106,6 @@ public class CalculateAverage_eriklumme {
                         // We have a station to store
                         if (mode == Mode.READ_VALUE) {
                             String stationName = new String(Arrays.copyOfRange(stationBuffer, 0, stationIndex), StandardCharsets.UTF_8);
-
-                            // TODO: More efficient way?
                             double value = Double.parseDouble(new String(Arrays.copyOfRange(valueBuffer, 0, valueIndex)));
 
                             StationMeasurement stationMeasurement = map.computeIfAbsent(stationName, StationMeasurement::new);
@@ -159,12 +154,7 @@ public class CalculateAverage_eriklumme {
                 }
 
             }
-            catch (Error e) {
-                System.out.println("[" + name + "] ERROREREROROOR");
-                System.out.println(Thread.currentThread().getName() + " >>>>>>>>>>>>>>>>>>>>>>>>>>>>> MUCH EXCEPTION WOW");
-                System.out.println("Station buffer: " + Arrays.toString(stationBuffer));
-                System.out.println("Value buffer: " + Arrays.toString(valueBuffer));
-                System.out.println("Mode: " + mode + ", char '" + c + "'");
+            catch (Throwable e) {
                 e.printStackTrace();
                 System.exit(1);
             }
@@ -181,19 +171,6 @@ public class CalculateAverage_eriklumme {
     public static void main(String[] args) throws Exception {
         Map<String, StationMeasurement> map = new TreeMap<>();
         CountDownLatch countDownLatch = new CountDownLatch(NUM_TASKS);
-
-        // try (BufferedReader reader = new BufferedReader(new FileReader(FILE))) {
-        // reader.lines().forEach(line -> {
-        // if (line.startsWith("İzmir")) {
-        // double value = Double.parseDouble(line.substring(6));
-        // if (value < -20) {
-        // System.out.println("Got Izmir value " + value);
-        // }
-        // }
-        // });
-        // }
-        // System.exit(1);
-
         Locale.setDefault(Locale.US);
 
         try (ExecutorService executorService = Executors.newFixedThreadPool(NUM_CPUS);
@@ -201,15 +178,15 @@ public class CalculateAverage_eriklumme {
                 FileChannel channel = fileInputStream.getChannel()) {
 
             fileSize = channel.size();
-            // System.out.println("File is " + fileSize);
 
-            // TODO: More sensible calculation instead of hardcoding num tasks
-            int fileSizePerThread = Math.max((int) Math.ceil(fileSize / (float) NUM_TASKS), 1000);
+            int fileSizePerThread = (int) Math.max(Math.ceil(fileSize / (float) NUM_TASKS), 1000);
             long sizeAccountedFor = 0;
 
             List<Future<Map<String, StationMeasurement>>> futures = new ArrayList<>(NUM_TASKS);
             for (int i = 0; i < NUM_TASKS; i++) {
                 if (sizeAccountedFor >= fileSize) {
+                    // The file is so small that because of the minimum file size per thread, we've covered it in less
+                    // threads than expected
                     countDownLatch.countDown();
                     continue;
                 }
@@ -247,5 +224,13 @@ public class CalculateAverage_eriklumme {
         result.append("}");
 
         System.out.println(result);
+    }
+
+    private static long getGarbageCollectionTime() {
+        long collectionTime = 0;
+        for (GarbageCollectorMXBean garbageCollectorMXBean : ManagementFactory.getGarbageCollectorMXBeans()) {
+            collectionTime += garbageCollectorMXBean.getCollectionTime();
+        }
+        return collectionTime;
     }
 }
