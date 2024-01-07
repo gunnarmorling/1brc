@@ -33,8 +33,15 @@ abstract class CalculateAverage_cliffclick {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 1)
-            args = new String[]{ "./measurements.txt" };
-        System.out.println(work(args));
+            args = new String[]{ "measurements.txt" };
+
+        Work w = work(args);
+        String foo = w.toString();
+        byte[] bar = new byte[foo.length()];
+        foo.getBytes(0, foo.length(), bar, 0);
+        // System.out.print(foo); // Breaks on weird encodings, because System.out Absolutely Most Definitely has to "encode" this String
+        System.out.write(bar);
+        System.out.write('\n');
     }
 
     // General work flow:
@@ -69,26 +76,25 @@ abstract class CalculateAverage_cliffclick {
                 }
             };
             T.start();
-            // T.join();
         }
 
         TS[0].join();
         Work W = WS[0];
         for (int i = 1; i < ncpus; i++) {
             TS[i].join();
-            W = W.reduce(WS[i]);
+            W.reduce(WS[i]);
         }
         return W;
     }
 
-    static Work tstart(Work w, File f, long start, long len) {
+    static void tstart(Work w, File f, long start, long len) {
         try {
             // Thread gets a chunk of work
             FileChannel fc = FileChannel.open(f.toPath(), StandardOpenOption.READ);
             final int MAX_MAP = 1 << 30;
 
             for (long s = start; s < start + len; s += MAX_MAP) {
-                int maxlen = (int) Math.min(len, MAX_MAP); // Length capped at MAX_MAP
+                int maxlen = (int) Math.min(len + 1, MAX_MAP); // Length capped at MAX_MAP
                 long rem = f.length() - s;
                 int mlen = (int) Math.min(rem, maxlen + 100); // Add a little extra so can finish out a line
                 int clen = (int) Math.min(rem, maxlen);
@@ -104,7 +110,6 @@ abstract class CalculateAverage_cliffclick {
         catch (IOException ioe) {
             throw new RuntimeException(ioe);
         }
-        return w;
     }
 
     // Has a zero byte in a long
@@ -120,8 +125,8 @@ abstract class CalculateAverage_cliffclick {
         int max = mmap.limit();
         // If start>0, skip until first newline
         if (skip1) {
-            while (mmap.get(idx) != '\n')
-                idx++;
+            while (mmap.get(idx++) != '\n')
+                ;
             // WINDOWS
             // idx++;
         }
@@ -157,13 +162,14 @@ abstract class CalculateAverage_cliffclick {
                 hasM = has0(x ^ HASSEMI);
             }
             // Found a semicolon this word.
-            // There is only one, because city names are not that short.
             // The high bit of the byte in question is set.
-            int semidx = Long.numberOfTrailingZeros(hasM);
-            int shr = semidx + 1;
+            int shr = Long.numberOfTrailingZeros(hasM) + 1;
             if (shr != 64) {
+                long hasM2 = hasM >>> shr;
+                if (hasM2 != 0) // Long word spans 2 cities (nasty test case)
+                    shr += Long.numberOfTrailingZeros(hasM2) + 1;
                 n8 ^= (x >> shr);
-                idx += 8 - ((semidx + 1) >> 3);
+                idx += 8 - (shr >> 3);
             }
 
             // Skip semicolon
@@ -199,7 +205,7 @@ abstract class CalculateAverage_cliffclick {
     }
 
     private static class Work {
-        private static final int TAB_SIZE = 0x800; // 512 for 413 cities
+        private static final int TAB_SIZE = 0x4000; // 512 for 413 cities
         // Fixed size hashtable. Longs are packed to hold the data.
         // cnt uhash
         // 8 7 6 5 4 3 2 1
@@ -209,35 +215,30 @@ abstract class CalculateAverage_cliffclick {
         String[] cities = new String[TAB_SIZE]; // Same index holds city names
 
         // Gather for city bits
-        final byte[] city = new byte[32];
+        final byte[] city = new byte[256];
 
         void insert(long n8, int temp, MappedByteBuffer mmap, int idx) {
             // 3 bytes uniquely id city, left at 4
-            int uhash = ((int) uhash_final(n8)) & 0xFFFFFF;
+            int uhash = (int) uhash_final(n8);
             // Index in small table
-            int ihash = uhash;
-            ihash = ihash ^ (ihash >> 17);
-            ihash = ihash + 29 * uhash;
-            ihash &= (TAB_SIZE - 1);
-
+            int ihash = hash_hash(uhash);
             long cnt_key = table[(ihash << 1)];
             long min_max = table[(ihash << 1) + 1];
             int key = key(cnt_key);
-            int probes = 0;
             while (key != uhash) {
                 if (key == 0) {
                     // Miss in hash table
-                    cnt_key = uhash;
-                    min_max = min_max(0x7FFF, 0, 0);
+                    cnt_key = uhash & 0xFFFFFFFFL;
+                    min_max = min_max(0x7FFF, 0xF000, 0);
                     // Put city name in cities
                     new_city(ihash, mmap, idx);
                     break;
                 }
                 // Reprobe
-                ihash = (ihash + (uhash | 1)) & (TAB_SIZE - 1);
+                ihash = reprobe(ihash, uhash);
                 cnt_key = table[(ihash << 1)];
                 min_max = table[(ihash << 1) + 1];
-                key = (int) cnt_key;
+                key = key(cnt_key);
             }
 
             // Break down parts
@@ -265,32 +266,40 @@ abstract class CalculateAverage_cliffclick {
             byte c;
             while ((c = mmap.get(idx++)) != ';')
                 city[i++] = c;
-            cities[ihash] = new String(city, 0, i);
+            cities[ihash] = new String(city, 0, 0, i);
         }
 
-        // Convert the large unique hash into a smaller table hash
-        int ihash(int uhash) {
+        private static int hash_hash(int uhash) {
             // Index in small table
             int ihash = uhash;
             ihash = ihash ^ (ihash >> 17);
             ihash = ihash + 29 * uhash;
             ihash &= (TAB_SIZE - 1);
+            return ihash;
+        }
 
-            long cnt_key = table[(ihash << 1)];
+        private static int reprobe(int ihash, int uhash) {
+            return (ihash + (uhash | 1)) & (TAB_SIZE - 1);
+        }
+
+        // Convert the large unique hash into a smaller table hash
+        int ihash(int uhash) {
+            // Index in small table
+            int ihash = hash_hash(uhash);
+            long cnt_key = table[ihash << 1];
             int key = key(cnt_key);
-            int probes = 0;
             while (key != uhash) {
                 if (key == 0)
                     return ihash;
                 // Reprobe
-                ihash = (ihash + (uhash | 1)) & (TAB_SIZE - 1);
+                ihash = reprobe(ihash, uhash);
                 cnt_key = table[(ihash << 1)];
                 key = key(cnt_key);
             }
             return ihash;
         }
 
-        Work reduce(Work w) {
+        void reduce(Work w) {
             for (int i = 0; i < w.cities.length; i++) {
                 if (w.cities[i] == null)
                     continue;
@@ -318,10 +327,7 @@ abstract class CalculateAverage_cliffclick {
                 sum0 += sum;
                 min0 = Math.min(min0, min);
                 max0 = Math.max(max0, max);
-                if (key0 != 0) {
-                    assert key0 == key;
-                }
-                else {
+                if (key0 == 0) {
                     key0 = key;
                     min0 = min;
                     cities[ihash] = w.cities[i];
@@ -329,7 +335,6 @@ abstract class CalculateAverage_cliffclick {
                 table[(ihash << 1)] = cnt_key(cnt0, key0);
                 table[(ihash << 1) + 1] = min_max(min0, max0, sum0);
             }
-            return this;
         }
 
         static int key(long cnt_key) {
@@ -345,7 +350,7 @@ abstract class CalculateAverage_cliffclick {
         } // Signed right shift; min often negative
 
         static int max(long min_max) {
-            return (int) (min_max >>> 32) & 0xFFFF;
+            return (short) ((min_max >>> 32) & 0xFFFF);
         }// Unsigned right shift;
 
         static int temp(long min_max) {
@@ -357,7 +362,7 @@ abstract class CalculateAverage_cliffclick {
         }
 
         static long min_max(int min, int max, int sum) {
-            return ((long) min << 48) | ((long) max << 32) | (((long) sum) & 0xFFFFFFFFL);
+            return ((long) min << 48) | ((long) (max & 0xFFFF) << 32) | (((long) sum) & 0xFFFFFFFFL);
         }
 
         @Override
@@ -378,14 +383,13 @@ abstract class CalculateAverage_cliffclick {
             StringBuilder sb = new StringBuilder().append("{");
             for (int i : is) {
                 String city = cities[i];
-                int cnt = (int) (table[i << 1] >> 32); // Cnts in high word; uhash in low word
+                int cnt = cnt(table[(i << 1)]);
                 long min_max = table[(i << 1) + 1];
-                double min = (min_max >> 48) / 10.0; // Keep the low sign, high sigh is always positive
-                double max = ((min_max >> 32) & 0xFFFF) / 10.0;
-                double temp = ((int) min_max) / 10.0;
-                double mean = temp / cnt; // Unscale scaled decimal, then average
-                sb.append(String.format("%s=%.1f/%.1f/%.1f, ", cities[i], min, mean, max));
-                // sb.append(city).append('=').append(min).append('/').append(mean).append('/').append(max).append(", ");
+                double min = min(min_max) / 10.0;
+                double max = max(min_max) / 10.0;
+                double temp = temp(min_max) / 10.0;
+                double mean = temp / cnt;
+                sb.append(String.format("%s=%.1f/%.1f/%.1f, ", city, min, mean, max));
             }
             sb.setLength(sb.length() - 2);
             return sb.append("}").toString();
