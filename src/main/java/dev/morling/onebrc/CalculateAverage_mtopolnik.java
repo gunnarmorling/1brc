@@ -15,6 +15,10 @@
  */
 package dev.morling.onebrc;
 
+import jdk.incubator.vector.ByteVector;
+import jdk.incubator.vector.VectorOperators;
+import jdk.incubator.vector.VectorSpecies;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -25,6 +29,7 @@ import java.nio.ByteOrder;
 import java.nio.channels.FileChannel.MapMode;
 import java.util.ArrayList;
 import java.util.TreeMap;
+import java.util.concurrent.locks.LockSupport;
 
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
@@ -138,67 +143,82 @@ public class CalculateAverage_mtopolnik {
                 namesMem = confinedArena.allocate(STATS_TABLE_SIZE * NAME_SLOT_SIZE, Long.BYTES);
                 namesMem.fill((byte) 0);
                 hashBuf = confinedArena.allocate(HASHBUF_SIZE);
-                while (cursor < inputMem.byteSize()) {
-                    recordMeasurementAndAdvanceCursor(bytePosOfSemicolon(inputMem, cursor));
-                }
-                var exportedStats = new ArrayList<StationStats>(10_000);
-                for (int i = 0; i < STATS_TABLE_SIZE; i++) {
-                    stats.gotoIndex(i);
-                    if (stats.hash() == 0) {
-                        continue;
-                    }
-                    var sum = stats.sum();
-                    var count = stats.count();
-                    var min = stats.min();
-                    var max = stats.max();
-                    var name = namesMem.getUtf8String(i * NAME_SLOT_SIZE);
-                    var stationStats = new StationStats();
-                    stationStats.name = name;
-                    stationStats.sum = sum;
-                    stationStats.count = count;
-                    stationStats.min = min;
-                    stationStats.max = max;
-                    exportedStats.add(stationStats);
-                }
-                results[myIndex] = exportedStats.toArray(new StationStats[0]);
+                processChunk();
+                exportResults();
             }
             catch (IOException e) {
                 throw new RuntimeException(e);
             }
         }
 
-        private void recordMeasurementAndAdvanceCursor(long semicolonPos) {
-            final long hash = hash(inputMem, cursor, semicolonPos);
+        private void processChunk() {
+            VectorSpecies<Byte> vectorSpecies = ByteVector.SPECIES_PREFERRED;
+            int vectorByteSize = vectorSpecies.vectorByteSize();
+            var vectorProcessingLimit = inputMem.byteSize() - vectorByteSize + 1;
+            long vectorStart = cursor;
+            while (vectorStart < vectorProcessingLimit) {
+                long semicolons;
+                while (true) {
+                    var vector = ByteVector.fromMemorySegment(vectorSpecies, inputMem, vectorStart, ByteOrder.nativeOrder());
+                    semicolons = vector.compare(VectorOperators.EQ, SEMICOLON).toLong();
+                    if (semicolons != 0) {
+                        break;
+                    }
+                    vectorStart += vectorByteSize;
+                    if (vectorStart >= vectorProcessingLimit) {
+                        break;
+                    }
+                }
+                while (semicolons != 0) {
+                    var semicolonPos = vectorStart + Long.numberOfTrailingZeros(semicolons);
+                    assert semicolonPos > cursor;
+                    semicolons &= (semicolons - 1);
+                    final long hash = hash(inputMem, cursor, semicolonPos);
+                    long nameLen = semicolonPos - cursor;
+                    assert nameLen <= 100 : "nameLen > 100";
+                    MemorySegment nameSlice = inputMem.asSlice(cursor, nameLen);
+                    int temperature = parseTemperatureAndAdvanceCursor(semicolonPos);
+                    updateStats(hash, nameLen, temperature, nameSlice);
+                }
+                vectorStart = Long.max(cursor, vectorStart + vectorByteSize);
+            }
+            while (cursor < inputMem.byteSize()) {
+                long semicolonPos = bytePosOfSemicolon(inputMem, cursor);
+                final long hash = hash(inputMem, cursor, semicolonPos);
+                long nameLen = semicolonPos - cursor;
+                assert nameLen <= 100 : "nameLen > 100";
+                MemorySegment nameSlice = inputMem.asSlice(cursor, nameLen);
+                int temperature = parseTemperatureAndAdvanceCursor(semicolonPos);
+                updateStats(hash, nameLen, temperature, nameSlice);
+            }
+        }
+
+        private void updateStats(long hash, long nameLen, int temperature, MemorySegment nameSlice) {
             int tableIndex = (int) (hash % STATS_TABLE_SIZE);
-            long nameLen = semicolonPos - cursor;
-            assert nameLen <= 100 : "nameLen > 100";
-            MemorySegment nameSlice = inputMem.asSlice(cursor, nameLen);
-            int temperature = parseTemperatureAndAdvanceCursor(semicolonPos);
             while (true) {
                 stats.gotoIndex(tableIndex);
                 long foundHash = stats.hash();
-                if (foundHash == 0) {
-                    stats.setHash(hash);
-                    stats.setNameLen((int) nameLen);
-                    stats.setSum(temperature);
-                    stats.setCount(1);
-                    stats.setMin((short) temperature);
-                    stats.setMax((short) temperature);
-                    var nameBlock = namesMem.asSlice(tableIndex * NAME_SLOT_SIZE, NAME_SLOT_SIZE);
-                    nameBlock.copyFrom(nameSlice);
-                    break;
+                if (foundHash == hash && stats.nameLen() == nameLen
+                        && namesMem.asSlice(tableIndex * NAME_SLOT_SIZE, nameLen).mismatch(nameSlice) == -1) {
+                    stats.setSum(stats.sum() + temperature);
+                    stats.setCount(stats.count() + 1);
+                    stats.setMin((short) Integer.min(stats.min(), temperature));
+                    stats.setMax((short) Integer.max(stats.max(), temperature));
+                    return;
                 }
-                if (foundHash != hash
-                        || stats.nameLen() != nameLen
-                        || namesMem.asSlice(tableIndex * NAME_SLOT_SIZE, nameLen).mismatch(nameSlice) != -1) {
+                if (foundHash != 0) {
                     tableIndex = (tableIndex + 1) % STATS_TABLE_SIZE;
                     continue;
                 }
-                stats.setSum(stats.sum() + temperature);
-                stats.setCount(stats.count() + 1);
-                stats.setMin((short) Integer.min(stats.min(), temperature));
-                stats.setMax((short) Integer.max(stats.max(), temperature));
-                break;
+                stats.setHash(hash);
+                stats.setNameLen((int) nameLen);
+                stats.setSum(temperature);
+                stats.setCount(1);
+                stats.setMin((short) temperature);
+                stats.setMax((short) temperature);
+                var nameBlock = namesMem.asSlice(tableIndex * NAME_SLOT_SIZE, NAME_SLOT_SIZE);
+                nameBlock.copyFrom(nameSlice);
+                return;
             }
         }
 
@@ -263,6 +283,30 @@ public class CalculateAverage_mtopolnik {
             // hash *= seed;
             // hash = Long.rotateLeft(hash, rotDist);
             return hash != 0 ? hash & (~Long.MIN_VALUE) : 1;
+        }
+
+        // Copies the results from native memory to Java heap and puts them into the results array.
+        private void exportResults() {
+            var exportedStats = new ArrayList<StationStats>(10_000);
+            for (int i = 0; i < STATS_TABLE_SIZE; i++) {
+                stats.gotoIndex(i);
+                if (stats.hash() == 0) {
+                    continue;
+                }
+                var sum = stats.sum();
+                var count = stats.count();
+                var min = stats.min();
+                var max = stats.max();
+                var name = namesMem.getUtf8String(i * NAME_SLOT_SIZE);
+                var stationStats = new StationStats();
+                stationStats.name = name;
+                stationStats.sum = sum;
+                stationStats.count = count;
+                stationStats.min = min;
+                stationStats.max = max;
+                exportedStats.add(stationStats);
+            }
+            results[myIndex] = exportedStats.toArray(new StationStats[0]);
         }
     }
 
