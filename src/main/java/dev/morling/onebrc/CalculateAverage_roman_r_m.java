@@ -171,9 +171,9 @@ public class CalculateAverage_roman_r_m {
     }
 
     private static final class ResultRow {
-        long min = 100;
+        long min = 1000;
         long sum = 0;
-        long max = -100;
+        long max = -1000;
         int count = 0;
 
         public String toString() {
