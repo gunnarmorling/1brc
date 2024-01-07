@@ -28,9 +28,6 @@
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-    <native.maven.plugin.version>0.9.12</native.maven.plugin.version>
-    <imageName>1brc_eriklumme</imageName>
-    <mainClass>dev.morling.onebrc.CalculateAverage_eriklumme</mainClass>
   </properties>
 
   <name>My OSS Project</name>
@@ -289,39 +286,5 @@
         <skipTests>true</skipTests>
       </properties>
     </profile>
-     <profile>
-         <id>native</id>
-         <build>
-             <plugins>
-                 <plugin>
-                     <groupId>org.graalvm.buildtools</groupId>
-                     <artifactId>native-maven-plugin</artifactId>
-                     <version>${native.maven.plugin.version}</version>
-                     <extensions>true</extensions>
-                     <executions>
-                         <execution>
-                             <id>build-native</id>
-                             <goals>
-                                 <goal>build</goal>
-                             </goals>
-                             <phase>package</phase>
-                         </execution>
-                     </executions>
-                     <configuration>
-                         <fallback>false</fallback>
-                         <buildArgs>
-                             <arg>-H:DashboardDump=fortune -H:+DashboardAll</arg>
-                         </buildArgs>
-                         <agent>
-                             <enabled>true</enabled>
-                             <options>
-                                 <option>experimental-class-loader-support</option>
-                             </options>
-                         </agent>
-                     </configuration>
-                 </plugin>
-             </plugins>
-         </build>
-     </profile>
   </profiles>
 </project>
