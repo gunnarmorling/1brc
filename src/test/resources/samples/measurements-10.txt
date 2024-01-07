@@ -1,0 +1,10 @@
+Halifax;12.9
+Zagreb;12.2
+Cabo San Lucas;14.9
+Adelaide;15.0
+Ségou;25.7
+Pittsburgh;9.7
+Karachi;15.4
+Xi'an;24.2
+Dodoma;22.2
+Tauranga;38.2
