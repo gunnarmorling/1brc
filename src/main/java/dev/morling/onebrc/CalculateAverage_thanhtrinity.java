@@ -15,18 +15,20 @@
  */
 package dev.morling.onebrc;
 
+import static java.lang.Math.abs;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
 import static java.lang.Math.round;
 import static java.nio.channels.FileChannel.MapMode.READ_ONLY;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.nio.file.StandardOpenOption.READ;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
@@ -38,17 +40,18 @@ public class CalculateAverage_thanhtrinity {
 
     public static void main(String[] args) throws IOException, InterruptedException {
 
-        System.out.println("Num Of Proccessor:" + TOTAL_PROCCESSOR);
+        // System.out.println("Num Of Proccessor:" + TOTAL_PROCCESSOR);
         var threads = new Thread[TOTAL_PROCCESSOR];
 
         var fileChannel = FileChannel.open(Path.of(FILE), READ);
         long fullSize = fileChannel.size();
-        System.out.println("FullSize:" + fullSize);
+        // System.out.println("FullSize:" + fullSize);
 
         long standardChunkSize = fullSize / TOTAL_PROCCESSOR;
-        System.out.println("StandardChunkSize:" + standardChunkSize);
+        // System.out.println("StandardChunkSize:" + standardChunkSize);
 
-        var CitiesTempChunk = new CitiesTempChunk[TOTAL_PROCCESSOR];
+        var citiesTempChunks = new CitiesTempChunk[TOTAL_PROCCESSOR];
+
         for (int index = 0; index < TOTAL_PROCCESSOR; index++) {
             var pIndex = index;
             var start = pIndex * standardChunkSize;
@@ -60,8 +63,9 @@ public class CalculateAverage_thanhtrinity {
             var thread = new Thread(() -> {
                 try {
                     var buffer = fileChannel.map(READ_ONLY, start, chunkSize);
-                    CitiesTempChunk[pIndex] = processBufferData(buffer, pIndex);
-                } catch (IOException e) {
+                    citiesTempChunks[pIndex] = processBufferData(buffer, pIndex);
+                }
+                catch (IOException e) {
                     e.printStackTrace();
                 }
             });
@@ -73,57 +77,14 @@ public class CalculateAverage_thanhtrinity {
             thread.join();
         }
 
-        consolidateStats(CitiesTempChunk);
-    }
-
-    private static void consolidateStats(CitiesTempChunk[] CitiesTempChunk) {
-
-        var citiesList = Arrays.stream(CitiesTempChunk)
-                .flatMap(cs -> Arrays.stream(cs.cities).filter(city -> city != null))
-                .toList();
-
-        System.out.println("Count:" + citiesList.size());
-
-        var cities = citiesList.stream().collect(
-                Collectors.toMap(
-                        city -> new String(city.getName(), StandardCharsets.UTF_8),
-                        city -> city,
-                        City::combine));
-
-        // Append Header And Footer
-        for (int i = 0; i < CitiesTempChunk.length; i++) {
-            if (i > 0) {
-                var footer = CitiesTempChunk[i - 1].footer;
-                var header = CitiesTempChunk[i].header;
-
-                var footerSize = footer != null ? footer.length : 0;
-                var headerSize = header != null ? header.length : 0;
-
-                var buffer = ByteBuffer.allocate(footerSize + headerSize);
-                if (footer != null) {
-                    buffer.put(footer);
-                }
-                if (header != null) {
-                    buffer.put(header);
-                }
-
-                var data = new String(buffer.array(), StandardCharsets.UTF_8).split(";");
-
-                var city = new City(data[0].getBytes());
-                city.updateTempurature(Double.valueOf(data[1]));
-                cities.merge(data[0], city, City::combine);
-            }
-        }
-
-        System.out.println(new TreeMap<>(cities));
+        consolidateData(citiesTempChunks);
     }
 
     private static CitiesTempChunk processBufferData(MappedByteBuffer buffer, int taskIdx) {
-
+        final int chunkSize = 4000;
         var breakLineIndex = 0;
-        var semicolonIndex = 0;
 
-        var cities = new City[1000];
+        var cities = new City[chunkSize];
         City city = null;
         var isProcessKey = true;
         var hashKey = 0;
@@ -143,47 +104,100 @@ public class CalculateAverage_thanhtrinity {
 
             if (isProcessKey) {
                 if (b == ';') {
-                    semicolonIndex = position;
-                    int cIdx = Math.abs(hashKey % 1000);
+                    int cIdx = abs(hashKey % chunkSize);
                     city = cities[cIdx];
                     if (city == null) {
-                        var name = new byte[semicolonIndex - breakLineIndex];
-                        buffer.get(breakLineIndex, name, 0, semicolonIndex - breakLineIndex - 1);
+                        var name = new byte[position - breakLineIndex];
+                        buffer.get(breakLineIndex, name, 0, position - breakLineIndex - 1);
                         cities[cIdx] = city = new City(name);
                     }
                     hashKey = 0;
                     isProcessKey = false;
-                } else {
+                }
+                else {
                     hashKey = 31 * hashKey + b;
                 }
-            } else {
-                if (b == '\n') {
-                    isProcessKey = true;
-                    var tem = pro.calculateTempurature();
-                    city.updateTempurature(tem);
-                    // reset parameter
-                    pro.resetParsingParams();
-                } else {
-                    pro.updateParsingParams(b);
-                }
+            }
+            else if (b == '\n') {
+                isProcessKey = true;
+                var temp = pro.calculateTemp();
+                city.updateTemp(temp);
+
+                // reset parameter
+                pro.resetParsingParams();
+            }
+            else {
+                pro.updateParsingParams(b);
             }
         }
-
-        byte[] byteHeader = null;
-        byte[] byteFooter = null;
         // Get Header And Footer byte[]
-        if (taskIdx != 0) {
+        var byteHeader = getByteHeader(buffer, taskIdx, firstBreakLineIndex);
+
+        var byteFooter = getByteFooter(buffer, breakLineIndex);
+
+        return new CitiesTempChunk(cities, byteHeader, byteFooter);
+    }
+
+    private static byte[] getByteHeader(MappedByteBuffer buffer, int taskIdx, int firstBreakLineIndex) {
+        byte[] byteHeader = null;
+        if (taskIdx != 0 && firstBreakLineIndex > 1 && buffer.capacity() > firstBreakLineIndex) {
             byteHeader = new byte[firstBreakLineIndex];
             buffer.get(0, byteHeader, 0, firstBreakLineIndex - 1);
         }
+        return byteHeader;
+    }
 
-        if (buffer.capacity() > breakLineIndex) {
+    private static byte[] getByteFooter(MappedByteBuffer buffer, int breakLineIndex) {
+        byte[] byteFooter = null;
+        if (buffer.capacity() > breakLineIndex && breakLineIndex > 0) {
             byteFooter = new byte[buffer.capacity() - breakLineIndex];
             buffer.get(breakLineIndex, byteFooter, 0, buffer.capacity() -
                     breakLineIndex);
         }
+        return byteFooter;
+    }
 
-        return new CitiesTempChunk(cities, byteHeader, byteFooter);
+    private static void consolidateData(CitiesTempChunk[] citiesTempChunk) {
+
+        var citiesList = Arrays.stream(citiesTempChunk)
+                .flatMap(cs -> Arrays.stream(cs.cities).filter(city -> city != null))
+                .collect(Collectors.toCollection(ArrayList::new));
+
+        // Append Header And Footer
+        for (int i = 0; i < citiesTempChunk.length; i++) {
+            if (i > 0) {
+                var footer = citiesTempChunk[i - 1].footer;
+                var header = citiesTempChunk[i].header;
+
+                if (footer == null && header == null) {
+                    continue;
+                }
+                var footerSize = footer != null ? footer.length : 0;
+                var headerSize = header != null ? header.length : 0;
+
+                var buffer = ByteBuffer.allocate(footerSize + headerSize);
+                if (footer != null) {
+                    buffer.put(footer);
+                }
+                if (header != null) {
+                    buffer.put(header);
+                }
+
+                var data = new String(buffer.array(), UTF_8).split(";");
+
+                var city = new City(data[0].getBytes());
+                city.updateTemp(Double.valueOf(data[1]));
+                citiesList.add(city);
+            }
+        }
+
+        var cities = citiesList.stream().collect(
+                Collectors.toMap(
+                        City::getKey,
+                        city -> city,
+                        City::combine));
+
+        System.out.println(new TreeMap<>(cities));
     }
 
     record CitiesTempChunk(City[] cities, byte[] header, byte[] footer) {
@@ -200,7 +214,7 @@ class DataProcessor {
     private double divisorForFraction = 1;
     private boolean isNegative = false;
 
-    public double calculateTempurature() {
+    public double calculateTemp() {
         fractionalPart /= divisorForFraction;
         result = integerPart + fractionalPart;
         if (isNegative) {
@@ -220,7 +234,8 @@ class DataProcessor {
             default:
                 if (!isFractional) {
                     integerPart = integerPart * 10 + (b - '0');
-                } else {
+                }
+                else {
                     divisorForFraction *= 10;
                     fractionalPart = fractionalPart * 10 + (b - '0');
                 }
@@ -253,11 +268,19 @@ class City {
         this.name = name;
     }
 
-    public void updateTempurature(double temp) {
+    public void updateTemp(double temp) {
         min = min(min, temp);
         max = max(max, temp);
         sum += temp;
         count++;
+    }
+
+    public String getKey() {
+        int i = 0;
+        while (i < name.length && name[i] != 0) {
+            i++;
+        }
+        return new String(name, 0, i, UTF_8);
     }
 
     public static City combine(City t1, City t2) {
@@ -282,7 +305,7 @@ class City {
         return this.name;
     }
 
-    private double roundNumber(double value) {
+    private static double roundNumber(double value) {
         return round(value * 10.0) / 10.0;
     }
 }
