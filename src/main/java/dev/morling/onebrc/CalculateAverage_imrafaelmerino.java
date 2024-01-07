@@ -99,8 +99,7 @@ public class CalculateAverage_imrafaelmerino {
     }
 
     private static Map<String, Stat> calculateStats(String file,
-                                                    long chunkSize
-                                                   )
+                                                    long chunkSize)
             throws IOException {
 
         try (var fileChannel = FileChannel.open(Paths.get(file),
@@ -118,8 +117,7 @@ public class CalculateAverage_imrafaelmerino {
     }
 
     private static Map<String, Stat> combine(Map<String, Stat> xs,
-                                             Map<String, Stat> ys
-                                            ) {
+                                             Map<String, Stat> ys) {
         Map<String, Stat> result = new HashMap<>();
         for (var key : xs.keySet()) {
             var m1 = xs.get(key);
