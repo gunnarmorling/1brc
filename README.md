@@ -37,8 +37,8 @@ Submit your implementation by Jan 31 2024 and become part of the leaderboard!
 
 | # | Result (m:s.ms) | Implementation     | JDK | Submitter     | Notes     |
 |---|-----------------|--------------------|-----|---------------|-----------|
-| 1.|        00:07.620| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_merykitty.java)| 21.0.1-open   | [Quan Anh Mai](https://github.com/merykitty)|
-| 2.|        00:07.999| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_royvanrijn.java)| 21.0.1-graal   | [Roy van Rijn](https://github.com/royvanrijn)|
+| 1.|        00:06.159| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_royvanrijn.java)| 21.0.1-graal | [royvanrijn](https://github.com/royvanrijn)|
+| 2.|        00:07.620| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_merykitty.java)| 21.0.1-open   | [Quan Anh Mai](https://github.com/merykitty)|
 | 3.|        00:09.338| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_ebarlas.java)| 21.0.1-graal | [Elliot Barlas](https://github.com/ebarlas)|
 |   |        00:09.625| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_thomaswue.java)| 21.0.1-graal   | [Thomas Wuerthinger](https://github.com/thomaswue)| GraalVM native binary |
 |   |        00:10.589| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_artsiomkorzun.java)| 21.0.1-graal | [Artsiom Korzun](https://github.com/artsiomkorzun)|
@@ -48,6 +48,7 @@ Submit your implementation by Jan 31 2024 and become part of the leaderboard!
 |   |        00:13.277| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_yavuztas.java)| 21.0.1-graal   | [Yavuz Tas](https://github.com/yavuztas)|
 |   |        00:13.430| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_jotschi.java)| 21.0.1-open| [Johannes Schüth](https://github.com/Jotschi)|
 |   |        00:13.463| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_yemreinci.java)| 21.0.1-open| [yemreinci](https://github.com/yemreinci)|
+|   |        00:13.615| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_ags313.java)| 21.0.1-graal | [ags313](https://github.com/ags313)|
 |   |        00:13.709| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_iziamos.java)| 21.0.1-open | [John Ziamos](https://github.com/iziamos)|
 |   |        00:13.857| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_filiphr.java)| 21.0.1-graal| [Filip Hrisafov](https://github.com/filiphr)|
 |   |        00:14.411| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_deemkeen.java)| 21.0.1-open| [deemkeen](https://github.com/deemkeen)|
