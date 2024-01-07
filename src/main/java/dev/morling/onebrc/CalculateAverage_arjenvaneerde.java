@@ -27,6 +27,7 @@ public class CalculateAverage_arjenvaneerde {
 
     static class Measure {
         byte[] station;
+        int length;
         int count;
         int minTemp;
         int maxTemp;
@@ -34,6 +35,7 @@ public class CalculateAverage_arjenvaneerde {
 
         Measure(final byte[] station, int count, int minTemp, int maxTemp, long sumTemp) {
             this.station = station;
+            this.length = station.length;
             this.count = count;
             this.minTemp = minTemp;
             this.maxTemp = maxTemp;
@@ -41,7 +43,8 @@ public class CalculateAverage_arjenvaneerde {
         }
 
         Measure(byte[] bytes, int startPos, int endPos, int temp) {
-            this.station = new byte[endPos - startPos];
+            this.length = endPos - startPos;
+            this.station = new byte[this.length];
             System.arraycopy(bytes, startPos, this.station, 0, this.station.length);
             this.count = 1;
             this.minTemp = temp;
@@ -66,7 +69,7 @@ public class CalculateAverage_arjenvaneerde {
     }
 
     static class Measures {
-        static final int HASH_TABLE_SIZE = 4 * 2048;
+        static final int HASH_TABLE_SIZE = 8 * 1024;
 
         Measure[][] measureHashTable;
 
@@ -78,82 +81,82 @@ public class CalculateAverage_arjenvaneerde {
             int len = endPos - startPos;
             int index = ((len - 2) & 0x1f | // 4 bits of the length
                     ((bytes[startPos + 0] & 0x1f) << 4) | // 5 bits of first char
-                    ((bytes[startPos + 2] & 0x1f) << 9) | // 5 bits of third char
-                    ((bytes[startPos + 1] & 0x1f) << 14) // 5 bits of second char
+                    ((bytes[startPos + 2] & 0x1f) << 9) // 5 bits of third char
+            // ((bytes[startPos + 1] & 0x1f) << 14) // 5 bits of second char
             ) & (HASH_TABLE_SIZE - 1);
             Measure[] arr = this.measureHashTable[index];
             int i = 0;
             boolean found = false;
-            while (i < arr.length) {
+            int arrLength = arr.length;
+            while (i < arrLength) {
                 Measure m = arr[i];
                 if (m == null) {
                     // Not found. Add new entry.
                     arr[i] = new Measure(bytes, startPos, endPos, temp);
                     return;
                 }
-                if (m.station.length == len) {
+                if (m.length == len) {
                     switch (len) {
                         case 0:
                             break;
                         case 1:
-                            if (m.station[0] == bytes[startPos + 0]) {
+                            if (m.station[0] == bytes[startPos]) {
                                 found = true;
                             }
                             break;
                         case 2:
-                            if (m.station[0] == bytes[startPos + 0] &&
-                                    m.station[1] == bytes[startPos + 1]) {
+                            if (m.station[1] == bytes[startPos + 1] &&
+                                    m.station[0] == bytes[startPos]) {
                                 found = true;
                             }
                             break;
                         case 3:
-                            if (m.station[0] == bytes[startPos + 0] &&
+                            if (m.station[2] == bytes[startPos + 2] &&
                                     m.station[1] == bytes[startPos + 1] &&
-                                    m.station[2] == bytes[startPos + 2]) {
+                                    m.station[0] == bytes[startPos]) {
                                 found = true;
                             }
                             break;
                         case 4:
-                            if (m.station[0] == bytes[startPos + 0] &&
-                                    m.station[1] == bytes[startPos + 1] &&
+                            if (m.station[3] == bytes[startPos + 3] &&
                                     m.station[2] == bytes[startPos + 2] &&
-                                    m.station[3] == bytes[startPos + 3]) {
+                                    m.station[1] == bytes[startPos + 1] &&
+                                    m.station[0] == bytes[startPos]) {
                                 found = true;
                             }
                             break;
                         case 5:
-                            if (m.station[0] == bytes[startPos + 0] &&
-                                    m.station[1] == bytes[startPos + 1] &&
-                                    m.station[2] == bytes[startPos + 2] &&
+                            if (m.station[4] == bytes[startPos + 4] &&
                                     m.station[3] == bytes[startPos + 3] &&
-                                    m.station[4] == bytes[startPos + 4]) {
+                                    m.station[2] == bytes[startPos + 2] &&
+                                    m.station[1] == bytes[startPos + 1] &&
+                                    m.station[0] == bytes[startPos]) {
                                 found = true;
                             }
                             break;
                         case 6:
-                            if (m.station[0] == bytes[startPos + 0] &&
-                                    m.station[1] == bytes[startPos + 1] &&
-                                    m.station[2] == bytes[startPos + 2] &&
-                                    m.station[3] == bytes[startPos + 3] &&
+                            if (m.station[5] == bytes[startPos + 5] &&
                                     m.station[4] == bytes[startPos + 4] &&
-                                    m.station[5] == bytes[startPos + 5]) {
+                                    m.station[3] == bytes[startPos + 3] &&
+                                    m.station[2] == bytes[startPos + 2] &&
+                                    m.station[1] == bytes[startPos + 1] &&
+                                    m.station[0] == bytes[startPos]) {
                                 found = true;
                             }
                             break;
                         case 7:
-                            if (m.station[0] == bytes[startPos + 0] &&
-                                    m.station[1] == bytes[startPos + 1] &&
-                                    m.station[2] == bytes[startPos + 2] &&
-                                    m.station[3] == bytes[startPos + 3] &&
-                                    m.station[4] == bytes[startPos + 4] &&
+                            if (m.station[6] == bytes[startPos + 6] &&
                                     m.station[5] == bytes[startPos + 5] &&
-                                    m.station[6] == bytes[startPos + 6]) {
+                                    m.station[4] == bytes[startPos + 4] &&
+                                    m.station[3] == bytes[startPos + 3] &&
+                                    m.station[2] == bytes[startPos + 2] &&
+                                    m.station[1] == bytes[startPos + 1] &&
+                                    m.station[0] == bytes[startPos]) {
                                 found = true;
                             }
                             break;
                         default:
-                            int mismatch = Arrays.mismatch(m.station, 0, len, bytes, startPos, endPos);
-                            found = mismatch == -1;
+                            found = Arrays.mismatch(m.station, 0, len, bytes, startPos, endPos) == -1;
                             break;
                     }
                     if (found) {
@@ -171,15 +174,6 @@ public class CalculateAverage_arjenvaneerde {
             this.measureHashTable[index] = newArr;
         }
     }
-
-    private static final String FILE = "./measurements.txt";
-    // private static final String FILE = "./src/test/resources/samples/measurements-1.txt";
-    // private static final String FILE = "./src/test/resources/samples/measurements-10000-unique-keys.txt";
-    private static final int NUM_THREADS = 8;
-    private static final int BYTE_BUFFER_SIZE = 16 * 1024 * 1024;
-    private static final ExecutorService threads = Executors.newFixedThreadPool(NUM_THREADS);
-    private static final List<Future<Integer>> futures = new ArrayList<>(NUM_THREADS);
-    private static final Measures[] measures = new Measures[NUM_THREADS];
 
     private static class BytesProcessor implements Runnable {
         final Measures measures;
@@ -244,18 +238,29 @@ public class CalculateAverage_arjenvaneerde {
 
         @Override
         public void run() {
-            for (int hashIdx = this.startIndex; hashIdx < this.endIndex; hashIdx++) {
-                for (int mIdx = 0; mIdx < this.measures.length; mIdx++) {
+            for (int mIdx = 0; mIdx < this.measures.length; mIdx++) {
+                for (int hashIdx = this.startIndex; hashIdx < this.endIndex; hashIdx++) {
                     Measure[] mArr = this.measures[mIdx].measureHashTable[hashIdx];
-                    for (Measure measure : mArr) {
-                        if (measure != null) {
-                            this.results.compute(new String(measure.station, StandardCharsets.UTF_8), (k, v) -> v == null ? measure : Measure.merge(v, measure));
-                        }
+                    int i = 0;
+                    Measure measure = mArr[i];
+                    while (measure != null) {
+                        Measure finalMeasure = measure;
+                        this.results.compute(new String(measure.station, StandardCharsets.UTF_8), (k, v) -> v == null ? finalMeasure : Measure.merge(v, finalMeasure));
+                        measure = mArr[++i];
                     }
                 }
             }
         }
     }
+
+    private static final String FILE = "./measurements.txt";
+    // private static final String FILE = "./src/test/resources/samples/measurements-1.txt";
+    // private static final String FILE = "./src/test/resources/samples/measurements-10000-unique-keys.txt";
+    private static final int NUM_THREADS = 8;
+    private static final int BYTE_BUFFER_SIZE = 16 * 1024 * 1024;
+    private static final ExecutorService threads = Executors.newFixedThreadPool(NUM_THREADS);
+    private static final List<Future<Integer>> futures = new ArrayList<>(NUM_THREADS);
+    private static final Measures[] measures = new Measures[NUM_THREADS];
 
     public static void main(String[] args) throws Exception {
         long startTime = System.currentTimeMillis();
@@ -266,24 +271,31 @@ public class CalculateAverage_arjenvaneerde {
         try (RandomAccessFile raFile = new RandomAccessFile(file, "r");
                 FileChannel inChannel = raFile.getChannel()) {
 
-            ByteBuffer buffer = ByteBuffer.allocate(BYTE_BUFFER_SIZE);
-            byte[] fileBytes = buffer.array();
+            ByteBuffer[] byteBuffers = new ByteBuffer[2];
+            byteBuffers[0] = ByteBuffer.allocate(BYTE_BUFFER_SIZE);
+            byteBuffers[1] = ByteBuffer.allocate(BYTE_BUFFER_SIZE);
+            int currrentByteBuffer = 0;
             long numBytesRead = 0;
             long numTotBytesRead = 0;
-            while ((numBytesRead = inChannel.read(buffer)) > 0) {
-                numTotBytesRead += numBytesRead;
+            numBytesRead = inChannel.read(byteBuffers[currrentByteBuffer]);
+            byteBuffers[currrentByteBuffer].flip();
+            while (numBytesRead > 0 || byteBuffers[currrentByteBuffer].position() > 0) {
+                if (numBytesRead > 0) {
+                    numTotBytesRead += numBytesRead;
+                }
                 // System.out.println((double) numTotBytesRead/(1024*1024));
-                buffer.flip();
-                //
-                int chunckSize = buffer.limit() / NUM_THREADS;
+                // Distribute buffer chunks across threads.
+                int bufferLimit = byteBuffers[currrentByteBuffer].limit();
+                byte[] fileBytes = byteBuffers[currrentByteBuffer].array();
+                int chunckSize = bufferLimit / NUM_THREADS;
                 int startOfChunkPos = 0;
                 int endOfChunkPos = 0;
                 for (int chunk = 0; chunk < NUM_THREADS; chunk++) {
                     if (chunk == NUM_THREADS - 1) {
-                        endOfChunkPos = buffer.limit() - 1;
+                        endOfChunkPos = bufferLimit - 1;
                     }
                     else {
-                        endOfChunkPos = Math.min((chunk + 1) * chunckSize, buffer.limit() - 1);
+                        endOfChunkPos = Math.min((chunk + 1) * chunckSize, bufferLimit - 1);
                     }
                     while (endOfChunkPos > startOfChunkPos &&
                             fileBytes[endOfChunkPos] != 0x0A) {
@@ -297,13 +309,23 @@ public class CalculateAverage_arjenvaneerde {
                         startOfChunkPos = endOfChunkPos;
                     }
                 }
-                //
-                for (Future<Integer> future : futures) {
-                    future.get();
+                int nextByteBuffer = (currrentByteBuffer + 1) % 2;
+                byteBuffers[nextByteBuffer].clear();
+                if (numBytesRead > 0) {
+                    // Copy over remaining bytes to next buffer.
+                    for (; endOfChunkPos < bufferLimit; endOfChunkPos++) {
+                        byteBuffers[nextByteBuffer].put(fileBytes[endOfChunkPos]);
+                    }
+                    // Read next set from channel.
+                    numBytesRead = inChannel.read(byteBuffers[nextByteBuffer]);
+                    byteBuffers[currrentByteBuffer].flip();
+                    // Wait for all threads to finish.
+                    for (Future<Integer> future : futures) {
+                        future.get();
+                    }
+                    futures.clear();
                 }
-                futures.clear();
-                buffer.position(endOfChunkPos);
-                buffer.compact();
+                currrentByteBuffer = nextByteBuffer;
             }
         }
         ConcurrentSkipListMap<String, Measure> measurements = new ConcurrentSkipListMap<>();
@@ -319,7 +341,7 @@ public class CalculateAverage_arjenvaneerde {
         threads.shutdown();
         threads.awaitTermination(1, TimeUnit.MILLISECONDS);
         System.out.println(measurements);
-        long endTime = System.currentTimeMillis();
+        // long endTime = System.currentTimeMillis();
         // System.out.printf("Duration : %.3f%n", (endTime - startTime) / 1000.0);
     }
 
