@@ -51,7 +51,7 @@ public class CalculateAverage_plbpietrz {
         List<FilePart> fileParts = new ArrayList<>();
         long fileLength = inputFile.length();
         long blockSize = fileLength / CPU_COUNT;
-        for (long start = 0, end = 0; start < fileLength; start = end) {
+        for (long start = 0, end; start < fileLength; start = end) {
             end = findMinBlockOffset(inputFile, start, blockSize);
             fileParts.add(new FilePart(start, end - start));
         }
@@ -89,7 +89,8 @@ public class CalculateAverage_plbpietrz {
 
         int limit = buffer.limit();
         boolean readingName = true;
-        Map<Integer, TemperatureStats> result = new HashMap<>();
+        Map<Integer, TemperatureStats> temperatures = new HashMap<>();
+        Map<Integer, String> stationNames = new HashMap<>();
         while (buffer.position() != limit) {
             byte aChar = buffer.get();
 
@@ -112,7 +113,7 @@ public class CalculateAverage_plbpietrz {
                     int len = stationLineNameLenght;
                     Integer pos = stationNameHash;
 
-                    TemperatureStats weatherStats = result.computeIfAbsent(pos, _ignored_ -> new TemperatureStats());
+                    TemperatureStats weatherStats = temperatures.computeIfAbsent(pos, _ignored_ -> new TemperatureStats());
 
                     double temp = parseTemperature(temperature, temperatureLineLenght);
 
@@ -126,11 +127,12 @@ public class CalculateAverage_plbpietrz {
                     stationNameHash = 0;
                     readingName = true;
 
-                    STATION_NAMES.putIfAbsent(pos, new String(stationName, 0, len, Charset.defaultCharset()));
+                    stationNames.putIfAbsent(pos, new String(stationName, 0, len, Charset.defaultCharset()));
                 }
             }
         }
-        return result;
+        STATION_NAMES.putAll(stationNames);
+        return temperatures;
     }
 
     private static double parseTemperature(byte[] temperature, int temperatureSize) {
