@@ -18,6 +18,7 @@ package dev.morling.onebrc;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -82,6 +83,7 @@ public class CalculateAverage_kuduwa_keshavram {
             private int initialPosition;
 
             private int delimiterIndex;
+            private int nextLineIndex;
 
             @Override
             public boolean hasNext() {
@@ -96,6 +98,14 @@ public class CalculateAverage_kuduwa_keshavram {
                         }
                         delimiterIndex++;
                     }
+                    nextLineIndex = 0;
+                    while (true) {
+                        byte b = byteBuffer.get();
+                        if (b == 10) {
+                            break;
+                        }
+                        nextLineIndex++;
+                    }
                     return true;
                 }
                 return false;
@@ -106,20 +116,17 @@ public class CalculateAverage_kuduwa_keshavram {
                 byteBuffer.position(initialPosition);
 
                 byte[] city = new byte[delimiterIndex];
-                for (int j = 0; j < delimiterIndex; j++) {
-                    city[j] = byteBuffer.get();
+                for (int i = 0; i < delimiterIndex; i++) {
+                    city[i] = byteBuffer.get();
                 }
 
                 byteBuffer.get();
-                String temp = "";
-                while (true) {
-                    char c = (char) byteBuffer.get();
-                    if (c == '\n') {
-                        break;
-                    }
-                    temp += c;
+                byte[] temp = new byte[8];
+                for (int i = 0; i < nextLineIndex; i++) {
+                    temp[i] = byteBuffer.get();
                 }
-                return new Measurement(new String(city), toDouble(temp));
+                byteBuffer.get();
+                return new Measurement(new String(city), toDouble(new String(temp)));
             }
         };
     }
