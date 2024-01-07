@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.Callable;
@@ -41,7 +42,7 @@ public class CalculateAverage_eriklumme {
 
     private static final String FILE = "./measurements.txt";
     private static final int NUM_CPUS = 8;
-    private static final int LINE_OVERHEAD = 40;
+    private static final int LINE_OVERHEAD = 100;
 
     private static class StationMeasurement {
         private final String stationName;
@@ -79,7 +80,7 @@ public class CalculateAverage_eriklumme {
 
         @Override
         public Map<String, StationMeasurement> call() throws Exception {
-            Map<String, StationMeasurement> map = new ConcurrentSkipListMap<>();
+            Map<String, StationMeasurement> map = new HashMap<>();
 
             char[] stationBuffer = new char[40];
             int stationIndex = 0;
@@ -194,6 +195,8 @@ public class CalculateAverage_eriklumme {
         // });
         // }
         // System.exit(1);
+
+        Locale.setDefault(Locale.US);
 
         try (ExecutorService executorService = Executors.newFixedThreadPool(NUM_CPUS);
                 FileInputStream fileInputStream = new FileInputStream(FILE);
