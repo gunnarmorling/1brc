@@ -374,12 +374,13 @@ public class CalculateAverage_shipilev {
                     bucket = map.bucket(slice, nameBegin, nameEnd, nameHash);
                 }
 
-                // Parse out the temperature. We implicitly look ahead for
+                // Parse out the temperature. The rules specify temperatures
+                // are within -99.9..99.9. We implicitly look ahead for
                 // negative sign and carry the negative multiplier, if found.
                 // We also implicitly look for decimal point, which is _below_
                 // '0' and would yield a "negative" digit. After that, we only
-                // care about a single digit after the point. The aggregation
-                // code expects temperatures at 10x scale.
+                // expect a single digit after the point. The aggregation code
+                // expects temperatures at 10x scale.
                 {
                     int temp = 0;
                     int neg = 1;
@@ -398,17 +399,13 @@ public class CalculateAverage_shipilev {
                     // Past decimal point, parse another digit and exit.
                     temp = temp * 10 + (slice.get(idx) - '0');
                     temp = temp * neg;
-                    idx++;
+
+                    // Eat the last digit and EOL
+                    idx += 2;
 
                     // Time to update!
                     bucket.merge(temp);
                 }
-
-                // Eat the rest of the digits and the EOL.
-                while (slice.get(idx) != '\n') {
-                    idx++;
-                }
-                idx++;
             }
         }
     }
