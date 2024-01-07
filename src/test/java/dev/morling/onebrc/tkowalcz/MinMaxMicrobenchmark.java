@@ -15,7 +15,6 @@
  */
 package dev.morling.onebrc.tkowalcz;
 
-import jdk.incubator.vector.*;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.profile.LinuxPerfAsmProfiler;
 import org.openjdk.jmh.profile.Profiler;
@@ -42,9 +41,8 @@ import java.util.concurrent.TimeUnit;
         "-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0"
 })
 @Threads(1)
-public class AllTrueMicrobenchmark {
+public class MinMaxMicrobenchmark {
 
-    private static final VectorSpecies<Byte> SPECIES = ByteVector.SPECIES_256;
     private int value1;
     private int value2;
 
@@ -54,12 +52,15 @@ public class AllTrueMicrobenchmark {
         value2 = ThreadLocalRandom.current().nextInt();
     }
 
+    // No, it's not branchless. I was looking for something like 'minsd'.
     @Benchmark
-    // @CompilerControl(CompilerControl.Mode.DONT_INLINE)
-    public long testTrue() {
-        ByteVector byteVector1 = ByteVector.broadcast(ByteVector.SPECIES_256, (byte) value1);
-        ByteVector byteVector2 = ByteVector.broadcast(ByteVector.SPECIES_256, (byte) value2);
-        return byteVector1.compare(VectorOperators.EQ, byteVector2).firstTrue();
+    public int minUsingJavaUtilMath() {
+        return Math.min(value1, value2);
+    }
+
+    @Benchmark
+    public int maxUsingJavaUtilMath() {
+        return Math.max(value1, value2);
     }
 
     public static void main(String[] args) throws RunnerException {
@@ -68,7 +69,7 @@ public class AllTrueMicrobenchmark {
         Class<? extends Profiler> profilerClass = LinuxPerfAsmProfiler.class;
 
         Options opt = new OptionsBuilder()
-                .include(AllTrueMicrobenchmark.class.getSimpleName())
+                .include(MinMaxMicrobenchmark.class.getSimpleName())
                 .warmupIterations(2)
                 .measurementIterations(2)
                 .resultFormat(ResultFormatType.CSV)

@@ -1,3 +1,18 @@
+/*
+ *  Copyright 2023 The original authors
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 package dev.morling.onebrc.tkowalcz;
 
 import jdk.incubator.vector.*;
@@ -18,16 +33,13 @@ import java.util.concurrent.TimeUnit;
 @State(Scope.Thread)
 @Fork(value = 0, jvmArgsPrepend = {
         "-XX:+UnlockDiagnosticVMOptions",
-        "-XX:+LogVMOutput",
-        "-XX:CompileCommand=print,*.selectWhereVector2",
         "-XX:PrintAssemblyOptions=intel",
         "-XX:+UnlockExperimentalVMOptions",
         "-XX:+AlwaysPreTouch",
         "-XX:+EnableVectorReboxing",
         "-XX:+EnableVectorAggressiveReboxing",
         "-XX:+UseEpsilonGC",
-        "-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0",
-        "-XX:MaxDirectMemorySize=10737418240"
+        "-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0"
 })
 @Threads(1)
 public class ParseMicrobenchmark {
@@ -55,39 +67,6 @@ public class ParseMicrobenchmark {
     public void setup() {
         value = "Warszawa;-12.3\nKraków;0.4\nSuwałki;-4.3".getBytes(StandardCharsets.UTF_8);
         position = 9;
-    }
-
-    @Benchmark
-    public long parseScalar() {
-        long result = 0;
-        if (value[position] == '-') {
-            position++;
-        }
-
-        byte v1 = (byte) (value[position] - '0');
-        byte v2 = (byte) (value[position + 1] - '0');
-        byte v3 = (byte) (value[position + 2] - '0');
-        byte v4 = (byte) (value[position + 3] - '0');
-
-        boolean negative = value[position] == '-';
-        if (v3 == '.') {
-
-        }
-        if (v1 == '-') {
-
-        }
-        else {
-            v1 -= '0';
-        }
-
-        // byte v2 = value[position + 1];
-        // if (v2 == '.') {
-        // return
-        // }
-        // byte v3 = value[position + 2]; This is always '.'
-        // byte v4 = value[position + 3];
-
-        return v4 + v2 * 10 + v1 * 100;
     }
 
     @Benchmark
@@ -143,7 +122,6 @@ public class ParseMicrobenchmark {
                 .resultFormat(ResultFormatType.CSV)
                 .jvmArgsAppend("--add-modules", "jdk.incubator.vector")
                 .addProfiler(profilerClass)
-                // .threads(3)
                 .build();
 
         new Runner(opt).run();
