@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 package dev.morling.onebrc;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
@@ -37,8 +38,8 @@ import java.util.function.Supplier;
  *  Executed 10 times in my machine with a chunk size of 20MB
  *
  *     21.0.1-graal
-  *     avg: 12,962 sg | min: 12,823 sg | max: 13,153 sg | acc: 64,808 sg | times: 5
-
+ *     avg: 12,962 sg | min: 12,823 sg | max: 13,153 sg | acc: 64,808 sg | times: 5
+ *
  *
  *
  *
@@ -98,7 +99,8 @@ public class CalculateAverage_imrafaelmerino {
     }
 
     private static Map<String, Stat> calculateStats(String file,
-                                                    long chunkSize)
+                                                    long chunkSize
+                                                   )
             throws IOException {
 
         try (var fileChannel = FileChannel.open(Paths.get(file),
@@ -116,7 +118,8 @@ public class CalculateAverage_imrafaelmerino {
     }
 
     private static Map<String, Stat> combine(Map<String, Stat> xs,
-                                             Map<String, Stat> ys) {
+                                             Map<String, Stat> ys
+                                            ) {
         Map<String, Stat> result = new HashMap<>();
         for (var key : xs.keySet()) {
             var m1 = xs.get(key);
