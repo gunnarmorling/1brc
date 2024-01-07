@@ -31,22 +31,10 @@ import java.util.Arrays;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 
-// There are 1B record need to read so we cannot create 1B of Objects to process --> out of memory
-// 1. There are around 10k+ cities over the world --> max city record is 10K Objects
-// 2. Init Max 10K citis at boot times. --> partions them for processors
-
-//--------------------------Process Chunk----------------------------
-// 1. Analys problem when split file to multiple pieces
-// First Task --> Concat last Line
-// Middle Task --> Concat First and Last Line
-// Last Task --> Concat Lirst Line
-// 2. How to know First Line and Last Line
-// Fist Line from 0 to the first \n
-// Last Line from last \n to the end of byte capacity
 public class CalculateAverage_thanhtrinity {
 
     private static final String FILE = "./measurements.txt";
-    private static final int TOTAL_PROCCESSOR = max(16, Runtime.getRuntime().availableProcessors());
+    private static final int TOTAL_PROCCESSOR = Runtime.getRuntime().availableProcessors();
 
     public static void main(String[] args) throws IOException, InterruptedException {
 
@@ -58,23 +46,22 @@ public class CalculateAverage_thanhtrinity {
         System.out.println("FullSize:" + fullSize);
 
         long standardChunkSize = fullSize / TOTAL_PROCCESSOR;
-        System.out.println("standardChunkSize:" + standardChunkSize);
+        System.out.println("StandardChunkSize:" + standardChunkSize);
 
-        var cityStats = new CityStats[TOTAL_PROCCESSOR];
+        var CitiesTempChunk = new CitiesTempChunk[TOTAL_PROCCESSOR];
         for (int index = 0; index < TOTAL_PROCCESSOR; index++) {
             var pIndex = index;
             var start = pIndex * standardChunkSize;
             // The last chunk will be the remaining
             var end = (pIndex == TOTAL_PROCCESSOR - 1) ? fullSize : start + standardChunkSize;
-            var regionSize = end - start;
+            var chunkSize = end - start;
 
             // Haved check with virtual thread but it slower than normal thread
             var thread = new Thread(() -> {
                 try {
-                    var buffer = fileChannel.map(READ_ONLY, start, regionSize);
-                    cityStats[pIndex] = processBufferData(buffer, pIndex);
-                }
-                catch (IOException e) {
+                    var buffer = fileChannel.map(READ_ONLY, start, chunkSize);
+                    CitiesTempChunk[pIndex] = processBufferData(buffer, pIndex);
+                } catch (IOException e) {
                     e.printStackTrace();
                 }
             });
@@ -86,13 +73,17 @@ public class CalculateAverage_thanhtrinity {
             thread.join();
         }
 
-        consolidateStats(cityStats);
+        consolidateStats(CitiesTempChunk);
     }
 
-    private static void consolidateStats(CityStats[] cityStats) {
+    private static void consolidateStats(CitiesTempChunk[] CitiesTempChunk) {
 
-        var citiesList = Arrays.stream(cityStats).flatMap(cs -> Arrays.stream(cs.cities).filter(city -> city != null))
+        var citiesList = Arrays.stream(CitiesTempChunk)
+                .flatMap(cs -> Arrays.stream(cs.cities).filter(city -> city != null))
                 .toList();
+
+        System.out.println("Count:" + citiesList.size());
+
         var cities = citiesList.stream().collect(
                 Collectors.toMap(
                         city -> new String(city.getName(), StandardCharsets.UTF_8),
@@ -100,10 +91,10 @@ public class CalculateAverage_thanhtrinity {
                         City::combine));
 
         // Append Header And Footer
-        for (int i = 0; i < cityStats.length; i++) {
+        for (int i = 0; i < CitiesTempChunk.length; i++) {
             if (i > 0) {
-                var footer = cityStats[i - 1].footer;
-                var header = cityStats[i].header;
+                var footer = CitiesTempChunk[i - 1].footer;
+                var header = CitiesTempChunk[i].header;
 
                 var footerSize = footer != null ? footer.length : 0;
                 var headerSize = header != null ? header.length : 0;
@@ -118,9 +109,8 @@ public class CalculateAverage_thanhtrinity {
 
                 var data = new String(buffer.array(), StandardCharsets.UTF_8).split(";");
 
-                var city = new City();
-                city.setName(data[0].getBytes());
-                city.update(Double.valueOf(data[1]));
+                var city = new City(data[0].getBytes());
+                city.updateTempurature(Double.valueOf(data[1]));
                 cities.merge(data[0], city, City::combine);
             }
         }
@@ -128,7 +118,7 @@ public class CalculateAverage_thanhtrinity {
         System.out.println(new TreeMap<>(cities));
     }
 
-    private static CityStats processBufferData(MappedByteBuffer buffer, int taskIdx) {
+    private static CitiesTempChunk processBufferData(MappedByteBuffer buffer, int taskIdx) {
 
         var breakLineIndex = 0;
         var semicolonIndex = 0;
@@ -137,84 +127,44 @@ public class CalculateAverage_thanhtrinity {
         City city = null;
         var isProcessKey = true;
         var hashKey = 0;
-        int firstBreakLineIndex = 0;
-
-        double result = 0;
-        int integerPart = 0;
-        double fractionalPart = 0;
-        boolean isFractional = false;
-        double divisorForFraction = 1;
-        boolean isNegative = false;
+        var firstBreakLineIndex = 0;
+        var pro = new DataProcessor();
         while (buffer.hasRemaining()) {
             var b = buffer.get();
+            var position = buffer.position();
+
+            if (b == '\n') {
+                breakLineIndex = position;
+                if (firstBreakLineIndex == 0) {
+                    firstBreakLineIndex = position;
+                }
+                hashKey = 0;
+            }
 
             if (isProcessKey) {
                 if (b == ';') {
-                    semicolonIndex = buffer.position();
+                    semicolonIndex = position;
                     int cIdx = Math.abs(hashKey % 1000);
-                    isProcessKey = !isProcessKey;
                     city = cities[cIdx];
                     if (city == null) {
                         var name = new byte[semicolonIndex - breakLineIndex];
                         buffer.get(breakLineIndex, name, 0, semicolonIndex - breakLineIndex - 1);
-                        cities[cIdx] = city = new City();
-                        city.setName(name);
+                        cities[cIdx] = city = new City(name);
                     }
                     hashKey = 0;
-                }
-                else if (b == '\n') {
-                    hashKey = 0;
-                    breakLineIndex = buffer.position();
-                    if (firstBreakLineIndex == 0) {
-                        firstBreakLineIndex = buffer.position();
-                    }
-                }
-                else {
+                    isProcessKey = false;
+                } else {
                     hashKey = 31 * hashKey + b;
                 }
-            }
-            else {
+            } else {
                 if (b == '\n') {
-                    fractionalPart /= divisorForFraction;
-                    result = integerPart + fractionalPart;
-                    if (isNegative) {
-                        result *= -1;
-                    }
-                    city.update(result);
-
-                    if (firstBreakLineIndex == 0) {
-                        firstBreakLineIndex = buffer.position();
-                    }
-
-                    isProcessKey = !isProcessKey;
-                    breakLineIndex = buffer.position();
-                    hashKey = 0;
-
+                    isProcessKey = true;
+                    var tem = pro.calculateTempurature();
+                    city.updateTempurature(tem);
                     // reset parameter
-                    result = 0;
-                    integerPart = 0;
-                    fractionalPart = 0;
-                    isFractional = false;
-                    divisorForFraction = 1;
-                    isNegative = false;
-                }
-                else {
-                    if (b == '-') {
-                        isNegative = true;
-                        continue;
-                    }
-                    else if (b == '.') {
-                        isFractional = true;
-                        continue;
-                    }
-
-                    if (!isFractional) {
-                        integerPart = integerPart * 10 + (b - '0');
-                    }
-                    else {
-                        divisorForFraction *= 10;
-                        fractionalPart = fractionalPart * 10 + (b - '0');
-                    }
+                    pro.resetParsingParams();
+                } else {
+                    pro.updateParsingParams(b);
                 }
             }
         }
@@ -229,15 +179,64 @@ public class CalculateAverage_thanhtrinity {
 
         if (buffer.capacity() > breakLineIndex) {
             byteFooter = new byte[buffer.capacity() - breakLineIndex];
-            buffer.get(breakLineIndex, byteFooter, 0, buffer.capacity() - breakLineIndex);
+            buffer.get(breakLineIndex, byteFooter, 0, buffer.capacity() -
+                    breakLineIndex);
         }
 
-        return new CityStats(cities, byteHeader, byteFooter);
+        return new CitiesTempChunk(cities, byteHeader, byteFooter);
     }
 
-    record CityStats(City[] cities, byte[] header, byte[] footer) {
+    record CitiesTempChunk(City[] cities, byte[] header, byte[] footer) {
     }
 
+}
+
+class DataProcessor {
+    // Tempurature Parsing Param
+    private double result = 0;
+    private int integerPart = 0;
+    private double fractionalPart = 0;
+    private boolean isFractional = false;
+    private double divisorForFraction = 1;
+    private boolean isNegative = false;
+
+    public double calculateTempurature() {
+        fractionalPart /= divisorForFraction;
+        result = integerPart + fractionalPart;
+        if (isNegative) {
+            result *= -1;
+        }
+        return result;
+    }
+
+    public void updateParsingParams(byte b) {
+        switch (b) {
+            case '-':
+                isNegative = true;
+                break;
+            case '.':
+                isFractional = true;
+                break;
+            default:
+                if (!isFractional) {
+                    integerPart = integerPart * 10 + (b - '0');
+                } else {
+                    divisorForFraction *= 10;
+                    fractionalPart = fractionalPart * 10 + (b - '0');
+                }
+                break;
+        }
+
+    }
+
+    public void resetParsingParams() {
+        result = 0;
+        integerPart = 0;
+        fractionalPart = 0;
+        isFractional = false;
+        divisorForFraction = 1;
+        isNegative = false;
+    }
 }
 
 class City {
@@ -247,7 +246,14 @@ class City {
     private double sum = 0L;
     private int count = 0;
 
-    public void update(double temp) {
+    public City() {
+    }
+
+    public City(byte[] name) {
+        this.name = name;
+    }
+
+    public void updateTempurature(double temp) {
         min = min(min, temp);
         max = max(max, temp);
         sum += temp;
