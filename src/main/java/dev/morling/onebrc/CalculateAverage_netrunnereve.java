@@ -71,19 +71,15 @@ public class CalculateAverage_netrunnereve {
                 boolean state = false; // 0 for station pickup, 1 for measurement pickup
                 int negMul = 1;
                 int head = 0;
-                int tempCnt = 0;
+                int tempCnt = -1; // 0 if 1 digit measurement, 1 if 2 digit
 
                 for (int i = 0; i < mbs; i++) {
                     byte cur = mbuf.get(i);
                     if (state == true) {
                         if (cur == 46) { // .
                             int tempa = mbuf.get(i + 1) - 48;
-                            if (tempCnt == 2) { // tens
-                                tempa += ((scratch[0] - 48) * 100 + (scratch[1] - 48) * 10);
-                            }
-                            else { // ones
-                                tempa += ((scratch[0] - 48) * 10);
-                            }
+                            tempa += (scratch[0] - 48) * (10 + 90 * tempCnt) + (scratch[1] - 48) * (10 * tempCnt);
+
                             tempa *= negMul;
 
                             if (tempa < ma.min) {
@@ -99,13 +95,13 @@ public class CalculateAverage_netrunnereve {
                             state = false;
                             negMul = 1;
                             head = i + 1;
-                            tempCnt = 0;
+                            tempCnt = -1;
                         }
                         else if (cur == 45) { // ascii -
                             negMul = -1;
                         }
                         else {
-                            scratch[tempCnt] = cur;
+                            scratch[tempCnt + 1] = cur;
                             tempCnt++;
                         }
                     }
