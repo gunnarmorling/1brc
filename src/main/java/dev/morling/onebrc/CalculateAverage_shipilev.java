@@ -382,25 +382,34 @@ public class CalculateAverage_shipilev {
                 // expect a single digit after the point. The aggregation code
                 // expects temperatures at 10x scale.
                 {
-                    int temp = 0;
                     int neg = 1;
                     if (slice.get(idx) == '-') {
                         neg = -1;
                         idx++;
                     }
-                    int digit = 0;
-                    do {
-                        temp = temp * 10 + digit;
-                        byte b = slice.get(idx);
-                        digit = b - '0';
-                        idx++;
-                    } while (digit >= 0);
 
-                    // Past decimal point, parse another digit and exit.
+                    // First digit is always present, start with it.
+                    int temp = slice.get(idx) - '0';
+                    idx++;
+
+                    // Second digit might be missing, check if it is a decimal point.
+                    int digit = slice.get(idx) - '0';
+                    if (digit >= 0) {
+                        // Nope, legit digit.
+                        temp = temp * 10 + digit;
+                        // Skip over decimal point.
+                        idx += 2;
+                    }
+                    else {
+                        // This was decimal point, skip it.
+                        idx++;
+                    }
+
+                    // The left-over is single digit after the point.
                     temp = temp * 10 + (slice.get(idx) - '0');
                     temp = temp * neg;
 
-                    // Eat the last digit and EOL
+                    // Eat the last digit and EOL.
                     idx += 2;
 
                     // Time to update!
