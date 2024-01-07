@@ -28,6 +28,7 @@ import java.util.TreeMap;
 
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
+import static java.lang.foreign.ValueLayout.JAVA_INT_UNALIGNED;
 import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
 // create_measurements3.sh 500_000_000
@@ -205,31 +206,44 @@ public class CalculateAverage_mtopolnik {
             final byte zero = (byte) '0';
             final byte dot = (byte) '.';
 
-            long pos = semicolonPos + 1;
-            byte ch = inputMem.get(JAVA_BYTE, pos);
+            long start = semicolonPos + 1;
+            // Temperature plus the following newline is at least 4 chars, so this is always safe:
+            int fourCh = inputMem.get(JAVA_INT_UNALIGNED, start);
+            if (ByteOrder.nativeOrder() == ByteOrder.BIG_ENDIAN) {
+                fourCh = Integer.reverseBytes(fourCh);
+            }
+            final int mask = 0xFF;
+            byte ch = (byte) (fourCh & mask);
+            int shift = 0;
             int temperature;
             int sign;
             if (ch == minus) {
                 sign = -1;
-                pos++;
-                ch = inputMem.get(JAVA_BYTE, pos);
+                shift += 8;
+                ch = (byte) ((fourCh & (mask << shift)) >>> shift);
             }
             else {
                 sign = 1;
             }
             temperature = ch - zero;
-            pos++;
-            ch = inputMem.get(JAVA_BYTE, pos);
+            shift += 8;
+            ch = (byte) ((fourCh & (mask << shift)) >>> shift);
             if (ch == dot) {
-                pos++;
+                shift += 8;
+                ch = (byte) ((fourCh & (mask << shift)) >>> shift);
             }
             else {
                 temperature = 10 * temperature + (ch - zero);
-                pos += 2;
+                shift += 16;
+                // The last character may be past the four loaded bytes, load it from memory.
+                // Checking that with another `if` is self-defeating for performance.
+                ch = inputMem.get(JAVA_BYTE, start + (shift / 8));
             }
-            ch = inputMem.get(JAVA_BYTE, pos);
-            cursor = pos + 2; // newline is at pos + 1, advance the cursor to the start of the next line
             temperature = 10 * temperature + (ch - zero);
+            // `shift` holds the number of bits in the temperature field.
+            // A newline character follows the temperature, and so we advance
+            // the cursor past the newline to the start of the next line.
+            cursor = start + (shift / 8) + 2;
             return sign * temperature;
         }
 
