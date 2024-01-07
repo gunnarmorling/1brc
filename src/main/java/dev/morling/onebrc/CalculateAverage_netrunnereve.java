@@ -47,14 +47,14 @@ public class CalculateAverage_netrunnereve {
 
             long h = 0;
             while (h < fileSize) {
-                long end = bufSize;
+                long length = bufSize;
                 boolean finished = false;
-                if (h + end > fileSize) {
-                    end = fileSize - h;
+                if (h + length > fileSize) {
+                    length = fileSize - h;
                     finished = true;
                 }
 
-                MappedByteBuffer mbuf = mraf.getChannel().map(FileChannel.MapMode.READ_ONLY, h, end);
+                MappedByteBuffer mbuf = mraf.getChannel().map(FileChannel.MapMode.READ_ONLY, h, length);
                 int mbs = mbuf.capacity();
 
                 // check for last newline and split there, anything after goes to next buffer
@@ -73,7 +73,6 @@ public class CalculateAverage_netrunnereve {
                 int head = 0;
                 int tempCnt = 0;
 
-                h += mbs;
                 for (int i = 0; i < mbs; i++) {
                     byte cur = mbuf.get(i);
                     if (cur == 59) { // ;
@@ -133,6 +132,7 @@ public class CalculateAverage_netrunnereve {
                         }
                     }
                 }
+                h += mbs;
             }
 
             // this is faster than filling staArr during file read
