@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 #  Copyright 2023 The original authors
 #
@@ -15,9 +15,15 @@
 #  limitations under the License.
 #
 
-
-JAVA_OPTS="-XX:+UseParallelGC --enable-preview"
-JAVA_OPTS="$JAVA_OPTS -Xloggc:/tmp/x -XX:+PrintGCDetails"
+JAVA_OPTS=""
+JAVA_OPTS="$JAVA_OPTS --enable-preview"
+JAVA_OPTS="$JAVA_OPTS -XX:+UseParallelGC"
+#JAVA_OPTS="$JAVA_OPTS -XX:+PrintCompilation"
+#JAVA_OPTS="$JAVA_OPTS -XX:CompileThreshold=20 "
+#JAVA_OPTS="$JAVA_OPTS -XX:-TieredCompilation -XX:TieredStopAtLevel=4"
+#JAVA_OPTS="$JAVA_OPTS -XX:+UnlockDiagnosticVMOptions"
+#JAVA_OPTS="$JAVA_OPTS -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -Xlog:all=off"
+#JAVA_OPTS="$JAVA_OPTS -Xlog:gc*=debug:file=/tmp/gc.log"
 
 source "$HOME/.sdkman/bin/sdkman-init.sh"
 #sdk use java 21.0.1-open 1>&2
