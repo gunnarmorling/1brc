@@ -123,13 +123,13 @@ public class CalculateAverage_JamalMulla {
     private static class CalculateTask implements Runnable {
 
         private final FileChannel channel;
-        private final Map<String, ResultRow> results;
+        private final SimplerHashMap results;
         private final Map<String, ResultRow> global;
         private final Chunk chunk;
 
         public CalculateTask(FileChannel fileChannel, Map<String, ResultRow> global, Chunk chunk) {
             this.channel = fileChannel;
-            this.results = new HashMap<>();
+            this.results = new SimplerHashMap();
             this.global = global;
             this.chunk = chunk;
         }
@@ -155,19 +155,7 @@ public class CalculateAverage_JamalMulla {
                     inName = false;
                 }
                 else if (c == 0xA /* Newline */) {
-                    // back to name and reset buffers at end
-                    String name = new String(nameBytes, 0, nameIndex, StandardCharsets.UTF_8);
-                    // int nameHash = fnv(nameBytes, nameIndex);
-                    ResultRow rr;
-                    if ((rr = results.get(name)) != null) {
-                        rr.min = Math.min(rr.min, ot);
-                        rr.max = Math.max(rr.max, ot);
-                        rr.count++;
-                        rr.sum += ot;
-                    }
-                    else {
-                        results.put(name, new ResultRow(ot));
-                    }
+                    results.putOrMerge(nameBytes, nameIndex, ot);
                     inName = true;
                     nameIndex = 0;
                 }
@@ -179,11 +167,7 @@ public class CalculateAverage_JamalMulla {
                     // always with a single fractional digit
                     // represented as a byte array of either 4 or 5 characters
                     if (c == 0x2D /* minus sign */) {
-                        // minus sign so number will be negative
-
                         // could be either n.x or nn.x
-                        // char 3
-                        // skip dot
                         if (mappedByteBuffer.get(mappedByteBuffer.position() + 3) == 0xA) {
                             ot = (mappedByteBuffer.get() - 48) * 10; // char 1
                         }
@@ -196,10 +180,7 @@ public class CalculateAverage_JamalMulla {
                         ot = -(ot / 10f);
                     }
                     else {
-
                         // could be either n.x or nn.x
-                        // char 3
-                        // skip dot
                         if (mappedByteBuffer.get(mappedByteBuffer.position() + 2) == 0xA) {
                             ot = (c - 48) * 10; // char 1
                         }
@@ -214,21 +195,20 @@ public class CalculateAverage_JamalMulla {
                 }
             }
 
-            // merge my results with overall results
-            for (String k : results.keySet()) {
+            // merge results with overall results
+            for (MapEntry me : results.getAll()) {
                 ResultRow rr;
-                ResultRow lr = results.get(k);
-                if ((rr = global.get(k)) != null) {
+                ResultRow lr = me.row;
+                if ((rr = global.get(me.key)) != null) {
                     rr.min = Math.min(rr.min, lr.min);
                     rr.max = Math.max(rr.max, lr.max);
                     rr.count += lr.count;
                     rr.sum += lr.sum;
                 }
                 else {
-                    global.put(k, lr);
+                    global.put(me.key, lr);
                 }
             }
-
         }
     }
 
@@ -241,8 +221,7 @@ public class CalculateAverage_JamalMulla {
         int numThreads = Runtime.getRuntime().availableProcessors();
         List<Chunk> chunks = getChunks(numThreads, channel);
         List<Thread> threads = new ArrayList<>();
-        for (Chunk chunk : chunks) {
-            // Thread t = Thread.ofVirtual().name(chunk.toString()).start(new CalculateTask(channel, results, chunk));
+        for (Chunk chunk : chunks){
             Thread t = new Thread(new CalculateTask(channel, results, chunk));
             t.start();
             threads.add(t);
@@ -255,4 +234,52 @@ public class CalculateAverage_JamalMulla {
         // just to sort
         System.out.println(new TreeMap<>(results));
     }
+
+    record MapEntry(String key, ResultRow row) {
+    }
+
+    static class SimplerHashMap {
+        // can't have more than 10000 unique keys but need size to be power of 2 for masking
+        int MAPSIZE = 16384;
+        ResultRow[] slots = new ResultRow[MAPSIZE];
+        byte[][] keys = new byte[MAPSIZE][];
+
+        public void putOrMerge(byte[] key, int length, double temp) {
+            int hash = fnv(key, length);
+            int slot = hash & (MAPSIZE - 1);
+            ResultRow slotValue = slots[slot];
+
+            // Linear probe for open slot
+            while (slotValue != null && (keys[slot].length != length || !Arrays.equals(keys[slot], 0, length, key, 0, length))) {
+                slot = (slot + 1) & (MAPSIZE - 1);
+                slotValue = slots[slot];
+            }
+            ResultRow value = slotValue;
+            if (value == null) {
+                slots[slot] = new ResultRow(temp);
+                byte[] bytes = new byte[length];
+                System.arraycopy(key, 0, bytes, 0, length);
+                keys[slot] = bytes;
+            }
+            else {
+                value.min = Math.min(value.min, temp);
+                value.max = Math.max(value.max, temp);
+                value.sum += temp;
+                value.count += 1;
+            }
+        }
+
+        // Get all pairs
+        public List<MapEntry> getAll() {
+            List<MapEntry> result = new ArrayList<>(slots.length);
+            for (int i = 0; i < slots.length; i++) {
+                ResultRow slotValue = slots[i];
+                if (slotValue != null) {
+                    result.add(new MapEntry(new String(keys[i], StandardCharsets.UTF_8), slotValue));
+                }
+            }
+            return result;
+        }
+    }
+
 }
