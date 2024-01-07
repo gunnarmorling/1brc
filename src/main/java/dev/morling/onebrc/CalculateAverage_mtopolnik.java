@@ -132,6 +132,7 @@ public class CalculateAverage_mtopolnik {
                 MemorySegment statsMem = confinedArena.allocate(STATS_TABLE_SIZE * StatsAccessor.SIZEOF, Long.BYTES);
                 stats = new StatsAccessor(statsMem);
                 namesMem = confinedArena.allocate(STATS_TABLE_SIZE * NAME_SLOT_SIZE, Long.BYTES);
+                namesMem.fill((byte) 0);
                 hashBuf = confinedArena.allocate(HASHBUF_SIZE);
                 byte semicolon = (byte) ';';
                 long broadcastSemicolon = broadcastByte(semicolon);
@@ -176,16 +177,18 @@ public class CalculateAverage_mtopolnik {
                 long foundHash = stats.hash();
                 if (foundHash == 0) {
                     stats.setHash(hash);
+                    stats.setNameLen((int) nameLen);
                     stats.setSum(temperature);
                     stats.setCount(1);
                     stats.setMin(temperature);
                     stats.setMax(temperature);
                     var nameBlock = namesMem.asSlice(tableIndex * NAME_SLOT_SIZE, NAME_SLOT_SIZE);
                     nameBlock.copyFrom(nameSlice);
-                    nameBlock.set(JAVA_BYTE, nameLen, (byte) 0);
                     break;
                 }
-                if (foundHash != hash || namesMem.asSlice(tableIndex * NAME_SLOT_SIZE, nameLen).mismatch(nameSlice) != -1) {
+                if (foundHash != hash
+                        || stats.nameLen() != nameLen
+                        || namesMem.asSlice(tableIndex * NAME_SLOT_SIZE, nameLen).mismatch(nameSlice) != -1) {
                     tableIndex = (tableIndex + 1) % STATS_TABLE_SIZE;
                     continue;
                 }
@@ -305,7 +308,8 @@ public class CalculateAverage_mtopolnik {
 
     static class StatsAccessor {
         static final long HASH_OFFSET = 0;
-        static final long SUM_OFFSET = HASH_OFFSET + Long.BYTES;
+        static final long NAMELEN_OFFSET = HASH_OFFSET + Long.BYTES;
+        static final long SUM_OFFSET = NAMELEN_OFFSET + Integer.BYTES;
         static final long COUNT_OFFSET = SUM_OFFSET + Integer.BYTES;
         static final long MIN_OFFSET = COUNT_OFFSET + Integer.BYTES;
         static final long MAX_OFFSET = MIN_OFFSET + Integer.BYTES;
@@ -326,6 +330,10 @@ public class CalculateAverage_mtopolnik {
             return memSeg.get(JAVA_LONG, base + HASH_OFFSET);
         }
 
+        int nameLen() {
+            return memSeg.get(JAVA_INT, base + NAMELEN_OFFSET);
+        }
+
         int sum() {
             return memSeg.get(JAVA_INT, base + SUM_OFFSET);
         }
@@ -344,6 +352,10 @@ public class CalculateAverage_mtopolnik {
 
         void setHash(long hash) {
             memSeg.set(JAVA_LONG, base + HASH_OFFSET, hash);
+        }
+
+        void setNameLen(int nameLen) {
+            memSeg.set(JAVA_INT, base + NAMELEN_OFFSET, nameLen);
         }
 
         void setSum(int sum) {
