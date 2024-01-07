@@ -15,10 +15,6 @@
  */
 package dev.morling.onebrc;
 
-import jdk.incubator.vector.ByteVector;
-import jdk.incubator.vector.VectorOperators;
-import jdk.incubator.vector.VectorSpecies;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -29,7 +25,6 @@ import java.nio.ByteOrder;
 import java.nio.channels.FileChannel.MapMode;
 import java.util.ArrayList;
 import java.util.TreeMap;
-import java.util.concurrent.locks.LockSupport;
 
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
@@ -152,36 +147,6 @@ public class CalculateAverage_mtopolnik {
         }
 
         private void processChunk() {
-            VectorSpecies<Byte> vectorSpecies = ByteVector.SPECIES_PREFERRED;
-            int vectorByteSize = vectorSpecies.vectorByteSize();
-            var vectorProcessingLimit = inputMem.byteSize() - vectorByteSize + 1;
-            long vectorStart = cursor;
-            while (vectorStart < vectorProcessingLimit) {
-                long semicolons;
-                while (true) {
-                    var vector = ByteVector.fromMemorySegment(vectorSpecies, inputMem, vectorStart, ByteOrder.nativeOrder());
-                    semicolons = vector.compare(VectorOperators.EQ, SEMICOLON).toLong();
-                    if (semicolons != 0) {
-                        break;
-                    }
-                    vectorStart += vectorByteSize;
-                    if (vectorStart >= vectorProcessingLimit) {
-                        break;
-                    }
-                }
-                while (semicolons != 0) {
-                    var semicolonPos = vectorStart + Long.numberOfTrailingZeros(semicolons);
-                    assert semicolonPos > cursor;
-                    semicolons &= (semicolons - 1);
-                    final long hash = hash(inputMem, cursor, semicolonPos);
-                    long nameLen = semicolonPos - cursor;
-                    assert nameLen <= 100 : "nameLen > 100";
-                    MemorySegment nameSlice = inputMem.asSlice(cursor, nameLen);
-                    int temperature = parseTemperatureAndAdvanceCursor(semicolonPos);
-                    updateStats(hash, nameLen, temperature, nameSlice);
-                }
-                vectorStart = Long.max(cursor, vectorStart + vectorByteSize);
-            }
             while (cursor < inputMem.byteSize()) {
                 long semicolonPos = bytePosOfSemicolon(inputMem, cursor);
                 final long hash = hash(inputMem, cursor, semicolonPos);
