@@ -56,7 +56,6 @@ public class CalculateAverage_mtopolnik {
     }
 
     public static void main(String[] args) throws Exception {
-        // while (true)
         calculate();
     }
 
@@ -116,6 +115,7 @@ public class CalculateAverage_mtopolnik {
         private MemorySegment namesMem;
         private MemorySegment hashBuf;
         private StatsAccessor stats;
+        private long cursor;
 
         ChunkProcessor(RandomAccessFile raf, long chunkStart, long chunkLimit, StationStats[][] results, int myIndex) {
             this.raf = raf;
@@ -133,16 +133,10 @@ public class CalculateAverage_mtopolnik {
                 stats = new StatsAccessor(statsMem);
                 namesMem = confinedArena.allocate(STATS_TABLE_SIZE * NAME_SLOT_SIZE, Long.BYTES);
                 hashBuf = confinedArena.allocate(HASHBUF_SIZE);
-                long offset = 0;
                 byte semicolon = (byte) ';';
-                byte newline = (byte) '\n';
                 long broadcastSemicolon = broadcastByte(semicolon);
-                long broadcastNewline = broadcastByte(newline);
-                while (offset < inputMem.byteSize()) {
-                    final long semicolonPos = bytePos(inputMem, semicolon, broadcastSemicolon, offset);
-                    final long newlinePos = bytePos(inputMem, newline, broadcastNewline, semicolonPos + 1);
-                    recordMeasurement(offset, semicolonPos, newlinePos);
-                    offset = newlinePos + 1;
+                while (cursor < inputMem.byteSize()) {
+                    recordMeasurementAndAdvanceCursor(bytePos(inputMem, semicolon, broadcastSemicolon, cursor));
                 }
                 var exportedStats = new ArrayList<StationStats>(10_000);
                 for (int i = 0; i < STATS_TABLE_SIZE; i++) {
@@ -170,13 +164,13 @@ public class CalculateAverage_mtopolnik {
             }
         }
 
-        private void recordMeasurement(long startPos, long semicolonPos, long newlinePos) {
-            int temperature = parseTemperature(semicolonPos, newlinePos);
-            final long hash = hash(inputMem, startPos, semicolonPos);
+        private void recordMeasurementAndAdvanceCursor(long semicolonPos) {
+            final long hash = hash(inputMem, cursor, semicolonPos);
             int tableIndex = (int) (hash % STATS_TABLE_SIZE);
-            short nameLen = (short) (semicolonPos - startPos);
+            long nameLen = semicolonPos - cursor;
             assert nameLen <= 100 : "nameLen > 100";
-            MemorySegment nameSlice = inputMem.asSlice(startPos, nameLen);
+            MemorySegment nameSlice = inputMem.asSlice(cursor, nameLen);
+            int temperature = parseTemperatureAndAdvanceCursor(semicolonPos);
             while (true) {
                 stats.gotoIndex(tableIndex);
                 long foundHash = stats.hash();
@@ -203,23 +197,37 @@ public class CalculateAverage_mtopolnik {
             }
         }
 
-        private int parseTemperature(long start, long limit) {
-            final byte zeroChar = (byte) '0';
-            int temperature = inputMem.get(JAVA_BYTE, limit - 1) - zeroChar;
-            temperature += 10 * (inputMem.get(JAVA_BYTE, limit - 3) - zeroChar);
-            if (limit - 4 > start) {
-                final byte b = inputMem.get(JAVA_BYTE, limit - 4);
-                if (b != (byte) '-') {
-                    temperature += 100 * (b - zeroChar);
-                    if (limit - 5 > start) {
-                        temperature = -temperature;
-                    }
-                }
-                else {
-                    temperature = -temperature;
-                }
+        private int parseTemperatureAndAdvanceCursor(long semicolonPos) {
+            final byte minus = (byte) '-';
+            final byte zero = (byte) '0';
+            final byte dot = (byte) '.';
+
+            long pos = semicolonPos + 1;
+            byte ch = inputMem.get(JAVA_BYTE, pos);
+            int temperature;
+            int sign;
+            if (ch == minus) {
+                sign = -1;
+                pos++;
+                ch = inputMem.get(JAVA_BYTE, pos);
             }
-            return temperature;
+            else {
+                sign = 1;
+            }
+            temperature = ch - zero;
+            pos++;
+            ch = inputMem.get(JAVA_BYTE, pos);
+            if (ch == dot) {
+                pos++;
+            }
+            else {
+                temperature = 10 * temperature + (ch - zero);
+                pos += 2;
+            }
+            ch = inputMem.get(JAVA_BYTE, pos);
+            cursor = pos + 2; // newline is at pos + 1, advance the cursor to the start of the next line
+            temperature = 10 * temperature + (ch - zero);
+            return sign * temperature;
         }
 
         private long hash(MemorySegment inputMem, long start, long limit) {

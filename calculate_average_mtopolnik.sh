@@ -14,6 +14,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
 # Script adapted from royvanrijn
 
 source "$HOME/.sdkman/bin/sdkman-init.sh"
