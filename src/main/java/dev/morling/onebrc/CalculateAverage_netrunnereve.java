@@ -37,11 +37,11 @@ public class CalculateAverage_netrunnereve {
     public static void main(String[] args) {
         try {
             RandomAccessFile mraf = new RandomAccessFile(FILE, "r");
-            MappedByteBuffer mbuf = mraf.getChannel().map(FileChannel.MapMode.READ_ONLY, 0, mraf.getChannel().size());
+            long fileSize = mraf.getChannel().size();
+            long bufSize = Integer.MAX_VALUE; // Java requirement is <= Integer.MAX_VALUE
 
             HashMap<String, MeasurementAggregator> staHash = new HashMap<String, MeasurementAggregator>();
 
-            int mbs = mbuf.capacity();
             boolean state = false; // 0 for station pickup, 1 for measurement pickup
             boolean negate = false;
             int head = 0;
@@ -49,62 +49,88 @@ public class CalculateAverage_netrunnereve {
             byte[] scratch = new byte[50]; // this will be auto-enlarged if necessary
             MeasurementAggregator ma = null;
 
-            for (int i = 0; i < mbs; i++) {
-                byte cur = mbuf.get(i);
-                if (cur == 59) { // ascii ;
-                    int len = i - head;
-                    if (scratch.length < len) { // enlarge scratch if it's too small for us
-                        scratch = new byte[scratch.length * 10];
-                    }
-
-                    // this is faster than filling scratch immediately after each byte is read
-                    mbuf.position(head);
-                    mbuf.get(scratch, 0, len);
-                    String station = new String(scratch, 0, len, StandardCharsets.UTF_8);
-
-                    ma = staHash.get(station);
-                    if (ma == null) {
-                        ma = new MeasurementAggregator();
-                        staHash.put(station, ma);
-                    }
-
-                    state = true;
-                    head = i + 1;
+            long h = 0;
+            while (h < fileSize) {
+                long end = bufSize;
+                boolean finished = false;
+                if (h + end > fileSize) {
+                    end = fileSize - h;
+                    finished = true;
                 }
-                else if (cur == 10) { // ascii \n
-                    state = false;
-                    negate = false;
-                    head = i + 1;
-                    tempCnt = 0;
+
+                MappedByteBuffer mbuf = mraf.getChannel().map(FileChannel.MapMode.READ_ONLY, h, end);
+                int mbs = mbuf.capacity();
+
+                // check for last newline and split there, anything after goes to next buffer
+                if (!finished) {
+                    for (int i = mbs - 1; true; i--) {
+                        byte cur = mbuf.get(i);
+                        if (cur == 10) { // \n
+                            mbs = i;
+                            break;
+                        }
+                    }
                 }
-                else if (state == true) {
-                    if (cur == 46) { // ascii .
-                        int tempa = mbuf.get(i + 1) - 48;
-                        if (tempCnt == 2) { // tens
-                            tempa += (scratch[0] - 48) * 100 + (scratch[1] - 48) * 10;
-                        }
-                        else { // ones
-                            tempa += (scratch[0] - 48) * 10;
-                        }
-                        if (negate) {
-                            tempa *= -1;
+
+                h += mbs;
+
+                for (int i = 0; i < mbs; i++) {
+                    byte cur = mbuf.get(i);
+                    if (cur == 59) { // ;
+                        int len = i - head;
+                        if (scratch.length < len) { // enlarge scratch if it's too small for us
+                            scratch = new byte[scratch.length * 10];
                         }
 
-                        if (tempa < ma.min) {
-                            ma.min = tempa;
+                        // this is faster than filling scratch immediately after each byte is read
+                        mbuf.position(head);
+                        mbuf.get(scratch, 0, len);
+                        String station = new String(scratch, 0, len, StandardCharsets.UTF_8);
+
+                        ma = staHash.get(station);
+                        if (ma == null) {
+                            ma = new MeasurementAggregator();
+                            staHash.put(station, ma);
                         }
-                        if (tempa > ma.max) {
-                            ma.max = tempa;
+
+                        state = true;
+                        head = i + 1;
+                    }
+                    else if (cur == 10) { // \n
+                        state = false;
+                        negate = false;
+                        head = i + 1;
+                        tempCnt = 0;
+                    }
+                    else if (state == true) {
+                        if (cur == 46) { // .
+                            int tempa = mbuf.get(i + 1) - 48;
+                            if (tempCnt == 2) { // tens
+                                tempa += (scratch[0] - 48) * 100 + (scratch[1] - 48) * 10;
+                            }
+                            else { // ones
+                                tempa += (scratch[0] - 48) * 10;
+                            }
+                            if (negate) {
+                                tempa *= -1;
+                            }
+
+                            if (tempa < ma.min) {
+                                ma.min = tempa;
+                            }
+                            if (tempa > ma.max) {
+                                ma.max = tempa;
+                            }
+                            ma.sum += tempa;
+                            ma.count++;
                         }
-                        ma.sum += tempa;
-                        ma.count++;
-                    }
-                    else if (cur == 45) { // ascii -
-                        negate = true;
-                    }
-                    else {
-                        scratch[tempCnt] = cur;
-                        tempCnt++;
+                        else if (cur == 45) { // ascii -
+                            negate = true;
+                        }
+                        else {
+                            scratch[tempCnt] = cur;
+                            tempCnt++;
+                        }
                     }
                 }
             }
