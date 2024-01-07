@@ -106,6 +106,8 @@ public class CalculateAverage_mtopolnik {
 
     private static class ChunkProcessor implements Runnable {
         private static final long HASHBUF_SIZE = 8;
+        private static final byte SEMICOLON = (byte) ';';
+        private static final long BROADCAST_SEMICOLON = broadcastByte(SEMICOLON);
 
         private final long chunkStart;
         private final long chunkLimit;
@@ -127,6 +129,7 @@ public class CalculateAverage_mtopolnik {
             this.myIndex = myIndex;
         }
 
+
         @Override
         public void run() {
             try (Arena confinedArena = Arena.ofConfined()) {
@@ -136,10 +139,8 @@ public class CalculateAverage_mtopolnik {
                 namesMem = confinedArena.allocate(STATS_TABLE_SIZE * NAME_SLOT_SIZE, Long.BYTES);
                 namesMem.fill((byte) 0);
                 hashBuf = confinedArena.allocate(HASHBUF_SIZE);
-                byte semicolon = (byte) ';';
-                long broadcastSemicolon = broadcastByte(semicolon);
                 while (cursor < inputMem.byteSize()) {
-                    recordMeasurementAndAdvanceCursor(bytePos(inputMem, semicolon, broadcastSemicolon, cursor));
+                    recordMeasurementAndAdvanceCursor(bytePos(inputMem, SEMICOLON, BROADCAST_SEMICOLON, cursor));
                 }
                 var exportedStats = new ArrayList<StationStats>(10_000);
                 for (int i = 0; i < STATS_TABLE_SIZE; i++) {
