@@ -16,7 +16,6 @@
 package dev.morling.onebrc;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
@@ -25,8 +24,6 @@ import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.ForkJoinPool;
 import java.util.function.Supplier;
-import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
 
 /**
  * @author Rafael Merino García
@@ -50,11 +47,11 @@ import java.util.stream.StreamSupport;
  *
  *
  *  Credits:
- *      . bjhara: Really nice splitearator to be able to use the Stream API.
+ *      . bjhara: Really nice segmentation of the file based on spullara.
  *      . ebarlas: working with integers since we only have to consider one decimal
  *        (I don't think this makes a big difference though)
- *      . filiphr: It was my starting point, since it's the most natural way of approaching
- *        the problem using the nice spliterartor from bjhara. This solution has the potential
+ *      . filiphr: It was my starting point, since it's the most natural and idiomatic way of approaching
+ *        the problem using a nice spliterartor from bjhara. This solution has the potential
  *        for substantial improvement by actively pursuing a <br>higher level of parallelization<br>.
  *  </pre>
  *
@@ -95,7 +92,7 @@ import java.util.stream.StreamSupport;
 public class CalculateAverage_imrafaelmerino {
 
     private static final String FILE = "./measurements.txt";
-    private static final int FIELD_SIZE = 128;
+    private static final int FIELD_SIZE = 100;
 
     public static void main(String[] args) throws IOException {
         var chunkSize = Long.parseLong(args[0].trim());
@@ -104,13 +101,13 @@ public class CalculateAverage_imrafaelmerino {
     }
 
     private static Map<String, Stat> calculateStats(String file,
-                                                    long chunkSize
-                                                   )
+                                                    long chunkSize)
             throws IOException {
 
         try (var fileChannel = FileChannel.open(Paths.get(file),
-                                                StandardOpenOption.READ)) {
-            var stats = fileMemoryStream(fileChannel, chunkSize)
+                StandardOpenOption.READ)) {
+            var stats = fileMemoryList(fileChannel, chunkSize)
+                    .stream()
                     .parallel()
                     .map(p -> ManagedComputation.compute(() -> parse(p)))
                     .reduce(Collections.emptyMap(),
@@ -122,8 +119,7 @@ public class CalculateAverage_imrafaelmerino {
     }
 
     private static Map<String, Stat> combine(Map<String, Stat> xs,
-                                             Map<String, Stat> ys
-                                            ) {
+                                             Map<String, Stat> ys) {
 
         Map<String, Stat> result = new HashMap<>();
 
@@ -144,19 +140,23 @@ public class CalculateAverage_imrafaelmerino {
         Map<String, Stat> stats = new HashMap<>();
         var limit = bb.limit();
         var field = new byte[FIELD_SIZE];
+        var number = 0;
+        var sign = 1;
+
         while (bb.position() < limit) {
-            var fieldCurrentIndex = 0;
+            int fieldCurrentIndex = 0;
+
             while (bb.position() < limit) {
-                var fieldByte = bb.get();
+                byte fieldByte = bb.get();
                 if (fieldByte == ';')
                     break;
                 field[fieldCurrentIndex++] = fieldByte;
             }
-            var fieldStr = new String(field, 0, fieldCurrentIndex);
-            var number = 0;
-            var sign = 1;
+
+            String fieldStr = new String(field, 0, fieldCurrentIndex);
+
             while (bb.position() < limit) {
-                var numberByte = bb.get();
+                byte numberByte = bb.get();
                 if (numberByte == '-')
                     sign = -1;
                 else if (numberByte == '\n')
@@ -164,55 +164,36 @@ public class CalculateAverage_imrafaelmerino {
                 else if (numberByte != '.')
                     number = number * 10 + (numberByte - '0');
             }
-            stats.computeIfAbsent(fieldStr,
-                                  k -> new Stat())
-                 .update(sign * number);
+
+            stats.computeIfAbsent(fieldStr, k -> new Stat()).update(sign * number);
+            number = 0;
+            sign = 1;
         }
 
         return stats;
     }
 
-    private static Stream<ByteBuffer> fileMemoryStream(FileChannel fileChannel,
-                                                       long chunkSize
-                                                      )
-            throws IOException {
+    private static List<ByteBuffer> fileMemoryList(FileChannel fileChannel, long chunkSize) throws IOException {
+        List<ByteBuffer> buffers = new ArrayList<>();
+        ByteBuffer reusableBuffer = ByteBuffer.allocateDirect((int) chunkSize);
 
-        var spliterator = Spliterators.spliteratorUnknownSize(fileMemoryIterator(fileChannel,
-                                                                                 chunkSize),
-                                                              Spliterator.IMMUTABLE);
-        return StreamSupport.stream(spliterator,
-                                    false);
-    }
+        long start = 0;
+        long size = fileChannel.size();
 
-    private static Iterator<ByteBuffer> fileMemoryIterator(FileChannel fileChannel, long chunkSize) throws IOException {
-        return new Iterator<>() {
+        while (start < size) {
+            reusableBuffer.clear();
+            fileChannel.read(reusableBuffer, start);
+            reusableBuffer.flip();
 
-            private final long size = fileChannel.size();
-            private long start = 0;
-
-            @Override
-            public boolean hasNext() {
-                return start < size;
+            while (reusableBuffer.get(reusableBuffer.limit() - 1) != '\n') {
+                reusableBuffer.limit(reusableBuffer.limit() - 1);
             }
 
-            @Override
-            public ByteBuffer next() {
-                try {
-                    var buffer = fileChannel.map(MapMode.READ_ONLY,
-                                                 start,
-                                                 Math.min(chunkSize,
-                                                          size - start));
-                    var limmit = buffer.limit() - 1;
-                    while (buffer.get(limmit) != '\n') limmit--;
-                    limmit++;
-                    buffer.limit(limmit);
-                    start += limmit;
-                    return buffer;
-                } catch (IOException ex) {
-                    throw new UncheckedIOException(ex);
-                }
-            }
-        };
+            buffers.add(reusableBuffer.duplicate());
+            start += reusableBuffer.limit();
+        }
+
+        return buffers;
     }
 
     private static final class Stat {
@@ -223,8 +204,7 @@ public class CalculateAverage_imrafaelmerino {
         private long count = 0L;
 
         public static Stat combine(Stat m1,
-                                   Stat m2
-                                  ) {
+                                   Stat m2) {
             var stat = new Stat();
             stat.min = Math.min(m1.min, m2.min);
             stat.max = Math.max(m1.max, m2.max);
@@ -256,7 +236,8 @@ public class CalculateAverage_imrafaelmerino {
             try {
                 ForkJoinPool.managedBlock(managedBlocker);
                 return managedBlocker.getResult();
-            } catch (InterruptedException e) {
+            }
+            catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new RuntimeException(e);
             }
