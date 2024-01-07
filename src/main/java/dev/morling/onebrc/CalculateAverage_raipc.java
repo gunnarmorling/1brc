@@ -412,7 +412,7 @@ public class CalculateAverage_raipc {
             int length = data.length;
             ByteArrayWrapper key = value.station;
             int hashCode = key.hashCode();
-            int idx = length & (hashCode ^ (hashCode >> 16));
+            int idx = (length - 1) & (hashCode ^ (hashCode >> 16));
             return doMerge(key, value, idx, length, data) || doMerge(key, value, 0, idx, data);
         }
 
