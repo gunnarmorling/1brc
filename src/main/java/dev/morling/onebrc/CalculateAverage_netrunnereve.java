@@ -69,13 +69,47 @@ public class CalculateAverage_netrunnereve {
                 }
 
                 boolean state = false; // 0 for station pickup, 1 for measurement pickup
-                boolean negate = false;
+                int negMul = 1;
                 int head = 0;
                 int tempCnt = 0;
 
                 for (int i = 0; i < mbs; i++) {
                     byte cur = mbuf.get(i);
-                    if (cur == 59) { // ;
+                    if (state == true) {
+                        if (cur == 46) { // .
+                            int tempa = mbuf.get(i + 1) - 48;
+                            if (tempCnt == 2) { // tens
+                                tempa += ((scratch[0] - 48) * 100 + (scratch[1] - 48) * 10);
+                            }
+                            else { // ones
+                                tempa += ((scratch[0] - 48) * 10);
+                            }
+                            tempa *= negMul;
+
+                            if (tempa < ma.min) {
+                                ma.min = tempa;
+                            }
+                            if (tempa > ma.max) {
+                                ma.max = tempa;
+                            }
+                            ma.sum += tempa;
+                            ma.count++;
+
+                            i += 2; // go to start of new line
+                            state = false;
+                            negMul = 1;
+                            head = i + 1;
+                            tempCnt = 0;
+                        }
+                        else if (cur == 45) { // ascii -
+                            negMul = -1;
+                        }
+                        else {
+                            scratch[tempCnt] = cur;
+                            tempCnt++;
+                        }
+                    }
+                    else if (cur == 59) { // ;
                         int len = i - head;
                         if (scratch.length < len) { // enlarge scratch if it's too small for us
                             scratch = new byte[scratch.length * 10];
@@ -94,42 +128,6 @@ public class CalculateAverage_netrunnereve {
 
                         state = true;
                         head = i + 1;
-                    }
-                    else if (cur == 10) { // \n
-                        state = false;
-                        negate = false;
-                        head = i + 1;
-                        tempCnt = 0;
-                    }
-                    else if (state == true) {
-                        if (cur == 46) { // .
-                            int tempa = mbuf.get(i + 1) - 48;
-                            if (tempCnt == 2) { // tens
-                                tempa += (scratch[0] - 48) * 100 + (scratch[1] - 48) * 10;
-                            }
-                            else { // ones
-                                tempa += (scratch[0] - 48) * 10;
-                            }
-                            if (negate) {
-                                tempa *= -1;
-                            }
-
-                            if (tempa < ma.min) {
-                                ma.min = tempa;
-                            }
-                            if (tempa > ma.max) {
-                                ma.max = tempa;
-                            }
-                            ma.sum += tempa;
-                            ma.count++;
-                        }
-                        else if (cur == 45) { // ascii -
-                            negate = true;
-                        }
-                        else {
-                            scratch[tempCnt] = cur;
-                            tempCnt++;
-                        }
                     }
                 }
                 h += mbs;
