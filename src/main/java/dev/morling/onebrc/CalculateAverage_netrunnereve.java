@@ -108,6 +108,7 @@ public class CalculateAverage_netrunnereve {
                 }
             }
 
+            // this is actually faster than filling staArr during file read
             String[] staArr = new String[staHash.size()];
             int j = 0;
             for (String i : staHash.keySet()) {
@@ -116,14 +117,15 @@ public class CalculateAverage_netrunnereve {
             }
             Arrays.sort(staArr);
 
+            int staH_size = staHash.size();
             String out = "{";
-            for (int i = 0; i < staHash.size(); i++) {
+            for (int i = 0; i < staH_size; i++) {
                 ma = staHash.get(staArr[i]);
                 double min = Math.round(Double.valueOf(ma.min)) / 10.0;
                 double avg = Math.round(Double.valueOf(ma.sum) / Double.valueOf(ma.count)) / 10.0;
                 double max = Math.round(Double.valueOf(ma.max)) / 10.0;
                 out += staArr[i] + "=" + min + "/" + avg + "/" + max;
-                if (i != (staHash.size() - 1)) {
+                if (i != (staH_size - 1)) {
                     out += ", ";
                 }
             }
