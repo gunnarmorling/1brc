@@ -30,6 +30,7 @@ import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static java.lang.foreign.ValueLayout.JAVA_INT_UNALIGNED;
 import static java.lang.foreign.ValueLayout.JAVA_LONG;
+import static java.lang.foreign.ValueLayout.JAVA_SHORT;
 
 // create_measurements3.sh 500_000_000
 // initial:    real	0m11.640s user	0m39.766s sys	0m9.852s
@@ -181,8 +182,8 @@ public class CalculateAverage_mtopolnik {
                     stats.setNameLen((int) nameLen);
                     stats.setSum(temperature);
                     stats.setCount(1);
-                    stats.setMin(temperature);
-                    stats.setMax(temperature);
+                    stats.setMin((short) temperature);
+                    stats.setMax((short) temperature);
                     var nameBlock = namesMem.asSlice(tableIndex * NAME_SLOT_SIZE, NAME_SLOT_SIZE);
                     nameBlock.copyFrom(nameSlice);
                     break;
@@ -195,8 +196,8 @@ public class CalculateAverage_mtopolnik {
                 }
                 stats.setSum(stats.sum() + temperature);
                 stats.setCount(stats.count() + 1);
-                stats.setMin(Integer.min(stats.min(), temperature));
-                stats.setMax(Integer.max(stats.max(), temperature));
+                stats.setMin((short) Integer.min(stats.min(), temperature));
+                stats.setMax((short) Integer.max(stats.max(), temperature));
                 break;
             }
         }
@@ -326,8 +327,8 @@ public class CalculateAverage_mtopolnik {
         static final long SUM_OFFSET = NAMELEN_OFFSET + Integer.BYTES;
         static final long COUNT_OFFSET = SUM_OFFSET + Integer.BYTES;
         static final long MIN_OFFSET = COUNT_OFFSET + Integer.BYTES;
-        static final long MAX_OFFSET = MIN_OFFSET + Integer.BYTES;
-        static final long SIZEOF = (MAX_OFFSET + Integer.BYTES - 1) / 8 * 8 + 8;
+        static final long MAX_OFFSET = MIN_OFFSET + Short.BYTES;
+        static final long SIZEOF = (MAX_OFFSET + Short.BYTES - 1) / 8 * 8 + 8;
 
         private final MemorySegment memSeg;
         private long base;
@@ -356,12 +357,12 @@ public class CalculateAverage_mtopolnik {
             return memSeg.get(JAVA_INT, base + COUNT_OFFSET);
         }
 
-        int min() {
-            return memSeg.get(JAVA_INT, base + MIN_OFFSET);
+        short min() {
+            return memSeg.get(JAVA_SHORT, base + MIN_OFFSET);
         }
 
-        int max() {
-            return memSeg.get(JAVA_INT, base + MAX_OFFSET);
+        short max() {
+            return memSeg.get(JAVA_SHORT, base + MAX_OFFSET);
         }
 
         void setHash(long hash) {
@@ -380,12 +381,12 @@ public class CalculateAverage_mtopolnik {
             memSeg.set(JAVA_INT, base + COUNT_OFFSET, count);
         }
 
-        void setMin(int min) {
-            memSeg.set(JAVA_INT, base + MIN_OFFSET, min);
+        void setMin(short min) {
+            memSeg.set(JAVA_SHORT, base + MIN_OFFSET, min);
         }
 
-        void setMax(int max) {
-            memSeg.set(JAVA_INT, base + MAX_OFFSET, max);
+        void setMax(short max) {
+            memSeg.set(JAVA_SHORT, base + MAX_OFFSET, max);
         }
     }
 }
