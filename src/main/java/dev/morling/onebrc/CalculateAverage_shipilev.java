@@ -22,11 +22,12 @@ import java.io.RandomAccessFile;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.concurrent.RecursiveAction;
+import java.util.concurrent.CountedCompleter;
 import java.util.function.Supplier;
 
 public class CalculateAverage_shipilev {
@@ -34,10 +35,10 @@ public class CalculateAverage_shipilev {
     // This might not be the fastest implementation one can do.
     // When working on this implementation, I set the bar like this:
     //
-    // 1. Using only vanilla Java, without defaulting to Unsafe tricks;
-    // 2. Using only standard Java, without preview features like FFM;
-    // 3. Leaving out hard-to-understand hacks, the correctness of which is not obvious;
-    // 4. PARALLELISM, to feed my hungry TR 3970X.
+    // 1. Use only vanilla Java, without defaulting to Unsafe tricks;
+    // 2. Use only standard Java, without preview features like FFM;
+    // 3. Leave out hard-to-understand hacks, the correctness of which is not obvious;
+    // 4. Use PARALLELISM, to feed my hungry TR 3970X.
     //
 
     // ========================= Tunables =========================
@@ -45,16 +46,14 @@ public class CalculateAverage_shipilev {
     // Workload data file.
     private static final String FILE = "./measurements.txt";
 
-    // The goal for this implementation is to do vanilla Java implementation.
-    // Some code paths are using Unsafe for better performance, but it is not
-    // required for this code to work. Disable the flag to run without Unsafe
-    // tricks.
-    private static final boolean UNSAFE_TRICKERY = false;
+    // The largest mmap-ed chunk. This should normally be Integer.MAX_VALUE,
+    // but can be tuned down to allow smaller mmaped regions, if needed.
+    private static final int MMAP_CHUNK_SIZE = Integer.MAX_VALUE;
 
     // The largest slice as unit of work, processed serially by a worker.
     // Set it too low and there would be more tasks and less batching, but
     // more parallelism. Set it too high, and the reverse would be true.
-    private static final int UNIT_SLICE_SIZE = 64 * 1024 * 1024;
+    private static final int UNIT_SLICE_SIZE = 1 * 1024 * 1024;
 
     // Max distance to search for line separator when scanning for line
     // boundaries.
@@ -78,17 +77,6 @@ public class CalculateAverage_shipilev {
     // After worker threads finish, the data is available here. One just needs
     // to merge it a little.
     private static final ArrayList<MeasurementsMap> ALL_MAPS = new ArrayList<>();
-
-    // Line buffers for workers to do scan for line boundaries.
-    // Even though crude, avoid lambdas here to alleviate startup costs.
-    private static final ThreadLocal<ByteBuffer> LINE_BUFFERS = ThreadLocal.withInitial(new Supplier<>() {
-        @Override
-        public ByteBuffer get() {
-            ByteBuffer bb = ByteBuffer.allocateDirect(MAX_LINE_LENGTH);
-            bb.order(ByteOrder.nativeOrder());
-            return bb;
-        }
-    });
 
     // ========================= MEATY GRITTY PARTS: PARSE AND AGGREGATE =========================
 
@@ -273,20 +261,19 @@ public class CalculateAverage_shipilev {
         }
     }
 
-    // The heavy-weight, where most of the magic happens.
-    public static class ParsingTask extends RecursiveAction {
-        private final FileChannel fc;
-        private final long start;
-        private final long end;
+    // The heavy-weight, where most of the magic happens. This is not a usual
+    // RecursiveAction, but rather a CountedCompleter in order to be more robust
+    // in presence of I/O stalls and other scheduling irregularities.
+    public static class ParsingTask extends CountedCompleter<Void> {
+        private final ByteBuffer buf;
 
-        public ParsingTask(FileChannel fc, long start, long end) {
-            this.fc = fc;
-            this.start = start;
-            this.end = end;
+        public ParsingTask(CountedCompleter<Void> p, ByteBuffer buf) {
+            super(p);
+            this.buf = buf;
         }
 
         @Override
-        protected void compute() {
+        public void compute() {
             try {
                 internalCompute();
             }
@@ -297,50 +284,41 @@ public class CalculateAverage_shipilev {
         }
 
         private void internalCompute() throws Exception {
-            if (end - start > UNIT_SLICE_SIZE) {
+            int len = buf.limit();
+            if (len > UNIT_SLICE_SIZE) {
                 // Split in half.
-                long mid = start + (end - start) / 2;
+                int mid = len / 2;
 
                 // Read a little chunk into a little buffer.
-                long minBound = mid - MAX_LINE_LENGTH;
-                ByteBuffer bb = LINE_BUFFERS.get();
-                bb.rewind();
-                fc.read(bb, minBound);
+                int minBound = mid - MAX_LINE_LENGTH;
 
                 // Figure out the boundary that does not split the line.
-                int w = MAX_LINE_LENGTH;
-                while (bb.get(w - 1) != '\n') {
+                int w = mid + MAX_LINE_LENGTH;
+                while (buf.get(w - 1) != '\n') {
                     w--;
                 }
-                mid = minBound + w;
+                mid = w;
 
                 // Fork out! The stack depth would be shallow enough for us to
                 // execute one of the computations directly.
-                ParsingTask t1 = new ParsingTask(fc, start, mid);
-                t1.fork();
-                ParsingTask t2 = new ParsingTask(fc, mid, end);
-                t2.compute();
-                t1.join();
+                // FJP API: Tell there is a pending task.
+                setPendingCount(1);
+                new ParsingTask(this, buf.slice(0, mid)).fork();
+
+                // The stack depth would be shallow enough for us to
+                // execute one of the computations directly.
+                new ParsingTask(this, buf.slice(mid, len - mid)).compute();
             }
             else {
                 // The call to seqCompute would normally be non-inlined.
                 // Do setup stuff here to save inlining budget.
                 MeasurementsMap map = MAPS.get();
 
-                // Memory-map the target chunk of file.
-                MappedByteBuffer slice = fc.map(FileChannel.MapMode.READ_ONLY, start, end - start);
-
-                // At this point, we know the length fits in integer.
-                int len = (int) (end - start);
-
                 // Go!
-                seqCompute(map, slice, len);
+                seqCompute(map, buf, len);
 
-                // Unmapping stuff at the end of workload gets in the way for very
-                // short running times. If possible, invoke the cleaner directly now.
-                if (UNSAFE_TRICKERY) {
-                    UnsafeAccess.invokeCleaner(slice);
-                }
+                // FJP API: Notify that this task have completed.
+                tryComplete();
             }
         }
 
@@ -378,14 +356,18 @@ public class CalculateAverage_shipilev {
                 // expect a single digit after the point. The aggregation code
                 // expects temperatures at 10x scale.
                 {
+                    byte first = slice.get(idx);
+
+                    // Is it a sign? Record it and read the true next digit.
                     int neg = 1;
-                    if (slice.get(idx) == '-') {
+                    if (first == '-') {
                         neg = -1;
                         idx++;
+                        first = slice.get(idx);
                     }
 
                     // First digit is always present, start with it.
-                    int temp = slice.get(idx) - '0';
+                    int temp = first - '0';
                     idx++;
 
                     // Second digit might be missing, check if it is a decimal point.
@@ -415,13 +397,73 @@ public class CalculateAverage_shipilev {
         }
     }
 
+    // Fork out the initial tasks. We would normally just fork out one large
+    // task and let it split, but unfortunately buffer API does not allow us
+    // "long" start-s and length-s. So we have to chunk at least by mmap-ed
+    // size first. It is a CountedCompleter for the same reason ParsingTask is.
+    public static class RootTask extends CountedCompleter<Void> {
+        private final FileChannel fc;
+
+        public RootTask(CountedCompleter<Void> parent, FileChannel fc) {
+            super(parent);
+            this.fc = fc;
+        }
+
+        @Override
+        public void compute() {
+            try {
+                internalCompute();
+            }
+            catch (Exception e) {
+                // Meh, YOLO.
+                throw new IllegalStateException("Internal error", e);
+            }
+        }
+
+        private void internalCompute() throws IOException {
+            ByteBuffer buf = ByteBuffer.allocateDirect(MAX_LINE_LENGTH);
+            buf.order(ByteOrder.nativeOrder());
+
+            long start = 0;
+            long size = fc.size();
+            while (start < size) {
+                long end = Math.min(size, start + MMAP_CHUNK_SIZE);
+
+                // Read a little chunk into a little buffer.
+                long minEnd = Math.max(0, end - MAX_LINE_LENGTH);
+                buf.rewind();
+                fc.read(buf, minEnd);
+
+                // Figure out the boundary that does not split the line.
+                int w = MAX_LINE_LENGTH;
+                while (buf.get(w - 1) != '\n') {
+                    w--;
+                }
+                end = minEnd + w;
+
+                // Fork out the large slice
+                long len = end - start;
+                ByteBuffer slice = fc.map(FileChannel.MapMode.READ_ONLY, start, len);
+                start += len;
+
+                // FJP API: Announce we have a pending task before forking.
+                addToPendingCount(1);
+
+                // ...and fork it
+                new ParsingTask(this, slice).fork();
+            }
+
+            // FJP API: We have finished, try to complete the whole task tree.
+            tryComplete();
+        }
+    }
+
     // ========================= Invocation =========================
 
     public static void main(String[] args) throws IOException {
-        try (RandomAccessFile file = new RandomAccessFile(FILE, "r");
-                FileChannel fc = file.getChannel()) {
-            // This little line carries the whole world.
-            new ParsingTask(fc, 0, fc.size()).invoke();
+        try (FileChannel fc = FileChannel.open(Path.of(FILE), StandardOpenOption.READ)) {
+            // This little line carries the whole world
+            new RootTask(null, fc).invoke();
 
             // Merge all results from thread-local maps...
             MeasurementsMap map = new MeasurementsMap();
@@ -482,30 +524,6 @@ public class CalculateAverage_shipilev {
             sb.append(avg);
             sb.append("/");
             sb.append(max);
-        }
-    }
-
-    // ========================= Utils =========================
-
-    public static class UnsafeAccess {
-        private static final Unsafe U;
-
-        static {
-            if (!UNSAFE_TRICKERY) {
-                throw new IllegalStateException("Can't touch this.");
-            }
-            try {
-                Field f = Unsafe.class.getDeclaredField("theUnsafe");
-                f.setAccessible(true);
-                U = (Unsafe) f.get(null);
-            }
-            catch (Exception e) {
-                throw new IllegalStateException(e);
-            }
-        }
-
-        public static void invokeCleaner(ByteBuffer bb) {
-            U.invokeCleaner(bb);
         }
     }
 
