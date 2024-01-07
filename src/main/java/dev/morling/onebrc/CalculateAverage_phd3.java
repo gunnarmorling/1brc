@@ -223,11 +223,13 @@ public class CalculateAverage_phd3 {
 
         // identifies indexes of the next ';' and '\n', which will be used to get entry key and value from line
         private static LineInfo getNextLine(byte[] buffer, int start) {
-            while (start < buffer.length && buffer[start] != ';') {
+            // caller guarantees that the access is in bounds, so no index check
+            while (buffer[start] != ';') {
                 start++;
             }
             int semicolonIndex = start;
-            while (start < buffer.length && buffer[start] != '\n') {
+            // caller guarantees that the access is in bounds, so no index check
+            while (buffer[start] != '\n') {
                 start++;
             }
             return new LineInfo(semicolonIndex, start + 1);
