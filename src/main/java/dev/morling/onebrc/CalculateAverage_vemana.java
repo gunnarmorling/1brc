@@ -24,7 +24,6 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel.MapMode;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -102,10 +101,10 @@ public class CalculateAverage_vemana {
 
     public static class ChunkProcessorState {
 
-        private final byte[] cityBytes = new byte[512]; // should fit a city name, 4bytes/UTF-8 char
         private final byte[][] cityNames;
         private final int slotsMask;
         private final Stat[] stats;
+        private int hashHits = 0, hashMisses = 0;
 
         public ChunkProcessorState(int slotsBits) {
             this.stats = new Stat[1 << slotsBits];
@@ -113,35 +112,37 @@ public class CalculateAverage_vemana {
             this.slotsMask = (1 << slotsBits) - 1;
         }
 
-        public int addDataPoint(MappedByteBuffer mbb, int nextPos, int endPos) {
+        public int addDataPoint(MappedByteBuffer mmb, int nextPos, int endPos) {
+            int originalPos = nextPos;
             byte nextByte;
-
-            int prevPos = nextPos - 1;
             int hash = 0;
 
-            // Read City
-            int cityLen = 0;
-            while ((nextByte = mbb.get(++prevPos)) != ';') {
-                cityBytes[cityLen++] = nextByte;
+            // Read City and Hash
+            while ((nextByte = mmb.get(nextPos++)) != ';') {
                 hash = (hash << 5) - hash + nextByte;
             }
+            int cityLen = nextPos - 1 - originalPos;
 
             // Read temperature
-            long temperature = 0;
-            boolean negative = mbb.get(prevPos + 1) == '-';
+            int temperature = 0;
+            boolean negative = mmb.get(nextPos) == '-';
             if (negative) {
-                ++prevPos;
+                nextPos++;
             }
 
-            while ((nextByte = mbb.get(++prevPos)) != '\n') {
+            while ((nextByte = mmb.get(nextPos++)) != '\n') {
                 if (nextByte != '.') {
                     temperature = temperature * 10 + (nextByte - '0');
                 }
             }
 
-            recordDataPoint(cityLen, hash & slotsMask, negative ? -temperature : temperature);
+            linearProbe(cityLen,
+                    hash & slotsMask,
+                    negative ? -temperature : temperature,
+                    mmb,
+                    originalPos);
 
-            return prevPos + 1;
+            return nextPos;
         }
 
         public Result result() {
@@ -152,40 +153,57 @@ public class CalculateAverage_vemana {
                     map.put(new String(cityNames[i]), stats[i]);
                 }
             }
+            // System.err.println(STR."Hashhits = \{hashHits}, misses = \{hashMisses}");
             return new Result(map);
         }
 
-        private int hash(int len) {
-            int hash = 0;
+        private byte[] copyFrom(MappedByteBuffer mmb, int offsetInMmb, int len) {
+            byte[] out = new byte[len];
             for (int i = 0; i < len; i++) {
-                hash = (hash << 5) - hash + cityBytes[i];
+                out[i] = mmb.get(offsetInMmb + i);
             }
-            return hash & slotsMask;
+            return out;
         }
 
-        private int linearProbe(int len, int hash) {
+        private boolean equals(byte[] left, MappedByteBuffer right, int offsetInMmb, int len) {
+            for (int i = 0; i < len; i++) {
+                if (left[i] != right.get(offsetInMmb + i)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // DEATH BY a 1000 cuts
+        // 15 ms for stat merging
+        // 20 ms for slot probing
+        // 20 ms for copying city name into needle (avoided this, but paying in manual arrayequals)
+        // 10 ms for hash
+        // 5 ms for temperature
+        // 1100 ms for just the basic overhead of running through all the data
+        // Hash hits are quite good, only about 1% need probing
+        private void linearProbe(int len, int hash, int temp, MappedByteBuffer mmb, int offsetInMmb) {
             for (int i = hash;; i = (i + 1) & slotsMask) {
                 var curBytes = cityNames[i];
                 if (curBytes == null) {
-                    cityNames[i] = Arrays.copyOf(cityBytes, len);
-                    return i;
+                    // We can no longer do cityNames[i] =Arrays.copyOf(..) since the cityname is encoded
+                    // as (mmb, offsetInMmb, len) instead of in a previously allocated byte[]
+                    // Even still, this allocation appears very costly
+                    cityNames[i] = copyFrom(mmb, offsetInMmb, len);
+                    stats[i] = Stat.firstReading(temp);
+                    return;
                 }
                 else {
-                    if (len == curBytes.length && Arrays.equals(cityBytes, 0, len, curBytes, 0, len)) {
-                        return i;
+                    // Overall, this tradeoff seems better than Arrays.equals(..)
+                    // City name param is encoded as (mmb, offsetnInMmb, len)
+                    // This avoids copying it into a (previously allocated) byte[]
+                    // The downside is that we have to manually implement 'equals' and it can lose out
+                    // to vectorized 'equals'; but the trade off seems to work in this particular case
+                    if (len == curBytes.length && equals(curBytes, mmb, offsetInMmb, len)) {
+                        stats[i].mergeReading(temp);
+                        return;
                     }
                 }
-            }
-        }
-
-        private void recordDataPoint(int length, int hash, long temp) {
-            int index = linearProbe(length, hash);
-            var stat = stats[index];
-            if (stat == null) {
-                stats[index] = Stat.firstReading(temp);
-            }
-            else {
-                stat.mergeReading(temp);
             }
         }
     }
@@ -327,7 +345,7 @@ public class CalculateAverage_vemana {
 
     public static class Stat {
 
-        public static Stat firstReading(long temp) {
+        public static Stat firstReading(int temp) {
             return new Stat(temp, temp, temp, 1);
         }
 
@@ -339,10 +357,10 @@ public class CalculateAverage_vemana {
                     left.count + right.count);
         }
 
-        private long count;
-        private long min, max, sum;
+        private long count, sum;
+        private int min, max;
 
-        public Stat(long min, long max, long sum, long count) {
+        public Stat(int min, int max, long sum, long count) {
             this.min = min;
             this.max = max;
             this.sum = sum;
@@ -350,9 +368,17 @@ public class CalculateAverage_vemana {
         }
 
         // Caution: Mutates
-        public void mergeReading(long curTemp) {
-            min = Math.min(min, curTemp);
-            max = Math.max(max, curTemp);
+        public void mergeReading(int curTemp) {
+            // min = Math.min(min, curTemp);
+            // max = Math.max(max, curTemp);
+            // Assuming random values for curTemp
+            // min gets updated roughly log(N)/N fraction of the time (a small number)
+            if (curTemp < min) {
+                min = curTemp;
+            }
+            else if (curTemp > max) {
+                max = curTemp;
+            }
             sum += curTemp;
             count++;
         }
