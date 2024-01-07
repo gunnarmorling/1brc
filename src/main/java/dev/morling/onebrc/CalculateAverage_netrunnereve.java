@@ -42,10 +42,6 @@ public class CalculateAverage_netrunnereve {
 
             HashMap<String, MeasurementAggregator> staHash = new HashMap<String, MeasurementAggregator>();
 
-            boolean state = false; // 0 for station pickup, 1 for measurement pickup
-            boolean negate = false;
-            int head = 0;
-            int tempCnt = 0;
             byte[] scratch = new byte[50]; // this will be auto-enlarged if necessary
             MeasurementAggregator ma = null;
 
@@ -64,7 +60,7 @@ public class CalculateAverage_netrunnereve {
                 // check for last newline and split there, anything after goes to next buffer
                 if (!finished) {
                     for (int i = mbs - 1; true; i--) {
-                        byte cur = mbuf.get(i);
+                        byte cur = mbuf.get(i - 1);
                         if (cur == 10) { // \n
                             mbs = i;
                             break;
@@ -72,8 +68,12 @@ public class CalculateAverage_netrunnereve {
                     }
                 }
 
-                h += mbs;
+                boolean state = false; // 0 for station pickup, 1 for measurement pickup
+                boolean negate = false;
+                int head = 0;
+                int tempCnt = 0;
 
+                h += mbs;
                 for (int i = 0; i < mbs; i++) {
                     byte cur = mbuf.get(i);
                     if (cur == 59) { // ;
