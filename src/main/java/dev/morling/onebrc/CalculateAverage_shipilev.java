@@ -15,10 +15,14 @@
  */
 package dev.morling.onebrc;
 
+import sun.misc.Unsafe;
+
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -41,20 +45,20 @@ public class CalculateAverage_shipilev {
     // Workload data file.
     private static final String FILE = "./measurements.txt";
 
-    // Enable dataset-specific optimizations. This would not pass all the tests,
-    // but would work for the "target" workload data. In other words, this
-    // enables the workload-specific cheating. Should normally be "false",
-    // and serve as marker for the places where such cheating is possible.
-    private static final boolean WORKLOAD_CHEATING = false;
+    // The goal for this implementation is to do vanilla Java implementation.
+    // Some code paths are using Unsafe for better performance, but it is not
+    // required for this code to work. Disable the flag to run without Unsafe
+    // tricks.
+    private static final boolean UNSAFE_TRICKERY = false;
 
     // The largest slice as unit of work, processed serially by a worker.
     // Set it too low and there would be more tasks and less batching, but
     // more parallelism. Set it too high, and the reverse would be true.
-    private static final int UNIT_SLICE_SIZE = 1 * 1024 * 1024;
+    private static final int UNIT_SLICE_SIZE = 64 * 1024 * 1024;
 
     // Max distance to search for line separator when scanning for line
     // boundaries.
-    private static final int MAX_LINE_LENGTH = WORKLOAD_CHEATING ? 32 : 1024;
+    private static final int MAX_LINE_LENGTH = 1024;
 
     // ========================= Storage =========================
 
@@ -86,17 +90,6 @@ public class CalculateAverage_shipilev {
         }
     });
 
-    // Chunk buffers for workers to do read stuff into.
-    // Even though crude, avoid lambdas here to alleviate startup costs.
-    private static final ThreadLocal<ByteBuffer> CHUNK_BUFFERS = ThreadLocal.withInitial(new Supplier<>() {
-        @Override
-        public ByteBuffer get() {
-            ByteBuffer bb = ByteBuffer.allocateDirect(UNIT_SLICE_SIZE);
-            bb.order(ByteOrder.nativeOrder());
-            return bb;
-        }
-    });
-
     // ========================= MEATY GRITTY PARTS: PARSE AND AGGREGATE =========================
 
     // Quick and dirty linear-probing hash map. YOLO.
@@ -117,10 +110,9 @@ public class CalculateAverage_shipilev {
             // allows better inlining.
             Bucket cur = map[idx];
             if (cur != null && cur.hash == hash &&
-                    (WORKLOAD_CHEATING || arraysEquals(cur.name, name, begin, end))) {
+                    arraysEquals(cur.name, name, begin, end)) {
                 // Existing bucket hit. On the off-chance it was a hash collision,
-                // we need to check the array contents. But on sample data, checking
-                // array contents is superfluous, as we never hash collide.
+                // we need to check the array contents.
                 return cur;
             }
 
@@ -143,7 +135,7 @@ public class CalculateAverage_shipilev {
                     return cur;
                 }
                 else if (cur.hash == hash &&
-                        (WORKLOAD_CHEATING || arraysEquals(cur.name, name, begin, end))) {
+                        arraysEquals(cur.name, name, begin, end)) {
                     // Same as bucket fastpath.
                     return cur;
                 }
@@ -151,7 +143,7 @@ public class CalculateAverage_shipilev {
                     // No dice. Keep searching until we hit the same index.
                     // This would need rehash. Again, on sample data, we do not ever need a rehash.
                     idx = (idx + 1) & mapSizeMask;
-                    if (!WORKLOAD_CHEATING && idx == origIdx) {
+                    if (idx == origIdx) {
                         rehash();
                         idx = hash & mapSizeMask;
                     }
@@ -201,13 +193,13 @@ public class CalculateAverage_shipilev {
                         break;
                     }
                     else if (cur.hash == other.hash &&
-                            (WORKLOAD_CHEATING || Arrays.equals(cur.name, other.name))) {
+                            Arrays.equals(cur.name, other.name)) {
                         cur.merge(other);
                         break;
                     }
                     else {
                         idx = (idx + 1) & mapSizeMask;
-                        if (!WORKLOAD_CHEATING && idx == origIdx) {
+                        if (idx == origIdx) {
                             if (allowRehash) {
                                 rehash();
                                 idx = other.hash & mapSizeMask;
@@ -335,16 +327,20 @@ public class CalculateAverage_shipilev {
                 // Do setup stuff here to save inlining budget.
                 MeasurementsMap map = MAPS.get();
 
-                // Read the chunk from file.
-                ByteBuffer slice = CHUNK_BUFFERS.get();
-                slice.rewind();
-                fc.read(slice, start);
+                // Memory-map the target chunk of file.
+                MappedByteBuffer slice = fc.map(FileChannel.MapMode.READ_ONLY, start, end - start);
 
                 // At this point, we know the length fits in integer.
                 int len = (int) (end - start);
 
                 // Go!
                 seqCompute(map, slice, len);
+
+                // Unmapping stuff at the end of workload gets in the way for very
+                // short running times. If possible, invoke the cleaner directly now.
+                if (UNSAFE_TRICKERY) {
+                    UnsafeAccess.invokeCleaner(slice);
+                }
             }
         }
 
@@ -486,6 +482,30 @@ public class CalculateAverage_shipilev {
             sb.append(avg);
             sb.append("/");
             sb.append(max);
+        }
+    }
+
+    // ========================= Utils =========================
+
+    public static class UnsafeAccess {
+        private static final Unsafe U;
+
+        static {
+            if (!UNSAFE_TRICKERY) {
+                throw new IllegalStateException("Can't touch this.");
+            }
+            try {
+                Field f = Unsafe.class.getDeclaredField("theUnsafe");
+                f.setAccessible(true);
+                U = (Unsafe) f.get(null);
+            }
+            catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        }
+
+        public static void invokeCleaner(ByteBuffer bb) {
+            U.invokeCleaner(bb);
         }
     }
 
