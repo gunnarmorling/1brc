@@ -52,6 +52,26 @@ public class CalculateAverage_richardstartin {
         return new String(bytes, StandardCharsets.UTF_8);
     }
 
+    static double parseTemperature(ByteBuffer slice) {
+        // credit: adapted from spullara's submission
+        int value = 0;
+        int negative = 1;
+        int i = 0;
+        while (i != slice.limit()) {
+            byte b = slice.get(i++);
+            switch (b) {
+                case '-':
+                    negative = -1;
+                case '.':
+                    break;
+                default:
+                    value = 10 * value + (b - '0');
+            }
+        }
+        value *= negative;
+        return value / 10.0;
+    }
+
     @FunctionalInterface
     interface IndexedStringConsumer {
         void accept(String value, int index);
@@ -60,7 +80,7 @@ public class CalculateAverage_richardstartin {
     /** Maps text to an integer encoding. Adapted from async-profiler. */
     public static class Dictionary {
 
-        private static final int ROW_BITS = 7;
+        private static final int ROW_BITS = 12;
         private static final int ROWS = (1 << ROW_BITS);
         private static final int CELLS = 3;
         private static final int TABLE_CAPACITY = (ROWS * CELLS);
@@ -89,10 +109,10 @@ public class CalculateAverage_richardstartin {
             forEach(this.table, consumer);
         }
 
-        public int encode(long hash, ByteBuffer slice) {
+        public int encode(int hash, ByteBuffer slice) {
             Table table = this.table;
             while (true) {
-                int rowIndex = (int) (Math.abs(hash) % ROWS);
+                int rowIndex = Math.abs(hash) % ROWS;
                 Row row = table.rows[rowIndex];
                 for (int c = 0; c < CELLS; c++) {
                     ByteBuffer storedKey = row.keys.get(c);
@@ -112,7 +132,7 @@ public class CalculateAverage_richardstartin {
                     }
                 }
                 table = row.getOrCreateNextTable(this::nextBaseIndex);
-                hash = Long.rotateRight(hash, ROW_BITS);
+                hash = Integer.rotateRight(hash, ROW_BITS);
             }
         }
 
@@ -210,43 +230,6 @@ public class CalculateAverage_richardstartin {
         return buffer.limit();
     }
 
-    private static long hash(ByteBuffer slice) {
-        long hash = slice.limit() + PRIME_5 + 0x123456789abcdef1L;
-        int i = 0;
-        for (; i + Long.BYTES < slice.limit(); i += Long.BYTES) {
-            hash = hashLong(hash, slice.getLong(i));
-        }
-        long part = 0L;
-        for (; i < slice.limit(); i++) {
-            part = (part >>> 8) | ((slice.get(i) & 0xFFL) << 56);
-        }
-        hash = hashLong(hash, part);
-        return mix(hash);
-    }
-
-    static final long PRIME_1 = 0x9E3779B185EBCA87L;
-    static final long PRIME_2 = 0xC2B2AE3D27D4EB4FL;
-    static final long PRIME_3 = 0x165667B19E3779F9L;
-    static final long PRIME_4 = 0x85EBCA77C2B2AE63L;
-    static final long PRIME_5 = 0x27D4EB2F165667C5L;
-
-    private static long hashLong(long hash, long k) {
-        k *= PRIME_2;
-        k = Long.rotateLeft(k, 31);
-        k *= PRIME_1;
-        hash ^= k;
-        return Long.rotateLeft(hash, 27) * PRIME_1 + PRIME_4;
-    }
-
-    private static long mix(long hash) {
-        hash ^= hash >>> 33;
-        hash *= PRIME_2;
-        hash ^= hash >>> 29;
-        hash *= PRIME_3;
-        hash ^= hash >>> 32;
-        return hash;
-    }
-
     static class Page {
 
         static final int PAGE_SIZE = 1024;
@@ -265,12 +248,18 @@ public class CalculateAverage_richardstartin {
             return Arrays.copyOf(PAGE_PROTOTYPE, PAGE_PROTOTYPE.length);
         }
 
-        static void update(double[][] pages, int position, double value) {
+        static void update(List<double[]> pages, int position, double value) {
             // find the page
             int pageIndex = position >>> PAGE_SHIFT;
-            double[] page = pages[pageIndex];
+            if (pageIndex >= pages.size()) {
+                for (int i = pages.size(); i <= pageIndex; i++) {
+                    pages.add(null);
+                }
+            }
+            double[] page = pages.get(pageIndex);
             if (page == null) {
-                pages[pageIndex] = page = newPage();
+                page = newPage();
+                pages.set(pageIndex, page);
             }
 
             // update local aggregates
@@ -280,8 +269,8 @@ public class CalculateAverage_richardstartin {
             page[(position & PAGE_MASK) * 4 + 3] += value; // sum
         }
 
-        static ResultRow toResultRow(double[][] pages, int position) {
-            double[] page = pages[position >>> PAGE_SHIFT];
+        static ResultRow toResultRow(List<double[]> pages, int position) {
+            double[] page = pages.get(position >>> PAGE_SHIFT);
             double count = page[(position & PAGE_MASK) * 4];
             double min = page[(position & PAGE_MASK) * 4 + 1];
             double max = page[(position & PAGE_MASK) * 4 + 2];
@@ -290,7 +279,7 @@ public class CalculateAverage_richardstartin {
         }
     }
 
-    private static class AggregationTask extends RecursiveTask<double[][]> {
+    private static class AggregationTask extends RecursiveTask<List<double[]>> {
 
         private final Dictionary dictionary;
         private final List<ByteBuffer> slices;
@@ -308,22 +297,18 @@ public class CalculateAverage_richardstartin {
             this.max = max;
         }
 
-        private void computeSlice(ByteBuffer slice, double[][] pages) {
+        private void computeSlice(ByteBuffer slice, List<double[]> pages) {
             for (int offset = 0; offset < slice.limit();) {
                 int nextSeparator = findIndexOf(slice, offset, DELIMITER);
                 ByteBuffer key = slice.slice(offset, nextSeparator - offset).order(ByteOrder.LITTLE_ENDIAN);
                 // find the global dictionary code to aggregate,
                 // making this code global allows easy merging
-                int dictId = dictionary.encode(hash(key), key);
+                int dictId = dictionary.encode(key.hashCode(), key);
 
                 offset = nextSeparator + 1;
                 int newLine = findIndexOf(slice, offset, NEW_LINE);
                 // parse the double
-                // todo do this without allocating a string, could use a fast parsing falgorithm
-                var bytes = new byte[newLine - offset];
-                slice.get(offset, bytes);
-                var string = new String(bytes, StandardCharsets.US_ASCII);
-                double d = Double.parseDouble(string);
+                double d = parseTemperature(slice.slice(offset, newLine - offset));
 
                 Page.update(pages, dictId, d);
 
@@ -331,14 +316,17 @@ public class CalculateAverage_richardstartin {
             }
         }
 
-        private static void merge(double[][] contribution, double[][] aggregate) {
-            for (int i = 0; i < contribution.length; i++) {
-                if (aggregate[i] == null) {
-                    aggregate[i] = contribution[i];
+        private static void merge(List<double[]> contribution, List<double[]> aggregate) {
+            for (int i = aggregate.size(); i < contribution.size(); i++) {
+                aggregate.add(null);
+            }
+            for (int i = 0; i < contribution.size(); i++) {
+                if (aggregate.get(i) == null) {
+                    aggregate.set(i, contribution.get(i));
                 }
-                else if (contribution[i] != null) {
-                    double[] to = aggregate[i];
-                    double[] from = contribution[i];
+                else if (contribution.get(i) != null) {
+                    double[] to = aggregate.get(i);
+                    double[] from = contribution.get(i);
                     // todo won't vectorise - consider separating aggregates into distinct regions and apply
                     // loop fission (if this shows up in the profile)
                     for (int j = 0; j < to.length; j += 4) {
@@ -352,10 +340,9 @@ public class CalculateAverage_richardstartin {
         }
 
         @Override
-        protected double[][] compute() {
+        protected List<double[]> compute() {
             if (min == max) {
-                // fixme - hardcoded to problem size
-                var pages = new double[1024][];
+                var pages = new ArrayList<double[]>();
                 var slice = slices.get(min);
                 computeSlice(slice, pages);
                 return pages;
@@ -373,7 +360,7 @@ public class CalculateAverage_richardstartin {
     }
 
     public static void main(String[] args) throws IOException {
-        int maxChunkSize = 10 << 20; // 10MiB
+        int maxChunkSize = 250 << 20; // 250MiB
         try (var raf = new RandomAccessFile(FILE, "r");
                 var channel = raf.getChannel()) {
             long size = channel.size();
@@ -409,7 +396,7 @@ public class CalculateAverage_richardstartin {
 
             var fjp = new ForkJoinPool(Runtime.getRuntime().availableProcessors());
             Dictionary dictionary = new Dictionary();
-            double[][] aggregates = fjp.submit(new AggregationTask(dictionary, slices)).join();
+            var aggregates = fjp.submit(new AggregationTask(dictionary, slices)).join();
             var map = new TreeMap<String, ResultRow>();
             dictionary.forEach((key, index) -> map.put(key, Page.toResultRow(aggregates, index)));
             System.out.println(map);

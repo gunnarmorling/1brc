@@ -15,14 +15,6 @@
 #  limitations under the License.
 #
 
-if [ -z "$1" ]
-  then
-    echo "Usage: prepare_evaluation.sh <fork name>"
-    exit 1
-fi
 
-
-git checkout -b $1
-
-git pull https://github.com/$1/1brc.git
-# git pull git@github.com:$1/1brc.git
+JAVA_OPTS="--enable-preview"
+time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_deemkeen

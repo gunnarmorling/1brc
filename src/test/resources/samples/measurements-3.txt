@@ -1,0 +1,6 @@
+Bosaso;5.0
+Bosaso;20.0
+Bosaso;-5.0
+Bosaso;-15.0
+Petropavlovsk-Kamchatsky;9.5
+Petropavlovsk-Kamchatsky;-9.5

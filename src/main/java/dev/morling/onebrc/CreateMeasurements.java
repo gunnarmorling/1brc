@@ -497,7 +497,7 @@ public class CreateMeasurements {
                 WeatherStation station = stations.get(ThreadLocalRandom.current().nextInt(stations.size()));
                 bw.write(station.id());
                 bw.write(";" + station.measurement());
-                bw.newLine();
+                bw.write('\n');
             }
         }
         System.out.printf("Created file with %,d measurements in %s ms%n", size, System.currentTimeMillis() - start);
