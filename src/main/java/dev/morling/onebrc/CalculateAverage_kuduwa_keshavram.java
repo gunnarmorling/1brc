@@ -18,7 +18,6 @@ package dev.morling.onebrc;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -26,7 +25,7 @@ import java.nio.channels.FileChannel.MapMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.DoubleSummaryStatistics;
+import java.util.IntSummaryStatistics;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -39,13 +38,9 @@ import java.util.stream.StreamSupport;
 public class CalculateAverage_kuduwa_keshavram {
 
     private static final String FILE = "./measurements.txt";
-    private static final long LEFT_SHIFT_EIGHT = Long.MAX_VALUE / (1L << 8);
-    private static final long LEFT_SHIFT_FOUR = Long.MAX_VALUE / (1L << 4);
-    private static final long LEFT_SHIFT_TWO = Long.MAX_VALUE / (1L << 2);
-    private static final long LEFT_SHIFT_ONE = Long.MAX_VALUE / (1L << 1);
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        Map<String, DoubleSummaryStatistics> resultMap = getFileSegments(new File(FILE)).stream()
+        Map<String, IntSummaryStatistics> resultMap = getFileSegments(new File(FILE)).stream()
                 .parallel()
                 .flatMap(
                         segment -> {
@@ -63,7 +58,7 @@ public class CalculateAverage_kuduwa_keshavram {
                         })
                 .collect(
                         Collectors.groupingBy(
-                                Measurement::city, Collectors.summarizingDouble(Measurement::temp)));
+                                Measurement::city, Collectors.summarizingInt(Measurement::temp)));
         System.out.println(
                 resultMap.entrySet().stream()
                         .sorted(Map.Entry.comparingByKey())
@@ -71,9 +66,9 @@ public class CalculateAverage_kuduwa_keshavram {
                                 entry -> String.format(
                                         "%s=%.1f/%.1f/%.1f",
                                         entry.getKey(),
-                                        entry.getValue().getMin(),
-                                        entry.getValue().getAverage(),
-                                        entry.getValue().getMax()))
+                                        entry.getValue().getMin() / 10f,
+                                        entry.getValue().getAverage() / 10f,
+                                        entry.getValue().getMax() / 10f))
                         .collect(Collectors.joining(", ", "{", "}")));
     }
 
@@ -81,9 +76,7 @@ public class CalculateAverage_kuduwa_keshavram {
         return new Iterator<>() {
 
             private int initialPosition;
-
             private int delimiterIndex;
-            private int nextLineIndex;
 
             @Override
             public boolean hasNext() {
@@ -97,14 +90,6 @@ public class CalculateAverage_kuduwa_keshavram {
                             break;
                         }
                         delimiterIndex++;
-                    }
-                    nextLineIndex = 0;
-                    while (true) {
-                        byte b = byteBuffer.get();
-                        if (b == 10) {
-                            break;
-                        }
-                        nextLineIndex++;
                     }
                     return true;
                 }
@@ -121,12 +106,22 @@ public class CalculateAverage_kuduwa_keshavram {
                 }
 
                 byteBuffer.get();
-                byte[] temp = new byte[nextLineIndex];
-                for (int i = 0; i < nextLineIndex; i++) {
-                    temp[i] = byteBuffer.get();
+                int measurement = 0;
+                boolean negative = false;
+                byte b;
+                while ((b = byteBuffer.get()) != 10) {
+                    if (b == 45) {
+                        negative = true;
+                    }
+                    else if (b == 46) {
+                        // skip
+                    }
+                    else {
+                        final int n = b - '0';
+                        measurement = measurement * 10 + n;
+                    }
                 }
-                byteBuffer.get();
-                return new Measurement(new String(city), toDouble(new String(temp)));
+                return new Measurement(new String(city), negative ? measurement * -1 : measurement);
             }
         };
     }
@@ -134,11 +129,11 @@ public class CalculateAverage_kuduwa_keshavram {
     private record FileSegment(long start, long end) {
     }
 
-    private record Measurement(String city, double temp) {
+    private record Measurement(String city, int temp) {
     }
 
     private static List<FileSegment> getFileSegments(final File file) throws IOException {
-        final int numberOfSegments = Runtime.getRuntime().availableProcessors();
+        final int numberOfSegments = Runtime.getRuntime().availableProcessors() * 2;
         final long fileSize = file.length();
         final long segmentSize = fileSize / numberOfSegments;
         if (segmentSize < 1000) {
@@ -177,80 +172,5 @@ public class CalculateAverage_kuduwa_keshavram {
             }
         }
         return location;
-    }
-
-    private static double toDouble(String num) {
-        long value = 0;
-        boolean negative = false;
-        int decimalPlaces = Integer.MIN_VALUE;
-        for (byte ch : num.getBytes()) {
-            if (ch >= '0' && ch <= '9') {
-                value = value * 10 + (ch - '0');
-                decimalPlaces++;
-            }
-            else if (ch == '-') {
-                negative = true;
-            }
-            else if (ch == '.') {
-                decimalPlaces = 0;
-            }
-            else {
-                break;
-            }
-        }
-
-        return asDouble(value, negative, decimalPlaces);
-    }
-
-    private static double asDouble(long value, boolean negative, int decimalPlaces) {
-        int exp = -48;
-        value <<= 48;
-        if (decimalPlaces > 0 && value < Long.MAX_VALUE / 2) {
-            if (value < LEFT_SHIFT_EIGHT) {
-                exp -= 8;
-                value <<= 8;
-            }
-            if (value < LEFT_SHIFT_FOUR) {
-                exp -= 4;
-                value <<= 4;
-            }
-            if (value < LEFT_SHIFT_TWO) {
-                exp -= 2;
-                value <<= 2;
-            }
-            if (value < LEFT_SHIFT_ONE) {
-                exp -= 1;
-                value <<= 1;
-            }
-        }
-        for (; decimalPlaces > 0; decimalPlaces--) {
-            exp--;
-            long mod = value % 5;
-            value /= 5;
-            int modDiv = 1;
-            if (value < LEFT_SHIFT_FOUR) {
-                exp -= 4;
-                value <<= 4;
-                modDiv <<= 4;
-            }
-            if (value < LEFT_SHIFT_TWO) {
-                exp -= 2;
-                value <<= 2;
-                modDiv <<= 2;
-            }
-            if (value < LEFT_SHIFT_ONE) {
-                exp -= 1;
-                value <<= 1;
-                modDiv <<= 1;
-            }
-            if (decimalPlaces > 1) {
-                value += modDiv * mod / 5;
-            }
-            else {
-                value += (modDiv * mod + 4) / 5;
-            }
-        }
-        final double d = Math.scalb((double) value, exp);
-        return negative ? -d : d;
     }
 }
