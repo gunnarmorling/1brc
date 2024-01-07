@@ -15,30 +15,25 @@
  */
 package dev.morling.onebrc;
 
-import java.io.BufferedReader;
 import java.io.FileInputStream;
-import java.io.FileReader;
-import java.io.IOException;
 import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
-import java.nio.CharBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.TreeMap;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class CalculateAverage_eriklumme {
 
@@ -48,9 +43,9 @@ public class CalculateAverage_eriklumme {
     private static final int NUM_TASKS = NUM_CPUS * 6;
 
     private static class StationMeasurement {
-        private final String stationName;
+        private final ByteArrayWrapper stationName;
 
-        private StationMeasurement(String stationName) {
+        private StationMeasurement(ByteArrayWrapper stationName) {
             this.stationName = stationName;
         }
 
@@ -58,6 +53,10 @@ public class CalculateAverage_eriklumme {
         private double max = Double.NEGATIVE_INFINITY;
         private double sum = 0;
         private int count = 0;
+
+        public String stringName() {
+            return new String(stationName.value, StandardCharsets.UTF_8);
+        }
     }
 
     private enum Mode {
@@ -66,7 +65,36 @@ public class CalculateAverage_eriklumme {
         READ_VALUE
     }
 
-    public static class DataProcessor implements Callable<Map<String, StationMeasurement>> {
+    private static class ByteArrayWrapper implements Comparable<ByteArrayWrapper> {
+
+        private final byte[] value;
+
+        private ByteArrayWrapper(byte[] value) {
+            this.value = value;
+        }
+
+        @Override
+        public int compareTo(ByteArrayWrapper o) {
+            return Arrays.compare(value, o.value);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o)
+                return true;
+            if (o instanceof ByteArrayWrapper that) {
+                return Arrays.equals(value, that.value);
+            }
+            return false;
+        }
+
+        @Override
+        public int hashCode() {
+            return Arrays.hashCode(value);
+        }
+    }
+
+    public static class DataProcessor implements Callable<Map<ByteArrayWrapper, StationMeasurement>> {
 
         private final int processorIndex;
         private final long size;
@@ -82,8 +110,8 @@ public class CalculateAverage_eriklumme {
         }
 
         @Override
-        public Map<String, StationMeasurement> call() throws Exception {
-            Map<String, StationMeasurement> map = new HashMap<>();
+        public Map<ByteArrayWrapper, StationMeasurement> call() {
+            Map<ByteArrayWrapper, StationMeasurement> map = new HashMap<>();
 
             byte[] stationBuffer = new byte[200];
             int stationIndex = 0;
@@ -105,7 +133,7 @@ public class CalculateAverage_eriklumme {
                     if (c == '\n') {
                         // We have a station to store
                         if (mode == Mode.READ_VALUE) {
-                            String stationName = new String(Arrays.copyOfRange(stationBuffer, 0, stationIndex), StandardCharsets.UTF_8);
+                            ByteArrayWrapper stationName = new ByteArrayWrapper(Arrays.copyOfRange(stationBuffer, 0, stationIndex));
                             double value = Double.parseDouble(new String(Arrays.copyOfRange(valueBuffer, 0, valueIndex)));
 
                             StationMeasurement stationMeasurement = map.computeIfAbsent(stationName, StationMeasurement::new);
@@ -140,7 +168,7 @@ public class CalculateAverage_eriklumme {
                 }
                 if (mode == Mode.READ_VALUE && valueIndex > 0) {
                     // One value left to store
-                    String stationName = new String(Arrays.copyOfRange(stationBuffer, 0, stationIndex), StandardCharsets.UTF_8);
+                    ByteArrayWrapper stationName = new ByteArrayWrapper(Arrays.copyOfRange(stationBuffer, 0, stationIndex));
 
                     // TODO: More efficient way?
                     double value = Double.parseDouble(new String(Arrays.copyOfRange(valueBuffer, 0, valueIndex)));
@@ -169,7 +197,7 @@ public class CalculateAverage_eriklumme {
     private static long fileSize;
 
     public static void main(String[] args) throws Exception {
-        Map<String, StationMeasurement> map = new TreeMap<>();
+        Map<ByteArrayWrapper, StationMeasurement> map = new HashMap<>();
         CountDownLatch countDownLatch = new CountDownLatch(NUM_TASKS);
         Locale.setDefault(Locale.US);
 
@@ -182,7 +210,7 @@ public class CalculateAverage_eriklumme {
             int fileSizePerThread = (int) Math.max(Math.ceil(fileSize / (float) NUM_TASKS), 1000);
             long sizeAccountedFor = 0;
 
-            List<Future<Map<String, StationMeasurement>>> futures = new ArrayList<>(NUM_TASKS);
+            List<Future<Map<ByteArrayWrapper, StationMeasurement>>> futures = new ArrayList<>(NUM_TASKS);
             for (int i = 0; i < NUM_TASKS; i++) {
                 if (sizeAccountedFor >= fileSize) {
                     // The file is so small that because of the minimum file size per thread, we've covered it in less
@@ -196,9 +224,9 @@ public class CalculateAverage_eriklumme {
             countDownLatch.await();
 
             // TODO: Try using multiple threads, try freeing up memory quicker by merging as they complete
-            for (Future<Map<String, StationMeasurement>> future : futures) {
-                Map<String, StationMeasurement> futureMap = future.get();
-                futureMap.entrySet().forEach(entry -> map.merge(entry.getKey(), entry.getValue(),
+            for (Future<Map<ByteArrayWrapper, StationMeasurement>> future : futures) {
+                Map<ByteArrayWrapper, StationMeasurement> futureMap = future.get();
+                futureMap.forEach((key, value) -> map.merge(key, value,
                         (st1, st2) -> {
                             st1.sum += st2.sum;
                             st1.count += st2.count;
@@ -211,12 +239,15 @@ public class CalculateAverage_eriklumme {
 
         StringBuilder result = new StringBuilder("{");
         boolean first = true;
-        for (StationMeasurement stationMeasurement : map.values()) {
+        List<StationMeasurement> values = new ArrayList<>(map.values());
+        values.sort(Comparator.comparing(StationMeasurement::stringName));
+
+        for (StationMeasurement stationMeasurement : values) {
             if (!first) {
                 result.append(", ");
             }
             first = false;
-            result.append(stationMeasurement.stationName).append("=");
+            result.append(new String(stationMeasurement.stationName.value, StandardCharsets.UTF_8)).append("=");
             result.append(stationMeasurement.min);
             result.append(String.format("/%.1f/", (stationMeasurement.sum / stationMeasurement.count)));
             result.append(stationMeasurement.max);
