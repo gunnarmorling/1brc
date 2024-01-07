@@ -36,7 +36,7 @@ public class CalculateAverage_mariuslarsen {
     private static final int BLOCK_SIZE = 2048;
 
     public static void main(String[] args) throws IOException {
-        Path path = Path.of("./measurements100m.txt");
+        Path path = Path.of("./measurements.txt");
 
         if (args.length > 0) {
             path = Path.of(args[0]);

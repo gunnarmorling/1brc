@@ -36,7 +36,7 @@ public class CalculateAverage_mariuslarsen_mapped {
     private static final int MAX_NUMBER_OF_DESTINATIONS = 1024;
 
     public static void main(String[] args) throws IOException {
-        Path path = Path.of("./measurements100m.txt");
+        Path path = Path.of("./measurements.txt");
 
         if (args.length > 0) {
             path = Path.of(args[0]);
@@ -120,12 +120,6 @@ public class CalculateAverage_mariuslarsen_mapped {
         return destinations.values();
     }
 
-    private static Stats createStats(ByteBuffer destination, int hashCode, int offset, int size) {
-        byte[] dest = new byte[size];
-        destination.get(offset, dest, 0, size);
-        return new Stats(dest, hashCode);
-    }
-
     static class Stats {
         int count;
         double min = Double.MAX_VALUE;
@@ -155,11 +149,6 @@ public class CalculateAverage_mariuslarsen_mapped {
         }
 
         @Override
-        public boolean equals(Object o) {
-            return Arrays.equals(city, ((Stats) (o)).city);
-        }
-
-        @Override
         public int hashCode() {
             return hashCode;
         }
@@ -173,5 +162,4 @@ public class CalculateAverage_mariuslarsen_mapped {
             return round(min) + "/" + round(sum / count) + "/" + round(max);
         }
     }
-
 }
