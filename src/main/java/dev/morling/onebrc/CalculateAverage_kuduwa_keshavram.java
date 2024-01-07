@@ -121,7 +121,7 @@ public class CalculateAverage_kuduwa_keshavram {
                 }
 
                 byteBuffer.get();
-                byte[] temp = new byte[8];
+                byte[] temp = new byte[nextLineIndex];
                 for (int i = 0; i < nextLineIndex; i++) {
                     temp[i] = byteBuffer.get();
                 }
