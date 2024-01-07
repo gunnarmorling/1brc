@@ -22,50 +22,47 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class CalculateAverage_mariuslarsen {
-    private static final Path path = Path.of("./measurements.txt");
     private static final Byte DELIMITER = ';';
     private static final Byte NEWLINE = '\n';
-    private static final int THREAD_COUNT = Runtime.getRuntime().availableProcessors();
+    private static final int N_THREADS = Runtime.getRuntime().availableProcessors();
     private static final int MAX_BYTES_IN_MEASUREMENT = 5;
     private static final int MAX_BYTES_IN_DESTINATION = 4 * 100;
-    private static final int MAX_NUMBER_OF_DESTINATIONS = 10000;
-    private static final ExecutorService THREAD_POOL = Executors.newFixedThreadPool(THREAD_COUNT);
+    private static final int MAX_NUMBER_OF_DESTINATIONS = 512;
 
     public static void main(String[] args) throws IOException {
-        readMeasurements();
+        Path path = Path.of("./measurements.txt");
+
+        if (args.length > 0) {
+            path = Path.of(args[0]);
+        }
+
+        long start = System.currentTimeMillis();
+        readMeasurements(path);
+        long end = System.currentTimeMillis();
+        System.out.printf("Time: %f", (end - start) / 1000.0);
     }
 
-    private static void readMeasurements() {
+    private static void readMeasurements(Path path) {
         try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
-            MappedByteBuffer[] blocks = createBuffers(channel);
-            var tasks = Arrays.stream(blocks)
-                    .map(buffer -> (Callable<Collection<Stats>>) (() -> parseBuffer(buffer)))
-                    .toList();
-
-            Map<String, Stats> res = THREAD_POOL.invokeAll(tasks).stream()
-                    .map(Future::resultNow)
+            Map<String, Stats> res = createBuffers(channel).parallelStream()
+                    .map(CalculateAverage_mariuslarsen::parseBuffer)
                     .flatMap(Collection::stream)
                     .collect(Collectors.toMap(s -> s.city, Function.identity(), Stats::join, TreeMap::new));
-
             System.out.println(res);
-            THREAD_POOL.shutdown();
-        } catch (IOException | InterruptedException e) {
+        }
+        catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
 
-    private static MappedByteBuffer[] createBuffers(FileChannel channel) throws IOException {
-        int taskCount = Math.max(THREAD_COUNT, (int) (channel.size() / Integer.MAX_VALUE));
+    private static List<MappedByteBuffer> createBuffers(FileChannel channel) throws IOException {
+        int taskCount = Math.max(N_THREADS, (int) (channel.size() / Integer.MAX_VALUE));
         int blockSize = (int) (channel.size() / taskCount);
-        MappedByteBuffer[] blocks = new MappedByteBuffer[taskCount];
+        List<MappedByteBuffer> blocks = new ArrayList<>(taskCount);
         long pos = 0;
         for (int i = 1; i <= taskCount; i++) {
             int size = (int) (i * blockSize - pos);
@@ -73,12 +70,11 @@ public class CalculateAverage_mariuslarsen {
                 size = (int) (channel.size() - pos);
             }
             MappedByteBuffer b = channel.map(FileChannel.MapMode.READ_ONLY, pos, size);
-            int j = size;
-            while (b.get(--j) != '\n')
+            while (b.get(--size) != '\n')
                 ;
-            b.limit(j + 1);
-            pos += j + 1;
-            blocks[i - 1] = b;
+            b.limit(size + 1);
+            blocks.add(b);
+            pos += size + 1;
         }
         return blocks;
     }
@@ -87,39 +83,44 @@ public class CalculateAverage_mariuslarsen {
         ByteBuffer destination = ByteBuffer.allocate(MAX_BYTES_IN_DESTINATION);
         ByteBuffer measurement = ByteBuffer.allocate(MAX_BYTES_IN_MEASUREMENT);
         ByteBuffer currentBuffer = destination;
-        Map<Integer, Stats> destinations = HashMap.newHashMap(MAX_NUMBER_OF_DESTINATIONS);
+        Map<Integer, Stats> destinations = new HashMap<>(MAX_NUMBER_OF_DESTINATIONS);
         int hashCode = 0;
-        int destinationHash = 0;
-        int negative = 1;
-        int temp = 0;
-
+        int destinationHash;
+        int negative;
+        int temperature;
+        byte digit;
         byte current;
+        Stats currentStats = null;
         while (buffer.hasRemaining()) {
             current = buffer.get();
             if (current == DELIMITER) {
                 destinationHash = hashCode;
-                destinations.computeIfAbsent(destinationHash, k -> new Stats(new String(destination.array(), 0, destination.position())));
-                currentBuffer.flip();
+                if ((currentStats = destinations.get(destinationHash)) == null) {
+                    currentStats = new Stats(new String(destination.array(), 0, destination.position()));
+                    destinations.put(destinationHash, currentStats);
+                }
                 currentBuffer.clear();
                 currentBuffer = measurement;
-            } else if (current == NEWLINE) {
+            }
+            else if (current == NEWLINE) {
                 currentBuffer.flip();
+                negative = 1;
+                temperature = 0;
                 while (currentBuffer.hasRemaining()) {
-                    byte d = currentBuffer.get();
-                    if (d == '-') {
+                    digit = currentBuffer.get();
+                    if (digit == '-') {
                         negative = -1;
-                    } else if (d != '.') {
-                        temp = temp * 10 + d - '0';
+                    }
+                    else if (digit != '.') {
+                        temperature = temperature * 10 + digit - '0';
                     }
                 }
-                destinations.get(destinationHash).update(negative * temp / 10.0);
+                currentStats.update(negative * temperature / 10.0);
                 currentBuffer.clear();
                 currentBuffer = destination;
-                negative = 1;
-                destinationHash = 0;
-                temp = 0;
                 hashCode = 0;
-            } else {
+            }
+            else {
                 currentBuffer.put(current);
                 hashCode = 31 * hashCode + current;
             }
@@ -127,6 +128,7 @@ public class CalculateAverage_mariuslarsen {
         return destinations.values();
     }
 }
+
 
 class Stats {
     int count;
@@ -160,6 +162,6 @@ class Stats {
 
     @Override
     public String toString() {
-        return STR."\{round(min)}/\{round(sum / count)}/\{round(max)}";
+        return round(min) + "/" + round(sum / count) + "/" + round(max);
     }
 }
