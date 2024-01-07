@@ -41,7 +41,7 @@ public class CalculateAverage_vemana {
     public static void main(String[] args) throws Exception {
         System.out.println(new Runner(Path.of("measurements.txt"),
                 24 /* chunkSizeBits */,
-                14 /* hashtableSizeBits */).run());
+                14 /* hashtableSizeBits */).getSummaryStatistics());
     }
 
     public record ByteRange(MappedByteBuffer byteBuffer, long start, long end) {
@@ -61,10 +61,10 @@ public class CalculateAverage_vemana {
             this.state = new ChunkProcessorState(hashtableSizeBits);
         }
 
-        public Result process() {
+        public Result processChunk() {
             ByteRange range;
             while ((range = chunkQueue.take(threadIdx)) != null) {
-                process(range);
+                processRange(range);
                 // justRead(range);
             }
             return result();
@@ -85,12 +85,12 @@ public class CalculateAverage_vemana {
             return ret;
         }
 
-        private void process(ByteRange range) {
+        private void processRange(ByteRange range) {
             MappedByteBuffer mbb = range.byteBuffer;
             int nextPos = 0;
             int end = mbb.capacity();
             while (nextPos < end) {
-                nextPos = state.addDataPoint(mbb, nextPos, end);
+                nextPos = state.processLine(mbb, nextPos, end);
             }
         }
 
@@ -112,7 +112,7 @@ public class CalculateAverage_vemana {
             this.slotsMask = (1 << slotsBits) - 1;
         }
 
-        public int addDataPoint(MappedByteBuffer mmb, int nextPos, int endPos) {
+        public int processLine(MappedByteBuffer mmb, int nextPos, int endPos) {
             int originalPos = nextPos;
             byte nextByte;
             int hash = 0;
@@ -230,7 +230,7 @@ public class CalculateAverage_vemana {
             this.hashtableSizeBits = hashtableSizeBits;
         }
 
-        Result run() throws Exception {
+        Result getSummaryStatistics() throws Exception {
             int processors = Runtime.getRuntime().availableProcessors();
             SerialLazyChunkQueue chunkQueue = new SerialLazyChunkQueue(1L << chunkSizeBits, inputFile, processors);
 
@@ -240,7 +240,7 @@ public class CalculateAverage_vemana {
                 final int I = i;
                 final Callable<Result> callable = () -> new ChunkProcessor(chunkQueue,
                         hashtableSizeBits,
-                        I).process();
+                        I).processChunk();
                 results.add(executorService.submit(callable));
             }
             executorService.shutdown();
@@ -371,13 +371,19 @@ public class CalculateAverage_vemana {
         public void mergeReading(int curTemp) {
             // min = Math.min(min, curTemp);
             // max = Math.max(max, curTemp);
-            // Assuming random values for curTemp
-            // min gets updated roughly log(N)/N fraction of the time (a small number)
-            if (curTemp < min) {
-                min = curTemp;
+
+            // Assuming random values for curTemp,
+            // min (&max) gets updated roughly log(N)/N fraction of the time (a small number)
+            // So, make it branch-predictor friendly
+            // In the worst case, there will be at-most one branch misprediction.
+            // On Ryzen 5950X this seems to save 0.5s of CPU time across 16 cores over Math.min/max
+            if (curTemp > min) { // Mostly passes. On branch misprediction, just update min.
+                if (curTemp > max) { // Mostly fails. On branch misprediction, just update max.
+                    max = curTemp;
+                }
             }
-            else if (curTemp > max) {
-                max = curTemp;
+            else {
+                min = curTemp;
             }
             sum += curTemp;
             count++;
