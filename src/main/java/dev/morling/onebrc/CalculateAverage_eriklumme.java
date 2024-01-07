@@ -43,6 +43,7 @@ public class CalculateAverage_eriklumme {
     private static final String FILE = "./measurements.txt";
     private static final int NUM_CPUS = 8;
     private static final int LINE_OVERHEAD = 100;
+    private static final int NUM_TASKS = 100;
 
     private static class StationMeasurement {
         private final String stationName;
@@ -66,11 +67,11 @@ public class CalculateAverage_eriklumme {
     public static class DataProcessor implements Callable<Map<String, StationMeasurement>> {
 
         private final int processorIndex;
-        private final int size;
+        private final long size;
         private final FileChannel fileChannel;
         private final CountDownLatch countDownLatch;
 
-        public DataProcessor(int processorIndex, int size, FileChannel fileChannel,
+        public DataProcessor(int processorIndex, long size, FileChannel fileChannel,
                              CountDownLatch countDownLatch) {
             this.processorIndex = processorIndex;
             this.size = size;
@@ -82,42 +83,35 @@ public class CalculateAverage_eriklumme {
         public Map<String, StationMeasurement> call() throws Exception {
             Map<String, StationMeasurement> map = new HashMap<>();
 
-            char[] stationBuffer = new char[40];
+            byte[] stationBuffer = new byte[200];
             int stationIndex = 0;
 
-            char[] valueBuffer = new char[5];
+            byte[] valueBuffer = new byte[10];
             int valueIndex = 0;
 
             Mode mode = processorIndex == 0 ? Mode.READ_STATION : Mode.UNINITIALIZED;
-            char c = 0;
+            byte c = 0;
 
             String name = Thread.currentThread().getName();
 
-            long offset = ((long) size) * processorIndex;
-            // TODO: Don't use hardcoded index
-            long sizeWithOffset = processorIndex == 99 ? size : size + LINE_OVERHEAD;
-
-            // System.out.println("[" + Thread.currentThread().getName() + "] " + "Starting...");
+            long offset = size * processorIndex;
+            long sizeWithOverhead = Math.min(size + LINE_OVERHEAD, fileSize - offset);
+            // System.out.format("Process '%d' want to handle '%d' with overhead '%d' from offset '%d' but are limited to '%d' because of file size '%d'%n", processorIndex,
+            // size, (size + LINE_OVERHEAD),
+            // offset, fileSize - offset, fileSize);
 
             try {
-                // System.out.println("[" + Thread.currentThread().getName() + "] " + "2Starting...");
-                MappedByteBuffer buffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, offset, sizeWithOffset);
-                // System.out.println("[" + Thread.currentThread().getName() + "] " + "Buffer position is: " + buffer.position() + ", reading from " + offset + " to "
-                // + (offset + sizeWithOffset));
+                MappedByteBuffer buffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, offset, sizeWithOverhead);
 
-                CharBuffer charBuffer = StandardCharsets.UTF_8.decode(buffer);
-
-                // System.out.println("[" + name + "] " + "Size is: " + size);
-                // System.out.println("Chars: " + charBuffer.length());
-
-                while (charBuffer.hasRemaining()) {
-                    c = charBuffer.get();
+                while (buffer.hasRemaining()) {
+                    c = buffer.get();
                     if (c == '\n') {
                         // We have a station to store
                         if (mode == Mode.READ_VALUE) {
-                            String stationName = String.valueOf(Arrays.copyOfRange(stationBuffer, 0, stationIndex));
+                            String stationName = new String(Arrays.copyOfRange(stationBuffer, 0, stationIndex), StandardCharsets.UTF_8);
 
-                            double value = Double.parseDouble(String.valueOf(Arrays.copyOfRange(valueBuffer, 0, valueIndex)));
+                            // TODO: More efficient way?
+                            double value = Double.parseDouble(new String(Arrays.copyOfRange(valueBuffer, 0, valueIndex)));
 
                             StationMeasurement stationMeasurement = map.computeIfAbsent(stationName, StationMeasurement::new);
 
@@ -131,8 +125,8 @@ public class CalculateAverage_eriklumme {
                         }
                         mode = Mode.READ_STATION;
 
-                        // We've run past our boundary
-                        if (charBuffer.position() >= size) {
+                        // We've run past our size, can happen
+                        if (buffer.position() > size) {
                             break;
                         }
                     }
@@ -151,8 +145,10 @@ public class CalculateAverage_eriklumme {
                 }
                 if (mode == Mode.READ_VALUE && valueIndex > 0) {
                     // One value left to store
-                    String stationName = String.valueOf(Arrays.copyOfRange(stationBuffer, 0, stationIndex));
-                    double value = Double.parseDouble(String.valueOf(Arrays.copyOfRange(valueBuffer, 0, valueIndex)));
+                    String stationName = new String(Arrays.copyOfRange(stationBuffer, 0, stationIndex), StandardCharsets.UTF_8);
+
+                    // TODO: More efficient way?
+                    double value = Double.parseDouble(new String(Arrays.copyOfRange(valueBuffer, 0, valueIndex)));
 
                     StationMeasurement stationMeasurement = map.computeIfAbsent(stationName, StationMeasurement::new);
 
@@ -179,10 +175,12 @@ public class CalculateAverage_eriklumme {
         }
     }
 
+    // TODO: Create new instance of some class if needed, to store similar fields
+    private static long fileSize;
+
     public static void main(String[] args) throws Exception {
-        int numDividers = 100;
         Map<String, StationMeasurement> map = new TreeMap<>();
-        CountDownLatch countDownLatch = new CountDownLatch(numDividers);
+        CountDownLatch countDownLatch = new CountDownLatch(NUM_TASKS);
 
         // try (BufferedReader reader = new BufferedReader(new FileReader(FILE))) {
         // reader.lines().forEach(line -> {
@@ -202,14 +200,21 @@ public class CalculateAverage_eriklumme {
                 FileInputStream fileInputStream = new FileInputStream(FILE);
                 FileChannel channel = fileInputStream.getChannel()) {
 
-            long fileSize = channel.size();
+            fileSize = channel.size();
             // System.out.println("File is " + fileSize);
 
-            int fileSizePerThread = (int) (fileSize / numDividers);
+            // TODO: More sensible calculation instead of hardcoding num tasks
+            int fileSizePerThread = Math.max((int) Math.ceil(fileSize / (float) NUM_TASKS), 1000);
+            long sizeAccountedFor = 0;
 
-            List<Future<Map<String, StationMeasurement>>> futures = new ArrayList<>(numDividers);
-            for (int i = 0; i < numDividers; i++) {
+            List<Future<Map<String, StationMeasurement>>> futures = new ArrayList<>(NUM_TASKS);
+            for (int i = 0; i < NUM_TASKS; i++) {
+                if (sizeAccountedFor >= fileSize) {
+                    countDownLatch.countDown();
+                    continue;
+                }
                 futures.add(executorService.submit(new DataProcessor(i, fileSizePerThread, channel, countDownLatch)));
+                sizeAccountedFor += fileSizePerThread;
             }
             countDownLatch.await();
 
