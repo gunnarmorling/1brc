@@ -191,6 +191,7 @@ public class CalculateAverage_yasyf {
                 this.buff = this.channel.map(MapMode.READ_ONLY, start,
                         Math.min(end - start + OVERSHOOT, channel.size() - start), Arena.global());
                 this.address = buff.address();
+                this.buff.load();
                 parse();
             }
             catch (IOException e) {

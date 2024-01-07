@@ -18,5 +18,5 @@
 source "$HOME/.sdkman/bin/sdkman-init.sh"
 sdk use java 21.0.1-graal 1>&2
 
-JAVA_OPTS="--enable-preview -da -dsa -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -Xms512m -Xmx512m -XX:+AlwaysPreTouch -XX:+UseTransparentHugePages"
+JAVA_OPTS="--enable-preview -da -dsa -XX:+UnlockExperimentalVMOptions -Xms512m -Xmx512m -XX:+AlwaysPreTouch -XX:+UseTransparentHugePages"
 time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_yasyf
