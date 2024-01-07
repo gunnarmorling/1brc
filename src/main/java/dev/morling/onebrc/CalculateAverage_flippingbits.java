@@ -40,7 +40,7 @@ public class CalculateAverage_flippingbits {
     public static void main(String[] args) throws IOException {
         try (var file = new RandomAccessFile(FILE, "r")) {
             // Calculate chunk boundaries
-            long[][] chunkBoundaries = getChunkBoundaries(file);
+            var chunkBoundaries = getChunkBoundaries(file);
             // Process chunks
             var result = Arrays.asList(chunkBoundaries).stream()
                     .map(chunk -> {
@@ -64,7 +64,7 @@ public class CalculateAverage_flippingbits {
                         }
                         return firstMap;
                     })
-                    .map(hashMap -> new TreeMap(hashMap)).get();
+                    .map(TreeMap::new).get();
 
             System.out.println(result);
         }
@@ -75,7 +75,7 @@ public class CalculateAverage_flippingbits {
         // Split file into chunks, so we can work around the size limitation of channels
         var chunks = (int) (fileSize / CHUNK_SIZE);
 
-        long[][] chunkBoundaries = new long[chunks + 1][2];
+        var chunkBoundaries = new long[chunks + 1][2];
         var endPointer = 0L;
 
         for (var i = 0; i <= chunks; i++) {
@@ -104,7 +104,7 @@ public class CalculateAverage_flippingbits {
     private static Map<String, PartitionAggregate> processChunk(long startOfChunk, long endOfChunk)
             throws IOException {
         Map<String, PartitionAggregate> stationAggregates = new HashMap<>(10_000);
-        byte[] byteChunk = new byte[(int) (endOfChunk - startOfChunk)];
+        var byteChunk = new byte[(int) (endOfChunk - startOfChunk)];
         try (var file = new RandomAccessFile(FILE, "r")) {
             file.seek(startOfChunk);
             file.read(byteChunk);
@@ -112,24 +112,36 @@ public class CalculateAverage_flippingbits {
             while (i < byteChunk.length) {
                 final var startPosStation = i;
 
-                // read station name
+                // Read station name
                 while (byteChunk[i] != ';') {
                     i++;
                 }
                 var station = new String(Arrays.copyOfRange(byteChunk, startPosStation, i));
                 i++;
 
-                // read measurement
-                final var startPosMeasurement = i;
-                while (byteChunk[i] != '\n') {
+                // Read measurement
+                var isNegative = byteChunk[i] == '-';
+                var measurement = 0;
+                if (isNegative) {
                     i++;
+                    while (byteChunk[i] != '.') {
+                        measurement = measurement * 10 + byteChunk[i] - '0';
+                        i++;
+                    }
+                    measurement = measurement * -10 + byteChunk[i + 1] - '0';
+                }
+                else {
+                    while (byteChunk[i] != '.') {
+                        measurement = measurement * 10 + byteChunk[i] - '0';
+                        i++;
+                    }
+                    measurement = measurement * 10 + byteChunk[i + 1] - '0';
                 }
 
-                var measurement = Arrays.copyOfRange(byteChunk, startPosMeasurement, i);
-                var aggregate = stationAggregates.getOrDefault(station, new PartitionAggregate());
-                aggregate.addMeasurementAndComputeAggregate(measurement);
-                stationAggregates.put(station, aggregate);
-                i++;
+                // Update aggregate
+                var aggregate = stationAggregates.computeIfAbsent(station, x -> new PartitionAggregate());
+                aggregate.addMeasurementAndComputeAggregate((short) measurement);
+                i += 3;
             }
             stationAggregates.values().forEach(PartitionAggregate::aggregateRemainingMeasurements);
         }
@@ -138,40 +150,22 @@ public class CalculateAverage_flippingbits {
     }
 
     private static class PartitionAggregate {
-        final short[] lane = new short[SIMD_LANE_LENGTH * 2];
+        final short[] doubleLane = new short[SIMD_LANE_LENGTH * 2];
         // Assume that we do not have more than Integer.MAX_VALUE measurements for the same station per partition
         int count = 0;
         long sum = 0;
         short min = Short.MAX_VALUE;
         short max = Short.MIN_VALUE;
 
-        public void addMeasurementAndComputeAggregate(byte[] measurementBytes) {
-            // Parse measurement and exploit that we know the format of the floating-point values
-            var measurement = measurementBytes[measurementBytes.length - 1] - '0';
-            var digits = 1;
-            for (var i = measurementBytes.length - 3; i > 0; i--) {
-                var num = measurementBytes[i] - '0';
-                measurement = measurement + (num * (int) Math.pow(10, digits));
-                digits++;
-            }
-
-            // Check if measurement is negative
-            if (measurementBytes[0] == '-') {
-                measurement = measurement * -1;
-            }
-            else {
-                var num = measurementBytes[0] - '0';
-                measurement = measurement + (num * (int) Math.pow(10, digits));
-            }
-
+        public void addMeasurementAndComputeAggregate(short measurement) {
             // Add measurement to buffer, which is later processed by SIMD instructions
-            lane[count % lane.length] = (short) measurement;
+            doubleLane[count % doubleLane.length] = measurement;
             count++;
 
             // Once lane is full, use SIMD instructions to calculate aggregates
-            if (count % lane.length == 0) {
-                var firstVector = ShortVector.fromArray(ShortVector.SPECIES_MAX, lane, 0);
-                var secondVector = ShortVector.fromArray(ShortVector.SPECIES_MAX, lane, SIMD_LANE_LENGTH);
+            if (count % doubleLane.length == 0) {
+                var firstVector = ShortVector.fromArray(ShortVector.SPECIES_MAX, doubleLane, 0);
+                var secondVector = ShortVector.fromArray(ShortVector.SPECIES_MAX, doubleLane, SIMD_LANE_LENGTH);
 
                 var simdMin = firstVector.min(secondVector).reduceLanes(VectorOperators.MIN);
                 min = (short) Math.min(min, simdMin);
@@ -184,8 +178,8 @@ public class CalculateAverage_flippingbits {
         }
 
         public void aggregateRemainingMeasurements() {
-            for (var i = 0; i < count % lane.length; i++) {
-                var measurement = lane[i];
+            for (var i = 0; i < count % doubleLane.length; i++) {
+                var measurement = doubleLane[i];
                 min = (short) Math.min(min, measurement);
                 max = (short) Math.max(max, measurement);
                 sum += measurement;
