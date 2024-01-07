@@ -27,6 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 
 public class CalculateAverage_phd3 {
 
@@ -35,6 +36,7 @@ public class CalculateAverage_phd3 {
     private static final long FILE_SIZE = new File(FILE).length();
     private static final int CHUNK_SIZE = 65536 * 1024;
     private static final int PADDING = 512;
+    private static final double[] POWERS_OF_10 = IntStream.range(0, 6).mapToDouble(x -> Math.pow(10.0, x)).toArray();
 
     private static final Map<String, AggregationInfo> globalMap = new ConcurrentHashMap<>();
 
@@ -183,7 +185,7 @@ public class CalculateAverage_phd3 {
             while (true) {
                 LineInfo lineInfo = getNextLine(buffer, start);
                 String key = new String(buffer, start, lineInfo.semicolonIndex - start);
-                double value = parseDoubleMethod(new String(buffer, lineInfo.semicolonIndex + 1, lineInfo.nextStart - lineInfo.semicolonIndex - 1, UTF_8));
+                double value = parseDouble(buffer, lineInfo.semicolonIndex + 1, lineInfo.nextStart - 1);
                 update(chunkMap, key, value);
 
                 if ((lineInfo.nextStart > nextChunkStart) || (lineInfo.nextStart >= buffer.length)) {
@@ -197,8 +199,21 @@ public class CalculateAverage_phd3 {
             return chunkMap;
         }
 
-        private static double parseDoubleMethod(String s) {
-            return Double.parseDouble(s);
+        private static double parseDouble(byte[] bytes, int offset, int end) {
+            boolean negative = (bytes[offset] == '-');
+            int current = negative ? offset + 1 : offset;
+            int preFloat = 0;
+            while (current < end && bytes[current] != '.') {
+                preFloat = (preFloat * 10) + (bytes[current++] - '0');
+            }
+            current++;
+            int postFloatStart = current;
+            int postFloat = 0;
+            while (current < end) {
+                postFloat = (postFloat * 10) + (bytes[current++] - '0');
+            }
+
+            return (preFloat + ((postFloat) / POWERS_OF_10[end - postFloatStart])) * (negative ? -1 : 1);
         }
 
         private static void update(Map<String, AggregationInfo> state, String key, double value) {
