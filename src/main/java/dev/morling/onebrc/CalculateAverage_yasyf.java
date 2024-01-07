@@ -81,9 +81,9 @@ public class CalculateAverage_yasyf {
 
     static final class Worker implements Runnable {
         private final long[][] metrics = new long[MAP_SIZE][METRICS_SIZE];
-        private final long[] names = new long[MAP_SIZE];
+        private final int[] names = new int[MAP_SIZE];
         private final int[] indices = new int[N_CITIES];
-        private int n_indices = 0;
+        private short n_indices = 0;
 
         private final FileChannel channel;
         private MemorySegment buff;
@@ -117,11 +117,11 @@ public class CalculateAverage_yasyf {
                 metrics[3] = 1;
                 metrics[4] = length;
                 metrics[5] = key2;
-                names[idx] = name;
+                names[idx] = (int) (name - address);
                 indices[n_indices++] = idx;
                 return;
             }
-            else if (metrics[4] != length || metrics[5] != key2 || mismatch(name, names[idx], length)) {
+            else if (metrics[4] != length || metrics[5] != key2 || mismatch(name, names[idx] + address, length)) {
                 // collision
                 addCity(name, length, key, key2, offset + 1, measurement);
                 return;
@@ -218,7 +218,9 @@ public class CalculateAverage_yasyf {
                 int cityIdx = WORKERS[i].indices[idx];
                 long[] metrics = WORKERS[i].metrics[cityIdx];
                 byte[] name = new byte[(int) metrics[4]];
-                UNSAFE.copyMemory(null, WORKERS[i].names[cityIdx], name, Unsafe.ARRAY_BYTE_BASE_OFFSET, metrics[4]);
+                UNSAFE.copyMemory(null, WORKERS[i].names[cityIdx] + WORKERS[i].address, name,
+                        Unsafe.ARRAY_BYTE_BASE_OFFSET,
+                        metrics[4]);
                 RESULTS.merge(new String(name), metrics, CalculateAverage_yasyf::mergeResults);
             }
         }
