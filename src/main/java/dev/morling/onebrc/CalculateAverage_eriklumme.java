@@ -16,14 +16,11 @@
 package dev.morling.onebrc;
 
 import java.io.FileInputStream;
-import java.lang.management.GarbageCollectorMXBean;
-import java.lang.management.ManagementFactory;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -42,172 +39,18 @@ public class CalculateAverage_eriklumme {
     private static final int LINE_OVERHEAD = 200;
     private static final int NUM_TASKS = NUM_CPUS * 6;
 
-    private static class StationMeasurement {
-        private final ByteArrayWrapper stationName;
+    private final CountDownLatch countDownLatch = new CountDownLatch(NUM_TASKS);
 
-        private StationMeasurement(ByteArrayWrapper stationName) {
-            this.stationName = stationName;
-        }
+    private final FileInputStream fileInputStream = new FileInputStream(FILE);
+    private final FileChannel fileChannel = fileInputStream.getChannel();
+    private final long fileSize = fileChannel.size();
+    private final int fileSizePerThread = (int) Math.max(Math.ceil(fileSize / (float) NUM_TASKS), 1000);
 
-        private double min = Double.POSITIVE_INFINITY;
-        private double max = Double.NEGATIVE_INFINITY;
-        private double sum = 0;
-        private int count = 0;
-
-        public String stringName() {
-            return new String(stationName.value, StandardCharsets.UTF_8);
-        }
-    }
-
-    private enum Mode {
-        UNINITIALIZED,
-        READ_STATION,
-        READ_VALUE
-    }
-
-    private static class ByteArrayWrapper implements Comparable<ByteArrayWrapper> {
-
-        private final byte[] value;
-
-        private ByteArrayWrapper(byte[] value) {
-            this.value = value;
-        }
-
-        @Override
-        public int compareTo(ByteArrayWrapper o) {
-            return Arrays.compare(value, o.value);
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o)
-                return true;
-            if (o instanceof ByteArrayWrapper that) {
-                return Arrays.equals(value, that.value);
-            }
-            return false;
-        }
-
-        @Override
-        public int hashCode() {
-            return Arrays.hashCode(value);
-        }
-    }
-
-    public static class DataProcessor implements Callable<Map<ByteArrayWrapper, StationMeasurement>> {
-
-        private final int processorIndex;
-        private final long size;
-        private final FileChannel fileChannel;
-        private final CountDownLatch countDownLatch;
-
-        public DataProcessor(int processorIndex, long size, FileChannel fileChannel,
-                             CountDownLatch countDownLatch) {
-            this.processorIndex = processorIndex;
-            this.size = size;
-            this.fileChannel = fileChannel;
-            this.countDownLatch = countDownLatch;
-        }
-
-        @Override
-        public Map<ByteArrayWrapper, StationMeasurement> call() {
-            Map<ByteArrayWrapper, StationMeasurement> map = new HashMap<>();
-
-            byte[] stationBuffer = new byte[200];
-            int stationIndex = 0;
-
-            byte[] valueBuffer = new byte[10];
-            int valueIndex = 0;
-
-            Mode mode = processorIndex == 0 ? Mode.READ_STATION : Mode.UNINITIALIZED;
-            byte c = 0;
-
-            long offset = size * processorIndex;
-            long sizeWithOverhead = Math.min(size + LINE_OVERHEAD, fileSize - offset);
-
-            try {
-                MappedByteBuffer buffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, offset, sizeWithOverhead);
-
-                while (buffer.hasRemaining()) {
-                    c = buffer.get();
-                    if (c == '\n') {
-                        // We have a station to store
-                        if (mode == Mode.READ_VALUE) {
-                            ByteArrayWrapper stationName = new ByteArrayWrapper(Arrays.copyOfRange(stationBuffer, 0, stationIndex));
-                            double value = Double.parseDouble(new String(Arrays.copyOfRange(valueBuffer, 0, valueIndex)));
-
-                            StationMeasurement stationMeasurement = map.computeIfAbsent(stationName, StationMeasurement::new);
-
-                            stationMeasurement.count++;
-                            stationMeasurement.min = Math.min(value, stationMeasurement.min);
-                            stationMeasurement.max = Math.max(value, stationMeasurement.max);
-                            stationMeasurement.sum += value;
-
-                            stationIndex = 0;
-                            valueIndex = 0;
-                        }
-                        mode = Mode.READ_STATION;
-
-                        // We've run past our size, can happen
-                        if (buffer.position() > size) {
-                            break;
-                        }
-                    }
-                    else if (mode == Mode.UNINITIALIZED) {
-                        // Do-nothing, read more
-                    }
-                    else if (c == ';') {
-                        mode = Mode.READ_VALUE;
-                    }
-                    else if (mode == Mode.READ_STATION) {
-                        stationBuffer[stationIndex++] = c;
-                    }
-                    else {
-                        valueBuffer[valueIndex++] = c;
-                    }
-                }
-                if (mode == Mode.READ_VALUE && valueIndex > 0) {
-                    // One value left to store
-                    ByteArrayWrapper stationName = new ByteArrayWrapper(Arrays.copyOfRange(stationBuffer, 0, stationIndex));
-
-                    // TODO: More efficient way?
-                    double value = Double.parseDouble(new String(Arrays.copyOfRange(valueBuffer, 0, valueIndex)));
-
-                    StationMeasurement stationMeasurement = map.computeIfAbsent(stationName, StationMeasurement::new);
-
-                    stationMeasurement.count++;
-                    stationMeasurement.min = Math.min(value, stationMeasurement.min);
-                    stationMeasurement.max = Math.max(value, stationMeasurement.max);
-                    stationMeasurement.sum += value;
-                }
-
-            }
-            catch (Throwable e) {
-                e.printStackTrace();
-                System.exit(1);
-            }
-            finally {
-                countDownLatch.countDown();
-            }
-            return map;
-        }
-    }
-
-    // TODO: Create new instance of some class if needed, to store similar fields
-    private static long fileSize;
-
-    public static void main(String[] args) throws Exception {
+    private CalculateAverage_eriklumme() throws Exception {
         Map<ByteArrayWrapper, StationMeasurement> map = new HashMap<>();
-        CountDownLatch countDownLatch = new CountDownLatch(NUM_TASKS);
-        Locale.setDefault(Locale.US);
 
-        try (ExecutorService executorService = Executors.newFixedThreadPool(NUM_CPUS);
-                FileInputStream fileInputStream = new FileInputStream(FILE);
-                FileChannel channel = fileInputStream.getChannel()) {
-
-            fileSize = channel.size();
-
-            int fileSizePerThread = (int) Math.max(Math.ceil(fileSize / (float) NUM_TASKS), 1000);
+        try (ExecutorService executorService = Executors.newFixedThreadPool(NUM_CPUS); fileInputStream; fileChannel) {
+            ;
             long sizeAccountedFor = 0;
 
             List<Future<Map<ByteArrayWrapper, StationMeasurement>>> futures = new ArrayList<>(NUM_TASKS);
@@ -218,12 +61,11 @@ public class CalculateAverage_eriklumme {
                     countDownLatch.countDown();
                     continue;
                 }
-                futures.add(executorService.submit(new DataProcessor(i, fileSizePerThread, channel, countDownLatch)));
+                futures.add(executorService.submit(new DataProcessor(i)));
                 sizeAccountedFor += fileSizePerThread;
             }
             countDownLatch.await();
 
-            // TODO: Try using multiple threads, try freeing up memory quicker by merging as they complete
             for (Future<Map<ByteArrayWrapper, StationMeasurement>> future : futures) {
                 Map<ByteArrayWrapper, StationMeasurement> futureMap = future.get();
                 futureMap.forEach((key, value) -> map.merge(key, value,
@@ -257,11 +99,128 @@ public class CalculateAverage_eriklumme {
         System.out.println(result);
     }
 
-    private static long getGarbageCollectionTime() {
-        long collectionTime = 0;
-        for (GarbageCollectorMXBean garbageCollectorMXBean : ManagementFactory.getGarbageCollectorMXBeans()) {
-            collectionTime += garbageCollectorMXBean.getCollectionTime();
+    private static class StationMeasurement {
+        private final ByteArrayWrapper stationName;
+
+        private StationMeasurement(ByteArrayWrapper stationName) {
+            this.stationName = stationName;
         }
-        return collectionTime;
+
+        private double min = Double.POSITIVE_INFINITY;
+        private double max = Double.NEGATIVE_INFINITY;
+        private double sum = 0;
+        private int count = 0;
+
+        public String stringName() {
+            return new String(stationName.value, StandardCharsets.UTF_8);
+        }
+    }
+
+    private enum Mode {
+        UNINITIALIZED,
+        READ_STATION,
+        READ_VALUE
+    }
+
+    private record ByteArrayWrapper(byte[] value) {
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o)
+                return true;
+            if (o instanceof ByteArrayWrapper that) {
+                return Arrays.equals(value, that.value);
+            }
+            return false;
+        }
+
+        @Override
+        public int hashCode() {
+            return Arrays.hashCode(value);
+        }
+    }
+
+    public class DataProcessor implements Callable<Map<ByteArrayWrapper, StationMeasurement>> {
+
+        private final int processorIndex;
+
+        public DataProcessor(int processorIndex) {
+            this.processorIndex = processorIndex;
+        }
+
+        @Override
+        public Map<ByteArrayWrapper, StationMeasurement> call() throws Exception {
+            Map<ByteArrayWrapper, StationMeasurement> map = new HashMap<>();
+
+            byte[] stationBuffer = new byte[200];
+            int stationIndex = 0;
+
+            byte[] valueBuffer = new byte[10];
+            int valueIndex = 0;
+
+            Mode mode = processorIndex == 0 ? Mode.READ_STATION : Mode.UNINITIALIZED;
+            byte b;
+
+            long offset = ((long) fileSizePerThread) * processorIndex;
+            long sizeWithOverhead = Math.min(((long) fileSizePerThread) + LINE_OVERHEAD, fileSize - offset);
+
+            try {
+                MappedByteBuffer buffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, offset, sizeWithOverhead);
+
+                while (buffer.hasRemaining()) {
+                    b = buffer.get();
+                    if (b == '\n') {
+                        // We have a station to store
+                        if (mode == Mode.READ_VALUE) {
+                            storeStation(map, stationBuffer, stationIndex, valueBuffer, valueIndex);
+                            stationIndex = 0;
+                            valueIndex = 0;
+                        }
+                        mode = Mode.READ_STATION;
+
+                        // We've run past our size, can happen
+                        if (buffer.position() > fileSizePerThread) {
+                            break;
+                        }
+                    }
+                    else if (mode == Mode.UNINITIALIZED) {
+                        // Do-nothing, read more
+                    }
+                    else if (b == ';') {
+                        mode = Mode.READ_VALUE;
+                    }
+                    else if (mode == Mode.READ_STATION) {
+                        stationBuffer[stationIndex++] = b;
+                    }
+                    else {
+                        valueBuffer[valueIndex++] = b;
+                    }
+                }
+                if (mode == Mode.READ_VALUE && valueIndex > 0) {
+                    // One value left to store
+                    storeStation(map, stationBuffer, stationIndex, valueBuffer, valueIndex);
+                }
+            }
+            finally {
+                countDownLatch.countDown();
+            }
+            return map;
+        }
+
+        private void storeStation(Map<ByteArrayWrapper, StationMeasurement> map, byte[] stationBuffer, int stationIndex, byte[] valueBuffer, int valueIndex) {
+            ByteArrayWrapper stationName = new ByteArrayWrapper(Arrays.copyOfRange(stationBuffer, 0, stationIndex));
+            double value = Double.parseDouble(new String(Arrays.copyOfRange(valueBuffer, 0, valueIndex)));
+
+            StationMeasurement stationMeasurement = map.computeIfAbsent(stationName, StationMeasurement::new);
+            stationMeasurement.count++;
+            stationMeasurement.min = Math.min(value, stationMeasurement.min);
+            stationMeasurement.max = Math.max(value, stationMeasurement.max);
+            stationMeasurement.sum += value;
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        Locale.setDefault(Locale.US);
+        new CalculateAverage_eriklumme();
     }
 }
