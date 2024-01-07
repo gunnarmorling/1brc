@@ -238,8 +238,12 @@ public class CalculateAverage_shipilev {
             }
 
             public void merge(int value) {
-                min = Math.min(min, value);
-                max = Math.max(max, value);
+                if (value < min) {
+                    min = value;
+                }
+                if (value > max) {
+                    max = value;
+                }
                 sum += value;
                 count++;
             }

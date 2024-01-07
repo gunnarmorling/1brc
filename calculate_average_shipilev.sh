@@ -19,7 +19,7 @@
 #source "$HOME/.sdkman/bin/sdkman-init.sh"
 #sdk use java 21.0.1-open 1>&2
 
-JAVA_OPTS="-XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -Xms128m -Xmx128m -XX:-AlwaysPreTouch -XX:-TieredCompilation -XX:CICompilerCount=1"
+JAVA_OPTS="-XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -Xms128m -Xmx128m -XX:-AlwaysPreTouch -XX:-TieredCompilation -Xbatch"
 
 #perf record java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_shipilev
 time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_shipilev
