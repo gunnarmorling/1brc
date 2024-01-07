@@ -46,16 +46,20 @@ public class CalculateAverage_netrunnereve {
             boolean negate = false;
             int head = 0;
             int tempCnt = 0;
-            byte[] buffer = new byte[1000]; // TODO: hardcode 1000 bytes for now, must auto scale
+            byte[] scratch = new byte[50]; // this will be auto-enlarged if necessary
             MeasurementAggregator ma = null;
 
             for (int i = 0; i < mbs; i++) {
                 byte cur = mbuf.get(i);
                 if (cur == 59) { // ascii ;
                     int len = i - head;
+                    if (scratch.length < len) { // enlarge scratch if it's too small for us
+                        scratch = new byte[scratch.length * 10];
+                    }
+
                     mbuf.position(head);
-                    mbuf.get(buffer, 0, len);
-                    String station = new String(buffer, 0, len, StandardCharsets.UTF_8);
+                    mbuf.get(scratch, 0, len);
+                    String station = new String(scratch, 0, len, StandardCharsets.UTF_8);
 
                     ma = staHash.get(station);
                     if (ma == null) {
@@ -76,10 +80,10 @@ public class CalculateAverage_netrunnereve {
                     if (cur == 46) { // ascii .
                         int tempa = mbuf.get(i + 1) - 48;
                         if (tempCnt == 2) { // tens
-                            tempa += (buffer[0] - 48) * 100 + (buffer[1] - 48) * 10;
+                            tempa += (scratch[0] - 48) * 100 + (scratch[1] - 48) * 10;
                         }
                         else { // ones
-                            tempa += (buffer[0] - 48) * 10;
+                            tempa += (scratch[0] - 48) * 10;
                         }
                         if (negate) {
                             tempa *= -1;
@@ -98,7 +102,7 @@ public class CalculateAverage_netrunnereve {
                         negate = true;
                     }
                     else {
-                        buffer[tempCnt] = cur;
+                        scratch[tempCnt] = cur;
                         tempCnt++;
                     }
                 }
