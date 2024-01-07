@@ -77,7 +77,8 @@ public class CalculateAverage_raipc {
     }
 
     private static class ParsingTask extends RecursiveTask<MyHashMap> {
-        private static final int SPLIT_FACTOR = 10;
+        private static final int SPLIT_FACTOR = 4;
+        private static final int MIN_TASK_SIZE = 256 * 1024;
         private final File file;
         private final long startPosition;
         private final long endPosition;
@@ -91,7 +92,7 @@ public class CalculateAverage_raipc {
         @Override
         protected MyHashMap compute() {
             long size = endPosition - startPosition;
-            if (size <= BUFFER_SIZE || size < +file.length() / Runtime.getRuntime().availableProcessors() / SPLIT_FACTOR) {
+            if (size <= MIN_TASK_SIZE || size < file.length() / Runtime.getRuntime().availableProcessors() / SPLIT_FACTOR) {
                 return doCompute();
             }
             var firstHalf = new ParsingTask(file, startPosition, (startPosition + endPosition) / 2).fork();
@@ -232,6 +233,7 @@ public class CalculateAverage_raipc {
 
     private static final MethodHandle indexOfMH;
     private static final MethodHandle vectorizedHashCodeMH;
+    private static final MethodHandle mismatchMH;
 
     static {
         try {
@@ -246,6 +248,10 @@ public class CalculateAverage_raipc {
             // int vectorizedHashCode(Object array, int fromIndex, int length, int initialValue, int basicType)
             vectorizedHashCodeMH = lookup.findStatic(arraysSupport, "vectorizedHashCode",
                     MethodType.methodType(int.class, Object.class, int.class, int.class, int.class, int.class));
+            lookup = MethodHandles.privateLookupIn(arraysSupport, MethodHandles.lookup());
+            // int mismatch(byte[] a, int aFromIndex, byte[] b, int bFromIndex, int length)
+            mismatchMH = lookup.findStatic(arraysSupport, "mismatch",
+                    MethodType.methodType(int.class, byte[].class, int.class, byte[].class, int.class, int.class));
         }
         catch (Exception e) {
             throw new Error(e);
@@ -268,7 +274,15 @@ public class CalculateAverage_raipc {
         catch (Throwable e) {
             throw new Error(e);
         }
+    }
 
+    static boolean arraysEqual(byte[] a, int aFromIndex, byte[] b, int bFromIndex, int length) {
+        try {
+            return ((int) mismatchMH.invoke(a, aFromIndex, b, bFromIndex, length)) < 0;
+        }
+        catch (Throwable e) {
+            throw new Error(e);
+        }
     }
 
     private static class ByteArrayWrapper {
@@ -290,8 +304,11 @@ public class CalculateAverage_raipc {
 
         @Override
         public boolean equals(Object obj) {
-            return obj instanceof ByteArrayWrapper bw &&
-                    Arrays.equals(content, start, start + length, bw.content, bw.start, bw.start + bw.length);
+            return obj instanceof ByteArrayWrapper bw && isEqualTo(bw);
+        }
+
+        boolean isEqualTo(ByteArrayWrapper other) {
+            return length == other.length && arraysEqual(content, start, other.content, other.start, length);
         }
 
         @Override
@@ -362,7 +379,7 @@ public class CalculateAverage_raipc {
             for (int i = from; i < to; ++i) {
                 AggregatedMeasurement item = data[i];
                 if (item != null) {
-                    if (item.station.equals(key)) {
+                    if (item.station.isEqualTo(key)) {
                         return item;
                     }
                 }
@@ -374,8 +391,9 @@ public class CalculateAverage_raipc {
                         put(result, this.data);
                     }
                     else {
-                        return data[i] = result;
+                        data[i] = result;
                     }
+                    return result;
                 }
             }
             return null;
@@ -402,7 +420,7 @@ public class CalculateAverage_raipc {
             for (int i = from; i < to; ++i) {
                 AggregatedMeasurement item = data[i];
                 if (item != null) {
-                    if (item.station.equals(key)) {
+                    if (item.station.isEqualTo(key)) {
                         item.merge(value);
                         return true;
                     }
