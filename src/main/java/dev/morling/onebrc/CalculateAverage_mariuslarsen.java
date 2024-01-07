@@ -22,19 +22,21 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 public class CalculateAverage_mariuslarsen {
     private static final Byte DELIMITER = ';';
     private static final Byte NEWLINE = '\n';
-    private static final int N_THREADS = Runtime.getRuntime().availableProcessors();
-    private static final int MAX_BYTES_IN_MEASUREMENT = 5;
-    private static final int MAX_BYTES_IN_DESTINATION = 4 * 100;
-    private static final int MAX_NUMBER_OF_DESTINATIONS = 512;
+    private static final int N_THREADS = 8;
+    private static final int MAX_NUMBER_OF_DESTINATIONS = 1024;
+    private static final int BLOCK_SIZE = 2048;
 
     public static void main(String[] args) throws IOException {
-        Path path = Path.of("./measurements.txt");
+        Path path = Path.of("./measurements100m.txt");
 
         if (args.length > 0) {
             path = Path.of(args[0]);
@@ -47,20 +49,130 @@ public class CalculateAverage_mariuslarsen {
     }
 
     private static void readMeasurements(Path path) {
-        try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
-            Map<String, Stats> res = createBuffers(channel).parallelStream()
-                    .map(CalculateAverage_mariuslarsen::parseBuffer)
-                    .flatMap(Collection::stream)
-                    .collect(Collectors.toMap(s -> s.city, Function.identity(), Stats::join, TreeMap::new));
-            System.out.println(res);
+        int numBuffers = 2 * N_THREADS;
+        BlockingQueue<ByteBuffer> fullBuffers = new ArrayBlockingQueue<>(numBuffers);
+        BlockingQueue<ByteBuffer> emptyBuffers = new ArrayBlockingQueue<>(numBuffers);
+        for (int i = 0; i < numBuffers; i++) {
+            emptyBuffers.offer(ByteBuffer.allocate(BLOCK_SIZE));
         }
-        catch (IOException e) {
+        AtomicBoolean isDone = new AtomicBoolean(false);
+
+        try (ExecutorService ex = Executors.newFixedThreadPool(N_THREADS)) {
+            ex.submit(new ReaderThread(fullBuffers, emptyBuffers, path, isDone));
+            var tasks = IntStream.range(0, N_THREADS - 1)
+                    .mapToObj(i -> new ParserThread(fullBuffers, emptyBuffers, isDone))
+                    .toList();
+            var res = ex.invokeAll(tasks).stream()
+                    .map(Future::resultNow)
+                    .flatMap(Collection::stream)
+                    .collect(Collectors.toMap(s -> new String(s.city), Function.identity(), Stats::join, TreeMap::new));
+            System.out.println(res);
+        } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
     }
 
+    static class ReaderThread implements Runnable {
+
+        BlockingQueue<ByteBuffer> fullBuffers;
+        BlockingQueue<ByteBuffer> emptyBuffers;
+        Path path;
+        AtomicBoolean isDone;
+
+        public ReaderThread(BlockingQueue<ByteBuffer> fullBuffers, BlockingQueue<ByteBuffer> emptyBuffers, Path path, AtomicBoolean isdone) {
+            this.fullBuffers = fullBuffers;
+            this.emptyBuffers = emptyBuffers;
+            this.path = path;
+            this.isDone = isdone;
+        }
+
+        @Override
+        public void run() {
+            try (FileChannel chan = FileChannel.open(path, StandardOpenOption.READ)) {
+                List<MappedByteBuffer> mappedByteBuffers = createBuffers(chan);
+                for (var mappedByteBuffer : mappedByteBuffers) {
+                    int size = mappedByteBuffer.limit();
+                    int processed = 0;
+                    while (processed < size) {
+                        ByteBuffer buffer = emptyBuffers.take();
+                        int max = Math.min(buffer.capacity(), mappedByteBuffer.remaining() - processed);
+                        mappedByteBuffer.get(processed, buffer.array(), 0, max);
+                        while (buffer.get(--max) != NEWLINE)
+                            ;
+                        buffer.limit(max + 1);
+                        processed += max + 1;
+                        fullBuffers.put(buffer);
+                    }
+                }
+            } catch (IOException | InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+            isDone.set(true);
+        }
+    }
+
+    static class ParserThread implements Callable<Collection<Stats>> {
+        BlockingQueue<ByteBuffer> fullBuffers;
+        BlockingQueue<ByteBuffer> emptyBuffers;
+        AtomicBoolean isDone;
+
+        public ParserThread(BlockingQueue<ByteBuffer> fullBuffers, BlockingQueue<ByteBuffer> emptyBuffers, AtomicBoolean isDone) {
+            this.fullBuffers = fullBuffers;
+            this.emptyBuffers = emptyBuffers;
+            this.isDone = isDone;
+        }
+
+        @Override
+        public Collection<Stats> call() {
+            Map<Integer, Stats> destinations = new HashMap<>(MAX_NUMBER_OF_DESTINATIONS);
+            ByteBuffer buffer;
+            while (!isDone.get() || !fullBuffers.isEmpty()) {
+                buffer = fullBuffers.poll();
+                if (buffer == null)
+                    continue;
+                Stats currentStats;
+                int size;
+                int hashCode;
+                int negative;
+                int temperature;
+                byte current;
+                int start;
+                while (buffer.hasRemaining()) {
+                    start = buffer.position();
+                    hashCode = 1;
+                    while ((current = buffer.get()) != DELIMITER) {
+                        hashCode = 31 * hashCode + current;
+                    }
+                    size = buffer.position() - start - 1;
+                    if ((currentStats = destinations.get(hashCode)) == null) {
+                        currentStats = createStats(buffer, hashCode, start, size);
+                        destinations.put(hashCode, currentStats);
+                    }
+                    temperature = 0;
+                    negative = 1;
+                    while ((current = buffer.get()) != NEWLINE) {
+                        if (current == '-') {
+                            negative = -1;
+                        } else if (current != '.') {
+                            temperature = temperature * 10 + current - '0';
+                        }
+                    }
+                    double temp = negative * temperature / 10.0;
+                    currentStats.update(temp);
+                }
+                buffer.clear();
+                try {
+                    emptyBuffers.put(buffer);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+            return destinations.values();
+        }
+    }
+
     private static List<MappedByteBuffer> createBuffers(FileChannel channel) throws IOException {
-        int taskCount = Math.max(N_THREADS, (int) (channel.size() / Integer.MAX_VALUE));
+        int taskCount = (int) (channel.size() / Integer.MAX_VALUE) + 1;
         int blockSize = (int) (channel.size() / taskCount);
         List<MappedByteBuffer> blocks = new ArrayList<>(taskCount);
         long pos = 0;
@@ -79,89 +191,59 @@ public class CalculateAverage_mariuslarsen {
         return blocks;
     }
 
-    private static Collection<Stats> parseBuffer(MappedByteBuffer buffer) {
-        ByteBuffer destination = ByteBuffer.allocate(MAX_BYTES_IN_DESTINATION);
-        ByteBuffer measurement = ByteBuffer.allocate(MAX_BYTES_IN_MEASUREMENT);
-        ByteBuffer currentBuffer = destination;
-        Map<Integer, Stats> destinations = new HashMap<>(MAX_NUMBER_OF_DESTINATIONS);
-        int hashCode = 0;
-        int destinationHash;
-        int negative;
-        int temperature;
-        byte digit;
-        byte current;
-        Stats currentStats = null;
-        while (buffer.hasRemaining()) {
-            current = buffer.get();
-            if (current == DELIMITER) {
-                destinationHash = hashCode;
-                if ((currentStats = destinations.get(destinationHash)) == null) {
-                    currentStats = new Stats(new String(destination.array(), 0, destination.position()));
-                    destinations.put(destinationHash, currentStats);
-                }
-                currentBuffer.clear();
-                currentBuffer = measurement;
-            }
-            else if (current == NEWLINE) {
-                currentBuffer.flip();
-                negative = 1;
-                temperature = 0;
-                while (currentBuffer.hasRemaining()) {
-                    digit = currentBuffer.get();
-                    if (digit == '-') {
-                        negative = -1;
-                    }
-                    else if (digit != '.') {
-                        temperature = temperature * 10 + digit - '0';
-                    }
-                }
-                currentStats.update(negative * temperature / 10.0);
-                currentBuffer.clear();
-                currentBuffer = destination;
-                hashCode = 0;
-            }
-            else {
-                currentBuffer.put(current);
-                hashCode = 31 * hashCode + current;
-            }
+    private static Stats createStats(ByteBuffer buffer, int hashCode, int offset, int size) {
+        Stats currentStats;
+        byte[] dest = new byte[size];
+        System.arraycopy(buffer.array(), offset, dest, 0, size);
+        currentStats = new Stats(dest, hashCode);
+        return currentStats;
+    }
+
+    static class Stats {
+        int count;
+        double min = Double.MAX_VALUE;
+        double max = Double.MIN_VALUE;
+        double sum;
+        byte[] city;
+        int hashCode;
+
+        public Stats(byte[] city, int hashCode) {
+            this.city = city;
+            this.hashCode = hashCode;
         }
-        return destinations.values();
-    }
-}
 
+        void update(double temp) {
+            count += 1;
+            sum += temp;
+            min = Math.min(min, temp);
+            max = Math.max(max, temp);
+        }
 
-class Stats {
-    int count;
-    double min = Double.MAX_VALUE;
-    double max = Double.MIN_VALUE;
-    double sum;
-    String city;
+        Stats join(Stats s) {
+            count += s.count;
+            sum += s.sum;
+            min = Math.min(min, s.min);
+            max = Math.max(max, s.max);
+            return this;
+        }
 
-    public Stats(String city) {
-        this.city = city;
-    }
+        @Override
+        public boolean equals(Object o) {
+            return Arrays.equals(city, ((Stats) (o)).city);
+        }
 
-    void update(double temp) {
-        count += 1;
-        sum += temp;
-        min = Math.min(min, temp);
-        max = Math.max(max, temp);
-    }
+        @Override
+        public int hashCode() {
+            return hashCode;
+        }
 
-    Stats join(Stats s) {
-        count += s.count;
-        sum += s.sum;
-        min = Math.min(min, s.min);
-        max = Math.max(max, s.max);
-        return this;
-    }
+        private double round(double value) {
+            return Math.round(value * 10.0) / 10.0;
+        }
 
-    private double round(double value) {
-        return Math.round(value * 10.0) / 10.0;
-    }
-
-    @Override
-    public String toString() {
-        return round(min) + "/" + round(sum / count) + "/" + round(max);
+        @Override
+        public String toString() {
+            return round(min) + "/" + round(sum / count) + "/" + round(max);
+        }
     }
 }
