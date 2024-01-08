@@ -136,39 +136,39 @@ public class CalculateAverage_berry120 {
                         }
 
                         var existingTemperatureSummary = map.get(rollingHash);
-                        int num = parse(digits, digitIdx);
+                        int num = parse(digits, digitIdx - 1);
 
                         if (existingTemperatureSummary == null) {
                             byte[] thisPlace = new byte[placeNameIdx];
                             System.arraycopy(placeName, 0, thisPlace, 0, placeNameIdx);
                             map.put(rollingHash, new TemperatureSummary(thisPlace, num, num, num, 1));
                         }
-                        else {
-                            if (!Arrays.equals(placeName, 0, placeNameIdx, existingTemperatureSummary.name, 0, placeNameIdx)) {
+                        else if (!Arrays.equals(placeName, 0, placeNameIdx, existingTemperatureSummary.name, 0, existingTemperatureSummary.name.length)) {
 
-                                /*
-                                 * This block will be slow - don't really care, should be very rare
-                                 */
-                                if (DEBUG)
-                                    System.out.println("BAD: COLLISION!");
-                                byte[] thisPlace = new byte[placeNameIdx];
-                                System.arraycopy(placeName, 0, thisPlace, 0, placeNameIdx);
-                                String backupKey = new String(thisPlace);
-                                var backupExistingTemperatureSummary = backupMap.get(backupKey);
+                            /*
+                             * This block will be slow - don't really care, should be very rare
+                             */
+                            if (DEBUG)
+                                System.out.println("BAD: COLLISION!");
+                            byte[] thisPlace = new byte[placeNameIdx];
+                            System.arraycopy(placeName, 0, thisPlace, 0, placeNameIdx);
+                            String backupKey = new String(thisPlace);
+                            var backupExistingTemperatureSummary = backupMap.get(backupKey);
 
-                                if (backupExistingTemperatureSummary == null) {
-                                    backupMap.put(backupKey, new TemperatureSummary(thisPlace, num, num, num, 1));
-                                }
-                                else {
-                                    backupExistingTemperatureSummary.max = (Math.max(num, backupExistingTemperatureSummary.max));
-                                    backupExistingTemperatureSummary.min = (Math.min(num, backupExistingTemperatureSummary.min));
-                                    backupExistingTemperatureSummary.total += num;
-                                    backupExistingTemperatureSummary.sampleCount++;
-                                }
-                                /*
-                                 * End slow block
-                                 */
+                            if (backupExistingTemperatureSummary == null) {
+                                backupMap.put(backupKey, new TemperatureSummary(thisPlace, num, num, num, 1));
                             }
+                            else {
+                                backupExistingTemperatureSummary.max = (Math.max(num, backupExistingTemperatureSummary.max));
+                                backupExistingTemperatureSummary.min = (Math.min(num, backupExistingTemperatureSummary.min));
+                                backupExistingTemperatureSummary.total += num;
+                                backupExistingTemperatureSummary.sampleCount++;
+                            }
+                            /*
+                             * End slow block
+                             */
+                        }
+                        else {
 
                             existingTemperatureSummary.max = (Math.max(num, existingTemperatureSummary.max));
                             existingTemperatureSummary.min = (Math.min(num, existingTemperatureSummary.min));
@@ -248,7 +248,21 @@ public class CalculateAverage_berry120 {
 
     private static int parse(byte[] arr, int len) {
         // TODO: SIMD?
-        return Integer.parseInt(new String(arr, 0, len).replace(".", ""));
+        int num = 0;
+        for (int mI = len, m = 1; mI >= 0; mI--) {
+            byte d = arr[mI];
+            if (d == '.') {
+            }
+            else if (d == '-') {
+                num = -num;
+                m *= 10;
+            }
+            else {
+                num += (d & 0xF) * m;
+                m *= 10;
+            }
+        }
+        return num;
     }
 
 }
