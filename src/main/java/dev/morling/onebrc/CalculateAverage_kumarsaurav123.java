@@ -15,20 +15,19 @@
  */
 package dev.morling.onebrc;
 
+import static java.util.stream.Collectors.*;
+
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collector;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-
-import static java.util.stream.Collectors.groupingBy;
 
 public class CalculateAverage_kumarsaurav123 {
 
@@ -61,15 +60,7 @@ public class CalculateAverage_kumarsaurav123 {
         private String station;
     }
 
-    public static void main(String[] args) throws IOException {
-        // Map<String, Double> measurements1 = Files.lines(Paths.get(FILE))
-        // .map(l -> l.split(";"))
-        // .collect(groupingBy(m -> m[0], averagingDouble(m -> Double.parseDouble(m[1]))));
-        //
-        // measurements1 = new TreeMap<>(measurements1.entrySet()
-        // .stream()
-        // .collect(toMap(e -> e.getKey(), e -> Math.round(e.getValue() * 10.0) / 10.0)));
-        // System.out.println(measurements1);
+    public static void main(String[] args) {
         Collector<ResultRow, MeasurementAggregator, ResultRow> collector2 = Collector.of(
                 MeasurementAggregator::new,
                 (a, m) -> {
@@ -116,10 +107,9 @@ public class CalculateAverage_kumarsaurav123 {
         long len = Paths.get(FILE).toFile().length();
         Map<Integer, List<byte[]>> leftOutsMap = new ConcurrentSkipListMap<>();
         int chunkSize = 2000_000;
-        long proc = (len / chunkSize);
+        long proc = Math.max(1, (len / chunkSize));
         ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2 * 2);
         List<ResultRow> measurements = Collections.synchronizedList(new ArrayList<ResultRow>());
-        AtomicInteger a = new AtomicInteger(0);
         IntStream.range(0, (int) proc)
                 .mapToObj(i -> {
                     return new Runnable() {
@@ -129,14 +119,14 @@ public class CalculateAverage_kumarsaurav123 {
                                 RandomAccessFile file = new RandomAccessFile(FILE, "r");
                                 byte[] allBytes2 = new byte[chunkSize];
                                 file.seek((long) i * (long) chunkSize);
-                                file.readFully(allBytes2);
+                                int l = file.read(allBytes2);
                                 byte[] eol = "\n".getBytes(StandardCharsets.UTF_8);
                                 List<String> indexs = new ArrayList<>();
                                 int st = 0;
                                 int cnt = 0;
                                 ArrayList<byte[]> local = new ArrayList<>();
 
-                                for (int i = 0; i < allBytes2.length; i++) {
+                                for (int i = 0; i < l; i++) {
                                     if (allBytes2[i] == eol[0]) {
                                         if (i != 0) {
                                             byte[] s2 = new byte[i - st];
@@ -153,7 +143,7 @@ public class CalculateAverage_kumarsaurav123 {
                                         st = i + 1;
                                     }
                                 }
-                                if (st < allBytes2.length) {
+                                if (st < l) {
                                     byte[] s2 = new byte[allBytes2.length - st];
                                     System.arraycopy(allBytes2, st, s2, 0, s2.length);
                                     local.add(s2);
@@ -167,13 +157,10 @@ public class CalculateAverage_kumarsaurav123 {
                                         })
                                         .collect(groupingBy(Measurement::station, collector))
                                         .values();
-                                // System.out.println("Records read" + newmeasurements.size());
                                 measurements.addAll(newmeasurements);
-                                // System.out.println(new TreeMap(newmeasurements.stream().collect(groupingBy(ResultRow::station))));
-                                a.incrementAndGet();
                             }
                             catch (Exception e) {
-                                throw new RuntimeException(e);
+                                // throw new RuntimeException(e);
                             }
                         }
                     };
@@ -187,8 +174,6 @@ public class CalculateAverage_kumarsaurav123 {
         catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
-        System.out.println(a.get());
-        System.out.println(proc);
         Collection<Measurement> lMeasure = new ArrayList<>();
         List<byte[]> leftOuts = leftOutsMap.values()
                 .stream()
@@ -204,21 +189,20 @@ public class CalculateAverage_kumarsaurav123 {
             System.arraycopy(leftOuts.get(i), 0, allBytes, pos, leftOuts.get(i).length);
             pos = pos + leftOuts.get(i).length;
         }
-        // for (int i = 0; i < leftOuts.size() - 1;) {
-        // if (leftOuts.get(i).length() == 0) {
-        // i = i + 1;
-        // continue;
-        // }
-        // if (leftOuts.get(i).split(";").length == 2 && leftOuts.get(i).split(";")[1].split("\\.").length > 1) {
-        // lMeasure.add(new Measurement(leftOuts.get(i).split(";")));
-        // i = i + 1;
-        // }
-        // else {
-        // lMeasure.add(new Measurement((leftOuts.get(i) + leftOuts.get(i + 1)).split(";")));
-        // i = i + 2;
-        // }
-        // }
-        // measurements.addAll(lMeasure.stream().collect(groupingBy(Measurement::station, collector)).values());
+        List<String> l = Arrays.asList(new String(allBytes).split(";"));
+        List<Measurement> measurements1 = new ArrayList<>();
+        String city = l.get(0);
+        for (int i = 0; i < l.size() - 1; i++) {
+            int sIndex = l.get(i + 1).indexOf('.') + 2;
+
+            String tempp = l.get(i + 1).substring(0, sIndex);
+
+            measurements1.add(new Measurement(city, Double.parseDouble(tempp)));
+            city = l.get(i + 1).substring(sIndex);
+        }
+        measurements.addAll(measurements1.stream()
+                .collect(groupingBy(Measurement::station, collector))
+                .values());
         Map<String, ResultRow> measurements2 = new TreeMap<>(measurements
                 .stream()
                 .parallel()
@@ -233,6 +217,5 @@ public class CalculateAverage_kumarsaurav123 {
         // .collect(groupingBy(m -> m.station(), collector)));
 
         System.out.println(measurements2);
-//        System.out.println(System.currentTimeMillis() - start);
     }
 }
