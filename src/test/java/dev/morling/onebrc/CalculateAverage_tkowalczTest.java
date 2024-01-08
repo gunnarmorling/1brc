@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class CalculateAverage_tkowalczTest {
 
-    private String stringData = """
+    private final String stringData = """
             İzmir;23.6
             Dushanbe;6.0
             Rostov-on-Don;6.8

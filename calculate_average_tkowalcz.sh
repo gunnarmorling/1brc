@@ -16,5 +16,5 @@
 #
 
 # Don't do -XX:+AlwaysPreTouch
-JAVA_OPTS="--enable-preview --add-modules jdk.incubator.vector -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -Xmx1g -Xmn1g -XX:+EnableVectorReboxing -XX:+EnableVectorAggressiveReboxing -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0"
+JAVA_OPTS="--enable-preview --add-modules jdk.incubator.vector -Xlog:disable -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -Xmx1g -Xmn1g -XX:+EnableVectorReboxing -XX:+EnableVectorAggressiveReboxing -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0"
 time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_tkowalcz

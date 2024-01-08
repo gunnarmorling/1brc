@@ -16,6 +16,7 @@
 package dev.morling.onebrc;
 
 import jdk.incubator.vector.*;
+import jdk.incubator.vector.Vector;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -25,10 +26,7 @@ import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.TreeMap;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -68,21 +66,21 @@ public class CalculateAverage_tkowalcz {
     // There are four combinations of possible mask results from comparing (less than) vector containing temperature
     // measurement with ASCII_ZERO. Hence, only four entries are populated.
     private static final ShortVector[] STOI_MUL_LOOKUP = {
-            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, 0),
-            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, 0),
-            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, 0),
-            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, 0),
-            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{ 100, 10, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, 0),
-            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{ 0, -10, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, 0),
-            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, 0),
-            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, 0),
-            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, 0),
-            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{ 0, -100, -10, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, 0),
-            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{ 10, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, 0)
+            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0),
+            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0),
+            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0),
+            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0),
+            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{100, 10, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0),
+            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{0, -10, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0),
+            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0),
+            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0),
+            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0),
+            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{0, -100, -10, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0),
+            ShortVector.fromArray(ShortVector.SPECIES_256, new short[]{10, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0)
     };
 
     // We also need to know the size of temperature measurement in characters, lookup table works the same way as STOI_MUL_LOOKUP.
-    private static final int[] STOI_SIZE_LOOKUP = { 0, 0, 0, 0, 5, 5, 0, 0, 0, 6, 4 };
+    private static final int[] STOI_SIZE_LOOKUP = {0, 0, 0, 0, 5, 5, 0, 0, 0, 6, 4};
 
     // We will use very large table for hash map to reduce collisions. There is little downside in increasing it as
     // we pay only cost of a reference (so 0x400000 size uses 32m of memory * thread count).
@@ -92,32 +90,31 @@ public class CalculateAverage_tkowalcz {
     public static final int TABLE_SIZE_MASK = 0x400000 - 1;
 
     public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
-        try (Arena arena = Arena.ofShared()) {
-            int availableProcessors = Runtime.getRuntime().availableProcessors();
+        Arena arena = Arena.ofShared();
+        int availableProcessors = Runtime.getRuntime().availableProcessors();
 
-            MemorySegment inputData = mmapDataFile(FILE, arena);
-            List<MemorySegment> memorySegments = divideAlongNewlines(inputData, availableProcessors);
+        MemorySegment inputData = mmapDataFile(FILE, arena);
+        List<MemorySegment> memorySegments = divideAlongNewlines(inputData, availableProcessors);
 
-            CompletionService<List<StatisticsAggregate>> completionService = new ExecutorCompletionService<>(
-                    Executors.newFixedThreadPool(
-                            availableProcessors,
-                            new DaemonThreadFactory()));
-            memorySegments.forEach(slice -> completionService.submit(() -> execute(slice)));
+        CompletionService<List<StatisticsAggregate>> completionService = new ExecutorCompletionService<>(
+                Executors.newFixedThreadPool(
+                        availableProcessors,
+                        new DaemonThreadFactory()));
+        memorySegments.forEach(slice -> completionService.submit(() -> execute(slice)));
 
-            TreeMap<String, StatisticsAggregate> results = new TreeMap<>();
-            for (int i = 0; i < memorySegments.size(); i++) {
-                List<StatisticsAggregate> result = completionService.take().get();
-                for (StatisticsAggregate statisticsAggregate : result) {
-                    StatisticsAggregate node = statisticsAggregate;
-                    do {
-                        results.merge(node.cityAsString(), node, StatisticsAggregate::merge);
-                        node = node.getNext();
-                    } while (node != null);
-                }
+        TreeMap<String, StatisticsAggregate> results = new TreeMap<>();
+        for (int i = 0; i < memorySegments.size(); i++) {
+            List<StatisticsAggregate> result = completionService.take().get();
+            for (StatisticsAggregate statisticsAggregate : result) {
+                StatisticsAggregate node = statisticsAggregate;
+                do {
+                    results.merge(node.cityAsString(), node, StatisticsAggregate::merge);
+                    node = node.getNext();
+                } while (node != null);
             }
-
-            System.out.println(results);
         }
+
+        System.out.println(results);
     }
 
     static List<MemorySegment> divideAlongNewlines(MemorySegment inputData, int numberOfParts) {
@@ -126,13 +123,16 @@ public class CalculateAverage_tkowalcz {
         long startingOffset = 0;
         long sliceSize = inputData.byteSize() / numberOfParts;
         do {
-            long endingOffset = findPastNewline(inputData, startingOffset + sliceSize);
+            long endingOffset = findPastNewline(inputData, startingOffset + sliceSize - 1);
             result.add(inputData.asSlice(startingOffset, endingOffset - startingOffset));
 
             startingOffset = endingOffset;
         } while (startingOffset < inputData.byteSize() - sliceSize);
 
-        result.add(inputData.asSlice(startingOffset, inputData.byteSize() - startingOffset));
+        if (inputData.byteSize() - startingOffset > 0) {
+            result.add(inputData.asSlice(startingOffset, inputData.byteSize() - startingOffset));
+        }
+
         return result;
     }
 
@@ -168,6 +168,9 @@ public class CalculateAverage_tkowalcz {
         }
 
         String inputString = new String(inputDataArray, StandardCharsets.UTF_8);
+        if (inputString.isEmpty()) {
+            return Collections.emptyMap();
+        }
 
         String[] lines = inputString.split("\n");
         return stream(lines)
@@ -177,15 +180,15 @@ public class CalculateAverage_tkowalcz {
                     byte[] cityBytes = cityAndTemperature[0].getBytes(StandardCharsets.UTF_8);
                     StatisticsAggregate aggregate = new StatisticsAggregate(cityBytes, cityBytes.length);
 
-                    long temperature = (long) Float.parseFloat(cityAndTemperature[1]) * 10;
+                    long temperature = (long) (Float.parseFloat(cityAndTemperature[1]) * 10);
                     return aggregate.accept(temperature);
                 })
                 .collect(Collectors.toMap(StatisticsAggregate::cityAsString, Function.identity(), StatisticsAggregate::merge));
     }
 
     public static DoubleCursor executeDoublePumped(MemorySegment inputData, StatisticsAggregate[] dataTable, long offset1, long end1, long offset2, long end2) {
-        end1 -= SPECIES.length();
-        end2 -= SPECIES.length();
+        end1 -= 2L * SPECIES.length();
+        end2 -= 2L * SPECIES.length();
 
         while (offset1 < end1 && offset2 < end2) {
             Vector<Byte> byteVector1 = SPECIES.fromMemorySegment(inputData, offset1, ByteOrder.nativeOrder());
@@ -351,8 +354,7 @@ public class CalculateAverage_tkowalcz {
             ByteVector cityVector = ByteVector.fromArray(ByteVector.SPECIES_256, node.getCity(), 0);
             if (!cityVector.compare(VectorOperators.EQ, hashInput).allTrue()) {
                 node = node.getNext();
-            }
-            else {
+            } else {
                 return node;
             }
         }
@@ -381,7 +383,7 @@ public class CalculateAverage_tkowalcz {
 
     private static MemorySegment mmapDataFile(String fileName, Arena arena) throws IOException {
         try (RandomAccessFile file = new RandomAccessFile(fileName, "r");
-                FileChannel channel = file.getChannel()) {
+             FileChannel channel = file.getChannel()) {
             return channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size(), arena);
         }
     }
@@ -449,8 +451,7 @@ public class CalculateAverage_tkowalcz {
         public StatisticsAggregate attachLast(StatisticsAggregate statisticsAggregate) {
             if (next != null) {
                 next.attachLast(statisticsAggregate);
-            }
-            else {
+            } else {
                 next = statisticsAggregate;
             }
 
