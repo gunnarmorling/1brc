@@ -15,8 +15,12 @@
  */
 package dev.morling.onebrc;
 
+import sun.misc.Unsafe;
+
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.lang.foreign.Arena;
+import java.lang.reflect.Field;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
@@ -26,6 +30,19 @@ import java.util.concurrent.ConcurrentHashMap;
 public class CalculateAverage_JamalMulla {
 
     private static final String FILE = "./measurements.txt";
+
+    private static final Unsafe UNSAFE = initUnsafe();
+
+    private static Unsafe initUnsafe() {
+        try {
+            Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
+            theUnsafe.setAccessible(true);
+            return (Unsafe) theUnsafe.get(Unsafe.class);
+        }
+        catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     private static final class ResultRow {
         private double min;
@@ -76,6 +93,7 @@ public class CalculateAverage_JamalMulla {
         long filebytes = channel.size();
         long roughChunkSize = filebytes / numThreads;
         List<Chunk> chunks = new ArrayList<>();
+        long mappedAddress = channel.map(FileChannel.MapMode.READ_ONLY, 0, filebytes, Arena.global()).address();
         // System.out.println("filebytes:" + filebytes + " roughsize: " + roughChunkSize + " numthreads: " + numThreads);
 
         long chunkStart = 0;
@@ -90,7 +108,7 @@ public class CalculateAverage_JamalMulla {
                 chunkLength++;
             }
 
-            chunks.add(new Chunk(chunkStart, chunkLength + 1));
+            chunks.add(new Chunk(mappedAddress + chunkStart, chunkLength + 1));
             // to skip the nl in the next chunk
             chunkStart += chunkLength + 1;
             chunkLength = Math.min(filebytes - chunkStart - 1, roughChunkSize);
@@ -129,20 +147,20 @@ public class CalculateAverage_JamalMulla {
             // no names bigger than this
             byte[] nameBytes = new byte[100];
             boolean inName = true;
-            MappedByteBuffer mappedByteBuffer;
-            try {
-                mappedByteBuffer = channel.map(FileChannel.MapMode.READ_ONLY, chunk.start, chunk.length);
-            }
-            catch (IOException e) {
-                throw new RuntimeException(e);
-            }
+            // MappedByteBuffer mappedByteBuffer;
+            // try {
+            // mappedByteBuffer = channel.map(FileChannel.MapMode.READ_ONLY, chunk.start, chunk.length);
+            // }
+            // catch (IOException e) {
+            // throw new RuntimeException(e);
+            // }
             short nameIndex = 0;
             double ot = 0;
 
-            int i = 0;
-            long cl = chunk.length;
+            long i = chunk.start;
+            final long cl = chunk.start + chunk.length;
             while (i < cl) {
-                byte c = mappedByteBuffer.get(i++);
+                byte c = UNSAFE.getByte(i++);
                 if (c == 0x3B /* Semicolon */) {
                     // no longer in name
                     inName = false;
@@ -161,28 +179,28 @@ public class CalculateAverage_JamalMulla {
                     // represented as a byte array of either 4 or 5 characters
                     if (c == 0x2D /* minus sign */) {
                         // could be either n.x or nn.x
-                        if (mappedByteBuffer.get(i + 3) == 0xA) {
-                            ot = (mappedByteBuffer.get(i++) - 48) * 10; // char 1
+                        if (UNSAFE.getByte(i + 3) == 0xA) {
+                            ot = (UNSAFE.getByte(i++) - 48) * 10; // char 1
                         }
                         else {
-                            ot = (mappedByteBuffer.get(i++) - 48) * 100; // char 1
-                            ot += (mappedByteBuffer.get(i++) - 48) * 10; // char 2
+                            ot = (UNSAFE.getByte(i++) - 48) * 100; // char 1
+                            ot += (UNSAFE.getByte(i++) - 48) * 10; // char 2
                         }
-                        mappedByteBuffer.get(i++); // skip dot
-                        ot += (mappedByteBuffer.get(i++) - 48); // char 2
+                        i++; // skip dot
+                        ot += (UNSAFE.getByte(i++) - 48); // char 2
                         ot = -(ot / 10f);
                     }
                     else {
                         // could be either n.x or nn.x
-                        if (mappedByteBuffer.get(i + 2) == 0xA) {
+                        if (UNSAFE.getByte(i + 2) == 0xA) {
                             ot = (c - 48) * 10; // char 1
                         }
                         else {
                             ot = (c - 48) * 100; // char 1
-                            ot += (mappedByteBuffer.get(i++) - 48) * 10; // char 2
+                            ot += (UNSAFE.getByte(i++) - 48) * 10; // char 2
                         }
-                        mappedByteBuffer.get(i++); // skip dot
-                        ot += (mappedByteBuffer.get(i++) - 48); // char 3
+                        i++; // skip dot
+                        ot += (UNSAFE.getByte(i++) - 48); // char 3
                         ot = ot / 10f;
                     }
                 }
@@ -244,7 +262,7 @@ public class CalculateAverage_JamalMulla {
             ResultRow slotValue = slots[slot];
 
             // Linear probe for open slot
-            while (slotValue != null && (keys[slot].length != length || !arrayEquals(keys[slot], key, length))) {
+            while (slotValue != null && (keys[slot].length != length || !unsafeEquals(keys[slot], key, length))) {
                 slotValue = slots[++slot];
             }
             ResultRow value = slotValue;
@@ -255,8 +273,8 @@ public class CalculateAverage_JamalMulla {
                 keys[slot] = bytes;
             }
             else {
-                value.min = Math.min(value.min, temp);
-                value.max = Math.max(value.max, temp);
+                value.min = (value.min <= temp) ? value.min : temp;
+                value.max = (value.max >= temp) ? value.max : temp;
                 value.sum += temp;
                 value.count++;
             }
@@ -266,6 +284,16 @@ public class CalculateAverage_JamalMulla {
             for (int i = 0; i < length; i++) {
                 if (a[i] != b[i])
                     return false;
+            }
+            return true;
+        }
+
+        static boolean unsafeEquals(final byte[] a, final byte[] b, final int length) {
+            int baseOffset = UNSAFE.arrayBaseOffset(byte[].class);
+            for (int i = 0; i < length; i++) {
+                if (UNSAFE.getByte(a, i + baseOffset) != UNSAFE.getByte(b, i + baseOffset)) {
+                    return false;
+                }
             }
             return true;
         }
