@@ -76,12 +76,16 @@ public class CalculateAverage_jamalmulla {
         long filebytes = channel.size();
         long roughChunkSize = filebytes / numThreads;
         List<Chunk> chunks = new ArrayList<>();
+        // System.out.println("filebytes:" + filebytes + " roughsize: " + roughChunkSize + " numthreads: " + numThreads);
 
         long chunkStart = 0;
-        long chunkLength = roughChunkSize;
-        for (int i = 0; i < numThreads - 1; i++) {
+        long chunkLength = Math.min(filebytes - chunkStart - 1, roughChunkSize);
+        while (chunkStart < filebytes) {
             // unlikely we need to read more than this many bytes to find the next newline
-            MappedByteBuffer mbb = channel.map(FileChannel.MapMode.READ_ONLY, chunkStart + chunkLength, 100);
+            // System.out.println("Chunk start: " + chunkStart + " chunkLength: " + chunkLength);
+            MappedByteBuffer mbb = channel.map(FileChannel.MapMode.READ_ONLY, chunkStart + chunkLength,
+                    Math.min(Math.min(filebytes - chunkStart - chunkLength, chunkLength), 100));
+
             while (mbb.get() != 0xA /* \n */) {
                 chunkLength++;
             }
@@ -89,10 +93,11 @@ public class CalculateAverage_jamalmulla {
             chunks.add(new Chunk(chunkStart, chunkLength + 1));
             // to skip the nl in the next chunk
             chunkStart += chunkLength + 1;
-            chunkLength = roughChunkSize;
+            chunkLength = Math.min(filebytes - chunkStart - 1, roughChunkSize);
         }
+        // System.out.println(chunks);
         // for the last chunk, we can set it to what's left
-        chunks.add(new Chunk(chunkStart, filebytes - chunkStart));
+        // chunks.add(new Chunk(chunkStart, filebytes - chunkStart));
         return chunks;
     }
 
@@ -205,8 +210,10 @@ public class CalculateAverage_jamalmulla {
 
         RandomAccessFile raFile = new RandomAccessFile(FILE, "r");
         FileChannel channel = raFile.getChannel();
-
-        int numThreads = Runtime.getRuntime().availableProcessors();
+        int numThreads = 1;
+        if (channel.size() > 64000) {
+            numThreads = Runtime.getRuntime().availableProcessors();
+        }
         List<Chunk> chunks = getChunks(numThreads, channel);
         List<Thread> threads = new ArrayList<>();
         for (Chunk chunk : chunks) {
@@ -218,7 +225,6 @@ public class CalculateAverage_jamalmulla {
         for (Thread t : threads) {
             t.join();
         }
-
         // just to sort
         System.out.println(new TreeMap<>(results));
     }
