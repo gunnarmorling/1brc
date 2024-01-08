@@ -15,11 +15,7 @@
  */
 package dev.morling.onebrc;
 
-import sun.misc.Unsafe;
-
 import java.io.IOException;
-import java.io.RandomAccessFile;
-import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
@@ -82,17 +78,17 @@ public class CalculateAverage_shipilev {
 
     // Quick and dirty linear-probing hash map. YOLO.
     public static class MeasurementsMap {
-        private int mapSize = 4096;
-        private int mapSizeMask = mapSize - 1;
+        private static final int SIZE = 16384;
+        private static final int SIZE_MASK = SIZE - 1;
 
         private Bucket[] map;
 
         public MeasurementsMap() {
-            map = new Bucket[mapSize];
+            map = new Bucket[SIZE];
         }
 
         public Bucket bucket(ByteBuffer name, int begin, int end, int hash) {
-            int idx = hash & mapSizeMask;
+            int idx = hash & SIZE_MASK;
 
             // Lucky fast path, most of the time we complete here. Smaller method
             // allows better inlining.
@@ -109,7 +105,7 @@ public class CalculateAverage_shipilev {
         }
 
         private Bucket bucketSlow(ByteBuffer name, int begin, int end, int hash) {
-            int origIdx = hash & mapSizeMask;
+            int origIdx = hash & SIZE_MASK;
             int idx = origIdx;
 
             while (true) {
@@ -130,11 +126,7 @@ public class CalculateAverage_shipilev {
                 else {
                     // No dice. Keep searching until we hit the same index.
                     // This would need rehash. Again, on sample data, we do not ever need a rehash.
-                    idx = (idx + 1) & mapSizeMask;
-                    if (idx == origIdx) {
-                        rehash();
-                        idx = hash & mapSizeMask;
-                    }
+                    idx = (idx + 1) & SIZE_MASK;
                 }
             }
         }
@@ -158,21 +150,12 @@ public class CalculateAverage_shipilev {
             merge(otherMap.map, true);
         }
 
-        private void rehash() {
-            // Double-up and remerge from ourselves.
-            Bucket[] oldMap = map;
-            mapSize *= 2;
-            mapSizeMask = mapSize - 1;
-            map = new Bucket[mapSize];
-            merge(oldMap, false);
-        }
-
         // Same as bucket(), really, but for merging maps. See the comments there.
         private void merge(Bucket[] buckets, boolean allowRehash) {
             for (Bucket other : buckets) {
                 if (other == null)
                     continue;
-                int origIdx = other.hash & mapSizeMask;
+                int origIdx = other.hash & SIZE_MASK;
                 int idx = origIdx;
                 while (true) {
                     Bucket cur = map[idx];
@@ -186,16 +169,7 @@ public class CalculateAverage_shipilev {
                         break;
                     }
                     else {
-                        idx = (idx + 1) & mapSizeMask;
-                        if (idx == origIdx) {
-                            if (allowRehash) {
-                                rehash();
-                                idx = other.hash & mapSizeMask;
-                            }
-                            else {
-                                throw new IllegalStateException("Cannot happen");
-                            }
-                        }
+                        idx = (idx + 1) & SIZE_MASK;
                     }
                 }
             }
@@ -205,7 +179,7 @@ public class CalculateAverage_shipilev {
         // This does several major things: filters away null-s, instantates full Strings,
         // and computes stats.
         public Row[] rows() {
-            Row[] rows = new Row[mapSize];
+            Row[] rows = new Row[SIZE];
             int idx = 0;
             for (Bucket bucket : map) {
                 if (bucket == null)
