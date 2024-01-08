@@ -39,11 +39,13 @@ public class CalculateAverage_mtopolnik {
     private static final int MAX_NAME_LEN = 100;
     private static final int NAME_SLOT_SIZE = 104;
     private static final int STATS_TABLE_SIZE = 1 << 16;
-    private static final long NATIVE_MEM_PER_THREAD = (NAME_SLOT_SIZE + StatsAccessor.SIZEOF) * STATS_TABLE_SIZE;
-    private static final long NATIVE_MEM_ON_8_THREADS = 8 * NATIVE_MEM_PER_THREAD;
     private static final String MEASUREMENTS_TXT = "measurements.txt";
     private static final byte SEMICOLON = (byte) ';';
     private static final long BROADCAST_SEMICOLON = broadcastSemicolon();
+
+    // These two are just informative, I let the IDE calculate them for me
+    private static final long NATIVE_MEM_PER_THREAD = StatsAccessor.SIZEOF * STATS_TABLE_SIZE;
+    private static final long NATIVE_MEM_ON_8_THREADS = 8 * NATIVE_MEM_PER_THREAD;
 
     private static Unsafe unsafe() {
         try {
