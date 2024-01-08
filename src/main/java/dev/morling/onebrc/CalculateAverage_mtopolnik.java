@@ -22,11 +22,15 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.lang.reflect.Field;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel.MapMode;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.TreeMap;
+
+import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 
 // create_measurements3.sh 500_000_000
 // initial:    real	0m11.640s user	0m39.766s sys	0m9.852s
@@ -124,12 +128,10 @@ public class CalculateAverage_mtopolnik {
         private final StationStats[][] results;
         private final int myIndex;
 
-        private MemorySegment namesMem;
         private StatsAccessor stats;
         private long inputBase;
         private long inputSize;
         private long hashBufBase;
-        private long namesBase;
         private long cursor;
 
         ChunkProcessor(RandomAccessFile raf, long chunkStart, long chunkLimit, StationStats[][] results, int myIndex) {
@@ -147,9 +149,6 @@ public class CalculateAverage_mtopolnik {
                 inputBase = inputMem.address();
                 inputSize = inputMem.byteSize();
                 stats = new StatsAccessor(confinedArena.allocate(STATS_TABLE_SIZE * StatsAccessor.SIZEOF, Long.BYTES));
-                namesMem = confinedArena.allocate(STATS_TABLE_SIZE * NAME_SLOT_SIZE, Long.BYTES);
-                namesBase = namesMem.address();
-                namesMem.fill((byte) 0);
                 final var hashBuf = confinedArena.allocate(HASHBUF_SIZE);
                 hashBufBase = hashBuf.address();
                 processChunk();
@@ -178,7 +177,7 @@ public class CalculateAverage_mtopolnik {
                 stats.gotoIndex(tableIndex);
                 long foundHash = stats.hash();
                 if (foundHash == hash && stats.nameLen() == nameLen
-                        && strcmp(namesBase + tableIndex * NAME_SLOT_SIZE, inputBase + namePos, nameLen)) {
+                        && strcmp(stats.nameAddress(), inputBase + namePos, nameLen)) {
                     stats.setSum(stats.sum() + temperature);
                     stats.setCount(stats.count() + 1);
                     stats.setMin((short) Integer.min(stats.min(), temperature));
@@ -195,7 +194,7 @@ public class CalculateAverage_mtopolnik {
                 stats.setCount(1);
                 stats.setMin((short) temperature);
                 stats.setMax((short) temperature);
-                UNSAFE.copyMemory(inputBase + namePos, namesBase + tableIndex * NAME_SLOT_SIZE, nameLen);
+                UNSAFE.copyMemory(inputBase + namePos, stats.nameAddress(), nameLen);
                 return;
             }
         }
@@ -335,7 +334,7 @@ public class CalculateAverage_mtopolnik {
                 var count = stats.count();
                 var min = stats.min();
                 var max = stats.max();
-                var name = namesMem.getUtf8String(i * NAME_SLOT_SIZE);
+                var name = stats.exportNameString();
                 var stationStats = new StationStats();
                 stationStats.name = name;
                 stationStats.sum = sum;
@@ -408,14 +407,17 @@ public class CalculateAverage_mtopolnik {
         static final long COUNT_OFFSET = SUM_OFFSET + Integer.BYTES;
         static final long MIN_OFFSET = COUNT_OFFSET + Integer.BYTES;
         static final long MAX_OFFSET = MIN_OFFSET + Short.BYTES;
-        static final long SIZEOF = (MAX_OFFSET + Short.BYTES - 1) / 8 * 8 + 8;
+        static final long NAME_OFFSET = MAX_OFFSET + Short.BYTES;
+        static final long SIZEOF = (NAME_OFFSET + NAME_SLOT_SIZE - 1) / 8 * 8 + 8;
 
-        // private final MemorySegment memSeg;
+        private final MemorySegment memSeg;
         private final long address;
         private long slotBase;
 
         StatsAccessor(MemorySegment memSeg) {
+            this.memSeg = memSeg;
             this.address = memSeg.address();
+            memSeg.fill((byte) 0);
         }
 
         void gotoIndex(int index) {
@@ -444,6 +446,14 @@ public class CalculateAverage_mtopolnik {
 
         short max() {
             return UNSAFE.getShort(slotBase + MAX_OFFSET);
+        }
+
+        long nameAddress() {
+            return slotBase + NAME_OFFSET;
+        }
+
+        String exportNameString() {
+            return memSeg.getUtf8String(nameAddress() - address);
         }
 
         void setHash(long hash) {
