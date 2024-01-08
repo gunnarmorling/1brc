@@ -90,17 +90,14 @@ public class CalculateAverage_JamalMulla {
 
     static List<Chunk> getChunks(int numThreads, FileChannel channel) throws IOException {
         // get all chunk boundaries
-        long filebytes = channel.size();
-        long roughChunkSize = filebytes / numThreads;
-        List<Chunk> chunks = new ArrayList<>();
-        long mappedAddress = channel.map(FileChannel.MapMode.READ_ONLY, 0, filebytes, Arena.global()).address();
-        // System.out.println("filebytes:" + filebytes + " roughsize: " + roughChunkSize + " numthreads: " + numThreads);
-
+        final long filebytes = channel.size();
+        final long roughChunkSize = filebytes / numThreads;
+        final List<Chunk> chunks = new ArrayList<>();
+        final long mappedAddress = channel.map(FileChannel.MapMode.READ_ONLY, 0, filebytes, Arena.global()).address();
         long chunkStart = 0;
         long chunkLength = Math.min(filebytes - chunkStart - 1, roughChunkSize);
         while (chunkStart < filebytes) {
             // unlikely we need to read more than this many bytes to find the next newline
-            // System.out.println("Chunk start: " + chunkStart + " chunkLength: " + chunkLength);
             MappedByteBuffer mbb = channel.map(FileChannel.MapMode.READ_ONLY, chunkStart + chunkLength,
                     Math.min(Math.min(filebytes - chunkStart - chunkLength, chunkLength), 100));
 
@@ -113,19 +110,7 @@ public class CalculateAverage_JamalMulla {
             chunkStart += chunkLength + 1;
             chunkLength = Math.min(filebytes - chunkStart - 1, roughChunkSize);
         }
-        // System.out.println(chunks);
-        // for the last chunk, we can set it to what's left
-        // chunks.add(new Chunk(chunkStart, filebytes - chunkStart));
         return chunks;
-    }
-
-    private static int fnv(final byte[] bytes, int length) {
-        int hash = 0x811c9dc5;
-        for (int i = 0; i < length; i++) {
-            hash ^= bytes[i];
-            hash *= 0x01000193;
-        }
-        return ((hash >> 16) ^ hash) & 65535;
     }
 
     private static class CalculateTask implements Runnable {
@@ -250,7 +235,7 @@ public class CalculateAverage_JamalMulla {
         ResultRow[] slots = new ResultRow[MAPSIZE];
         byte[][] keys = new byte[MAPSIZE][];
 
-        public void putOrMerge(byte[] key, int length, int hash, int temp) {
+        public void putOrMerge(final byte[] key, final int length, final int hash, final int temp) {
             int slot = hash;
             ResultRow slotValue = slots[slot];
 
