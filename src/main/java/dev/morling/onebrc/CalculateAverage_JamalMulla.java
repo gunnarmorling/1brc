@@ -23,7 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class CalculateAverage_jamalmulla {
+public class CalculateAverage_JamalMulla {
 
     private static final String FILE = "./measurements.txt";
 
