@@ -25,6 +25,8 @@ import java.util.TreeMap;
 
 public class CalculateAverage_elsteveogrande {
 
+    private static final int MAX_NAME_LENGTH = 256;
+    private static final int MAX_TEMP_LENGTH = 8;
     private static final String FILE = "./measurements.txt";
 
     static final int NPROCS = Runtime.getRuntime().availableProcessors();
@@ -41,8 +43,8 @@ public class CalculateAverage_elsteveogrande {
         public void run() {
             int n = mmap.capacity();
 
-            byte[] stationBytes = new byte[32];
-            byte[] valBytes = new byte[8];
+            byte[] stationBytes = new byte[MAX_NAME_LENGTH];
+            byte[] valBytes = new byte[MAX_TEMP_LENGTH];
             int i = 0;
             while (i < n) {
                 int s = 0;
@@ -126,8 +128,8 @@ public class CalculateAverage_elsteveogrande {
 
 final class Station {
     final String name;
-    float min = Float.MAX_VALUE;
-    float max = Float.MIN_VALUE;
+    float min = Float.POSITIVE_INFINITY;
+    float max = Float.NEGATIVE_INFINITY;
     double total = 0;
     int count = 0;
 
@@ -150,8 +152,9 @@ final class Station {
     }
 
     public String toString() {
-        return STR.
-                "\{String.format("%.1f", this.min)}\{'/'}\{String.format("%.1f", this.total / this.count)}\{'/'}\{String.format("%.1f", this.max)}";
+        return String.format("%.1f", this.min)
+                + '/' + String.format("%.1f", this.total / this.count)
+                + '/' + String.format("%.1f", this.max);
     }
 }
 
