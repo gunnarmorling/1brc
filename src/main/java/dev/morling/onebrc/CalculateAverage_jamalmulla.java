@@ -15,18 +15,15 @@
  */
 package dev.morling.onebrc;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.nio.CharBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
-public class CalculateAverage_JamalMulla {
+public class CalculateAverage_jamalmulla {
 
     private static final String FILE = "./measurements.txt";
 
@@ -50,18 +47,6 @@ public class CalculateAverage_JamalMulla {
 
         private double round(double value) {
             return Math.round(value * 10.0) / 10.0;
-        }
-
-        public double min() {
-            return min;
-        }
-
-        public double mean() {
-            return sum / count;
-        }
-
-        public double max() {
-            return max;
         }
 
         @Override
@@ -111,13 +96,13 @@ public class CalculateAverage_JamalMulla {
         return chunks;
     }
 
-    private static int fnv(byte[] bytes, int length) {
+    private static int fnv(final byte[] bytes, int length) {
         int hash = 0x811c9dc5;
         for (int i = 0; i < length; i++) {
             hash ^= bytes[i];
             hash *= 0x01000193;
         }
-        return hash;
+        return ((hash >> 16) ^ hash) & 65535;
     }
 
     private static class CalculateTask implements Runnable {
@@ -137,7 +122,7 @@ public class CalculateAverage_JamalMulla {
         @Override
         public void run() {
             // no names bigger than this
-            byte[] nameBytes = new byte[127];
+            byte[] nameBytes = new byte[100];
             boolean inName = true;
             MappedByteBuffer mappedByteBuffer;
             try {
@@ -148,8 +133,11 @@ public class CalculateAverage_JamalMulla {
             }
             short nameIndex = 0;
             double ot = 0;
-            while (mappedByteBuffer.hasRemaining()) {
-                byte c = mappedByteBuffer.get();
+
+            int i = 0;
+            long cl = chunk.length;
+            while (i < cl) {
+                byte c = mappedByteBuffer.get(i++);
                 if (c == 0x3B /* Semicolon */) {
                     // no longer in name
                     inName = false;
@@ -168,28 +156,28 @@ public class CalculateAverage_JamalMulla {
                     // represented as a byte array of either 4 or 5 characters
                     if (c == 0x2D /* minus sign */) {
                         // could be either n.x or nn.x
-                        if (mappedByteBuffer.get(mappedByteBuffer.position() + 3) == 0xA) {
-                            ot = (mappedByteBuffer.get() - 48) * 10; // char 1
+                        if (mappedByteBuffer.get(i + 3) == 0xA) {
+                            ot = (mappedByteBuffer.get(i++) - 48) * 10; // char 1
                         }
                         else {
-                            ot = (mappedByteBuffer.get() - 48) * 100; // char 1
-                            ot += (mappedByteBuffer.get() - 48) * 10; // char 2
+                            ot = (mappedByteBuffer.get(i++) - 48) * 100; // char 1
+                            ot += (mappedByteBuffer.get(i++) - 48) * 10; // char 2
                         }
-                        mappedByteBuffer.get(); // skip dot
-                        ot += (mappedByteBuffer.get() - 48); // char 2
+                        mappedByteBuffer.get(i++); // skip dot
+                        ot += (mappedByteBuffer.get(i++) - 48); // char 2
                         ot = -(ot / 10f);
                     }
                     else {
                         // could be either n.x or nn.x
-                        if (mappedByteBuffer.get(mappedByteBuffer.position() + 2) == 0xA) {
+                        if (mappedByteBuffer.get(i + 2) == 0xA) {
                             ot = (c - 48) * 10; // char 1
                         }
                         else {
                             ot = (c - 48) * 100; // char 1
-                            ot += (mappedByteBuffer.get() - 48) * 10; // char 2
+                            ot += (mappedByteBuffer.get(i++) - 48) * 10; // char 2
                         }
-                        mappedByteBuffer.get(); // skip dot
-                        ot += (mappedByteBuffer.get() - 48); // char 3
+                        mappedByteBuffer.get(i++); // skip dot
+                        ot += (mappedByteBuffer.get(i++) - 48); // char 3
                         ot = ot / 10f;
                     }
                 }
@@ -221,7 +209,7 @@ public class CalculateAverage_JamalMulla {
         int numThreads = Runtime.getRuntime().availableProcessors();
         List<Chunk> chunks = getChunks(numThreads, channel);
         List<Thread> threads = new ArrayList<>();
-        for (Chunk chunk : chunks){
+        for (Chunk chunk : chunks) {
             Thread t = new Thread(new CalculateTask(channel, results, chunk));
             t.start();
             threads.add(t);
@@ -239,20 +227,19 @@ public class CalculateAverage_JamalMulla {
     }
 
     static class SimplerHashMap {
-        // can't have more than 10000 unique keys but need size to be power of 2 for masking
-        int MAPSIZE = 16384;
+        // based on spullara'ss
+        // can't have more than 10000 unique keys butwant to match max hash
+        int MAPSIZE = 65536;
         ResultRow[] slots = new ResultRow[MAPSIZE];
         byte[][] keys = new byte[MAPSIZE][];
 
         public void putOrMerge(byte[] key, int length, double temp) {
-            int hash = fnv(key, length);
-            int slot = hash & (MAPSIZE - 1);
+            int slot = fnv(key, length);
             ResultRow slotValue = slots[slot];
 
             // Linear probe for open slot
-            while (slotValue != null && (keys[slot].length != length || !Arrays.equals(keys[slot], 0, length, key, 0, length))) {
-                slot = (slot + 1) & (MAPSIZE - 1);
-                slotValue = slots[slot];
+            while (slotValue != null && (keys[slot].length != length || !arrayEquals(keys[slot], key, length))) {
+                slotValue = slots[++slot];
             }
             ResultRow value = slotValue;
             if (value == null) {
@@ -265,8 +252,16 @@ public class CalculateAverage_JamalMulla {
                 value.min = Math.min(value.min, temp);
                 value.max = Math.max(value.max, temp);
                 value.sum += temp;
-                value.count += 1;
+                value.count++;
             }
+        }
+
+        private boolean arrayEquals(final byte[] a, final byte[] b, final int length) {
+            for (int i = 0; i < length; i++) {
+                if (a[i] != b[i])
+                    return false;
+            }
+            return true;
         }
 
         // Get all pairs
