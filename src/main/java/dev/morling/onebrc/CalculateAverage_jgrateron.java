@@ -60,7 +60,8 @@ public class CalculateAverage_jgrateron {
                     if (buffer[i] == '\n' || buffer[i] == '\r') {
                         size++;
                         break;
-                    } else {
+                    }
+                    else {
                         size++;
                     }
                 }
@@ -76,7 +77,7 @@ public class CalculateAverage_jgrateron {
     }
 
     public static void main(String[] args) throws InterruptedException, IOException {
-        //var startTime = System.nanoTime();
+        // var startTime = System.nanoTime();
 
         var totalMediciones = new HashMap<Integer, Medicion>();
         var tareas = new ArrayList<Thread>();
@@ -104,12 +105,14 @@ public class CalculateAverage_jgrateron {
                             if (medicion == null) {
                                 medicion = new Medicion(estacion, 1, temp, temp, temp);
                                 mediciones.put(hashCode, medicion);
-                            } else {
+                            }
+                            else {
                                 medicion.update(1, temp, temp, temp);
                             }
                         }
                     }
-                } catch (IOException e) {
+                }
+                catch (IOException e) {
                     System.exit(-1);
                 }
                 synchronized (totalMediciones) {
@@ -117,7 +120,8 @@ public class CalculateAverage_jgrateron {
                         var medicion = totalMediciones.get(entry.getKey());
                         if (medicion == null) {
                             totalMediciones.put(entry.getKey(), entry.getValue());
-                        } else {
+                        }
+                        else {
                             var otraMed = entry.getValue();
                             medicion.update(otraMed.count, otraMed.tempMin, otraMed.tempMax, otraMed.tempSum);
                         }
@@ -140,7 +144,7 @@ public class CalculateAverage_jgrateron {
                 .collect(Collectors.joining(", "));
 
         System.out.println("{" + result + "}");
-        //System.out.println("Total: " + (System.nanoTime() - startTime) / 1000000 + "ms");
+        // System.out.println("Total: " + (System.nanoTime() - startTime) / 1000000 + "ms");
     }
 
     /*
@@ -188,13 +192,15 @@ public class CalculateAverage_jgrateron {
                         System.arraycopy(buffer, idx, line, lenRest, len);
                         len += lenRest;
                         lenRest = 0;
-                    } else {
+                    }
+                    else {
                         System.arraycopy(buffer, idx, line, 0, len);
                     }
                     lineas.add(new String(line, 0, len));
                     idx = pos + 1;
                     len = 0;
-                } else {
+                }
+                else {
                     len++;
                 }
                 pos++;
