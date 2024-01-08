@@ -37,19 +37,29 @@ public class CalculateAverage_yavuztas {
     private static final Path FILE = Path.of("./measurements.txt");
 
     static class Measurement {
-        private double min;
-        private double max;
-        private double sum;
-        private int count = 1;
 
-        public Measurement(double initial) {
+        // Only accessed by a single thread, so it is safe to share
+        private static final StringBuilder STRING_BUILDER = new StringBuilder(14);
+
+        private int min; // calculations over int is faster than double, we convert to double in the end only once
+        private int max;
+        private long sum;
+        private long count = 1;
+
+        public Measurement(int initial) {
             this.min = initial;
             this.max = initial;
             this.sum = initial;
         }
 
         public String toString() {
-            return round(this.min) + "/" + round(this.sum / this.count) + "/" + round(this.max);
+            STRING_BUILDER.setLength(0); // clear the builder to reuse
+            STRING_BUILDER.append(this.min / 10.0); // convert to double while generating the string output
+            STRING_BUILDER.append("/");
+            STRING_BUILDER.append(round((this.sum / 10.0) / this.count));
+            STRING_BUILDER.append("/");
+            STRING_BUILDER.append(this.max / 10.0);
+            return STRING_BUILDER.toString();
         }
 
         private double round(double value) {
@@ -59,24 +69,23 @@ public class CalculateAverage_yavuztas {
 
     static class KeyBuffer {
 
-        ByteBuffer value;
+        ByteBuffer buffer;
+        int length;
         int hash;
 
-        public KeyBuffer(ByteBuffer buffer) {
-            this.value = buffer;
-            this.hash = buffer.hashCode();
+        public KeyBuffer(ByteBuffer buffer, int length, int hash) {
+            this.buffer = buffer;
+            this.length = length;
+            this.hash = hash;
         }
 
         @Override
         public boolean equals(Object o) {
-            if (this == o)
-                return true;
-
             final KeyBuffer keyBuffer = (KeyBuffer) o;
-            if (o == null || getClass() != o.getClass() || this.hash != keyBuffer.hash)
+            if (this.length != keyBuffer.length || this.hash != keyBuffer.hash)
                 return false;
 
-            return this.value.equals(keyBuffer.value);
+            return this.buffer.equals(keyBuffer.buffer);
         }
 
         @Override
@@ -86,19 +95,13 @@ public class CalculateAverage_yavuztas {
 
         @Override
         public String toString() {
-            final int limit = this.value.limit();
-            final byte[] bytes = new byte[limit];
-            this.value.get(bytes);
-            return new String(bytes, 0, limit, StandardCharsets.UTF_8);
+            final byte[] bytes = new byte[this.length];
+            this.buffer.get(bytes);
+            return new String(bytes, 0, this.length, StandardCharsets.UTF_8);
         }
     }
 
     static class FixedRegionDataAccessor {
-
-        static final byte SEMI_COLON = 59; // ';'
-        static final byte LINE_BREAK = 10; // '\n'
-
-        final byte[] workBuffer = new byte[256]; // assuming max 256 bytes for a row is enough
 
         long startPos;
         long size;
@@ -111,30 +114,35 @@ public class CalculateAverage_yavuztas {
             this.buffer = buffer;
         }
 
-        void traverse(BiConsumer<KeyBuffer, Double> consumer) {
-
-            int semiColonPos = 0;
-            int lineBreakPos = 0;
+        void traverse(BiConsumer<KeyBuffer, Integer> consumer) {
+            int keyHash;
+            int length;
             while (this.buffer.hasRemaining()) {
 
-                while ((this.workBuffer[0] = this.buffer.get()) != LINE_BREAK) {
-                    if (this.workBuffer[0] == SEMI_COLON) { // save semicolon pos
-                        semiColonPos = this.buffer.position(); // semicolon exclusive
-                    }
+                this.position = this.buffer.position(); // save line start pos
+
+                byte b;
+                keyHash = 0;
+                length = 0;
+                while ((b = this.buffer.get()) != ';') { // read until semicolon
+                    keyHash = 31 * keyHash + b; // calculate key hash ahead, eleminates one more loop later
+                    length++;
                 }
-                // found linebreak
-                lineBreakPos = this.buffer.position();
 
-                this.buffer.position(this.position); // set back to line start
-                final int length1 = semiColonPos - this.position; // station length
-                final int length2 = lineBreakPos - semiColonPos; // temperature length
+                final ByteBuffer station = this.buffer.slice(this.position, length);
+                final KeyBuffer key = new KeyBuffer(station, length, keyHash);
 
-                final ByteBuffer station = getRef(length1); // read station
-                final String temperature = readString(length2); // read temperature
+                this.buffer.mark(); // semicolon pos
+                skip(3); // skip more since minimum temperature length is 3
+                length = 4; // +1 for semicolon
 
-                this.position = lineBreakPos; // skip to line end
+                while (this.buffer.get() != '\n') {
+                    length++; // read until linebreak
+                    // TODO how to read temperature here
+                }
 
-                consumer.accept(new KeyBuffer(station), Double.parseDouble(temperature));
+                this.buffer.reset(); // set to after semicolon
+                consumer.accept(key, readTemperature(length));
             }
         }
 
@@ -157,21 +165,40 @@ public class CalculateAverage_yavuztas {
             return initial;
         }
 
-        String readString(int length) {
-            this.buffer.get(this.workBuffer, 0, length);
-            return new String(this.workBuffer, 0, length - 1, // strip the last char
-                    StandardCharsets.UTF_8);
+        // caching Math.pow calculation improves a lot!
+        // interestingly, instance field access is much faster than static field access
+        final int[] powerOfTenCache = new int[]{ 1, 10, 100 };
+
+        int readTemperature(int length) {
+            int temp = 0;
+            final byte b1 = this.buffer.get(); // get first byte
+
+            int digits = length - 4; // digit position
+            final boolean negative = b1 == '-';
+            if (!negative) {
+                temp += this.powerOfTenCache[digits + 1] * (b1 - 48); // add first digit ahead
+            }
+
+            byte b;
+            while ((b = this.buffer.get()) != '.') { // read until dot
+                temp += this.powerOfTenCache[digits--] * (b - 48);
+            }
+            b = this.buffer.get(); // read after dot, only one digit no loop
+            temp += this.powerOfTenCache[digits] * (b - 48);
+            this.buffer.get(); // skip line break
+
+            return (negative) ? -temp : temp;
         }
 
-        ByteBuffer getRef(int length) {
+        ByteBuffer getKeyRef(int length) {
             final ByteBuffer slice = this.buffer.slice().limit(length - 1);
-            skip(this.buffer, length);
+            skip(length);
             return slice;
         }
 
-        static void skip(ByteBuffer buffer, int length) {
-            final int pos = buffer.position();
-            buffer.position(pos + length);
+        void skip(int length) {
+            final int pos = this.buffer.position();
+            this.buffer.position(pos + length);
         }
 
     }
@@ -187,11 +214,11 @@ public class CalculateAverage_yavuztas {
             final long fileSize = Files.size(path);
             long regionSize = fileSize / concurrency;
 
-            if (regionSize > Integer.MAX_VALUE) {
-                // TODO multiply concurrency and try again
-                throw new IllegalArgumentException("Bigger than integer!");
-            }
             // handling extreme cases
+            while (regionSize > Integer.MAX_VALUE) {
+                concurrency *= 2;
+                regionSize = fileSize / concurrency;
+            }
             if (regionSize <= 256) { // small file, no need concurrency
                 concurrency = 1;
                 regionSize = fileSize;
@@ -251,7 +278,7 @@ public class CalculateAverage_yavuztas {
         private static int findClosestLineEnd(int regionSize, ByteBuffer buffer) {
             int position = regionSize;
             int left = regionSize;
-            while (buffer.get(position) != FixedRegionDataAccessor.LINE_BREAK) {
+            while (buffer.get(position) != '\n') {
                 position = --left;
             }
             return position;
