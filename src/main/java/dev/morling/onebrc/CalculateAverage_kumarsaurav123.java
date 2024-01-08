@@ -106,9 +106,9 @@ public class CalculateAverage_kumarsaurav123 {
         long start = System.currentTimeMillis();
         long len = Paths.get(FILE).toFile().length();
         Map<Integer, List<byte[]>> leftOutsMap = new ConcurrentSkipListMap<>();
-        int chunkSize = 1000_000;
+        int chunkSize = 1_0000_00;
         long proc = Math.max(1, (len / chunkSize));
-        ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 8);
+        ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2 * 2*2);
         List<ResultRow> measurements = Collections.synchronizedList(new ArrayList<ResultRow>());
         IntStream.range(0, (int) proc)
                 .mapToObj(i -> {
@@ -152,8 +152,8 @@ public class CalculateAverage_kumarsaurav123 {
                                 allBytes2 = null;
                                 Collection<ResultRow> newmeasurements = indexs.stream()
                                         .map(ii -> {
-                                            Measurement m = new Measurement(ii.split(";"));
-                                            return m;
+                                            int sIndex = ii.indexOf(';') + 1;
+                                            return new Measurement( ii.substring(0,sIndex), Double.parseDouble( ii.substring(sIndex)));
                                         })
                                         .collect(groupingBy(Measurement::station, collector))
                                         .values();
@@ -161,6 +161,7 @@ public class CalculateAverage_kumarsaurav123 {
                             }
                             catch (Exception e) {
                                 // throw new RuntimeException(e);
+//                                System.out.println("");
                             }
                         }
                     };
@@ -217,5 +218,6 @@ public class CalculateAverage_kumarsaurav123 {
         // .collect(groupingBy(m -> m.station(), collector)));
 
         System.out.println(measurements2);
+//        System.out.println(System.currentTimeMillis() - start);
     }
 }
