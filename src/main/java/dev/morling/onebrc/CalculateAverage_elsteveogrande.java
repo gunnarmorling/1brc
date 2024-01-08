@@ -262,19 +262,38 @@ final class Util {
 }
 
 /**
- * Station names are converted into integers (see {@link Util#key(byte[], int)})
- * which fit into a known particular range; this "map" will simply index into
- * an array using these keys to find stations.
+ * Station names are converted into integers (see {@link Util#key(byte[], int)}).
+ * These 32-bit keys are used as indexes into a two-level table
+ * (the two 16-bit pairs within the 32-bit key being indexes within the tables).
+ *
+ * <p>
+ * This map does not need to be thread-safe.
+ * </p>
  */
 @SuppressWarnings({ "unchecked" })
 final class ArrayMap<V> extends AbstractMap<Integer, V> {
-    final Object[] entries = new Object[1 << 16];
+    int size = 0;
 
     @Override
-    public V computeIfAbsent(Integer key, Function<? super Integer, ? extends V> mappingFunction) {
-        var ret = entries[key];
+    public Set<Entry<Integer, V>> entrySet() {
+        // Any methods required of this class by the above code
+        // are implemented directly, and not in terms of `entrySet`.
+        throw new AssertionError();
+    }
+
+    final Object[][] entries = new Object[1 << 16][];
+
+    @Override
+    public V computeIfAbsent(
+                             Integer key,
+                             Function<? super Integer, ? extends V> mappingFunction) {
+        var array = entries[key >>> 16];
+        if (array == null) {
+            array = entries[key >>> 16] = new Object[1 << 16];
+        }
+        var ret = array[key];
         if (ret == null) {
-            ret = entries[key] = mappingFunction.apply(key);
+            ret = array[key] = mappingFunction.apply(key);
         }
         return (V) ret;
     }
@@ -282,16 +301,50 @@ final class ArrayMap<V> extends AbstractMap<Integer, V> {
     @Override
     public Collection<V> values() {
         var ret = new ArrayList<V>();
-        for (var e : entries) {
-            if (e != null) {
-                ret.add((V) e);
+        for (var array : entries) {
+            if (array != null) {
+                for (var e : array) {
+                    if (e != null) {
+                        ret.add((V) e);
+                    }
+                }
             }
         }
         return ret;
     }
 
     @Override
-    public Set<Entry<Integer, V>> entrySet() {
-        throw new Error();
+    public V get(Object key) {
+        if (key instanceof Integer int32) {
+            int hi16 = int32 >>> 16;
+            if (entries[hi16] != null) {
+                int lo16 = int32 & 0xffff;
+                return (V) entries[hi16][lo16];
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public V put(Integer key, V value) {
+        int hi16 = key >>> 16;
+        int lo16 = key & 0xffff;
+        if (entries[hi16] == null) {
+            entries[hi16] = new Object[1 << 16];
+        }
+        var ret = entries[hi16][lo16];
+        entries[hi16][lo16] = value;
+        if (ret == null) { ++size; }
+        return (V) ret;
+    }
+
+    @Override
+    public int size() {
+        return this.size;
+    }
+
+    @Override
+    public boolean isEmpty() {
+        return size() == 0;
     }
 }

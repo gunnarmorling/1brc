@@ -51,4 +51,31 @@ class CalculateElsteveograndeTest {
         s.update(30.0f);
         assertEquals("-10.0/6.7/30.0", s.toString()); // check rounding (6.666...)
     }
+
+    @Test
+    public void testArrayMapGeneral() {
+        final var m = new ArrayMap<Character>();
+        assertTrue(m.isEmpty());
+        assertNull(m.put(1, 'a'));
+        assertNull(m.put(2, 'b'));
+        assertNull(m.put(3, 'c'));
+        assertFalse(m.isEmpty());
+        assertEquals(3, m.size());
+        assertEquals('c', m.put(3, 'C'));
+        assertEquals(3, m.size());
+    }
+
+    @Test
+    public void testArrayMapInternal() {
+        final var m = new ArrayMap<Character>();
+        assertNull(m.put(0x10001111, 'a'));
+        assertNull(m.put(0x20002222, 'b'));
+        assertNull(m.put(0x20003333, 'c'));
+        assertNull(m.entries[0]);
+        assertNotNull(m.entries[0x1000]);
+        assertNotNull(m.entries[0x2000]);
+        assertEquals('a', m.entries[0x1000][0x1111]);
+        assertEquals('b', m.entries[0x2000][0x2222]);
+        assertEquals('c', m.entries[0x2000][0x3333]);
+    }
 }
