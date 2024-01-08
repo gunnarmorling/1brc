@@ -274,7 +274,7 @@ public class CalculateAverage_mtopolnik {
             if (cursor <= inputSize - Long.BYTES) {
                 n1 = UNSAFE.getLong(inputBase + cursor);
                 long nameSize = limit - cursor;
-                long shiftDistance = 8 * (Long.BYTES - nameSize);
+                long shiftDistance = 8 * Long.max(0, Long.BYTES - nameSize);
                 long mask = ~0L;
                 if (!ORDER_IS_BIG_ENDIAN) {
                     mask >>>= shiftDistance;
