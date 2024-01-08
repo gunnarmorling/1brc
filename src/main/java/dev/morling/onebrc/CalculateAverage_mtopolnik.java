@@ -22,16 +22,12 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.lang.reflect.Field;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel.MapMode;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.TreeMap;
-
-import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 
 public class CalculateAverage_mtopolnik {
     private static final Unsafe UNSAFE = unsafe();
@@ -40,8 +36,8 @@ public class CalculateAverage_mtopolnik {
     private static final int NAME_SLOT_SIZE = 104;
     private static final int STATS_TABLE_SIZE = 1 << 16;
     private static final String MEASUREMENTS_TXT = "measurements.txt";
-    private static final byte SEMICOLON = (byte) ';';
-    private static final long BROADCAST_SEMICOLON = broadcastSemicolon();
+    private static final byte SEMICOLON = ';';
+    private static final long BROADCAST_SEMICOLON = broadcastByte(SEMICOLON);
 
     // These two are just informative, I let the IDE calculate them for me
     private static final long NATIVE_MEM_PER_THREAD = StatsAccessor.SIZEOF * STATS_TABLE_SIZE;
@@ -330,6 +326,9 @@ public class CalculateAverage_mtopolnik {
                     : bytePosBigEndian(offset);
         }
 
+        private static final long BROADCAST_0x01 = broadcastByte(0x01);
+        private static final long BROADCAST_0x80 = broadcastByte(0x80);
+
         // Adapted from https://jameshfisher.com/2017/01/24/bitwise-check-for-zero-byte/
         // and https://github.com/ashvardanian/StringZilla/blob/14e7a78edcc16b031c06b375aac1f66d8f19d45a/stringzilla/stringzilla.h#L139-L169
         long bytePosLittleEndian(long offset) {
@@ -337,7 +336,7 @@ public class CalculateAverage_mtopolnik {
             for (; offset < limit; offset += Long.BYTES) {
                 var block = UNSAFE.getLong(inputBase + offset);
                 final long diff = block ^ BROADCAST_SEMICOLON;
-                long matchIndicators = (diff - 0x0101010101010101L) & ~diff & 0x8080808080808080L;
+                long matchIndicators = (diff - BROADCAST_0x01) & ~diff & BROADCAST_0x80;
                 if (matchIndicators != 0) {
                     return offset + Long.numberOfTrailingZeros(matchIndicators) / 8;
                 }
@@ -345,14 +344,16 @@ public class CalculateAverage_mtopolnik {
             return simpleSearch(offset);
         }
 
+        private static final long BROADCAST_0x7F = broadcastByte(0x7F);
+
         // Adapted from https://richardstartin.github.io/posts/finding-bytes
         long bytePosBigEndian(long offset) {
             final long limit = inputSize - Long.BYTES + 1;
             for (; offset < limit; offset += Long.BYTES) {
                 var block = UNSAFE.getLong(inputBase + offset);
                 final long diff = block ^ BROADCAST_SEMICOLON;
-                long matchIndicators = (diff & 0x7F7F7F7F7F7F7F7FL) + 0x7F7F7F7F7F7F7F7FL;
-                matchIndicators = ~(matchIndicators | diff | 0x7F7F7F7F7F7F7F7FL);
+                long matchIndicators = (diff & BROADCAST_0x7F) + BROADCAST_0x7F;
+                matchIndicators = ~(matchIndicators | diff | BROADCAST_0x7F);
                 if (matchIndicators != 0) {
                     return offset + Long.numberOfLeadingZeros(matchIndicators) / 8;
                 }
@@ -390,8 +391,8 @@ public class CalculateAverage_mtopolnik {
         return true;
     }
 
-    private static long broadcastSemicolon() {
-        long nnnnnnnn = SEMICOLON;
+    private static long broadcastByte(int b) {
+        long nnnnnnnn = b;
         nnnnnnnn |= nnnnnnnn << 8;
         nnnnnnnn |= nnnnnnnn << 16;
         nnnnnnnn |= nnnnnnnn << 32;
