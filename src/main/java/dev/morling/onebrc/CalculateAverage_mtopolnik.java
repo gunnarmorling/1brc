@@ -26,6 +26,7 @@ import java.lang.foreign.ValueLayout;
 import java.lang.reflect.Field;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel.MapMode;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.TreeMap;
@@ -149,8 +150,7 @@ public class CalculateAverage_mtopolnik {
                 inputBase = inputMem.address();
                 inputSize = inputMem.byteSize();
                 stats = new StatsAccessor(confinedArena.allocate(STATS_TABLE_SIZE * StatsAccessor.SIZEOF, Long.BYTES));
-                final var hashBuf = confinedArena.allocate(HASHBUF_SIZE);
-                hashBufBase = hashBuf.address();
+                hashBufBase = confinedArena.allocate(HASHBUF_SIZE).address();
                 processChunk();
                 exportResults();
             }
@@ -410,14 +410,13 @@ public class CalculateAverage_mtopolnik {
         static final long NAME_OFFSET = MAX_OFFSET + Short.BYTES;
         static final long SIZEOF = (NAME_OFFSET + NAME_SLOT_SIZE - 1) / 8 * 8 + 8;
 
-        private final MemorySegment memSeg;
+        static final int ARRAY_BASE_OFFSET = UNSAFE.arrayBaseOffset(byte[].class);
+
         private final long address;
         private long slotBase;
 
         StatsAccessor(MemorySegment memSeg) {
-            this.memSeg = memSeg;
             this.address = memSeg.address();
-            memSeg.fill((byte) 0);
         }
 
         void gotoIndex(int index) {
@@ -453,7 +452,9 @@ public class CalculateAverage_mtopolnik {
         }
 
         String exportNameString() {
-            return memSeg.getUtf8String(nameAddress() - address);
+            final var bytes = new byte[nameLen()];
+            UNSAFE.copyMemory(null, nameAddress(), bytes, ARRAY_BASE_OFFSET, nameLen());
+            return new String(bytes, StandardCharsets.UTF_8);
         }
 
         void setHash(long hash) {
