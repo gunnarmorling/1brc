@@ -33,10 +33,6 @@ import java.util.TreeMap;
 
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 
-// create_measurements3.sh 500_000_000
-// initial:    real	0m11.640s user	0m39.766s sys	0m9.852s
-// short hash: real	0m11.241s user	0m36.534s sys	0m9.700s
-
 public class CalculateAverage_mtopolnik {
     private static final Unsafe UNSAFE = unsafe();
     private static final boolean ORDER_IS_BIG_ENDIAN = ByteOrder.nativeOrder() == ByteOrder.BIG_ENDIAN;
