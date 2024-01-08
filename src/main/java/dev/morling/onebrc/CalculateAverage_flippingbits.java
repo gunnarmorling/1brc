@@ -20,7 +20,9 @@ import jdk.incubator.vector.VectorOperators;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Approach:
@@ -37,86 +39,90 @@ public class CalculateAverage_flippingbits {
 
     private static final int SIMD_LANE_LENGTH = ShortVector.SPECIES_MAX.length();
 
-    public static void main(String[] args) throws IOException {
-        try (var file = new RandomAccessFile(FILE, "r")) {
-            // Calculate chunk boundaries
-            var chunkBoundaries = getChunkBoundaries(file);
-            // Process chunks
-            var result = Arrays.asList(chunkBoundaries).stream()
-                    .map(chunk -> {
-                        try {
-                            return processChunk(chunk[0], chunk[1]);
-                        }
-                        catch (IOException e) {
-                            throw new RuntimeException(e);
-                        }
-                    })
-                    .parallel()
-                    .reduce((firstMap, secondMap) -> {
-                        for (var entry : secondMap.entrySet()) {
-                            PartitionAggregate firstAggregate = firstMap.get(entry.getKey());
-                            if (firstAggregate == null) {
-                                firstMap.put(entry.getKey(), entry.getValue());
-                            }
-                            else {
-                                firstAggregate.mergeWith(entry.getValue());
-                            }
-                        }
-                        return firstMap;
-                    })
-                    .map(TreeMap::new).get();
+    private static final int MAX_STATION_NAME_LENGTH = 100;
 
-            System.out.println(result);
-        }
+    public static void main(String[] args) throws IOException {
+        // Process chunks
+        var result = Arrays.asList(getChunkBoundaries()).stream()
+                .map(chunk -> {
+                    try {
+                        return processChunk(chunk[0], chunk[1]);
+                    }
+                    catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                })
+                .parallel()
+                .reduce((firstMap, secondMap) -> {
+                    for (var entry : secondMap.entrySet()) {
+                        PartitionAggregate firstAggregate = firstMap.get(entry.getKey());
+                        if (firstAggregate == null) {
+                            firstMap.put(entry.getKey(), entry.getValue());
+                        }
+                        else {
+                            firstAggregate.mergeWith(entry.getValue());
+                        }
+                    }
+                    return firstMap;
+                })
+                .map(TreeMap::new).get();
+
+        System.out.println(result);
     }
 
-    private static long[][] getChunkBoundaries(RandomAccessFile file) throws IOException {
-        var fileSize = file.length();
-        // Split file into chunks, so we can work around the size limitation of channels
-        var chunks = (int) (fileSize / CHUNK_SIZE);
+    private static long[][] getChunkBoundaries() throws IOException {
+        try (var file = new RandomAccessFile(FILE, "r")) {
+            var fileSize = file.length();
+            // Split file into chunks, so we can work around the size limitation of channels
+            var chunks = (int) (fileSize / CHUNK_SIZE);
 
-        var chunkBoundaries = new long[chunks + 1][2];
-        var endPointer = 0L;
+            var chunkBoundaries = new long[chunks + 1][2];
+            var endPointer = 0L;
 
-        for (var i = 0; i <= chunks; i++) {
-            // Start of chunk
-            chunkBoundaries[i][0] = Math.min(Math.max(endPointer, i * CHUNK_SIZE), fileSize);
+            for (var i = 0; i < chunks; i++) {
+                // Start of chunk
+                chunkBoundaries[i][0] = Math.min(Math.max(endPointer, i * CHUNK_SIZE), fileSize);
 
-            // Seek end of chunk, limited by the end of the file
-            file.seek(Math.min(chunkBoundaries[i][0] + CHUNK_SIZE - 1, fileSize));
+                // Seek end of chunk, limited by the end of the file
+                file.seek(Math.min(chunkBoundaries[i][0] + CHUNK_SIZE - 1, fileSize));
 
-            // Extend chunk until end of line or file
-            while (true) {
-                var character = file.read();
-                if (character == '\n' || character == -1) {
-                    break;
+                // Extend chunk until end of line or file
+                while (file.read() != '\n') {
                 }
+
+                // End of chunk
+                endPointer = file.getFilePointer();
+                chunkBoundaries[i][1] = endPointer;
             }
 
-            // End of chunk
-            endPointer = file.getFilePointer();
-            chunkBoundaries[i][1] = endPointer;
-        }
+            chunkBoundaries[chunks][0] = Math.max(endPointer, chunks * CHUNK_SIZE);
+            chunkBoundaries[chunks][1] = fileSize;
 
-        return chunkBoundaries;
+            return chunkBoundaries;
+        }
     }
 
     private static Map<String, PartitionAggregate> processChunk(long startOfChunk, long endOfChunk)
             throws IOException {
         Map<String, PartitionAggregate> stationAggregates = new HashMap<>(10_000);
         var byteChunk = new byte[(int) (endOfChunk - startOfChunk)];
+        var stationBuffer = new byte[MAX_STATION_NAME_LENGTH];
         try (var file = new RandomAccessFile(FILE, "r")) {
             file.seek(startOfChunk);
             file.read(byteChunk);
             var i = 0;
             while (i < byteChunk.length) {
-                final var startPosStation = i;
-
+                // Station name has at least one byte
+                stationBuffer[0] = byteChunk[i];
+                i++;
                 // Read station name
+                var j = 1;
                 while (byteChunk[i] != ';') {
+                    stationBuffer[j] = byteChunk[i];
+                    j++;
                     i++;
                 }
-                var station = new String(Arrays.copyOfRange(byteChunk, startPosStation, i));
+                var station = new String(stationBuffer, 0, j, StandardCharsets.UTF_8);
                 i++;
 
                 // Read measurement
@@ -128,7 +134,7 @@ public class CalculateAverage_flippingbits {
                         measurement = measurement * 10 + byteChunk[i] - '0';
                         i++;
                     }
-                    measurement = measurement * -10 + byteChunk[i + 1] - '0';
+                    measurement = (measurement * 10 + byteChunk[i + 1] - '0') * -1;
                 }
                 else {
                     while (byteChunk[i] != '.') {
