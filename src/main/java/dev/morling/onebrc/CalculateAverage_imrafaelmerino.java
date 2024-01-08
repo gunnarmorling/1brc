@@ -16,6 +16,7 @@
 package dev.morling.onebrc;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
@@ -23,6 +24,8 @@ import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.ForkJoinPool;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 /**
  * @author Rafael Merino García
@@ -35,13 +38,7 @@ import java.util.function.Supplier;
  *  Total Number of Cores: 8 (4 performance and 4 efficiency)
  *  Memory: 16 GB
  *
- *  Executed 10 times in my machine with a chunk size of 20MB
- *
- *     21.0.1-graal
- *     avg: 12,962 sg | min: 12,823 sg | max: 13,153 sg | acc: 64,808 sg | times: 5
- *
- *
- *
+ *  Around 16 seg
  *
  *
  *  Credits:
@@ -104,8 +101,7 @@ public class CalculateAverage_imrafaelmerino {
 
         try (var fileChannel = FileChannel.open(Paths.get(file),
                 StandardOpenOption.READ)) {
-            var stats = memoryBuffers(fileChannel, chunkSize)
-                    .stream()
+            var stats = fileMemoryStream(fileChannel, chunkSize)
                     .parallel()
                     .map(p -> ManagedComputation.compute(() -> parse(p)))
                     .reduce(Collections.emptyMap(),
@@ -163,21 +159,48 @@ public class CalculateAverage_imrafaelmerino {
         return stats;
     }
 
-    private static List<ByteBuffer> memoryBuffers(FileChannel fileChannel, long chunkSize) throws IOException {
-        List<ByteBuffer> buffers = new ArrayList<>();
-        var buffer = ByteBuffer.allocateDirect((int) chunkSize);
-        long start = 0;
-        long size = fileChannel.size();
-        while (start < size) {
-            buffer.clear();
-            fileChannel.read(buffer, start);
-            buffer.flip();
-            while (buffer.get(buffer.limit() - 1) != '\n')
-                buffer.limit(buffer.limit() - 1);
-            buffers.add(buffer.duplicate());
-            start += buffer.limit();
-        }
-        return buffers;
+    private static Stream<ByteBuffer> fileMemoryStream(FileChannel fileChannel,
+                                                       long chunkSize)
+            throws IOException {
+
+        var spliterator = Spliterators.spliteratorUnknownSize(fileMemoryIterator(fileChannel,
+                chunkSize),
+                Spliterator.IMMUTABLE);
+        return StreamSupport.stream(spliterator,
+                false);
+    }
+
+    private static Iterator<ByteBuffer> fileMemoryIterator(FileChannel fileChannel, long chunkSize) throws IOException {
+        return new Iterator<>() {
+
+            private final long size = fileChannel.size();
+            private long start = 0;
+
+            @Override
+            public boolean hasNext() {
+                return start < size;
+            }
+
+            @Override
+            public ByteBuffer next() {
+                try {
+                    var buffer = fileChannel.map(FileChannel.MapMode.READ_ONLY,
+                            start,
+                            Math.min(chunkSize,
+                                    size - start));
+                    var limmit = buffer.limit() - 1;
+                    while (buffer.get(limmit) != '\n')
+                        limmit--;
+                    limmit++;
+                    buffer.limit(limmit);
+                    start += limmit;
+                    return buffer;
+                }
+                catch (IOException ex) {
+                    throw new UncheckedIOException(ex);
+                }
+            }
+        };
     }
 
     private static final class Stat {
