@@ -18,164 +18,113 @@ package dev.morling.onebrc;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.TreeMap;
 
 import static java.nio.channels.FileChannel.MapMode.READ_ONLY;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.util.stream.Collectors.toMap;
 
 public class CalculateAverage_armandino {
 
-    private static final String FILE = "./measurements.txt";
+    private static final Path FILE = Path.of("./measurements.txt");
 
+    private static final int NUM_CHUNKS = Runtime.getRuntime().availableProcessors();
     private static final int MAX_KEY_LENGTH = 100;
     private static final byte SEMICOLON = 59;
     private static final byte NL = 10;
     private static final byte DOT = 46;
     private static final byte MINUS = 45;
+    private static final byte ZERO_DIGIT = 48;
 
     public static void main(String[] args) throws Exception {
-        Aggregator aggregator = new Aggregator();
-        aggregator.process();
-        aggregator.printStats();
-    }
+        var channel = FileChannel.open(FILE, StandardOpenOption.READ);
 
-    private static class Aggregator {
-
-        private final Map<Integer, Stats> map = new ConcurrentHashMap<>(2048);
-
-        private record Chunk(long start, long end) {
-        }
-
-        void process() throws Exception {
-            var channel = FileChannel.open(Path.of(FILE), StandardOpenOption.READ);
-            final Chunk[] chunks = split(channel);
-            final Thread[] threads = new Thread[chunks.length];
-
-            for (int i = 0; i < chunks.length; i++) {
-                final Chunk chunk = chunks[i];
-
-                threads[i] = Thread.ofVirtual().start(() -> {
+        var results = Arrays.stream(split(channel)).parallel()
+                .map(chunk -> {
                     try {
                         var bb = channel.map(READ_ONLY, chunk.start, chunk.end - chunk.start);
-                        process(bb);
+                        return new ChunkProcessor().process(bb);
                     }
                     catch (IOException e) {
                         throw new RuntimeException(e);
                     }
-                });
+                })
+                .flatMap(Collection::stream)
+                .collect(toMap(s -> s.city, s -> s, CalculateAverage_armandino::mergeStats, TreeMap::new));
+
+        print(results.values());
+    }
+
+    private static Stats mergeStats(final Stats x, final Stats y) {
+        x.min = Math.min(x.min, y.min);
+        x.max = Math.max(x.max, y.max);
+        x.count += y.count;
+        x.sum += y.sum;
+        return x;
+    }
+
+    private static class ChunkProcessor {
+        private final List<Stats> list = new ArrayList<>(512);
+        private final Map<Integer, Stats> map = new HashMap<>(2048);
+
+        private List<Stats> process(final ByteBuffer bb) {
+            // not sure if this is faster... from royvanrijn
+            bb.order(ByteOrder.nativeOrder());
+
+            final byte[] keyBytes = new byte[MAX_KEY_LENGTH];
+            int keyLength = 0;
+            int keyHash = 0;
+            int measurement = 0;
+            boolean negative = false;
+
+            while (bb.hasRemaining()) {
+                byte b;
+                while ((b = bb.get()) != SEMICOLON) {
+                    keyBytes[keyLength++] = b;
+                    keyHash = 31 * keyHash + b;
+                }
+                while ((b = bb.get()) != NL) {
+                    if (b == MINUS) {
+                        negative = true;
+                    }
+                    else if (b != DOT) {
+                        measurement = measurement * 10 + b - ZERO_DIGIT;
+                    }
+                }
+
+                // add/update stats
+                Stats stats = map.get(keyHash);
+
+                if (stats == null) {
+                    stats = new Stats(new String(keyBytes, 0, keyLength, UTF_8));
+                    map.put(keyHash, stats);
+                    list.add(stats);
+                }
+
+                // update stats
+                final var val = negative ? -measurement : measurement;
+                stats.min = Math.min(stats.min, val);
+                stats.max = Math.max(stats.max, val);
+                stats.sum += val;
+                stats.count++;
+
+                // reset
+                keyHash = 0;
+                keyLength = 0;
+                measurement = 0;
+                negative = false;
             }
-
-            for (Thread t : threads) {
-                t.join();
-            }
-        }
-
-        private static Chunk[] split(final FileChannel channel) throws IOException {
-            final long fileSize = channel.size();
-            if (fileSize < 10000) {
-                return new Chunk[]{ new Chunk(0, fileSize) };
-            }
-
-            final int numChunks = 8;
-            final long chunkSize = fileSize / numChunks;
-            final var chunks = new Chunk[numChunks];
-
-            for (int i = 0; i < numChunks; i++) {
-                long start = 0;
-                long end = chunkSize;
-
-                if (i > 0) {
-                    start = chunks[i - 1].end + 1;
-                    end = Math.min(start + chunkSize, fileSize);
-                }
-
-                end = end == fileSize ? end : seekNextNewline(channel, end);
-                chunks[i] = new Chunk(start, end);
-            }
-            return chunks;
-        }
-
-        private static long seekNextNewline(final FileChannel channel, final long end) throws IOException {
-            var bb = ByteBuffer.allocate(MAX_KEY_LENGTH);
-            channel.position(end).read(bb);
-
-            for (int i = 0; i < bb.limit(); i++) {
-                if (bb.get(i) == NL) {
-                    return end + i;
-                }
-            }
-
-            throw new IllegalStateException("Couldn't find next newline");
-        }
-
-        private void process(final ByteBuffer bb) {
-            final var sample = new Sample();
-            var isKey = true;
-
-            for (long i = 0, sz = bb.limit(); i < sz; i++) {
-
-                final byte b = bb.get();
-
-                if (b == SEMICOLON) {
-                    isKey = false;
-                }
-                else if (b == NL) {
-                    isKey = true;
-                    addSample(sample);
-                    sample.reset();
-                }
-                else if (isKey) {
-                    sample.pushKey(b);
-                }
-                else if (b == DOT) {
-                    // skip
-                }
-                else if (b == MINUS) {
-                    sample.sign = -1;
-                }
-                else {
-                    sample.pushMeasurement(b);
-                }
-            }
-        }
-
-        private void addSample(final Sample sample) {
-            final Stats stats = map.computeIfAbsent(sample.keyHash,
-                    k -> new Stats(new String(sample.keyBytes, 0, sample.keyLength, UTF_8)));
-
-            final var val = sample.getMeasurement();
-
-            if (val < stats.min)
-                stats.min = val;
-
-            if (val > stats.max)
-                stats.max = val;
-
-            stats.sum += val;
-            stats.count++;
-        }
-
-        void printStats() {
-            var sorted = new ArrayList<>(map.values());
-            Collections.sort(sorted);
-
-            int size = sorted.size();
-
-            System.out.print('{');
-
-            for (Stats stats : sorted) {
-                stats.print(System.out);
-                if (--size > 0) {
-                    System.out.print(", ");
-                }
-            }
-            System.out.println('}');
+            return list;
         }
     }
 
@@ -183,8 +132,8 @@ public class CalculateAverage_armandino {
         private final String city;
         private int min = Integer.MAX_VALUE;
         private int max = Integer.MIN_VALUE;
-        private long sum;
         private int count;
+        private long sum;
 
         private Stats(String city) {
             this.city = city;
@@ -210,32 +159,52 @@ public class CalculateAverage_armandino {
         }
     }
 
-    private static class Sample {
-        private final byte[] keyBytes = new byte[MAX_KEY_LENGTH];
-        private int keyLength;
-        private int keyHash;
-        private int measurement;
-        private int sign = 1;
+    private static void print(final Collection<Stats> sorted) {
+        int size = sorted.size();
+        System.out.print('{');
+        for (Stats stats : sorted) {
+            stats.print(System.out);
+            if (--size > 0) {
+                System.out.print(", ");
+            }
+        }
+        System.out.println('}');
+    }
 
-        void pushKey(byte b) {
-            keyBytes[keyLength++] = b;
-            keyHash = 31 * keyHash + b;
+    private static Chunk[] split(final FileChannel channel) throws IOException {
+        final long fileSize = channel.size();
+        if (fileSize < 10000) {
+            return new Chunk[]{ new Chunk(0, fileSize) };
         }
 
-        void pushMeasurement(byte b) {
-            final int i = b - '0';
-            measurement = measurement * 10 + i;
-        }
+        final int numChunks = NUM_CHUNKS;
+        final long chunkSize = fileSize / numChunks;
+        final var chunks = new Chunk[numChunks];
+        long start = 0;
+        long end = chunkSize;
 
-        int getMeasurement() {
-            return sign * measurement;
-        }
+        for (int i = 0; i < numChunks; i++) {
+            if (i > 0) {
+                start = chunks[i - 1].end;
+                end = Math.min(start + chunkSize, fileSize);
+            }
 
-        void reset() {
-            keyHash = 0;
-            keyLength = 0;
-            measurement = 0;
-            sign = 1;
+            if (end < fileSize) {
+                var bb = ByteBuffer.allocate(MAX_KEY_LENGTH);
+                channel.position(end).read(bb);
+
+                for (int j = 0; j < bb.limit(); j++) {
+                    if (bb.get(j) == NL) {
+                        end = end + j + 1;
+                        break;
+                    }
+                }
+            }
+            chunks[i] = new Chunk(start, end);
         }
+        return chunks;
+    }
+
+    private record Chunk(long start, long end) {
     }
 }
