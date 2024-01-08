@@ -49,6 +49,8 @@ public class CalculateAverage_roman_r_m {
                 value.reset();
                 parsingStation = false;
             }
+            else if (c == '\r') {
+            }
             else if (c == '\n') {
                 long val = value.get();
                 var a = resultStore.get(station);
