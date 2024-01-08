@@ -16,115 +16,201 @@
 
 package dev.morling.onebrc;
 
-import java.io.BufferedReader;
-import java.io.FileReader;
+import java.io.File;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedList;
-import java.util.Map;
+import java.util.List;
 import java.util.Queue;
-import java.util.TreeMap;
+import java.util.Map.Entry;
 import java.util.stream.Collectors;
 
 public class CalculateAverage_jgrateron {
     private static final String FILE = "./measurements.txt";
-    private static int MAX_LINES = 100000;
 
-    public static void main(String[] args) throws IOException, InterruptedException {
-        // long startTime = System.nanoTime();
-
-        var tasks = new ArrayList<TaskCalcular>();
-        try (var reader = new BufferedReader(new FileReader(FILE))) {
-            String line;
-            var listaLineas = new LinkedList<String>();
-            while ((line = reader.readLine()) != null) {
-                listaLineas.add(line);
-                if (listaLineas.size() > MAX_LINES) {
-                    var taskCalcular = new TaskCalcular(listaLineas);
-                    listaLineas = new LinkedList<String>();
-                    tasks.add(taskCalcular);
-                }
-            }
-            if (listaLineas.size() > 0) {
-                var taskCalcular = new TaskCalcular(listaLineas);
-                tasks.add(taskCalcular);
-            }
-        }
-        // combinar todas las particiones
-        var totalMediciones = new TreeMap<String, Medicion>();
-        for (var task : tasks) {
-            task.join();
-            var mediciones = task.getMediciones();
-            for (var entry : mediciones.entrySet()) {
-                var medicion = totalMediciones.get(entry.getKey());
-                if (medicion == null) {
-                    totalMediciones.put(entry.getKey(), entry.getValue());
-                }
-                else {
-                    var otraMed = entry.getValue();
-                    medicion.update(otraMed.count, otraMed.tempMin, otraMed.tempMax, otraMed.tempSum);
-                }
-            }
-        }
-        var result = totalMediciones.entrySet().stream()//
-                .map(e -> e.getKey() + "=" + e.getValue())//
-                .collect(Collectors.joining(", "));
-
-        System.out.println("{" + result + "}");
-
-        // System.out.println("Total: " + (System.nanoTime() - startTime) / 1000000);
+    public record Particion(long offset, long size) {
     }
 
     /*
      * 
      */
-    static class TaskCalcular {
-
-        private Queue<String> listaLineas;
-        private Map<String, Medicion> mediciones;
-        private Thread hilo;
-
-        public TaskCalcular(Queue<String> listaLineas) {
-            this.listaLineas = listaLineas;
-            mediciones = new HashMap<String, Medicion>();
-            hilo = Thread.ofPlatform().unstarted(() -> {
-                run();
-            });
-            hilo.start();
+    public static List<Particion> dividirArchivo(File archivo) throws IOException {
+        var particiones = new ArrayList<Particion>();
+        var buffer = new byte[255];
+        var length = archivo.length();
+        var sizeParticion = length / 12;
+        var ini = 0l;
+        try (var rfile = new RandomAccessFile(archivo, "r")) {
+            for (;;) {
+                var size = sizeParticion;
+                var pos = ini + size;
+                if (pos > length) {
+                    pos = length - 1;
+                    size = length - ini;
+                }
+                rfile.seek(pos);
+                int count = rfile.read(buffer);
+                if (count == -1) {
+                    break;
+                }
+                for (int i = 0; i < count; i++) {
+                    if (buffer[i] == '\n' || buffer[i] == '\r') {
+                        size++;
+                        break;
+                    } else {
+                        size++;
+                    }
+                }
+                var particion = new Particion(ini, size);
+                particiones.add(particion);
+                if (count != buffer.length) {
+                    break;
+                }
+                ini += size;
+            }
         }
+        return particiones;
+    }
 
-        public void join() throws InterruptedException {
+    public static void main(String[] args) throws InterruptedException, IOException {
+        //var startTime = System.nanoTime();
+
+        var totalMediciones = new HashMap<Integer, Medicion>();
+        var tareas = new ArrayList<Thread>();
+        var particiones = dividirArchivo(new File(FILE));
+
+        for (var p : particiones) {
+            var hilo = Thread.ofVirtual().start(() -> {
+                var mediciones = new HashMap<Integer, Medicion>();
+                try (var miArchivo = new MiArchivo(new File(FILE), p)) {
+                    for (;;) {
+                        var lineas = miArchivo.readLines();
+                        if (lineas.isEmpty()) {
+                            break;
+                        }
+                        for (;;) {
+                            var linea = lineas.poll();
+                            if (linea == null) {
+                                break;
+                            }
+                            int pos = linea.indexOf(";");
+                            var estacion = linea.substring(0, pos);
+                            var temp = Double.parseDouble(linea.substring(pos + 1));
+                            var hashCode = estacion.hashCode();
+                            var medicion = mediciones.get(hashCode);
+                            if (medicion == null) {
+                                medicion = new Medicion(estacion, 1, temp, temp, temp);
+                                mediciones.put(hashCode, medicion);
+                            } else {
+                                medicion.update(1, temp, temp, temp);
+                            }
+                        }
+                    }
+                } catch (IOException e) {
+                    System.exit(-1);
+                }
+                synchronized (totalMediciones) {
+                    for (var entry : mediciones.entrySet()) {
+                        var medicion = totalMediciones.get(entry.getKey());
+                        if (medicion == null) {
+                            totalMediciones.put(entry.getKey(), entry.getValue());
+                        } else {
+                            var otraMed = entry.getValue();
+                            medicion.update(otraMed.count, otraMed.tempMin, otraMed.tempMax, otraMed.tempSum);
+                        }
+                    }
+                }
+            });
+            tareas.add(hilo);
+        }
+        for (var hilo : tareas) {
             hilo.join();
         }
 
-        public void run() {
-            String linea;
-            int pos;
-            while ((linea = listaLineas.poll()) != null) {
-                pos = linea.indexOf(";");
-                var estacion = linea.substring(0, pos);
-                var temp = Double.parseDouble(linea.substring(pos + 1));
-                var medicion = mediciones.get(estacion);
-                if (medicion == null) {
-                    medicion = new Medicion(estacion, 1, temp, temp, temp);
-                    mediciones.put(estacion, medicion);
-                }
-                else {
-                    medicion.update(1, temp, temp, temp);
-                }
-            }
+        Comparator<Entry<Integer, Medicion>> comparar = (a, b) -> {
+            return a.getValue().estacion.compareTo(b.getValue().estacion);
+        };
+
+        var result = totalMediciones.entrySet().stream()//
+                .sorted(comparar)//
+                .map(e -> e.getValue().toString())//
+                .collect(Collectors.joining(", "));
+
+        System.out.println("{" + result + "}");
+        //System.out.println("Total: " + (System.nanoTime() - startTime) / 1000000 + "ms");
+    }
+
+    /*
+     * 
+     */
+    static class MiArchivo implements AutoCloseable {
+        private final RandomAccessFile rFile;
+        private final byte buffer[] = new byte[1024 * 4];
+        private final byte line[] = new byte[255];
+        private final byte rest[] = new byte[255];
+        private int lenRest = 0;
+        private long maxRead = 0;
+        private long totalRead = 0;
+        private Queue<String> lineas = new LinkedList<String>();
+
+        public MiArchivo(File file, Particion particion) throws IOException {
+            maxRead = particion.size;
+            rFile = new RandomAccessFile(file, "r");
+            rFile.seek(particion.offset);
         }
 
-        public Map<String, Medicion> getMediciones() {
-            return mediciones;
+        @Override
+        public void close() throws IOException {
+            rFile.close();
+        }
+
+        public Queue<String> readLines() throws IOException {
+            lineas.clear();
+            long numBytes = rFile.read(buffer);
+            if (numBytes == -1) {
+                return lineas;
+            }
+            var totalLeidos = totalRead + numBytes;
+            if (totalLeidos > maxRead) {
+                numBytes = (totalLeidos - maxRead) - numBytes;
+            }
+            totalRead += numBytes;
+            int pos = 0;
+            int len = 0;
+            int idx = 0;
+            while (pos < numBytes) {
+                if (buffer[pos] == '\n' || buffer[pos] == '\r') {
+                    if (lenRest > 0) {
+                        System.arraycopy(rest, 0, line, 0, lenRest);
+                        System.arraycopy(buffer, idx, line, lenRest, len);
+                        len += lenRest;
+                        lenRest = 0;
+                    } else {
+                        System.arraycopy(buffer, idx, line, 0, len);
+                    }
+                    lineas.add(new String(line, 0, len));
+                    idx = pos + 1;
+                    len = 0;
+                } else {
+                    len++;
+                }
+                pos++;
+            }
+            if (len > 0) {
+                System.arraycopy(buffer, idx, rest, 0, len);
+                lenRest = len;
+            }
+            return lineas;
         }
     }
 
     /*
      * 
      */
-    static class Medicion implements Comparable<Medicion> {
+    static class Medicion {
         private String estacion;
         private int count;
         private double tempMin;
@@ -154,13 +240,7 @@ public class CalculateAverage_jgrateron {
         @Override
         public String toString() {
             double tempPro = tempSum / count;
-            return "%.1f/%.1f/%.1f".formatted(tempMin, tempPro, tempMax);
-        }
-
-        @Override
-        public int compareTo(Medicion medicion) {
-            return estacion.compareTo(medicion.estacion);
+            return "%s=%.2f/%.2f/%.2f".formatted(estacion, tempMin, tempMax, tempPro);
         }
     }
-
 }
