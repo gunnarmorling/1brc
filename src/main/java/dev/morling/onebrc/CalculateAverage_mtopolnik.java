@@ -124,9 +124,7 @@ public class CalculateAverage_mtopolnik {
         private final StationStats[][] results;
         private final int myIndex;
 
-        private MemorySegment inputMem;
         private MemorySegment namesMem;
-        private MemorySegment hashBuf;
         private StatsAccessor stats;
         private long inputBase;
         private long inputSize;
@@ -145,15 +143,14 @@ public class CalculateAverage_mtopolnik {
         @Override
         public void run() {
             try (Arena confinedArena = Arena.ofConfined()) {
-                inputMem = raf.getChannel().map(MapMode.READ_ONLY, chunkStart, chunkLimit - chunkStart, confinedArena);
+                final var inputMem = raf.getChannel().map(MapMode.READ_ONLY, chunkStart, chunkLimit - chunkStart, confinedArena);
                 inputBase = inputMem.address();
                 inputSize = inputMem.byteSize();
-                MemorySegment statsMem = confinedArena.allocate(STATS_TABLE_SIZE * StatsAccessor.SIZEOF, Long.BYTES);
-                stats = new StatsAccessor(statsMem);
+                stats = new StatsAccessor(confinedArena.allocate(STATS_TABLE_SIZE * StatsAccessor.SIZEOF, Long.BYTES));
                 namesMem = confinedArena.allocate(STATS_TABLE_SIZE * NAME_SLOT_SIZE, Long.BYTES);
                 namesBase = namesMem.address();
                 namesMem.fill((byte) 0);
-                hashBuf = confinedArena.allocate(HASHBUF_SIZE);
+                final var hashBuf = confinedArena.allocate(HASHBUF_SIZE);
                 hashBufBase = hashBuf.address();
                 processChunk();
                 exportResults();
@@ -164,7 +161,7 @@ public class CalculateAverage_mtopolnik {
         }
 
         private void processChunk() {
-            while (cursor < inputMem.byteSize()) {
+            while (cursor < inputSize) {
                 long semicolonPos = bytePosOfSemicolon(cursor);
                 final long hash = hash(cursor, semicolonPos);
                 long nameLen = semicolonPos - cursor;
@@ -181,10 +178,7 @@ public class CalculateAverage_mtopolnik {
                 stats.gotoIndex(tableIndex);
                 long foundHash = stats.hash();
                 if (foundHash == hash && stats.nameLen() == nameLen
-                        && strcmp(namesBase + tableIndex * NAME_SLOT_SIZE, inputBase + namePos, nameLen)
-//                        && namesMem.asSlice(tableIndex * NAME_SLOT_SIZE, nameLen)
-//                                .mismatch(inputMem.asSlice(namePos, nameLen)) == -1
-                ) {
+                        && strcmp(namesBase + tableIndex * NAME_SLOT_SIZE, inputBase + namePos, nameLen)) {
                     stats.setSum(stats.sum() + temperature);
                     stats.setCount(stats.count() + 1);
                     stats.setMin((short) Integer.min(stats.min(), temperature));
@@ -228,7 +222,7 @@ public class CalculateAverage_mtopolnik {
 
         private int parseTemperatureAndAdvanceCursor(long semicolonPos) {
             long startOffset = semicolonPos + 1;
-            if (startOffset <= inputMem.byteSize() - Long.BYTES) {
+            if (startOffset <= inputSize - Long.BYTES) {
                 return parseTemperatureSwarAndAdvanceCursor(startOffset);
             }
             return parseTemperatureSimpleAndAdvanceCursor(startOffset);
