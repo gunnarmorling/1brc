@@ -13,45 +13,133 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+
 package dev.morling.onebrc;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.io.RandomAccessFile;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.DoubleSummaryStatistics;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.StringJoiner;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import java.util.concurrent.*;
 
 public class CalculateAverage_dalogax {
 
-    public static void main(String[] args) throws IOException {
-        try (Stream<String> lines = Files.lines(Paths.get("./measurements.txt"))) {
-            Map<String, DoubleSummaryStatistics> cityStatsMap = lines
-                    .parallel()
-                    .map(CalculateAverage_dalogax::splitSemicolon)
-                    .collect(Collectors.groupingBy(
-                            parts -> parts[0],
-                            Collectors.summarizingDouble(value -> Double.parseDouble(value[1]))));
+    private static final int CHUNK_SIZE = 1024 * 1024 * 1000;
+    private static final int QUEUE_CAPACITY = 10; // adjust as needed
 
-            StringJoiner result = new StringJoiner(", ", "{", "}");
+    public static void main(String[] args) throws Exception {
+        Map<String, DoubleSummaryStatistics> cityStatsMap = new HashMap<>();
+        ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+        BlockingQueue<byte[]> queue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
+
+        Future<Void> readerFuture = executor.submit(() -> {
+            try (RandomAccessFile file = new RandomAccessFile("./measurements.txt", "r")) {
+                long position = 0;
+                while (position < file.length()) {
+                    byte[] chunk = new byte[CHUNK_SIZE];
+                    file.seek(position);
+                    int bytesRead = file.read(chunk);
+                    if (bytesRead < CHUNK_SIZE && bytesRead != -1) {
+                        queue.put(Arrays.copyOf(chunk, bytesRead));
+                        break;
+                    }
+                    int backtrack = 0;
+                    while (chunk[bytesRead - 1 - backtrack] != '\n') {
+                        backtrack++;
+                    }
+                    queue.put(Arrays.copyOf(chunk, bytesRead - backtrack));
+                    position += bytesRead - backtrack;
+                }
+            }
+            return null;
+        });
+
+        List<Future<Void>> processorFutures = new ArrayList<>();
+        for (int i = 0; i < Runtime.getRuntime().availableProcessors() - 1; i++) {
+            processorFutures.add(executor.submit(() -> {
+                while (true) {
+                    byte[] chunk = queue.take();
+                    if (chunk.length == 0) {
+                        break;
+                    }
+                    processChunk(chunk, cityStatsMap);
+                }
+                return null;
+            }));
+        }
+
+        readerFuture.get();
+
+        for (int i = 0; i < Runtime.getRuntime().availableProcessors() - 1; i++) {
+            queue.put(new byte[0]);
+        }
+
+        for (Future<Void> future : processorFutures) {
+            future.get();
+        }
+
+        executor.shutdown();
+
+        StringJoiner result = new StringJoiner(", ", "{", "}");
+        synchronized (cityStatsMap) {
             cityStatsMap.entrySet().stream()
                     .sorted(Map.Entry.comparingByKey())
                     .forEach(entry -> result.add(entry.getKey() + "="
                             + String.format("%.1f", entry.getValue().getMin()) + "/"
-                            + String.format("%.1f", entry.getValue().getMax()) + "/"
-                            + String.format("%.1f", entry.getValue().getAverage())));
-
-            System.out.println(result.toString());
+                            + String.format("%.1f", entry.getValue().getAverage()) + "/"
+                            + String.format("%.1f", entry.getValue().getMax())));
         }
+    
+        System.out.println(result.toString());
+        executor.shutdownNow();
+        System.exit(0);
     }
 
-    private static String[] splitSemicolon(String line) {
-        String[] parts = new String[2];
-        int semicolonIndex = line.indexOf(';');
-        parts[0] = line.substring(0, semicolonIndex).trim();
-        parts[1] = line.substring(semicolonIndex + 1).trim();
-        return parts;
+    private static byte[] leftover;
+    private static ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+
+    private static Future<Void> processChunk(byte[] chunk, Map<String, DoubleSummaryStatistics> cityStatsMap) {
+        return executor.submit(() -> {
+            byte[] bytes;
+            synchronized (CalculateAverage_dalogax.class) {
+                bytes = Arrays.copyOf(chunk, chunk.length);
+                if (leftover != null) {
+                    byte[] combined = new byte[leftover.length + bytes.length];
+                    System.arraycopy(leftover, 0, combined, 0, leftover.length);
+                    System.arraycopy(bytes, 0, combined, leftover.length, bytes.length);
+                    bytes = combined;
+                    leftover = null;
+                }
+            }
+            int start = 0;
+            for (int end = 0; end < bytes.length; end++) {
+                if (bytes[end] == '\n') {
+                    String line = new String(bytes, start, end - start);
+                    processLine(line, cityStatsMap);
+                    start = end + 1;
+                }
+            }
+            if (start < bytes.length) {
+                leftover = new byte[bytes.length - start];
+                System.arraycopy(bytes, start, leftover, 0, bytes.length - start);
+            }
+            return null;
+        });
+    }
+
+    private static void processLine(String line, Map<String, DoubleSummaryStatistics> cityStatsMap) {
+        int index = line.lastIndexOf(';');
+        if (index != -1) {
+            String city = line.substring(0, index);
+            double value = Double.parseDouble(line.substring(index + 1));
+            synchronized (cityStatsMap) {
+                cityStatsMap.computeIfAbsent(city, k -> new DoubleSummaryStatistics())
+                        .accept(value);
+            }
+        }
     }
 }
