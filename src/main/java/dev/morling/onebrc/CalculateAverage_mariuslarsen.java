@@ -34,22 +34,14 @@ public class CalculateAverage_mariuslarsen {
     private static final int MAX_LINE_WIDTH = 108;
 
     public static void main(String[] args) throws IOException {
-        Path path = Path.of("./measurements.txt");
-
-        if (args.length > 0) {
-            path = Path.of(args[0]);
-        }
-        readMeasurements(path);
-    }
-
-    private static void readMeasurements(Path path) {
-        try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
+        try (FileChannel channel = FileChannel.open(Path.of("./measurements.txt"), StandardOpenOption.READ)) {
             Map<String, Stats> res = createBuffers(channel).parallelStream()
                     .map(CalculateAverage_mariuslarsen::parseBuffer)
                     .flatMap(Collection::stream)
                     .collect(Collectors.toMap(s -> new String(s.city), Function.identity(), Stats::join, TreeMap::new));
             System.out.println(res);
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
@@ -59,7 +51,8 @@ public class CalculateAverage_mariuslarsen {
         long blockSize;
         if (N_THREADS * MIN_BLOCK_SIZE > channelSize) {
             blockSize = MIN_BLOCK_SIZE;
-        } else {
+        }
+        else {
             long wantedBlockSize = Math.ceilDiv(channelSize, N_THREADS) + MAX_LINE_WIDTH;
             blockSize = Math.min(Integer.MAX_VALUE, wantedBlockSize);
         }
@@ -104,7 +97,8 @@ public class CalculateAverage_mariuslarsen {
             while ((current = buffer.get()) != NEWLINE) {
                 if (current == '-') {
                     negative = -1;
-                } else if (current != '.') {
+                }
+                else if (current != '.') {
                     temperature = temperature * 10 + current - '0';
                 }
             }
