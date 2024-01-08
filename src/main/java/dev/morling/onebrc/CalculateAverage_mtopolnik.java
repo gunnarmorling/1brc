@@ -199,26 +199,6 @@ public class CalculateAverage_mtopolnik {
             }
         }
 
-        private static boolean strcmp(long addr1, long addr2, long len) {
-            int i = 0;
-            for (; i <= len - Long.BYTES; i += Long.BYTES) {
-                if (UNSAFE.getLong(addr1 + i) != UNSAFE.getLong(addr2 + i)) {
-                    return false;
-                }
-            }
-            for (; i <= len - Integer.BYTES; i += Integer.BYTES) {
-                if (UNSAFE.getInt(addr1 + i) != UNSAFE.getInt(addr2 + i)) {
-                    return false;
-                }
-            }
-            for (; i < len; i++) {
-                if (UNSAFE.getByte(addr1 + i) != UNSAFE.getByte(addr2 + i)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
         private int parseTemperatureAndAdvanceCursor(long semicolonPos) {
             long startOffset = semicolonPos + 1;
             if (startOffset <= inputSize - Long.BYTES) {
@@ -390,6 +370,26 @@ public class CalculateAverage_mtopolnik {
             }
             throw new RuntimeException("Semicolon not found");
         }
+    }
+
+    private static boolean strcmp(long addr1, long addr2, long len) {
+        int i = 0;
+        for (; i <= len - Long.BYTES; i += Long.BYTES) {
+            if (UNSAFE.getLong(addr1 + i) != UNSAFE.getLong(addr2 + i)) {
+                return false;
+            }
+        }
+        for (; i <= len - Integer.BYTES; i += Integer.BYTES) {
+            if (UNSAFE.getInt(addr1 + i) != UNSAFE.getInt(addr2 + i)) {
+                return false;
+            }
+        }
+        for (; i < len; i++) {
+            if (UNSAFE.getByte(addr1 + i) != UNSAFE.getByte(addr2 + i)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static long broadcastSemicolon() {
