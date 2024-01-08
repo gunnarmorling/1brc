@@ -95,9 +95,7 @@ public class CalculateAverage_jbachorik {
             while (offset < BUCKET_SIZE && bucket[offset] != null && !equals(bucket[offset].slice, slice)) {
                 offset++;
             }
-            if (offset == BUCKET_SIZE) {
-                throw new RuntimeException("Unable to find a free slot in the bucket");
-            }
+            assert (offset <= BUCKET_SIZE);
             if (bucket[offset] != null) {
                 return bucket[offset].stats;
             }
@@ -126,27 +124,27 @@ public class CalculateAverage_jbachorik {
                     }
                     pos += 8;
                 }
-//                else if (pos > 0) {
-//                    int offset = 4 - remainder;
-//                    int newpos = pos - offset;
-//                    int offsetBits = 8 * offset;
-//                    leftSlice.position(newpos);
-//                    rightSlice.position(newpos);
-//                    int l = leftSlice.getInt() >> offsetBits;
-//                    int r = rightSlice.getInt() >> offsetBits;
-//                    return l == r;
-//                }
-//                else {
-//                    switch (remainder) {
-//                        case 1:
-//                            return leftSlice.get() == rightSlice.get();
-//                        case 2:
-//                            return leftSlice.getShort() == rightSlice.getShort();
-//                        case 3:
-//                            return leftSlice.getShort() == rightSlice.getShort()
-//                                    && leftSlice.get() == rightSlice.get();
-//                    }
-//                }
+                // else if (pos > 0) {
+                // int offset = 4 - remainder;
+                // int newpos = pos - offset;
+                // int offsetBits = 8 * offset;
+                // leftSlice.position(newpos);
+                // rightSlice.position(newpos);
+                // int l = leftSlice.getInt() >> offsetBits;
+                // int r = rightSlice.getInt() >> offsetBits;
+                // return l == r;
+                // }
+                // else {
+                // switch (remainder) {
+                // case 1:
+                // return leftSlice.get() == rightSlice.get();
+                // case 2:
+                // return leftSlice.getShort() == rightSlice.getShort();
+                // case 3:
+                // return leftSlice.getShort() == rightSlice.getShort()
+                // && leftSlice.get() == rightSlice.get();
+                // }
+                // }
                 for (; i < limit; i++) {
                     if (leftSlice.get() != rightSlice.get()) {
                         return false;
@@ -214,8 +212,11 @@ public class CalculateAverage_jbachorik {
         ExecutorService mergerPool = Executors.newSingleThreadExecutor();
         try (FileInputStream fis = new FileInputStream(f)) {
             FileChannel fc = fis.getChannel();
+            if ((fc.size() / workers) < GRANULARITY) {
+                workers = (int) (fc.size() / GRANULARITY) + 1;
+            }
             int chunkSize = (int) Math.min(fc.size() / workers, Integer.MAX_VALUE);
-            chunkSize = (chunkSize / GRANULARITY) * GRANULARITY;
+            chunkSize = ((chunkSize / GRANULARITY) + 1) * GRANULARITY;
             // System.out.println("Chunk size: " + chunkSize);
             for (ByteBuffer bb : mmap(fc, chunkSize)) {
                 workerPool.submit(() -> {
@@ -342,9 +343,7 @@ public class CalculateAverage_jbachorik {
     private static final long dotPattern = compilePattern((byte) ('.' ^ 0x30));
 
     private static short fastParse(ByteBuffer bb, int len, boolean fast) {
-        if (len > 5) {
-            throw new RuntimeException("Unexpected temperature length:" + len);
-        }
+        assert (len <= 5);
         int targetPos = bb.position() + len;
         long word;
         if (!fast) {
@@ -373,9 +372,8 @@ public class CalculateAverage_jbachorik {
         if (negPos == 0) {
             negative = 1;
         }
-        else if (negPos != 8) {
-            throw new RuntimeException("Unexpected temperature format");
-        }
+        assert (negPos == 8);
+
         int dotPos = firstInstance(word, dotPattern);
         if (dotPos == 8 || (dotPos + negative) >= len) {
             multiplier = 10;
@@ -393,7 +391,7 @@ public class CalculateAverage_jbachorik {
     }
 
     private static ByteBuffer[] mmap(FileChannel fc, int splitSize) throws Exception {
-        if (splitSize < 128) {
+        if (fc.size() > splitSize && splitSize < 128) {
             throw new IllegalArgumentException("Split size must be at least 128 bytes");
         }
 
@@ -413,9 +411,7 @@ public class CalculateAverage_jbachorik {
                         break;
                     }
                 }
-                if (adjust == -1) {
-                    throw new Exception("Unable to find new line pattern");
-                }
+                assert (adjust != -1);
                 int size = splitSize - adjust;
                 // System.out.println("===> chunk: " + (fc.size() - remaining) + " - " + (fc.size() - remaining + size - 1));
                 buffers[j] = fc.map(FileChannel.MapMode.READ_ONLY, fc.size() - remaining, size);
