@@ -165,34 +165,50 @@ public class CalculateAverage_eriklumme {
 
             try {
                 MappedByteBuffer buffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, offset, sizeWithOverhead);
+                // Read from buffer in chunks for improved performance
+                byte[] bytes = new byte[(int) (sizeWithOverhead / 6) + 1];
 
                 while (buffer.hasRemaining()) {
-                    b = buffer.get();
-                    if (b == '\n') {
-                        // We have a station to store
-                        if (mode == Mode.READ_VALUE) {
-                            storeStation(map, stationBuffer, stationIndex, valueBuffer, valueIndex);
-                            stationIndex = 0;
-                            valueIndex = 0;
-                        }
-                        mode = Mode.READ_STATION;
-
-                        // We've run past our size, can happen
-                        if (buffer.position() > fileSizePerThread) {
-                            break;
-                        }
-                    }
-                    else if (mode == Mode.UNINITIALIZED) {
-                        // Do-nothing, read more
-                    }
-                    else if (b == ';') {
-                        mode = Mode.READ_VALUE;
-                    }
-                    else if (mode == Mode.READ_STATION) {
-                        stationBuffer[stationIndex++] = b;
+                    long bytesRemaining = sizeWithOverhead - buffer.position();
+                    int bytesOffset, bytesLength;
+                    if (bytesRemaining >= bytes.length) {
+                        bytesOffset = 0;
+                        bytesLength = bytes.length;
                     }
                     else {
-                        valueBuffer[valueIndex++] = b;
+                        bytesOffset = (int) (bytes.length - bytesRemaining);
+                        bytesLength = (int) bytesRemaining;
+                    }
+                    buffer.get(bytes, bytesOffset, bytesLength);
+
+                    for (int i = bytesOffset; i < bytes.length; i++) {
+                        b = bytes[i];
+                        if (b == '\n') {
+                            // We have a station to store
+                            if (mode == Mode.READ_VALUE) {
+                                storeStation(map, stationBuffer, stationIndex, valueBuffer, valueIndex);
+                                stationIndex = 0;
+                                valueIndex = 0;
+                            }
+                            mode = Mode.READ_STATION;
+
+                            // We've run past our size, can happen
+                            if (buffer.position() - bytes.length + i > fileSizePerThread) {
+                                break;
+                            }
+                        }
+                        else if (mode == Mode.UNINITIALIZED) {
+                            // Do-nothing, read more
+                        }
+                        else if (b == ';') {
+                            mode = Mode.READ_VALUE;
+                        }
+                        else if (mode == Mode.READ_STATION) {
+                            stationBuffer[stationIndex++] = b;
+                        }
+                        else {
+                            valueBuffer[valueIndex++] = b;
+                        }
                     }
                 }
                 if (mode == Mode.READ_VALUE && valueIndex > 0) {
