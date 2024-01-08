@@ -181,8 +181,10 @@ public class CalculateAverage_mtopolnik {
                 stats.gotoIndex(tableIndex);
                 long foundHash = stats.hash();
                 if (foundHash == hash && stats.nameLen() == nameLen
-                        && namesMem.asSlice(tableIndex * NAME_SLOT_SIZE, nameLen)
-                                .mismatch(inputMem.asSlice(namePos, nameLen)) == -1) {
+                        && strcmp(namesBase + tableIndex * NAME_SLOT_SIZE, inputBase + namePos, nameLen)
+//                        && namesMem.asSlice(tableIndex * NAME_SLOT_SIZE, nameLen)
+//                                .mismatch(inputMem.asSlice(namePos, nameLen)) == -1
+                ) {
                     stats.setSum(stats.sum() + temperature);
                     stats.setCount(stats.count() + 1);
                     stats.setMin((short) Integer.min(stats.min(), temperature));
@@ -202,6 +204,26 @@ public class CalculateAverage_mtopolnik {
                 UNSAFE.copyMemory(inputBase + namePos, namesBase + tableIndex * NAME_SLOT_SIZE, nameLen);
                 return;
             }
+        }
+
+        private static boolean strcmp(long addr1, long addr2, long len) {
+            int i = 0;
+            for (; i <= len - Long.BYTES; i += Long.BYTES) {
+                if (UNSAFE.getLong(addr1 + i) != UNSAFE.getLong(addr2 + i)) {
+                    return false;
+                }
+            }
+            for (; i <= len - Integer.BYTES; i += Integer.BYTES) {
+                if (UNSAFE.getInt(addr1 + i) != UNSAFE.getInt(addr2 + i)) {
+                    return false;
+                }
+            }
+            for (; i < len; i++) {
+                if (UNSAFE.getByte(addr1 + i) != UNSAFE.getByte(addr2 + i)) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         private int parseTemperatureAndAdvanceCursor(long semicolonPos) {
