@@ -128,6 +128,10 @@ public class CalculateAverage_mtopolnik {
         private MemorySegment namesMem;
         private MemorySegment hashBuf;
         private StatsAccessor stats;
+        private long inputBase;
+        private long inputSize;
+        private long hashBufBase;
+        private long namesBase;
         private long cursor;
 
         ChunkProcessor(RandomAccessFile raf, long chunkStart, long chunkLimit, StationStats[][] results, int myIndex) {
@@ -142,11 +146,15 @@ public class CalculateAverage_mtopolnik {
         public void run() {
             try (Arena confinedArena = Arena.ofConfined()) {
                 inputMem = raf.getChannel().map(MapMode.READ_ONLY, chunkStart, chunkLimit - chunkStart, confinedArena);
+                inputBase = inputMem.address();
+                inputSize = inputMem.byteSize();
                 MemorySegment statsMem = confinedArena.allocate(STATS_TABLE_SIZE * StatsAccessor.SIZEOF, Long.BYTES);
                 stats = new StatsAccessor(statsMem);
                 namesMem = confinedArena.allocate(STATS_TABLE_SIZE * NAME_SLOT_SIZE, Long.BYTES);
+                namesBase = namesMem.address();
                 namesMem.fill((byte) 0);
                 hashBuf = confinedArena.allocate(HASHBUF_SIZE);
+                hashBufBase = hashBuf.address();
                 processChunk();
                 exportResults();
             }
@@ -157,17 +165,18 @@ public class CalculateAverage_mtopolnik {
 
         private void processChunk() {
             while (cursor < inputMem.byteSize()) {
-                long semicolonPos = bytePosOfSemicolon(inputMem, cursor);
-                final long hash = hash(inputMem, cursor, semicolonPos);
+                long semicolonPos = bytePosOfSemicolon(cursor);
+                final long hash = hash(cursor, semicolonPos);
                 long nameLen = semicolonPos - cursor;
                 assert nameLen <= 100 : "nameLen > 100";
-                MemorySegment nameSlice = inputMem.asSlice(cursor, nameLen);
+                final long namePos = cursor;
                 int temperature = parseTemperatureAndAdvanceCursor(semicolonPos);
-                updateStats(hash, nameLen, temperature, nameSlice);
+                updateStats(hash, nameLen, temperature, namePos);
             }
         }
 
-        private void updateStats(long hash, long nameLen, int temperature, MemorySegment nameSlice) {
+        private void updateStats(long hash, long nameLen, int temperature, long namePos) {
+            MemorySegment nameSlice = inputMem.asSlice(namePos, nameLen);
             int tableIndex = (int) (hash % STATS_TABLE_SIZE);
             while (true) {
                 stats.gotoIndex(tableIndex);
@@ -190,23 +199,24 @@ public class CalculateAverage_mtopolnik {
                 stats.setCount(1);
                 stats.setMin((short) temperature);
                 stats.setMax((short) temperature);
-                var nameBlock = namesMem.asSlice(tableIndex * NAME_SLOT_SIZE, NAME_SLOT_SIZE);
-                nameBlock.copyFrom(nameSlice);
+                // var nameBlock = namesMem.asSlice(tableIndex * NAME_SLOT_SIZE, NAME_SLOT_SIZE);
+                // nameBlock.copyFrom(nameSlice);
+                UNSAFE.copyMemory(inputBase + namePos, namesBase + tableIndex * NAME_SLOT_SIZE, nameLen);
                 return;
             }
         }
 
         private int parseTemperatureAndAdvanceCursor(long semicolonPos) {
-            long start = semicolonPos + 1;
-            if (start <= inputMem.byteSize() - Long.BYTES) {
-                return parseTemperatureSwarAndAdvanceCursor(start);
+            long startOffset = semicolonPos + 1;
+            if (startOffset <= inputMem.byteSize() - Long.BYTES) {
+                return parseTemperatureSwarAndAdvanceCursor(startOffset);
             }
-            return parseTemperatureSimpleAndAdvanceCursor(start);
+            return parseTemperatureSimpleAndAdvanceCursor(startOffset);
         }
 
         // Credit: merykitty
-        private int parseTemperatureSwarAndAdvanceCursor(long start) {
-            long word = UNSAFE.getLong(inputMem.address() + start);
+        private int parseTemperatureSwarAndAdvanceCursor(long startOffset) {
+            long word = UNSAFE.getLong(inputBase + startOffset);
             if (ORDER_IS_BIG_ENDIAN) {
                 word = Long.reverseBytes(word);
             }
@@ -217,18 +227,18 @@ public class CalculateAverage_mtopolnik {
             final long digits = ((word & removeSignMask) << (28 - dotPos)) & 0x0F000F0F00L;
             final long absValue = ((digits * 0x640a0001) >>> 32) & 0x3FF;
             final int temperature = (int) ((absValue ^ signed) - signed);
-            cursor = start + (dotPos / 8) + 3;
+            cursor = startOffset + (dotPos / 8) + 3;
             return temperature;
         }
 
-        private int parseTemperatureSimpleAndAdvanceCursor(long start) {
+        private int parseTemperatureSimpleAndAdvanceCursor(long startOffset) {
             final byte minus = (byte) '-';
             final byte zero = (byte) '0';
             final byte dot = (byte) '.';
 
             // Temperature plus the following newline is at least 4 chars, so this is always safe:
-            int fourCh = UNSAFE.getInt(inputMem.address() + start);
-            // int fourCh = inputMem.get(JAVA_INT_UNALIGNED, start);
+            int fourCh = UNSAFE.getInt(inputBase + startOffset);
+            // int fourCh = inputMem.get(JAVA_INT_UNALIGNED, startOffset);
             if (ORDER_IS_BIG_ENDIAN) {
                 fourCh = Integer.reverseBytes(fourCh);
             }
@@ -257,23 +267,23 @@ public class CalculateAverage_mtopolnik {
                 shift += 16;
                 // The last character may be past the four loaded bytes, load it from memory.
                 // Checking that with another `if` is self-defeating for performance.
-                ch = UNSAFE.getByte(inputMem.address() + start + (shift / 8));
-                // ch = inputMem.get(JAVA_BYTE, start + (shift / 8));
+                ch = UNSAFE.getByte(inputBase + startOffset + (shift / 8));
+                // ch = inputMem.get(JAVA_BYTE, startOffset + (shift / 8));
             }
             temperature = 10 * temperature + (ch - zero);
             // `shift` holds the number of bits in the temperature field.
             // A newline character follows the temperature, and so we advance
             // the cursor past the newline to the start of the next line.
-            cursor = start + (shift / 8) + 2;
+            cursor = startOffset + (shift / 8) + 2;
             return sign * temperature;
         }
 
-        private long hash(MemorySegment inputMem, long start, long limit) {
-            UNSAFE.putLong(hashBuf.address(), 0); // hashBuf.set(JAVA_LONG, 0, 0);
+        private long hash(long startOffset, long limit) {
+            UNSAFE.putLong(hashBufBase, 0); // hashBuf.set(JAVA_LONG, 0, 0);
             // UNSAFE.putLong(hashBuf.address() + 8, 0); // hashBuf.set(JAVA_LONG, 8, 0);
-            UNSAFE.copyMemory(inputMem.address() + start, hashBuf.address(), Long.min(HASHBUF_SIZE, limit - start));
-            // hashBuf.copyFrom(inputMem.asSlice(start, Long.min(HASHBUF_SIZE, limit - start)));
-            long n1 = UNSAFE.getLong(hashBuf.address()); // long n1 = hashBuf.get(JAVA_LONG, 0);
+            UNSAFE.copyMemory(inputBase + startOffset, hashBufBase, Long.min(HASHBUF_SIZE, limit - startOffset));
+            // hashBuf.copyFrom(inputMem.asSlice(startOffset, Long.min(HASHBUF_SIZE, limit - startOffset)));
+            long n1 = UNSAFE.getLong(hashBufBase); // long n1 = hashBuf.get(JAVA_LONG, 0);
             // long n2 = hashBuf.get(JAVA_LONG, 8);
             long seed = 0x51_7c_c1_b7_27_22_0a_95L;
             int rotDist = 19;
@@ -309,46 +319,51 @@ public class CalculateAverage_mtopolnik {
             }
             results[myIndex] = exportedStats.toArray(new StationStats[0]);
         }
-    }
 
-    static long bytePosOfSemicolon(MemorySegment haystack, long start) {
-        return !ORDER_IS_BIG_ENDIAN
-                ? bytePosLittleEndian(haystack, start)
-                : bytePosBigEndian(haystack, start);
-    }
-
-    // Adapted from https://jameshfisher.com/2017/01/24/bitwise-check-for-zero-byte/
-    // and https://github.com/ashvardanian/StringZilla/blob/14e7a78edcc16b031c06b375aac1f66d8f19d45a/stringzilla/stringzilla.h#L139-L169
-    static long bytePosLittleEndian(MemorySegment haystack, long start) {
-        long limit = haystack.byteSize() - Long.BYTES + 1;
-        long offset = start;
-        long base = haystack.address();
-        for (; offset < limit; offset += Long.BYTES) {
-            var block = UNSAFE.getLong(base + offset); // haystack.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
-            final long diff = block ^ BROADCAST_SEMICOLON;
-            long matchIndicators = (diff - 0x0101010101010101L) & ~diff & 0x8080808080808080L;
-            if (matchIndicators != 0) {
-                return offset + Long.numberOfTrailingZeros(matchIndicators) / 8;
-            }
+        long bytePosOfSemicolon(long offset) {
+            return !ORDER_IS_BIG_ENDIAN
+                    ? bytePosLittleEndian(offset)
+                    : bytePosBigEndian(offset);
         }
-        return simpleSearch(haystack, offset);
-    }
 
-    // Adapted from https://richardstartin.github.io/posts/finding-bytes
-    static long bytePosBigEndian(MemorySegment haystack, long start) {
-        long limit = haystack.byteSize() - Long.BYTES + 1;
-        long offset = start;
-        long base = haystack.address();
-        for (; offset < limit; offset += Long.BYTES) {
-            var block = UNSAFE.getLong(base + offset); // haystack.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
-            final long diff = block ^ BROADCAST_SEMICOLON;
-            long matchIndicators = (diff & 0x7F7F7F7F7F7F7F7FL) + 0x7F7F7F7F7F7F7F7FL;
-            matchIndicators = ~(matchIndicators | diff | 0x7F7F7F7F7F7F7F7FL);
-            if (matchIndicators != 0) {
-                return offset + Long.numberOfLeadingZeros(matchIndicators) / 8;
+        // Adapted from https://jameshfisher.com/2017/01/24/bitwise-check-for-zero-byte/
+        // and https://github.com/ashvardanian/StringZilla/blob/14e7a78edcc16b031c06b375aac1f66d8f19d45a/stringzilla/stringzilla.h#L139-L169
+        long bytePosLittleEndian(long offset) {
+            final long limit = inputSize - Long.BYTES + 1;
+            for (; offset < limit; offset += Long.BYTES) {
+                var block = UNSAFE.getLong(inputBase + offset); // haystack.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+                final long diff = block ^ BROADCAST_SEMICOLON;
+                long matchIndicators = (diff - 0x0101010101010101L) & ~diff & 0x8080808080808080L;
+                if (matchIndicators != 0) {
+                    return offset + Long.numberOfTrailingZeros(matchIndicators) / 8;
+                }
             }
+            return simpleSearch(offset);
         }
-        return simpleSearch(haystack, offset);
+
+        // Adapted from https://richardstartin.github.io/posts/finding-bytes
+        long bytePosBigEndian(long offset) {
+            final long limit = inputSize - Long.BYTES + 1;
+            for (; offset < limit; offset += Long.BYTES) {
+                var block = UNSAFE.getLong(inputBase + offset); // haystack.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+                final long diff = block ^ BROADCAST_SEMICOLON;
+                long matchIndicators = (diff & 0x7F7F7F7F7F7F7F7FL) + 0x7F7F7F7F7F7F7F7FL;
+                matchIndicators = ~(matchIndicators | diff | 0x7F7F7F7F7F7F7F7FL);
+                if (matchIndicators != 0) {
+                    return offset + Long.numberOfLeadingZeros(matchIndicators) / 8;
+                }
+            }
+            return simpleSearch(offset);
+        }
+
+        private long simpleSearch(long offset) {
+            for (; offset < inputSize; offset++) {
+                if (UNSAFE.getByte(inputBase + offset) /* haystack.get(JAVA_BYTE, offset) */ == SEMICOLON) {
+                    return offset;
+                }
+            }
+            throw new RuntimeException("Semicolon not found");
+        }
     }
 
     private static long broadcastSemicolon() {
@@ -357,16 +372,6 @@ public class CalculateAverage_mtopolnik {
         nnnnnnnn |= nnnnnnnn << 16;
         nnnnnnnn |= nnnnnnnn << 32;
         return nnnnnnnn;
-    }
-
-    private static long simpleSearch(MemorySegment haystack, long offset) {
-        long base = haystack.address();
-        for (; offset < haystack.byteSize(); offset++) {
-            if (UNSAFE.getByte(base + offset) /* haystack.get(JAVA_BYTE, offset) */ == SEMICOLON) {
-                return offset;
-            }
-        }
-        return -1;
     }
 
     static class StatsAccessor {
