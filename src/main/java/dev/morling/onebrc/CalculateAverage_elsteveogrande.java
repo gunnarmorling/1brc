@@ -33,48 +33,49 @@ public class CalculateAverage_elsteveogrande {
     static final String FILE = "./measurements.txt";
     static final int NPROCS = Runtime.getRuntime().availableProcessors();
 
-    private void run() throws IOException {
+    void initOffsets(long[] offsets, RandomAccessFile file) throws IOException {
+        var size = file.length();
+        for (int i = 1; i < NPROCS; i++) {
+            long offset = (long) (size * ((float) i) / NPROCS);
+            file.seek(offset);
+            // noinspection StatementWithEmptyBody
+            while (file.readByte() != '\n') {
+            }
+            offsets[i] = file.getFilePointer();
+        }
+        offsets[NPROCS] = size;
+    }
+
+    void run(RandomAccessFile file) throws IOException {
+
+        long[] offsets = new long[NPROCS + 1];
+        initOffsets(offsets, file);
+
         Task[] tasks = new Task[NPROCS];
+        for (int i = 0; i < NPROCS; i++) {
+            tasks[i] = new Task(
+                    file.getChannel().map(
+                            FileChannel.MapMode.READ_ONLY,
+                            offsets[i],
+                            offsets[i + 1] - offsets[i]));
+            tasks[i].start();
+        }
 
-        try (var file = new RandomAccessFile(new File(FILE), "r")) {
-            long[] offsets = new long[NPROCS + 1];
-
-            var size = file.length();
-            for (int i = 1; i < NPROCS; i++) {
-                long offset = (long) (size * ((float) i) / NPROCS);
-                file.seek(offset);
-                // noinspection StatementWithEmptyBody
-                while (file.readByte() != '\n') {
+        for (int i = 0; i < NPROCS; i++) {
+            while (true) {
+                try {
+                    tasks[i].join();
+                    break;
                 }
-                offsets[i] = file.getFilePointer();
-            }
-            offsets[NPROCS] = size;
-
-            for (int i = 0; i < NPROCS; i++) {
-                tasks[i] = new Task(
-                        file.getChannel().map(
-                                FileChannel.MapMode.READ_ONLY,
-                                offsets[i],
-                                offsets[i + 1] - offsets[i]));
-                tasks[i].start();
-            }
-
-            for (int i = 0; i < NPROCS; i++) {
-                while (true) {
-                    try {
-                        tasks[i].join();
-                        break;
-                    }
-                    catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    }
+                catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                 }
             }
         }
 
         final SortedMap<String, Station> stationsByName = new TreeMap<>();
         for (var task : tasks) {
-            task.stations.forEach((_, station) -> {
+            task.stations.values().forEach(station -> {
                 var s = stationsByName.computeIfAbsent(station.name, Station::new);
                 s.merge(station);
             });
@@ -84,7 +85,11 @@ public class CalculateAverage_elsteveogrande {
     }
 
     public static void main(String[] args) throws Exception {
-        (new CalculateAverage_elsteveogrande()).run();
+        // while (true) {
+        try (var file = new RandomAccessFile(new File(FILE), "r")) {
+            (new CalculateAverage_elsteveogrande()).run(file);
+        }
+        // }
     }
 }
 
@@ -176,16 +181,19 @@ class Task extends Thread {
             }
 
             // Find (possibly create) this station.
-            // (Avoid creating a String unless needed.)
-            final var ns = nameSize;
-            var station = stations.computeIfAbsent(
-                    Util.key(nameBytes, nameSize),
-                    _ -> new Station(new String(nameBytes, 0, ns)));
+            var station = getStation(nameBytes, nameSize);
 
             // Parse temperature reading, and update station's stats
             var temp = Util.parseFloatDot1(tempBytes);
             station.update(temp);
         }
+    }
+
+    Station getStation(byte[] nameBytes, int nameSize) {
+        // (Avoid creating a String unless needed.)
+        return stations.computeIfAbsent(
+                Util.key(nameBytes, nameSize),
+                _ -> new Station(new String(nameBytes, 0, nameSize)));
     }
 }
 
@@ -210,7 +218,7 @@ final class Util {
             b = bytes[i++];
             ret = (59L * ret) + b;
         }
-        return ret;
+        return ret & 0xfffffL;
     }
 
     /**
