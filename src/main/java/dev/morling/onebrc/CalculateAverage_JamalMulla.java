@@ -118,7 +118,7 @@ public class CalculateAverage_JamalMulla {
             final long cl = chunk.start + chunk.length;
             while (i < cl) {
                 byte c;
-                while ((c = UNSAFE.getByte(i++)) != 0x3B) {
+                while ((c = UNSAFE.getByte(i++)) != 0x3B /* semi-colon */) {
                     nameBytes[nameIndex++] = c;
                     hash ^= c;
                     hash *= 0x01000193;
@@ -156,7 +156,7 @@ public class CalculateAverage_JamalMulla {
                 }
 
                 i++;// nl
-                hash = ((hash >> 16) ^ hash) & 65535;
+                hash &= 65535;
                 results.putOrMerge(nameBytes, nameIndex, hash, ot);
                 // reset
                 nameIndex = 0;
@@ -215,19 +215,23 @@ public class CalculateAverage_JamalMulla {
 
         public void putOrMerge(final byte[] key, final short length, final int hash, final int temp) {
             int slot = hash;
-            ResultRow slotValue = slots[slot];
-            // found existing so update
-            if (slotValue != null && keys[slot].length == length && unsafeEquals(keys[slot], key, length)) {
+            ResultRow slotValue;
+
+            // Linear probe for open slot
+            while ((slotValue = slots[slot]) != null && (keys[slot].length != length || !unsafeEquals(keys[slot], key, length))) {
+                slot++;
+            }
+
+            // existing
+            if (slotValue != null) {
                 slotValue.min = Math.min(slotValue.min, temp);
                 slotValue.max = Math.max(slotValue.max, temp);
                 slotValue.sum += temp;
                 slotValue.count++;
                 return;
             }
-            // Linear probe for open slot
-            while (slotValue != null && (keys[slot].length != length || !unsafeEquals(keys[slot], key, length))) {
-                slotValue = slots[++slot];
-            }
+
+            // new value
             slots[slot] = new ResultRow(temp);
             byte[] bytes = new byte[length];
             System.arraycopy(key, 0, bytes, 0, length);
