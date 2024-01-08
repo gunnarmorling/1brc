@@ -115,7 +115,7 @@ public class CalculateAverage_yavuztas {
         static final int BITMASK = SIZE - 1;
         Record[] keys = new Record[SIZE];
 
-        private int hashBucket(int hash) {
+        int hashBucket(int hash) {
             hash = hash ^ (hash >>> 16); // naive bit spreading but greatly decreases collision
             return hash & BITMASK; // fast modulo, to find bucket
         }
@@ -129,10 +129,12 @@ public class CalculateAverage_yavuztas {
                 return;
             }
 
-            if (!existing.equals(key)) {
-                // collision, linear probing to find a slot
-                while ((existing = this.keys[++bucket]) != null && !existing.equals(key)) {
-                    // no-op
+            if (!existing.equals(key)) { // collision
+                // linear probing to find a slot
+                while ((existing = this.keys[++bucket & BITMASK]) != null && !existing.equals(key)) {
+                    // can be stuck here if all the buckets are full :(
+                    // However, since the data set is max 10K (unique keys) this shouldn't happen
+                    // So, I'm happily leave here branchless :)
                 }
                 if (existing == null) {
                     this.keys[bucket] = key;
@@ -154,10 +156,12 @@ public class CalculateAverage_yavuztas {
                 return;
             }
 
-            if (!existing.equals(key)) {
-                // collision, linear probing to find a slot
-                while ((existing = this.keys[++bucket]) != null && !existing.equals(key)) {
-                    // no-op
+            if (!existing.equals(key)) { // collision
+                // linear probing to find a slot
+                while ((existing = this.keys[++bucket & BITMASK]) != null && !existing.equals(key)) {
+                    // can be stuck here if all the buckets are full :(
+                    // However, since the data set is max 10K (unique keys) this shouldn't happen
+                    // So, I'm happily leave here branchless :)
                 }
                 if (existing == null) {
                     this.keys[bucket] = key;
