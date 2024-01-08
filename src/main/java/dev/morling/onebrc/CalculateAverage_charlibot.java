@@ -33,7 +33,6 @@ import static java.util.stream.Collectors.groupingBy;
 public class CalculateAverage_charlibot {
 
     private static final String FILE = "./measurements.txt";
-    // private static final String FILE = "./smaller.txt";
 
     public static void main(String[] args) throws Exception {
         // withBufferedReaderCustomMap();
@@ -373,23 +372,37 @@ public class CalculateAverage_charlibot {
         }
     }
 
+    // Copied from Roy van Rijn's code
+    // branchless max (unprecise for large numbers, but good enough)
+    static int max(final int a, final int b) {
+        final int diff = a - b;
+        final int dsgn = diff >> 31;
+        return a - (diff & dsgn);
+    }
+
+    // branchless min (unprecise for large numbers, but good enough)
+    static int min(final int a, final int b) {
+        final int diff = a - b;
+        final int dsgn = diff >> 31;
+        return b + (diff & dsgn);
+    }
+
     static class MyMap2 {
 
         final int[][] map;
-        final int capacity = 4096;
+        final int capacity = 16_384; // 2^14. Might need 2^15 = 32768
+
+        final int numIntsToStoreCity = 25; // stores up to 100 characters.
+        int minPos = numIntsToStoreCity;
+        int maxPos = numIntsToStoreCity + 1;
+        int sumPos = numIntsToStoreCity + 2;
+        int countPos = numIntsToStoreCity + 3;
 
         MyMap2() {
-            map = new int[capacity][8 + 4]; // length of string and then the city encoded cast bytes to int. then min, max, sum, count,
+            map = new int[capacity][numIntsToStoreCity + 4]; // length of string and then the city encoded cast bytes to int. then min, max, sum, count,
         }
 
         public void insert(byte[] array, int offset, int length, int value) {
-            // int hashcode = 0;
-            // for (int i = offset; i < offset + length; i++) {
-            // // System.out.printf("i=%d, array[i]=%s, value=%d\n", i, (char) array[i], value);
-            // hashcode = 31 * hashcode + array[i];
-            // }
-            // The below makes it so much worse
-            // hashcode = hashcode >>> 16; // Do the same trick as-in hashmap since we're using power of 2
             int hashcode = hashArraySlice(array, offset, length);
             int index = hashcode & (capacity - 1); // same trick as in hashmap. This is the same as (% capacity).
             tryInsert(index, array, offset, length, value);
@@ -399,16 +412,6 @@ public class CalculateAverage_charlibot {
             // jas[0] is 4 bytes of information.
             // int count = 0;
             outer: while (true) {
-                // if (count > 2) {
-                // System.out.println(Arrays.toString(map[mapIndex]));
-                // System.out.println(Arrays.toString(map[mapIndex-1]));
-                // System.out.println(Arrays.toString(map[mapIndex-2]));
-                // System.out.println(Arrays.toString(map[mapIndex-3]));
-                // System.out.println(Arrays.toString(map[mapIndex-4]));
-                // System.out.println(mapIndex);
-                // System.out.println(new String(array, offset, length, StandardCharsets.UTF_8));
-                // throw new RuntimeException("What is going on!? " + count);
-                // }
                 int[] jas = map[mapIndex];
                 if (jas[0] == 0) {
                     // easy case since no entry - just insert
@@ -424,10 +427,10 @@ public class CalculateAverage_charlibot {
                         jas[jasIndex] = jas[jasIndex] | ((b & 0xFF) << (8 * (i & 3)));
                         i++;
                     }
-                    jas[8] = value;
-                    jas[9] = value;
-                    jas[10] = value;
-                    jas[11] = 1;
+                    jas[minPos] = value;
+                    jas[maxPos] = value;
+                    jas[sumPos] = value;
+                    jas[countPos] = 1;
                     break;
                 }
                 else {
@@ -440,21 +443,15 @@ public class CalculateAverage_charlibot {
                         }
                         byte inJas = (byte) (jas[jasIndex] >>> (8 * (i & 3)));
                         if (b != inJas) {
-                            // System.out.println(b);
-                            // System.out.println(inJas);
-                            // System.out.println(jasIndex);
-                            // System.out.println("We're in here! " + i);
-                            // System.out.println(new String(array, offset, length, StandardCharsets.UTF_8));
                             mapIndex = (mapIndex + 1) & (capacity - 1);
-                            // count++;
                             continue outer;
                         }
                         i++;
                     }
-                    jas[8] = Math.min(value, jas[8]);
-                    jas[9] = Math.max(value, jas[9]);
-                    jas[10] += value;
-                    jas[11] += 1; // Zig would be handy here. Compile time constants of length-1, length-2, etc
+                    jas[minPos] = min(value, jas[minPos]);
+                    jas[maxPos] = max(value, jas[maxPos]);
+                    jas[sumPos] += value;
+                    jas[countPos] += 1; // Zig would be handy here. Compile time constants of length-1, length-2, etc
                     break;
                 }
             }
@@ -465,8 +462,8 @@ public class CalculateAverage_charlibot {
             for (int[] jas : map) {
                 if (jas[0] != 0) {
                     int jasIndex = 0;
-                    byte[] array = new byte[32];
-                    while (jasIndex < 8) {
+                    byte[] array = new byte[numIntsToStoreCity * 4];
+                    while (jasIndex < numIntsToStoreCity) {
                         int tmp = jas[jasIndex];
                         array[jasIndex * 4] = (byte) tmp;
                         array[jasIndex * 4 + 1] = (byte) (tmp >>> 8);
@@ -483,10 +480,10 @@ public class CalculateAverage_charlibot {
                     }
                     String city = new String(array, 0, length, StandardCharsets.UTF_8);
                     Measurement m = new Measurement(0);
-                    m.min = jas[8];
-                    m.max = jas[9];
-                    m.sum = jas[10];
-                    m.count = jas[11];
+                    m.min = jas[minPos];
+                    m.max = jas[maxPos];
+                    m.sum = jas[sumPos];
+                    m.count = jas[countPos];
                     hashMap.put(city, m);
                 }
             }
@@ -532,7 +529,7 @@ public class CalculateAverage_charlibot {
     }
 
     public static void checkCities() throws IOException {
-        Path path = Paths.get("./cities.txt");
+        Path path = Paths.get("./cities.out");
         var lines = Files.newBufferedReader(path);
         String line;
         Map<Integer, Integer> hashes = new HashMap<>();
@@ -565,7 +562,7 @@ public class CalculateAverage_charlibot {
     }
 
     public static void checkCities2() throws IOException {
-        Path path = Paths.get("./cities.txt");
+        Path path = Paths.get("./cities.out");
         var lines = Files.newBufferedReader(path);
         String line;
         MyMap2 myMap2 = new MyMap2();
@@ -1187,7 +1184,7 @@ public class CalculateAverage_charlibot {
                 long seekPoint = startPositions[processIdx];
                 long bytesToRead = startPositions[processIdx + 1] - startPositions[processIdx];
                 int finalProcessIdx = processIdx;
-                Future<MyMap2> future = executorService.submit(() -> {
+                Future<HashMap<String, Measurement>> future = executorService.submit(() -> {
                     MyMap2 measurements = new MyMap2();
                     int lineCount = 0;
                     try (FileInputStream fis = new FileInputStream(FILE)) {
@@ -1206,7 +1203,7 @@ public class CalculateAverage_charlibot {
                                 // we have read everything we intend to and there is no city in the buffer to finish processing
                                 System.out.printf("Read everything intend to. Process=%d, totalBytesRead=%d, bytesToRead=%d\n", finalProcessIdx, totalBytesRead,
                                         bytesToRead);
-                                return measurements;
+                                return measurements.toMap();
                             }
                             int i = 0;
                             int cityIndexStart = 0;
@@ -1218,7 +1215,7 @@ public class CalculateAverage_charlibot {
                                     // we have read everything we intend to for this chunk
                                     System.out.printf("ooRead everything intend to inner loop. Process=%d, totalBytesRead=%d, bytesToRead=%d\n", finalProcessIdx,
                                             totalBytesRead, bytesToRead);
-                                    return measurements;
+                                    return measurements.toMap();
                                 }
                                 if (buffer[i] == ';') {
                                     cityLength = i - cityIndexStart;
@@ -1267,7 +1264,7 @@ public class CalculateAverage_charlibot {
                                                 totalBytesRead, bytesToRead);
                                         System.out.printf("More info for %d. cityIndexStart=%d, cityLength=%d, value=%d, lineCount=%d, city=%s\n", finalProcessIdx,
                                                 cityIndexStart, cityLength, value, lineCount, new String(buffer, cityIndexStart, cityLength, StandardCharsets.UTF_8));
-                                        return measurements;
+                                        return measurements.toMap();
                                     }
                                     cityIndexStart = i + 1;
                                     value = 0;
@@ -1281,14 +1278,14 @@ public class CalculateAverage_charlibot {
                         }
                     }
                     System.out.println("Returning from here " + finalProcessIdx);
-                    return measurements;
+                    return measurements.toMap();
                 });
                 results[processIdx] = future;
             }
 
             final HashMap<String, Measurement> measurements = new HashMap<>();
             for (Future f : results) {
-                HashMap<String, Measurement> m = ((MyMap2) f.get()).toMap();
+                HashMap<String, Measurement> m = (HashMap<String, Measurement>) f.get();
                 m.forEach((city, measurement) -> {
                     measurements.merge(city, measurement, (oldValue, newValue) -> {
                         Measurement mmm = new Measurement(0);
