@@ -15,20 +15,21 @@
  */
 package dev.morling.onebrc;
 
+import sun.misc.Unsafe;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.lang.reflect.Field;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel.MapMode;
 import java.util.ArrayList;
 import java.util.TreeMap;
 
-import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
-import static java.lang.foreign.ValueLayout.JAVA_INT_UNALIGNED;
 import static java.lang.foreign.ValueLayout.JAVA_LONG;
 import static java.lang.foreign.ValueLayout.JAVA_SHORT;
 
@@ -37,14 +38,26 @@ import static java.lang.foreign.ValueLayout.JAVA_SHORT;
 // short hash: real	0m11.241s user	0m36.534s sys	0m9.700s
 
 public class CalculateAverage_mtopolnik {
-    public static final int MAX_NAME_LEN = 100;
-    public static final int NAME_SLOT_SIZE = 104;
+    private static final Unsafe UNSAFE = unsafe();
+    private static final int MAX_NAME_LEN = 100;
+    private static final int NAME_SLOT_SIZE = 104;
     private static final int STATS_TABLE_SIZE = 1 << 16;
     private static final long NATIVE_MEM_PER_THREAD = (NAME_SLOT_SIZE + StatsAccessor.SIZEOF) * STATS_TABLE_SIZE;
     private static final long NATIVE_MEM_ON_8_THREADS = 8 * NATIVE_MEM_PER_THREAD;
-    public static final String MEASUREMENTS_TXT = "measurements.txt";
+    private static final String MEASUREMENTS_TXT = "measurements.txt";
     private static final byte SEMICOLON = (byte) ';';
     private static final long BROADCAST_SEMICOLON = broadcastSemicolon();
+
+    private static Unsafe unsafe() {
+        try {
+            Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
+            theUnsafe.setAccessible(true);
+            return (Unsafe) theUnsafe.get(Unsafe.class);
+        }
+        catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     static class StationStats {
         String name;
@@ -194,7 +207,8 @@ public class CalculateAverage_mtopolnik {
 
             long start = semicolonPos + 1;
             // Temperature plus the following newline is at least 4 chars, so this is always safe:
-            int fourCh = inputMem.get(JAVA_INT_UNALIGNED, start);
+            int fourCh = UNSAFE.getInt(inputMem.address() + start);
+            // int fourCh = inputMem.get(JAVA_INT_UNALIGNED, start);
             if (ByteOrder.nativeOrder() == ByteOrder.BIG_ENDIAN) {
                 fourCh = Integer.reverseBytes(fourCh);
             }
@@ -223,7 +237,8 @@ public class CalculateAverage_mtopolnik {
                 shift += 16;
                 // The last character may be past the four loaded bytes, load it from memory.
                 // Checking that with another `if` is self-defeating for performance.
-                ch = inputMem.get(JAVA_BYTE, start + (shift / 8));
+                ch = UNSAFE.getByte(inputMem.address() + start + (shift / 8));
+                // ch = inputMem.get(JAVA_BYTE, start + (shift / 8));
             }
             temperature = 10 * temperature + (ch - zero);
             // `shift` holds the number of bits in the temperature field.
@@ -234,10 +249,11 @@ public class CalculateAverage_mtopolnik {
         }
 
         private long hash(MemorySegment inputMem, long start, long limit) {
-            hashBuf.set(JAVA_LONG, 0, 0);
-            // hashBuf.set(JAVA_LONG, 8, 0);
-            hashBuf.copyFrom(inputMem.asSlice(start, Long.min(HASHBUF_SIZE, limit - start)));
-            long n1 = hashBuf.get(JAVA_LONG, 0);
+            UNSAFE.putLong(hashBuf.address(), 0); // hashBuf.set(JAVA_LONG, 0, 0);
+            // UNSAFE.putLong(hashBuf.address() + 8, 0); // hashBuf.set(JAVA_LONG, 8, 0);
+            UNSAFE.copyMemory(inputMem.address() + start, hashBuf.address(), Long.min(HASHBUF_SIZE, limit - start));
+            // hashBuf.copyFrom(inputMem.asSlice(start, Long.min(HASHBUF_SIZE, limit - start)));
+            long n1 = UNSAFE.getLong(hashBuf.address()); // long n1 = hashBuf.get(JAVA_LONG, 0);
             // long n2 = hashBuf.get(JAVA_LONG, 8);
             long seed = 0x51_7c_c1_b7_27_22_0a_95L;
             int rotDist = 19;
@@ -286,8 +302,9 @@ public class CalculateAverage_mtopolnik {
     static long bytePosLittleEndian(MemorySegment haystack, long start) {
         long limit = haystack.byteSize() - Long.BYTES + 1;
         long offset = start;
+        long base = haystack.address();
         for (; offset < limit; offset += Long.BYTES) {
-            var block = haystack.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+            var block = UNSAFE.getLong(base + offset); // haystack.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
             final long diff = block ^ BROADCAST_SEMICOLON;
             long matchIndicators = (diff - 0x0101010101010101L) & ~diff & 0x8080808080808080L;
             if (matchIndicators != 0) {
@@ -301,8 +318,9 @@ public class CalculateAverage_mtopolnik {
     static long bytePosBigEndian(MemorySegment haystack, long start) {
         long limit = haystack.byteSize() - Long.BYTES + 1;
         long offset = start;
+        long base = haystack.address();
         for (; offset < limit; offset += Long.BYTES) {
-            var block = haystack.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+            var block = UNSAFE.getLong(base + offset); // haystack.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
             final long diff = block ^ BROADCAST_SEMICOLON;
             long matchIndicators = (diff & 0x7F7F7F7F7F7F7F7FL) + 0x7F7F7F7F7F7F7F7FL;
             matchIndicators = ~(matchIndicators | diff | 0x7F7F7F7F7F7F7F7FL);
@@ -322,8 +340,9 @@ public class CalculateAverage_mtopolnik {
     }
 
     private static long simpleSearch(MemorySegment haystack, long offset) {
+        long base = haystack.address();
         for (; offset < haystack.byteSize(); offset++) {
-            if (haystack.get(JAVA_BYTE, offset) == SEMICOLON) {
+            if (UNSAFE.getByte(base + offset) /* haystack.get(JAVA_BYTE, offset) */ == SEMICOLON) {
                 return offset;
             }
         }
@@ -339,63 +358,64 @@ public class CalculateAverage_mtopolnik {
         static final long MAX_OFFSET = MIN_OFFSET + Short.BYTES;
         static final long SIZEOF = (MAX_OFFSET + Short.BYTES - 1) / 8 * 8 + 8;
 
-        private final MemorySegment memSeg;
-        private long base;
+        // private final MemorySegment memSeg;
+        private final long address;
+        private long slotBase;
 
         StatsAccessor(MemorySegment memSeg) {
-            this.memSeg = memSeg;
+            this.address = memSeg.address();
         }
 
         void gotoIndex(int index) {
-            base = index * SIZEOF;
+            slotBase = address + index * SIZEOF;
         }
 
         long hash() {
-            return memSeg.get(JAVA_LONG, base + HASH_OFFSET);
+            return UNSAFE.getLong(slotBase + HASH_OFFSET);
         }
 
         int nameLen() {
-            return memSeg.get(JAVA_INT, base + NAMELEN_OFFSET);
+            return UNSAFE.getInt(slotBase + NAMELEN_OFFSET);
         }
 
         int sum() {
-            return memSeg.get(JAVA_INT, base + SUM_OFFSET);
+            return UNSAFE.getInt(slotBase + SUM_OFFSET);
         }
 
         int count() {
-            return memSeg.get(JAVA_INT, base + COUNT_OFFSET);
+            return UNSAFE.getInt(slotBase + COUNT_OFFSET);
         }
 
         short min() {
-            return memSeg.get(JAVA_SHORT, base + MIN_OFFSET);
+            return UNSAFE.getShort(slotBase + MIN_OFFSET);
         }
 
         short max() {
-            return memSeg.get(JAVA_SHORT, base + MAX_OFFSET);
+            return UNSAFE.getShort(slotBase + MAX_OFFSET);
         }
 
         void setHash(long hash) {
-            memSeg.set(JAVA_LONG, base + HASH_OFFSET, hash);
+            UNSAFE.putLong(slotBase + HASH_OFFSET, hash);
         }
 
         void setNameLen(int nameLen) {
-            memSeg.set(JAVA_INT, base + NAMELEN_OFFSET, nameLen);
+            UNSAFE.putInt(slotBase + NAMELEN_OFFSET, nameLen);
         }
 
         void setSum(int sum) {
-            memSeg.set(JAVA_INT, base + SUM_OFFSET, sum);
+            UNSAFE.putInt(slotBase + SUM_OFFSET, sum);
         }
 
         void setCount(int count) {
-            memSeg.set(JAVA_INT, base + COUNT_OFFSET, count);
+            UNSAFE.putInt(slotBase + COUNT_OFFSET, count);
         }
 
         void setMin(short min) {
-            memSeg.set(JAVA_SHORT, base + MIN_OFFSET, min);
+            UNSAFE.putShort(slotBase + MIN_OFFSET, min);
         }
 
         void setMax(short max) {
-            memSeg.set(JAVA_SHORT, base + MAX_OFFSET, max);
+            UNSAFE.putShort(slotBase + MAX_OFFSET, max);
         }
     }
 }
