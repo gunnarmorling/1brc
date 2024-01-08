@@ -15,19 +15,20 @@
  */
 package dev.morling.onebrc;
 
-import static java.util.stream.Collectors.*;
-
-import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.io.UnsupportedEncodingException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collector;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+
+import static java.util.stream.Collectors.groupingBy;
 
 public class CalculateAverage_kumarsaurav123 {
 
@@ -61,6 +62,17 @@ public class CalculateAverage_kumarsaurav123 {
     }
 
     public static void main(String[] args) {
+        HashMap<Byte,Integer> map=new HashMap<>();
+        map.put((byte) 48,0);
+        map.put((byte) 49,1);
+        map.put((byte) 50,2);
+        map.put((byte) 51,3);
+        map.put((byte) 52,4);
+        map.put((byte) 53,5);
+        map.put((byte) 54,6);
+        map.put((byte) 55,7);
+        map.put((byte) 56,8);
+        map.put((byte) 57,9);
         Collector<ResultRow, MeasurementAggregator, ResultRow> collector2 = Collector.of(
                 MeasurementAggregator::new,
                 (a, m) -> {
@@ -108,7 +120,7 @@ public class CalculateAverage_kumarsaurav123 {
         Map<Integer, List<byte[]>> leftOutsMap = new ConcurrentSkipListMap<>();
         int chunkSize = 1_0000_00;
         long proc = Math.max(1, (len / chunkSize));
-        ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2 * 2*2);
+        ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2 * 2 * 2);
         List<ResultRow> measurements = Collections.synchronizedList(new ArrayList<ResultRow>());
         IntStream.range(0, (int) proc)
                 .mapToObj(i -> {
@@ -121,7 +133,9 @@ public class CalculateAverage_kumarsaurav123 {
                                 file.seek((long) i * (long) chunkSize);
                                 int l = file.read(allBytes2);
                                 byte[] eol = "\n".getBytes(StandardCharsets.UTF_8);
-                                List<String> indexs = new ArrayList<>();
+                                byte[] sep = ";".getBytes(StandardCharsets.UTF_8);
+
+                                List<Measurement> mst = new ArrayList<>();
                                 int st = 0;
                                 int cnt = 0;
                                 ArrayList<byte[]> local = new ArrayList<>();
@@ -132,7 +146,30 @@ public class CalculateAverage_kumarsaurav123 {
                                             byte[] s2 = new byte[i - st];
                                             System.arraycopy(allBytes2, st, s2, 0, s2.length);
                                             if (cnt != 0) {
-                                                indexs.add(new String(s2));
+                                                for(int j=0;j<s2.length;j++)
+                                                {
+                                                    if (s2[j] == sep[0]) {
+                                                        byte[] city = new byte[j];
+                                                        byte[] value = new byte[s2.length-j-1];
+                                                        System.arraycopy(s2, 0, city, 0, city.length);
+                                                        System.arraycopy(s2, city.length+1, value,0, value.length);
+                                                        double d=0.0;
+                                                        int s=-1;
+                                                        for(int k=value.length-1;k>=0;k--) {
+                                                            if (value[k] == 45) {
+                                                                d=d*-1;
+                                                            }
+                                                            else if (value[k] == 46) {
+                                                            } else {
+                                                                d = d + map.get(value[k]).intValue() * Math.pow(10, s);
+                                                                s++;
+                                                            }
+                                                        }
+                                                        mst.add(new Measurement(new String(city),d));
+
+                                                    }
+                                                }
+
                                             }
                                             else {
                                                 local.add(s2);
@@ -150,18 +187,14 @@ public class CalculateAverage_kumarsaurav123 {
                                 }
                                 leftOutsMap.put(i, local);
                                 allBytes2 = null;
-                                Collection<ResultRow> newmeasurements = indexs.stream()
-                                        .map(ii -> {
-                                            int sIndex = ii.indexOf(';') + 1;
-                                            return new Measurement( ii.substring(0,sIndex), Double.parseDouble( ii.substring(sIndex)));
-                                        })
+                                measurements.addAll(mst.stream()
                                         .collect(groupingBy(Measurement::station, collector))
-                                        .values();
-                                measurements.addAll(newmeasurements);
+                                        .values());
+//                                System.out.println(measurements.size());
                             }
                             catch (Exception e) {
                                 // throw new RuntimeException(e);
-//                                System.out.println("");
+                                System.out.println("");
                             }
                         }
                     };
