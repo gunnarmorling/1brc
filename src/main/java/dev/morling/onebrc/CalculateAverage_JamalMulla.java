@@ -45,13 +45,13 @@ public class CalculateAverage_JamalMulla {
     }
 
     private static final class ResultRow {
-        private double min;
-        private double max;
+        private int min;
+        private int max;
 
-        private double sum;
-        private long count;
+        private long sum;
+        private int count;
 
-        private ResultRow(double v) {
+        private ResultRow(int v) {
             this.min = v;
             this.max = v;
             this.sum = v;
@@ -59,11 +59,11 @@ public class CalculateAverage_JamalMulla {
         }
 
         public String toString() {
-            return round(min) + "/" + round(sum / count) + "/" + round(max);
+            return round(min) + "/" + round((double) (sum) / count) + "/" + round(max);
         }
 
         private double round(double value) {
-            return Math.round(value * 10.0) / 10.0;
+            return Math.round(value) / 10.0;
         }
 
         @Override
@@ -147,15 +147,9 @@ public class CalculateAverage_JamalMulla {
             // no names bigger than this
             byte[] nameBytes = new byte[100];
             boolean inName = true;
-            // MappedByteBuffer mappedByteBuffer;
-            // try {
-            // mappedByteBuffer = channel.map(FileChannel.MapMode.READ_ONLY, chunk.start, chunk.length);
-            // }
-            // catch (IOException e) {
-            // throw new RuntimeException(e);
-            // }
             short nameIndex = 0;
-            double ot = 0;
+            int ot = 0;
+            int hash = 0x811c9dc5;
 
             long i = chunk.start;
             final long cl = chunk.start + chunk.length;
@@ -166,12 +160,16 @@ public class CalculateAverage_JamalMulla {
                     inName = false;
                 }
                 else if (c == 0xA /* Newline */) {
-                    results.putOrMerge(nameBytes, nameIndex, ot);
+                    hash = ((hash >> 16) ^ hash) & 65535;
+                    results.putOrMerge(nameBytes, nameIndex, hash, ot);
                     inName = true;
                     nameIndex = 0;
+                    hash = 0x811c9dc5;
                 }
                 else if (inName) {
                     nameBytes[nameIndex++] = c;
+                    hash ^= c;
+                    hash *= 0x01000193;
                 }
                 else {
                     // we know the val has to be between -99.9 and 99.8
@@ -188,7 +186,7 @@ public class CalculateAverage_JamalMulla {
                         }
                         i++; // skip dot
                         ot += (UNSAFE.getByte(i++) - 48); // char 2
-                        ot = -(ot / 10f);
+                        ot = -ot;
                     }
                     else {
                         // could be either n.x or nn.x
@@ -201,7 +199,6 @@ public class CalculateAverage_JamalMulla {
                         }
                         i++; // skip dot
                         ot += (UNSAFE.getByte(i++) - 48); // char 3
-                        ot = ot / 10f;
                     }
                 }
             }
@@ -257,35 +254,26 @@ public class CalculateAverage_JamalMulla {
         ResultRow[] slots = new ResultRow[MAPSIZE];
         byte[][] keys = new byte[MAPSIZE][];
 
-        public void putOrMerge(byte[] key, int length, double temp) {
-            int slot = fnv(key, length);
+        public void putOrMerge(byte[] key, int length, int hash, int temp) {
+            int slot = hash;
             ResultRow slotValue = slots[slot];
 
             // Linear probe for open slot
             while (slotValue != null && (keys[slot].length != length || !unsafeEquals(keys[slot], key, length))) {
                 slotValue = slots[++slot];
             }
-            ResultRow value = slotValue;
-            if (value == null) {
+            if (slotValue == null) {
                 slots[slot] = new ResultRow(temp);
                 byte[] bytes = new byte[length];
                 System.arraycopy(key, 0, bytes, 0, length);
                 keys[slot] = bytes;
             }
             else {
-                value.min = (value.min <= temp) ? value.min : temp;
-                value.max = (value.max >= temp) ? value.max : temp;
-                value.sum += temp;
-                value.count++;
+                slotValue.min = Math.min(slotValue.min, temp);
+                slotValue.max = Math.max(slotValue.max, temp);
+                slotValue.sum += temp;
+                slotValue.count++;
             }
-        }
-
-        private boolean arrayEquals(final byte[] a, final byte[] b, final int length) {
-            for (int i = 0; i < length; i++) {
-                if (a[i] != b[i])
-                    return false;
-            }
-            return true;
         }
 
         static boolean unsafeEquals(final byte[] a, final byte[] b, final int length) {
