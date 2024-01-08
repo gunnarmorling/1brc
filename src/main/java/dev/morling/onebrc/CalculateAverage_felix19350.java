@@ -24,7 +24,6 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
@@ -76,8 +75,8 @@ public class CalculateAverage_felix19350 {
     }
 
   private record AverageAggregatorTask(MemorySegment memSegment) {
-    private static final int[] INT_PARSE_FACTORS = new int[]{1,10,100};
-    private static final int HASH_FACTOR = 433; // Mersenne prime
+    private static final int[] INT_PARSE_FACTORS = new int[]{1, 10, 100};
+    private static final int HASH_FACTOR = 607; // Mersenne prime
     private static final int EXPECTED_MAX_NUM_CITIES = 15_000; // 10K cities + a buffer no to trigger the load factor
 
     public static Stream<AverageAggregatorTask> createStreamOf(List<MemorySegment> memorySegments) {
@@ -115,20 +114,13 @@ public class CalculateAverage_felix19350 {
           separatorIdx = i;
           lineBytes.clear();
           break;
-        }else{
+        } else {
           fingerPrint = HASH_FACTOR * fingerPrint + currentByte;
         }
       }
       assert (separatorIdx > 0);
 
-      lineBytes.clear();
-      var bytes = new byte[separatorIdx];
-      lineBytes.get(bytes);
-      var city = new String(bytes, StandardCharsets.UTF_8);
-      System.out.println(city + " - " + city.hashCode() + " | " + fingerPrint);
-      lineBytes.clear();
-      //TODO failing because of collisions in the hashcode here "igButeboJuršinciKoaniImdinaNova VasDestrnikVarvarinSkomunGornji PetrovciRibnicaKon TumŠavnikPoul"
-      final var value = parseInt(lineBytes, separatorIdx+1, lineBytes.capacity());
+      final var value = parseInt(lineBytes, separatorIdx + 1, lineBytes.capacity());
       final var latestValue = measurements.get(fingerPrint);
       if (latestValue != null) {
         latestValue.mergeValue(value);
@@ -145,10 +137,10 @@ public class CalculateAverage_felix19350 {
     private static int parseInt(ByteBuffer valueBytes, int start, int end) {
       int multiplier = 1;
       int digitValue = 0;
-      int numDigits = end-start-1; // there is always one decimal place
+      int numDigits = end - start - 1; // there is always one decimal place
 
       valueBytes.position(start);
-      while(valueBytes.hasRemaining()){
+      while (valueBytes.hasRemaining()) {
         var valueByte = valueBytes.get();
         switch ((char) valueByte) {
           case '-':
@@ -163,7 +155,7 @@ public class CalculateAverage_felix19350 {
             break;
         }
       }
-      return multiplier*digitValue;
+      return multiplier * digitValue;
     }
   }
 
