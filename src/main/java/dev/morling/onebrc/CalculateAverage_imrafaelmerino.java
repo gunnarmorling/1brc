@@ -42,7 +42,7 @@ import java.util.stream.StreamSupport;
  *
  *
  *  Credits:
- *      . bjhara: Really nice segmentation of the file based on spullara.
+ *      . bjhara: Really nice spliterator based on bjhara solution.
  *      . ebarlas: working with integers since we only have to consider one decimal
  *        (I don't think this makes a big difference though)
  *      . filiphr: It was my starting point, since it's the most natural and idiomatic way of approaching
@@ -76,7 +76,7 @@ import java.util.stream.StreamSupport;
  *
  *  - Commong guys! stop rolling the dice with fancy optimizations and reiventing hash maps structures and
  *   hash algorithms. This should be <a href="https://dailypapert.com/hard-fun/">hard fun</a>
- *   and not tedious. Dont get me wrong! just an opinion :) I'
+ *   and not tedious. Dont get me wrong! just an opinion :) I'll stick to idiomatic and simple Java
  *
  * - Last but not least, Gunnar Morling, you rock man! Thanks for your time and effort.
  *
