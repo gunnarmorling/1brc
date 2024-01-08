@@ -27,37 +27,6 @@ public class CalculateAverage_elsteveogrande {
 
     private static final String FILE = "./measurements.txt";
 
-    static final class Station {
-        final String name;
-        float min = Float.MAX_VALUE;
-        float max = Float.MIN_VALUE;
-        float total = 0;
-        int count = 0;
-
-        Station(String name) {
-            this.name = name;
-        }
-
-        void update(float val) {
-            min = Math.min(min, val);
-            max = Math.max(max, val);
-            total += val;
-            count++;
-        }
-
-        public void update(Station that) {
-            min = Math.min(this.min, that.min);
-            max = Math.max(this.max, that.max);
-            this.total += that.total;
-            this.count += that.count;
-        }
-
-        public String toString() {
-            return STR.
-                    "\{String.format("%.1f", this.min)}\{'/'}\{String.format("%.1f", this.total / this.count)}\{'/'}\{String.format("%.1f", this.max)}";
-        }
-    }
-
     static final int NPROCS = Runtime.getRuntime().availableProcessors();
 
     static class Task extends Thread {
@@ -88,42 +57,11 @@ public class CalculateAverage_elsteveogrande {
 
                 final var ss = s;
                 var station = stations.computeIfAbsent(
-                        key(stationBytes, s),
-                        _ -> {
-                            var name = new String(stationBytes, 0, ss);
-                            return new Station(name);
-                        });
-                var val = parseFloatDot1(valBytes);
+                        Util.key(stationBytes, s),
+                        _ -> new Station(new String(stationBytes, 0, ss)));
+                var val = Util.parseFloatDot1(valBytes);
                 station.update(val);
             }
-        }
-
-        private int key(byte[] bytes, int len) {
-            int i = 0;
-            int ret = 0;
-            byte b;
-            len = Math.min(4, len);
-            while (i < len) {
-                b = bytes[i++];
-                ret = (59 * ret) + b;
-            }
-            return ret;
-        }
-
-        private float parseFloatDot1(byte[] s) {
-            byte b;
-            int i = 0;
-            float ret = 0.0f;
-            boolean neg = false;
-            if (s[i] == '-') {
-                ++i;
-                neg = true;
-            }
-            while ((b = s[i++]) != '.') {
-                ret = (ret * 10.0f) + (float) (b - '0');
-            }
-            ret += ((b - '0') / 10.0f);
-            return neg ? -ret : ret;
         }
     }
 
@@ -183,5 +121,66 @@ public class CalculateAverage_elsteveogrande {
 
     public static void main(String[] args) throws Exception {
         (new CalculateAverage_elsteveogrande()).run();
+    }
+}
+
+final class Station {
+    final String name;
+    float min = Float.MAX_VALUE;
+    float max = Float.MIN_VALUE;
+    double total = 0;
+    int count = 0;
+
+    Station(String name) {
+        this.name = name;
+    }
+
+    void update(float val) {
+        min = Math.min(min, val);
+        max = Math.max(max, val);
+        total += val;
+        count++;
+    }
+
+    public void update(Station that) {
+        min = Math.min(this.min, that.min);
+        max = Math.max(this.max, that.max);
+        this.total += that.total;
+        this.count += that.count;
+    }
+
+    public String toString() {
+        return STR.
+                "\{String.format("%.1f", this.min)}\{'/'}\{String.format("%.1f", this.total / this.count)}\{'/'}\{String.format("%.1f", this.max)}";
+    }
+}
+
+final class Util {
+    static int key(byte[] bytes, int len) {
+        int i = 0;
+        int ret = 0;
+        byte b;
+        len = Math.min(4, len);
+        while (i < len) {
+            b = bytes[i++];
+            ret = (59 * ret) + b;
+        }
+        return ret;
+    }
+
+    static float parseFloatDot1(byte[] s) {
+        byte b;
+        int i = 0;
+        float ret = 0.0f;
+        boolean neg = false;
+        if (s[i] == '-') {
+            ++i;
+            neg = true;
+        }
+        while ((b = s[i++]) != '.') {
+            ret = (ret * 10.0f) + (float) (b - '0');
+        }
+        ret += ((s[i] - '0') / 10.0f);
+        return neg ? -ret : ret;
     }
 }
