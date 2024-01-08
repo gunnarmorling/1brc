@@ -26,8 +26,11 @@ import java.util.TreeMap;
 
 public class CalculateAverage_dalogax {
 
+    // Tunning parameters
     private static final int QUEUE_CAPACITY = 6;
     private static final int PROCESSOR_POOL_SIZE = 6;
+    public static final int CHUNK_SIZE = 1024 * 1024 * 10;
+
     private static final String END_MARKER = "END";
 
     public static void main(String[] args) throws Exception {
@@ -56,7 +59,7 @@ public class CalculateAverage_dalogax {
     private static void processChunks(BlockingQueue<String> queue) {
         try {
             ExecutorService executor = Executors.newFixedThreadPool(PROCESSOR_POOL_SIZE);
-            List<Future<Map<String, CityTemperatureStats>>> futures = new ArrayList<>();
+            List<Future<Map<String, CityTemperatureStats>>> futures = new ArrayList<>(PROCESSOR_POOL_SIZE);
 
             while (true) {
                 String chunk = queue.take();
@@ -64,6 +67,7 @@ public class CalculateAverage_dalogax {
                     break;
                 }
                 futures.add(executor.submit(new CityStatsProcessor(chunk)));
+                chunk = null;
             }
 
             executor.shutdown();
@@ -82,14 +86,15 @@ public class CalculateAverage_dalogax {
 }
 
 class ChunkReader {
-    private static final int CHUNK_SIZE = 1024 * 1024 * 10;
 
     private final RandomAccessFile file;
     private long nextChunkStart;
+    private byte[] buffer;
 
     public ChunkReader(String filePath) throws IOException {
         this.file = new RandomAccessFile(filePath, "r");
         this.nextChunkStart = 0;
+        this.buffer = new byte[CalculateAverage_dalogax.CHUNK_SIZE];
     }
 
     public boolean hasMoreChunks() throws IOException {
@@ -99,7 +104,6 @@ class ChunkReader {
     public String readChunk() throws IOException {
         // System.out.println("Reading chunk at " + nextChunkStart);
         file.seek(nextChunkStart);
-        byte[] buffer = new byte[CHUNK_SIZE];
         int bytesRead = file.read(buffer);
         int lastNewlineIndex = findLastNewlineIndex(buffer, bytesRead);
 
