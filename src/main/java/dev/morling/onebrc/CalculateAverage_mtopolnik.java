@@ -22,16 +22,11 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.lang.reflect.Field;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel.MapMode;
 import java.util.ArrayList;
 import java.util.TreeMap;
-
-import static java.lang.foreign.ValueLayout.JAVA_INT;
-import static java.lang.foreign.ValueLayout.JAVA_LONG;
-import static java.lang.foreign.ValueLayout.JAVA_SHORT;
 
 // create_measurements3.sh 500_000_000
 // initial:    real	0m11.640s user	0m39.766s sys	0m9.852s
@@ -39,6 +34,7 @@ import static java.lang.foreign.ValueLayout.JAVA_SHORT;
 
 public class CalculateAverage_mtopolnik {
     private static final Unsafe UNSAFE = unsafe();
+    private static final boolean ORDER_IS_BIG_ENDIAN = ByteOrder.nativeOrder() == ByteOrder.BIG_ENDIAN;
     private static final int MAX_NAME_LEN = 100;
     private static final int NAME_SLOT_SIZE = 104;
     private static final int STATS_TABLE_SIZE = 1 << 16;
@@ -201,15 +197,39 @@ public class CalculateAverage_mtopolnik {
         }
 
         private int parseTemperatureAndAdvanceCursor(long semicolonPos) {
+            long start = semicolonPos + 1;
+            if (start <= inputMem.byteSize() - Long.BYTES) {
+                return parseTemperatureSwarAndAdvanceCursor(start);
+            }
+            return parseTemperatureSimpleAndAdvanceCursor(start);
+        }
+
+        // Credit: merykitty
+        private int parseTemperatureSwarAndAdvanceCursor(long start) {
+            long word = UNSAFE.getLong(inputMem.address() + start);
+            if (ORDER_IS_BIG_ENDIAN) {
+                word = Long.reverseBytes(word);
+            }
+            final long negated = ~word;
+            final int dotPos = Long.numberOfTrailingZeros(negated & 0x10101000);
+            final long signed = (negated << 59) >> 63;
+            final long removeSignMask = ~(signed & 0xFF);
+            final long digits = ((word & removeSignMask) << (28 - dotPos)) & 0x0F000F0F00L;
+            final long absValue = ((digits * 0x640a0001) >>> 32) & 0x3FF;
+            final int temperature = (int) ((absValue ^ signed) - signed);
+            cursor = start + (dotPos / 8) + 3;
+            return temperature;
+        }
+
+        private int parseTemperatureSimpleAndAdvanceCursor(long start) {
             final byte minus = (byte) '-';
             final byte zero = (byte) '0';
             final byte dot = (byte) '.';
 
-            long start = semicolonPos + 1;
             // Temperature plus the following newline is at least 4 chars, so this is always safe:
             int fourCh = UNSAFE.getInt(inputMem.address() + start);
             // int fourCh = inputMem.get(JAVA_INT_UNALIGNED, start);
-            if (ByteOrder.nativeOrder() == ByteOrder.BIG_ENDIAN) {
+            if (ORDER_IS_BIG_ENDIAN) {
                 fourCh = Integer.reverseBytes(fourCh);
             }
             final int mask = 0xFF;
@@ -292,7 +312,7 @@ public class CalculateAverage_mtopolnik {
     }
 
     static long bytePosOfSemicolon(MemorySegment haystack, long start) {
-        return ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN
+        return !ORDER_IS_BIG_ENDIAN
                 ? bytePosLittleEndian(haystack, start)
                 : bytePosBigEndian(haystack, start);
     }
