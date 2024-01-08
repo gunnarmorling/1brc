@@ -17,5 +17,4 @@
 
 
 JAVA_OPTS=""
-#time java $JAVA_OPTS -agentpath:/Users/charlieevans/Downloads/visualvm_217/visualvm/lib/deployed/jdk16/mac/libprofilerinterface.jnilib=/Users/charlieevans/Downloads/visualvm_217/visualvm/lib,5140 --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_charlibot
 time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_charlibot
