@@ -176,13 +176,13 @@ public class CalculateAverage_mtopolnik {
         }
 
         private void updateStats(long hash, long nameLen, int temperature, long namePos) {
-            MemorySegment nameSlice = inputMem.asSlice(namePos, nameLen);
             int tableIndex = (int) (hash % STATS_TABLE_SIZE);
             while (true) {
                 stats.gotoIndex(tableIndex);
                 long foundHash = stats.hash();
                 if (foundHash == hash && stats.nameLen() == nameLen
-                        && namesMem.asSlice(tableIndex * NAME_SLOT_SIZE, nameLen).mismatch(nameSlice) == -1) {
+                        && namesMem.asSlice(tableIndex * NAME_SLOT_SIZE, nameLen)
+                                .mismatch(inputMem.asSlice(namePos, nameLen)) == -1) {
                     stats.setSum(stats.sum() + temperature);
                     stats.setCount(stats.count() + 1);
                     stats.setMin((short) Integer.min(stats.min(), temperature));
@@ -278,7 +278,7 @@ public class CalculateAverage_mtopolnik {
             UNSAFE.putLong(hashBufBase, 0);
             UNSAFE.copyMemory(inputBase + startOffset, hashBufBase, Long.min(HASHBUF_SIZE, limit - startOffset));
             long n1 = UNSAFE.getLong(hashBufBase);
-//            long n1 = UNSAFE.getLong(hashBufBase + Long.BYTES);
+            // long n1 = UNSAFE.getLong(hashBufBase + Long.BYTES);
             long seed = 0x51_7c_c1_b7_27_22_0a_95L;
             int rotDist = 19;
             long hash = n1;
