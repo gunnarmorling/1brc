@@ -31,7 +31,7 @@ public class CalculateAverage_elsteveogrande {
 
     static class Task extends Thread {
         final MappedByteBuffer mmap;
-        final Map<Integer, Station> stations = new HashMap<>();
+        final Map<Long, Station> stations = new HashMap<>();
 
         Task(MappedByteBuffer mmap) {
             this.mmap = mmap;
@@ -156,14 +156,13 @@ final class Station {
 }
 
 final class Util {
-    static int key(byte[] bytes, int len) {
+    static long key(byte[] bytes, int len) {
         int i = 0;
-        int ret = 0;
+        long ret = 0L;
         byte b;
-        len = Math.min(4, len);
         while (i < len) {
             b = bytes[i++];
-            ret = (59 * ret) + b;
+            ret = (59L * ret) + b;
         }
         return ret;
     }
