@@ -146,61 +146,57 @@ public class CalculateAverage_JamalMulla {
         public void run() {
             // no names bigger than this
             byte[] nameBytes = new byte[100];
-            boolean inName = true;
             short nameIndex = 0;
-            int ot = 0;
+            int ot;
             int hash = 0x811c9dc5;
 
             long i = chunk.start;
             final long cl = chunk.start + chunk.length;
             while (i < cl) {
-                byte c = UNSAFE.getByte(i++);
-                if (c == 0x3B /* Semicolon */) {
-                    // no longer in name
-                    inName = false;
-                }
-                else if (c == 0xA /* Newline */) {
-                    hash = ((hash >> 16) ^ hash) & 65535;
-                    results.putOrMerge(nameBytes, nameIndex, hash, ot);
-                    inName = true;
-                    nameIndex = 0;
-                    hash = 0x811c9dc5;
-                }
-                else if (inName) {
+                byte c;
+                while ((c = UNSAFE.getByte(i++)) != 0x3B) {
                     nameBytes[nameIndex++] = c;
                     hash ^= c;
                     hash *= 0x01000193;
                 }
-                else {
-                    // we know the val has to be between -99.9 and 99.8
-                    // always with a single fractional digit
-                    // represented as a byte array of either 4 or 5 characters
-                    if (c == 0x2D /* minus sign */) {
-                        // could be either n.x or nn.x
-                        if (UNSAFE.getByte(i + 3) == 0xA) {
-                            ot = (UNSAFE.getByte(i++) - 48) * 10; // char 1
-                        }
-                        else {
-                            ot = (UNSAFE.getByte(i++) - 48) * 100; // char 1
-                            ot += (UNSAFE.getByte(i++) - 48) * 10; // char 2
-                        }
-                        i++; // skip dot
-                        ot += (UNSAFE.getByte(i++) - 48); // char 2
-                        ot = -ot;
+
+                // the temp
+                c = UNSAFE.getByte(i++);
+                // we know the val has to be between -99.9 and 99.8
+                // always with a single fractional digit
+                // represented as a byte array of either 4 or 5 characters
+                if (c == 0x2D /* minus sign */) {
+                    // could be either n.x or nn.x
+                    if (UNSAFE.getByte(i + 3) == 0xA) {
+                        ot = (UNSAFE.getByte(i++) - 48) * 10; // char 1
                     }
                     else {
-                        // could be either n.x or nn.x
-                        if (UNSAFE.getByte(i + 2) == 0xA) {
-                            ot = (c - 48) * 10; // char 1
-                        }
-                        else {
-                            ot = (c - 48) * 100; // char 1
-                            ot += (UNSAFE.getByte(i++) - 48) * 10; // char 2
-                        }
-                        i++; // skip dot
-                        ot += (UNSAFE.getByte(i++) - 48); // char 3
+                        ot = (UNSAFE.getByte(i++) - 48) * 100; // char 1
+                        ot += (UNSAFE.getByte(i++) - 48) * 10; // char 2
                     }
+                    i++; // skip dot
+                    ot += (UNSAFE.getByte(i++) - 48); // char 2
+                    ot = -ot;
                 }
+                else {
+                    // could be either n.x or nn.x
+                    if (UNSAFE.getByte(i + 2) == 0xA) {
+                        ot = (c - 48) * 10; // char 1
+                    }
+                    else {
+                        ot = (c - 48) * 100; // char 1
+                        ot += (UNSAFE.getByte(i++) - 48) * 10; // char 2
+                    }
+                    i++; // skip dot
+                    ot += (UNSAFE.getByte(i++) - 48); // char 3
+                }
+
+                i++;// nl
+                hash = ((hash >> 16) ^ hash) & 65535;
+                results.putOrMerge(nameBytes, nameIndex, hash, ot);
+                // reset
+                nameIndex = 0;
+                hash = 0x811c9dc5;
             }
 
             // merge results with overall results
