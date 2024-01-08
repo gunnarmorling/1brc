@@ -225,19 +225,19 @@ public class CalculateAverage_shipilev {
             private final int hash;
 
             // Temperature values, in 10x scale.
-            private int min;
-            private int max;
+            private short min;
+            private short max;
             private long sum;
-            private long count;
+            private int count;
 
             public Bucket(byte[] name, int hash) {
-                this.min = Integer.MAX_VALUE;
-                this.max = Integer.MIN_VALUE;
+                this.min = Short.MAX_VALUE;
+                this.max = Short.MIN_VALUE;
                 this.name = name;
                 this.hash = hash;
             }
 
-            public void merge(int value) {
+            public void merge(short value) {
                 if (value < min) {
                     min = value;
                 }
@@ -249,8 +249,8 @@ public class CalculateAverage_shipilev {
             }
 
             public void merge(Bucket s) {
-                min = Math.min(min, s.min);
-                max = Math.max(max, s.max);
+                min = (short) Math.min(min, s.min);
+                max = (short) Math.max(max, s.max);
                 sum += s.sum;
                 count += s.count;
             }
@@ -395,7 +395,7 @@ public class CalculateAverage_shipilev {
                     idx += 2;
 
                     // Time to update!
-                    bucket.merge(temp);
+                    bucket.merge((short) temp);
                 }
             }
         }
