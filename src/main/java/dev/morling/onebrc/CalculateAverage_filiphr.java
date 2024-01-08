@@ -18,11 +18,11 @@ package dev.morling.onebrc;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -40,8 +40,10 @@ import java.util.stream.StreamSupport;
  * Adding memory mapped files:                         0m 55s (based on bjhara's submission)
  * Using big decimal and iterating the buffer once:    0m 20s
  * Using long parse:                                   0m 11s
- * Using array hash code for city key:                 0m 7.1s
+ * Using array hash code for city key:                 0m 7.1s (this is invalid since it can lead to hash collisions)
  * Manually compute the value:                         0m 6.8s
+ * Revert array hash code for city key:                0m 10s
+ * Use array hash and Arrays#equals for city key:      0m 7.2s
  * <p>
  * Using 21.0.1 Temurin with ShenandoahGC on Macbook (Intel) Pro
  * `sdk use java 21.0.1-tem`
@@ -61,15 +63,10 @@ public class CalculateAverage_filiphr {
 
     private static final class Measurement {
 
-        private final String city;
         private long min = Long.MAX_VALUE;
         private long max = Long.MIN_VALUE;
         private long sum = 0L;
         private long count = 0L;
-
-        private Measurement(String city) {
-            this.city = city;
-        }
 
         private void add(long value) {
             this.min = Math.min(this.min, value);
@@ -79,7 +76,7 @@ public class CalculateAverage_filiphr {
         }
 
         public static Measurement combine(Measurement m1, Measurement m2) {
-            Measurement measurement = new Measurement(m1.city);
+            Measurement measurement = new Measurement();
             measurement.min = Math.min(m1.min, m2.min);
             measurement.max = Math.max(m1.max, m2.max);
             measurement.sum = m1.sum + m2.sum;
@@ -100,7 +97,7 @@ public class CalculateAverage_filiphr {
     public static void main(String[] args) throws IOException {
         // long start = System.nanoTime();
 
-        Map<Integer, Measurement> measurements;
+        Map<Key, Measurement> measurements;
         try (FileChannel fileChannel = FileChannel.open(Paths.get(FILE), StandardOpenOption.READ)) {
             measurements = fineChannelStream(fileChannel)
                     .parallel()
@@ -109,24 +106,26 @@ public class CalculateAverage_filiphr {
         }
 
         Map<String, Measurement> finalMeasurements = new TreeMap<>();
-        for (Measurement measurement : measurements.values()) {
-            finalMeasurements.put(measurement.city, measurement);
+        for (Map.Entry<Key, Measurement> entry : measurements.entrySet()) {
+            StoredKey key = (StoredKey) entry.getKey();
+            Measurement measurement = entry.getValue();
+            finalMeasurements.put(new String(key.keyBytes), measurement);
         }
 
         System.out.println(finalMeasurements);
         // System.out.println("Done in " + (System.nanoTime() - start) / 1000000 + " ms");
     }
 
-    private static Map<Integer, Measurement> mergeMaps(Map<Integer, Measurement> map1, Map<Integer, Measurement> map2) {
+    private static Map<Key, Measurement> mergeMaps(Map<Key, Measurement> map1, Map<Key, Measurement> map2) {
         if (map1.isEmpty()) {
             return map2;
         }
         else {
-            Set<Integer> cities = new HashSet<>(map1.keySet());
+            Set<Key> cities = new HashSet<>(map1.keySet());
             cities.addAll(map2.keySet());
-            Map<Integer, Measurement> result = HashMap.newHashMap(cities.size());
+            Map<Key, Measurement> result = HashMap.newHashMap(cities.size());
 
-            for (Integer city : cities) {
+            for (Key city : cities) {
                 Measurement m1 = map1.get(city);
                 Measurement m2 = map2.get(city);
                 if (m2 == null) {
@@ -153,8 +152,8 @@ public class CalculateAverage_filiphr {
      * We are using {@code Map<Integer, Measurement>} because creating the string key on every single line is obsolete.
      * Instead, we create a hash key from the string, and we use that as a key in the map.
      */
-    private static Map<Integer, Measurement> parseBuffer(ByteBuffer bb) {
-        Map<Integer, Measurement> measurements = HashMap.newHashMap(415);
+    private static Map<Key, Measurement> parseBuffer(ByteBuffer bb) {
+        Map<Key, Measurement> measurements = HashMap.newHashMap(415);
         int limit = bb.limit();
         byte[] cityBuffer = new byte[128];
 
@@ -163,15 +162,17 @@ public class CalculateAverage_filiphr {
 
             // Iterate through the byte buffer and fill the buffer until we find the separator (;)
             // While iterating we are also going to compute the city hash key
-            int cityKey = 1;
+            int cityHash = 1;
             while (bb.position() < limit) {
                 byte positionByte = bb.get();
                 if (positionByte == ';') {
                     break;
                 }
                 cityBuffer[cityBufferIndex++] = positionByte;
-                cityKey = 31 * cityKey + positionByte;
+                cityHash = 31 * cityHash + positionByte;
             }
+
+            SearchKey searchKey = new SearchKey(cityBuffer, cityHash, cityBufferIndex);
 
             byte lastPositionByte = '\n';
             boolean negative = false;
@@ -198,11 +199,13 @@ public class CalculateAverage_filiphr {
                 value = -value;
             }
 
-            Measurement measurement = measurements.get(cityKey);
+            Measurement measurement = measurements.get(searchKey);
             if (measurement == null) {
-                String city = new String(cityBuffer, 0, cityBufferIndex);
-                measurement = new Measurement(city);
-                measurements.put(cityKey, measurement);
+                byte[] keyBytes = new byte[cityBufferIndex];
+                System.arraycopy(cityBuffer, 0, keyBytes, 0, cityBufferIndex);
+                StoredKey storedKey = new StoredKey(keyBytes, cityHash);
+                measurement = new Measurement();
+                measurements.put(storedKey, measurement);
             }
             measurement.add(value);
 
@@ -258,4 +261,86 @@ public class CalculateAverage_filiphr {
             }
         };
     }
+
+    /**
+     * This is a class that is used to reference a city key using its bytes only.
+     * It has the hash precomputed, and it is equal to a {@link SearchKey} when the key bytes are equal to the {@link SearchKey#buffer} up to the {@link SearchKey#limit}.
+     */
+    private static final class StoredKey implements Key {
+
+        private final byte[] keyBytes;
+        private final int hash;
+
+        private StoredKey(byte[] keyBytes, int hash) {
+            this.keyBytes = keyBytes;
+            this.hash = hash;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null) {
+                return false;
+            }
+            if (o instanceof SearchKey key) {
+                return Arrays.equals(keyBytes, 0, keyBytes.length, key.buffer, 0, key.limit);
+            }
+            else if (o instanceof StoredKey key) {
+                return Arrays.equals(keyBytes, key.keyBytes);
+            }
+            return false;
+        }
+
+        @Override
+        public int hashCode() {
+            return hash;
+        }
+    }
+
+    /**
+     * A class that is used to lookup for a value in a map.
+     * This key is equal to {@link StoredKey} when the buffer has the same contents as the {@link StoredKey#keyBytes}.
+     */
+    private static final class SearchKey implements Key {
+
+        private final byte[] buffer;
+        private final int hash;
+        private final int limit;
+
+        private SearchKey(byte[] buffer, int hash, int limit) {
+            this.buffer = buffer;
+            this.hash = hash;
+            this.limit = limit;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null) {
+                return false;
+            }
+
+            if (o instanceof StoredKey key) {
+                return Arrays.equals(buffer, 0, limit, key.keyBytes, 0, limit);
+            }
+            else if (o instanceof SearchKey key) {
+                return Arrays.equals(buffer, 0, limit, key.buffer, 0, key.limit);
+            }
+            return false;
+        }
+
+        @Override
+        public int hashCode() {
+            return hash;
+        }
+    }
+
+    private interface Key {
+
+    }
+
 }

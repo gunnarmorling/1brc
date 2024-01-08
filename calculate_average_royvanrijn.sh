@@ -15,12 +15,8 @@
 #  limitations under the License.
 #
 
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+sdk use java 21.0.1-graal 1>&2
 
-# Added for fun, doesn't seem to be making a difference...
-if [ -f "target/calculate_average_royvanrijn.jsa" ]; then
-    JAVA_OPTS="-XX:SharedArchiveFile=target/calculate_average_royvanrijn.jsa -Xshare:on"
-else
-    # First run, create the archive:
-    JAVA_OPTS="-XX:ArchiveClassesAtExit=target/calculate_average_royvanrijn.jsa"
-fi
+JAVA_OPTS="--enable-preview"
 time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_royvanrijn

@@ -16,7 +16,9 @@
 package dev.morling.onebrc;
 
 import java.io.IOException;
+import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
@@ -51,7 +53,7 @@ public class CalculateAverage_ebarlas {
             var pSize = pEnd - pStart;
             Runnable r = () -> {
                 try {
-                    var buffer = channel.map(FileChannel.MapMode.READ_ONLY, pStart, pSize);
+                    var buffer = channel.map(FileChannel.MapMode.READ_ONLY, pStart, pSize).order(ByteOrder.LITTLE_ENDIAN);
                     partitions[pIdx] = processBuffer(buffer, pIdx == 0);
                 }
                 catch (IOException e) {
@@ -112,7 +114,7 @@ public class CalculateAverage_ebarlas {
             var merged = mergeFooterAndHeader(pPrev.footer, pNext.header);
             if (merged != null) {
                 if (merged[merged.length - 1] == '\n') { // fold into prev partition
-                    doProcessBuffer(ByteBuffer.wrap(merged), true, pPrev.stats);
+                    doProcessBuffer(ByteBuffer.wrap(merged).order(ByteOrder.LITTLE_ENDIAN), true, pPrev.stats);
                 }
                 else { // no newline appeared in partition, carry forward
                     pNext.footer = merged;
@@ -140,57 +142,97 @@ public class CalculateAverage_ebarlas {
 
     private static Partition doProcessBuffer(ByteBuffer buffer, boolean first, Stats[] stats) {
         var header = first ? null : readHeader(buffer);
-        var readingKey = true; // reading key or value?
+        var keyStart = reallyDoProcessBuffer(buffer, stats);
+        var footer = keyStart < buffer.limit() ? readFooter(buffer, keyStart) : null;
+        return new Partition(header, footer, stats);
+    }
+
+    private static int reallyDoProcessBuffer(ByteBuffer buffer, Stats[] stats) {
         var keyBuf = new byte[MAX_KEY_SIZE]; // buffer for key
-        var keyPos = 0; // current position in key buffer
-        var keyHash = 0; // accumulating hash of key
-        var keyStart = buffer.position(); // start of key in buffer used for footer calc
-        var negative = false; // is value negative?
-        var val = 0; // accumulating value
-        Stats st = null;
-        while (buffer.hasRemaining()) {
-            var b = buffer.get();
-            if (readingKey) {
-                if (b != ';') {
-                    keyHash = HASH_FACTOR * keyHash + b;
-                    keyBuf[keyPos++] = b;
-                }
-                else {
-                    var idx = keyHash & HASH_TBL_SIZE;
-                    st = stats[idx];
-                    if (st == null) { // nothing in table, eagerly claim spot
-                        st = stats[idx] = newStats(keyBuf, keyPos, keyHash);
+        int keyStart = 0; // start of key in buffer used for footer calc
+        try { // abort with exception to allow optimistic line processing
+            while (true) { // one line per iteration
+                keyStart = buffer.position(); // preserve line start
+                int n = buffer.getInt(); // first four bytes of key
+                byte b1 = (byte) (n & 0xFF);
+                byte b2 = (byte) ((n >> 8) & 0xFF);
+                byte b3 = (byte) ((n >> 16) & 0xFF);
+                byte b = (byte) ((n >> 24) & 0xFF);
+                int keyPos;
+                int keyHash = keyBuf[0] = b1;
+                if (b2 != ';' && b3 != ';') { // true for keys of length 3 or more
+                    keyBuf[1] = b2;
+                    keyBuf[2] = b3;
+                    keyHash = HASH_FACTOR * (HASH_FACTOR * keyHash + b2) + b3;
+                    keyPos = 3;
+                    while (b != ';') {
+                        keyHash = HASH_FACTOR * keyHash + b;
+                        keyBuf[keyPos++] = b;
+                        b = buffer.get();
                     }
-                    else if (!Arrays.equals(st.key, 0, st.key.length, keyBuf, 0, keyPos)) {
-                        st = findInTable(stats, keyHash, keyBuf, keyPos);
+                }
+                else { // slow path, rewind and consume byte-by-byte
+                    buffer.position(keyStart + 1);
+                    keyPos = 1;
+                    while ((b = buffer.get()) != ';') {
+                        keyHash = HASH_FACTOR * keyHash + b;
+                        keyBuf[keyPos++] = b;
                     }
-                    readingKey = false;
                 }
-            }
-            else {
-                if (b == '\n') {
-                    var v = negative ? -val : val;
-                    st.min = Math.min(st.min, v);
-                    st.max = Math.max(st.max, v);
-                    st.sum += v;
-                    st.count++;
-                    readingKey = true;
-                    keyHash = 0;
-                    val = 0;
-                    negative = false;
-                    keyStart = buffer.position();
-                    keyPos = 0;
+                var idx = keyHash & HASH_TBL_SIZE;
+                var st = stats[idx];
+                if (st == null) { // nothing in table, eagerly claim spot
+                    st = stats[idx] = newStats(keyBuf, keyPos, keyHash);
                 }
-                else if (b == '-') {
-                    negative = true;
+                else if (!Arrays.equals(st.key, 0, st.key.length, keyBuf, 0, keyPos)) {
+                    st = findInTable(stats, keyHash, keyBuf, keyPos);
                 }
-                else if (b != '.') { // skip '.' since fractional tenth unit after decimal point is assumed
-                    val = val * 10 + (b - '0');
+                var value = buffer.getInt();
+                b = (byte) (value & 0xFF); // digit or dash
+                int val;
+                if (b == '-') { // dash branch
+                    val = ((byte) ((value >> 8) & 0xFF)) - '0'; // digit after dash
+                    b = (byte) ((value >> 16) & 0xFF); // second digit or decimal
+                    if (b != '.') { // second digit
+                        val = val * 10 + (b - '0'); // calc second digit
+                        // skip decimal (at >> 24)
+                        b = buffer.get(); // digit after decimal
+                        val = val * 10 + (b - '0'); // calc digit after decimal
+                    }
+                    else { // decimal branch
+                           // skip decimal (at >> 16)
+                        b = (byte) ((value >> 24) & 0xFF); // digit after decimal
+                        val = val * 10 + (b - '0'); // calc digit after decimal
+                    }
+                    buffer.get(); // newline
+                    val = -val;
                 }
+                else { // first digit branch
+                    val = b - '0'; // calc first digit
+                    b = (byte) ((value >> 8) & 0xFF); // second digit or decimal
+                    if (b != '.') { // second digit branch
+                        val = val * 10 + (b - '0'); // calc second digit
+                        // skip decimal (at >> 16)
+                        b = (byte) ((value >> 24) & 0xFF); // digit after decimal
+                        val = val * 10 + (b - '0'); // calc digit after decimal
+                        buffer.get(); // newline
+                    }
+                    else { // decimal branch
+                        b = (byte) ((value >> 16) & 0xFF); // digit after decimal
+                        val = val * 10 + (b - '0'); // calc digit after decimal
+                        // skip newline (at >> 24)
+                    }
+                }
+                st.min = Math.min(st.min, val);
+                st.max = Math.max(st.max, val);
+                st.sum += val;
+                st.count++;
             }
         }
-        var footer = keyStart < buffer.position() ? readFooter(buffer, keyStart) : null;
-        return new Partition(header, footer, stats);
+        catch (BufferUnderflowException ignore) {
+
+        }
+        return keyStart;
     }
 
     private static Stats findInTable(Stats[] stats, int hash, byte[] key, int len) { // open-addressing scan
@@ -213,7 +255,7 @@ public class CalculateAverage_ebarlas {
     }
 
     private static byte[] readFooter(ByteBuffer buffer, int lineStart) { // read from line start to current pos (end-of-input)
-        var footer = new byte[buffer.position() - lineStart];
+        var footer = new byte[buffer.limit() - lineStart];
         buffer.get(lineStart, footer, 0, footer.length);
         return footer;
     }
