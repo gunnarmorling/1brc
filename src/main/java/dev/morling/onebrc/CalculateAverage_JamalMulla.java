@@ -30,7 +30,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public class CalculateAverage_JamalMulla {
 
     private static final String FILE = "./measurements.txt";
-
     private static final Unsafe UNSAFE = initUnsafe();
 
     private static Unsafe initUnsafe() {
@@ -47,7 +46,6 @@ public class CalculateAverage_JamalMulla {
     private static final class ResultRow {
         private int min;
         private int max;
-
         private long sum;
         private int count;
 
@@ -65,24 +63,6 @@ public class CalculateAverage_JamalMulla {
         private double round(double value) {
             return Math.round(value) / 10.0;
         }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (obj == this)
-                return true;
-            if (obj == null || obj.getClass() != this.getClass())
-                return false;
-            var that = (ResultRow) obj;
-            return Double.doubleToLongBits(this.min) == Double.doubleToLongBits(that.min) &&
-                    Double.doubleToLongBits(this.sum) == Double.doubleToLongBits(that.sum) &&
-                    Double.doubleToLongBits(this.max) == Double.doubleToLongBits(that.max);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(min, sum, max);
-        }
-
     }
 
     private record Chunk(Long start, Long length) {
@@ -92,7 +72,7 @@ public class CalculateAverage_JamalMulla {
         // get all chunk boundaries
         final long filebytes = channel.size();
         final long roughChunkSize = filebytes / numThreads;
-        final List<Chunk> chunks = new ArrayList<>();
+        final List<Chunk> chunks = new ArrayList<>(numThreads);
         final long mappedAddress = channel.map(FileChannel.MapMode.READ_ONLY, 0, filebytes, Arena.global()).address();
         long chunkStart = 0;
         long chunkLength = Math.min(filebytes - chunkStart - 1, roughChunkSize);
@@ -115,13 +95,11 @@ public class CalculateAverage_JamalMulla {
 
     private static class CalculateTask implements Runnable {
 
-        private final FileChannel channel;
         private final SimplerHashMap results;
         private final Map<String, ResultRow> global;
         private final Chunk chunk;
 
-        public CalculateTask(FileChannel fileChannel, Map<String, ResultRow> global, Chunk chunk) {
-            this.channel = fileChannel;
+        public CalculateTask(Map<String, ResultRow> global, Chunk chunk) {
             this.results = new SimplerHashMap();
             this.global = global;
             this.chunk = chunk;
@@ -133,6 +111,7 @@ public class CalculateAverage_JamalMulla {
             byte[] nameBytes = new byte[100];
             short nameIndex = 0;
             int ot;
+            // fnv hash
             int hash = 0x811c9dc5;
 
             long i = chunk.start;
@@ -145,7 +124,7 @@ public class CalculateAverage_JamalMulla {
                     hash *= 0x01000193;
                 }
 
-                // the temp
+                // temperature value follows
                 c = UNSAFE.getByte(i++);
                 // we know the val has to be between -99.9 and 99.8
                 // always with a single fractional digit
@@ -213,15 +192,14 @@ public class CalculateAverage_JamalMulla {
         List<Chunk> chunks = getChunks(numThreads, channel);
         List<Thread> threads = new ArrayList<>();
         for (Chunk chunk : chunks) {
-            Thread t = new Thread(new CalculateTask(channel, results, chunk));
-            t.start();
-            threads.add(t);
+            Thread thread = new Thread(new CalculateTask(results, chunk));
+            thread.start();
+            threads.add(thread);
         }
-
         for (Thread t : threads) {
             t.join();
         }
-        // just to sort
+        // create treemap just to sort
         System.out.println(new TreeMap<>(results));
     }
 
@@ -235,35 +213,57 @@ public class CalculateAverage_JamalMulla {
         ResultRow[] slots = new ResultRow[MAPSIZE];
         byte[][] keys = new byte[MAPSIZE][];
 
-        public void putOrMerge(final byte[] key, final int length, final int hash, final int temp) {
+        public void putOrMerge(final byte[] key, final short length, final int hash, final int temp) {
             int slot = hash;
             ResultRow slotValue = slots[slot];
-
-            // Linear probe for open slot
-            while (slotValue != null && (keys[slot].length != length || !unsafeEquals(keys[slot], key, length))) {
-                slotValue = slots[++slot];
-            }
-            if (slotValue == null) {
-                slots[slot] = new ResultRow(temp);
-                byte[] bytes = new byte[length];
-                System.arraycopy(key, 0, bytes, 0, length);
-                keys[slot] = bytes;
-            }
-            else {
+            // found existing so update
+            if (slotValue != null && keys[slot].length == length && unsafeEquals(keys[slot], key, length)) {
                 slotValue.min = Math.min(slotValue.min, temp);
                 slotValue.max = Math.max(slotValue.max, temp);
                 slotValue.sum += temp;
                 slotValue.count++;
+                return;
             }
+            // Linear probe for open slot
+            while (slotValue != null && (keys[slot].length != length || !unsafeEquals(keys[slot], key, length))) {
+                slotValue = slots[++slot];
+            }
+            slots[slot] = new ResultRow(temp);
+            byte[] bytes = new byte[length];
+            System.arraycopy(key, 0, bytes, 0, length);
+            keys[slot] = bytes;
         }
 
-        static boolean unsafeEquals(final byte[] a, final byte[] b, final int length) {
-            int baseOffset = UNSAFE.arrayBaseOffset(byte[].class);
-            for (int i = 0; i < length; i++) {
+        static boolean unsafeEquals(final byte[] a, final byte[] b, final short length) {
+            // byte by byte comparisons are slow, so do as big chunks as possible
+            final int baseOffset = Unsafe.ARRAY_BYTE_BASE_OFFSET;
+
+            short i = 0;
+            // round down to nearest power of 8
+            for (; i < (length & -8); i += 8) {
+                if (UNSAFE.getLong(a, i + baseOffset) != UNSAFE.getLong(b, i + baseOffset)) {
+                    return false;
+                }
+            }
+            // leftover ints
+            for (; i < (length - i & -4); i += 4) {
+                if (UNSAFE.getInt(a, i + baseOffset) != UNSAFE.getInt(b, i + baseOffset)) {
+                    return false;
+                }
+            }
+            // leftover shorts
+            for (; i < (length - i & -2); i += 2) {
+                if (UNSAFE.getShort(a, i + baseOffset) != UNSAFE.getShort(b, i + baseOffset)) {
+                    return false;
+                }
+            }
+            // leftover bytes
+            for (; i < (length - i); i++) {
                 if (UNSAFE.getByte(a, i + baseOffset) != UNSAFE.getByte(b, i + baseOffset)) {
                     return false;
                 }
             }
+
             return true;
         }
 
