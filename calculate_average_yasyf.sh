@@ -16,7 +16,8 @@
 #
 
 source "$HOME/.sdkman/bin/sdkman-init.sh"
-sdk use java 21.0.1-graal 1>&2
+sdk use java 21.0.1-graalce 1>&2
 
-JAVA_OPTS="--enable-preview -da -dsa -XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:InitiatingHeapOccupancyPercent=85 -Xms512m -Xmx512m -XX:+AlwaysPreTouch -XX:+UseTransparentHugePages"
+JAVA_OPTS="--enable-preview --add-modules jdk.incubator.vector -da -dsa -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -Xms512m -Xmx512m -XX:+AlwaysPreTouch -XX:+TrustFinalNonStaticFields"
+JAVA_OPTS="$JAVA_OPTS -XX:+UseTransparentHugePages -XX:+UseNUMA"
 time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_yasyf

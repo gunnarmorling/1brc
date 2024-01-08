@@ -21,6 +21,7 @@ import java.io.OutputStreamWriter;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.reflect.Field;
+import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
 import java.nio.file.Files;
@@ -28,10 +29,14 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.TreeMap;
 
+import jdk.incubator.vector.ByteVector;
+import jdk.incubator.vector.VectorOperators;
+import jdk.incubator.vector.VectorSpecies;
 import sun.misc.Unsafe;
 
 public class CalculateAverage_yasyf {
-    private static final int CORES = Runtime.getRuntime().availableProcessors() * 2;
+    private static final int CORES = Runtime.getRuntime().availableProcessors();
+    private static final int NAME = 100;
     private static final int N_CITIES = 10_000;
     private static final int MAP_SIZE = 1024 * 128;
     private static final int METRICS_SIZE = 6; // min + max + sum + count + length + key2
@@ -44,10 +49,11 @@ public class CalculateAverage_yasyf {
     private static final Thread[] THREADS = new Thread[CORES];
     private static final TreeMap<String, long[]> RESULTS = new TreeMap<>();
     private static final Unsafe UNSAFE;
+    private static final VectorSpecies<Byte> SPECIES = ByteVector.SPECIES_PREFERRED;
 
     static {
         try {
-            Field f = Unsafe.class.getDeclaredField("theUnsafe");
+            final Field f = Unsafe.class.getDeclaredField("theUnsafe");
             f.setAccessible(true);
             UNSAFE = (Unsafe) f.get(null);
         }
@@ -68,7 +74,7 @@ public class CalculateAverage_yasyf {
     }
 
     private static final void printCity(String name, long[] metrics) throws IOException {
-        int mean = (int) Math.round((float) metrics[2] / metrics[3]);
+        int mean = (int) Math.round((double) metrics[2] / metrics[3]);
 
         OUT.write(name);
         OUT.write("=");
@@ -99,7 +105,8 @@ public class CalculateAverage_yasyf {
         }
 
         private final boolean mismatch(long a, long b, int length) {
-            for (int i = 0; i < length; i++) {
+            int i = 0;
+            for (; i < length; i++) {
                 if (UNSAFE.getByte(a + i) != UNSAFE.getByte(b + i)) {
                     return true;
                 }
@@ -109,6 +116,7 @@ public class CalculateAverage_yasyf {
 
         private final void addCity(long name, int length, int key, int key2, int offset, int measurement) {
             // https://stackoverflow.com/a/6670766
+
             int idx = ((key & (MAP_SIZE - 1)) + offset) % MAP_SIZE;
             long[] metrics = this.metrics[idx];
 
@@ -123,7 +131,7 @@ public class CalculateAverage_yasyf {
             }
             else if (metrics[4] != length || metrics[5] != key2 || mismatch(name, names[idx] + address, length)) {
                 // collision
-                addCity(name, length, key, key2, offset + 1, measurement);
+                addCity(name, length, rehash(key2), rehash(key), offset + 1, measurement);
                 return;
             }
 
@@ -133,16 +141,85 @@ public class CalculateAverage_yasyf {
             metrics[3] = metrics[3] + 1;
         }
 
-        private final void parse() {
-            int trueStart = 0, trueEnd = (int) (end - start);
+        private final long parseOneMeasurement(long start, long city, int len, int key, int key2) {
+            int measurement = 0, sign = 1;
+            long pos = start;
             byte b = 0;
-            int pos = 0;
+
+            if ((b = UNSAFE.getByte(address + pos++)) == '-') {
+                sign = -1;
+            }
+            else {
+                measurement = b - '0';
+            }
+
+            while ((b = UNSAFE.getByte(address + pos++)) != '\n') {
+                if (b != '.') {
+                    measurement = (measurement * 10) + (b - '0');
+                }
+            }
+
+            addCity(city, len, key, key2, 0, measurement * sign);
+            return pos;
+        }
+
+        private final byte[] _name = new byte[NAME];
+
+        private final long parseOne(long start) {
+            int key = 0, key2 = 0, len = 0;
+            long pos = start;
+            long city = address + pos;
+            byte b;
+
+            while ((b = UNSAFE.getByte(address + pos++)) != ';') {
+                len++;
+                _name[len - 1] = b;
+            }
+
+            key = key * 31 + _name[0];
+            key2 = _name[0] << 24;
+            if (len > 1) {
+                key = key * 31 + _name[1];
+                key2 += (_name[1] << 16);
+            }
+            if (len > 2) {
+                key = key * 31 + _name[len - 2];
+                key2 += (_name[len - 2] << 8);
+
+                key = key * 31 + _name[len - 1];
+                key2 += _name[len - 1];
+            }
+            key = key * 31 + len;
+            key2 ^= len;
+
+            return parseOneMeasurement(pos, city, len, key, hash2(key2));
+        }
+
+        private final int hash2(int x) {
+            x ^= x >> 16;
+            x *= 0x7feb352d;
+            x ^= x >> 15;
+            x *= 0x846ca68b;
+            x ^= x >> 16;
+            return x;
+        }
+
+        static int rehash(int x) {
+            x = ((x >>> 16) ^ x) * 0x45d9f3b;
+            x = ((x >>> 16) ^ x) * 0x45d9f3b;
+            x = (x >>> 16) ^ x;
+            return x;
+        }
+
+        private final void parse() {
+            long trueStart = 0, trueEnd = (end - start);
+            long pos = 0;
             long limit = buff.byteSize();
 
             if (start != 0) {
                 while (pos < limit) {
                     trueStart++;
-                    if ((b = UNSAFE.getByte(address + pos++)) == '\n') {
+                    if (UNSAFE.getByte(address + pos++) == '\n') {
                         break;
                     }
                 }
@@ -151,37 +228,92 @@ public class CalculateAverage_yasyf {
             pos = trueEnd;
             while (pos < limit) {
                 trueEnd++;
-                if ((b = UNSAFE.getByte(address + pos++)) == '\n') {
+                if (UNSAFE.getByte(address + pos++) == '\n') {
                     break;
                 }
             }
 
             pos = trueStart;
-            while (pos < trueEnd) {
-                int key = 0, key2 = 0, measurement = 0, len = 0, sign = 1;
+            int size = SPECIES.length();
+
+            while (pos + size < trueEnd) {
+                final ByteVector bytes = ByteVector.fromMemorySegment(SPECIES, buff, pos, ByteOrder.nativeOrder());
                 long city = address + pos;
 
-                while ((b = UNSAFE.getByte(address + pos++)) != ';') {
-                    len++;
-                    // https://stackoverflow.com/a/2351171
-                    key = key * 31 + b;
-                    key2 = key2 * 37 + b;
+                long semicolon = bytes.compare(VectorOperators.EQ, ';').toLong();
+                int first = Long.numberOfTrailingZeros(semicolon);
+                if (first >= size - 1 || first < 3) {
+                    // Name too long or short
+                    pos = parseOne(pos);
+                    continue;
                 }
+                pos += first + 1;
+                int length = first;
 
-                if ((b = UNSAFE.getByte(address + pos++)) == '-') {
-                    sign = -1;
-                }
-                else {
-                    measurement = b - '0';
-                }
+                // var mask = SPECIES.indexInRange(0, length).toVector();
+                // var ints = bytes.and(mask).reinterpretAsInts();
+                // int hash = ints.lanewise(VectorOperators.LSHR, 16)
+                // .lanewise(VectorOperators.XOR, ints)
+                // .mul(0x7feb352d) // https://github.com/skeeto/hash-prospector
+                // .reduceLanes(VectorOperators.XOR);
 
-                while ((b = UNSAFE.getByte(address + pos++)) != '\n') {
-                    if (b != '.') {
-                        measurement = (measurement * 10) + (b - '0');
-                    }
-                }
+                char name_start = UNSAFE.getChar(city);
+                byte name_1 = (byte) (name_start);
+                byte name_2 = (byte) (name_start >> 8);
 
-                addCity(city, len, key, key2, 0, measurement * sign);
+                long data = UNSAFE.getLong(address + pos - 3);
+                // last 2 chars of city, try to hash and if it fails, then
+
+                byte name_3 = (byte) (data);
+                byte name_4 = (byte) ((data >> 8));
+                // byte 3 is ":"
+
+                int key = 0;
+                key = key * 31 + name_1;
+                key = key * 31 + name_2;
+                key = key * 31 + name_3;
+                key = key * 31 + name_4;
+                key = key * 31 + length;
+
+                int key2 = 0;
+                key2 += (name_1 << 24);
+                key2 += (name_2 << 16);
+                key2 += (name_3 << 8);
+                key2 += name_4;
+                key2 ^= length;
+                key2 = hash2(key2);
+
+                byte byte_1 = (byte) ((data >> 24));
+                int mul = byte_1 == '-' ? -1 : 1;
+
+                byte byte_2 = (byte) ((data >> 32));
+                byte byte_3 = (byte) ((data >> 40));
+                byte byte_4 = (byte) ((data >> 48));
+                byte byte_5 = (byte) ((data >> 56));
+
+                int measurement;
+                if (byte_2 == '.') { // 1 digit, no neg
+                    measurement = (byte_1 - '0') * 10 + (byte_3 - '0');
+                    pos += 3;
+                }
+                else if (byte_3 == '.' && mul == 1) { // 2 digit, no neg
+                    measurement = (byte_1 - '0') * 100 + (byte_2 - '0') * 10 + (byte_4 - '0');
+                    pos += 4;
+                }
+                else if (byte_3 == '.') { // 1 digit, neg
+                    measurement = (byte_2 - '0') * 10 + (byte_4 - '0');
+                    pos += 4;
+                }
+                else { // 2 digit, neg
+                    measurement = (byte_2 - '0') * 100 + (byte_3 - '0') * 10 + (byte_5 - '0');
+                    pos += 5;
+                }
+                pos++; // skip newline
+                addCity(city, length, key, key2, 0, measurement * mul);
+            }
+
+            while (pos < trueEnd) {
+                pos = parseOne(pos);
             }
         }
 
