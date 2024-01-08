@@ -155,7 +155,7 @@ public class CalculateAverage_mtopolnik {
 
         private void processChunk() {
             while (cursor < inputSize) {
-                long semicolonPos = bytePosOfSemicolon(cursor);
+                long semicolonPos = posOfSemicolon(cursor);
                 final long hash = hash(semicolonPos);
                 long nameLen = semicolonPos - cursor;
                 assert nameLen <= 100 : "nameLen > 100";
@@ -320,10 +320,10 @@ public class CalculateAverage_mtopolnik {
             results[myIndex] = exportedStats.toArray(new StationStats[0]);
         }
 
-        long bytePosOfSemicolon(long offset) {
+        long posOfSemicolon(long offset) {
             return !ORDER_IS_BIG_ENDIAN
-                    ? bytePosLittleEndian(offset)
-                    : bytePosBigEndian(offset);
+                    ? posOfSemicolonLittleEndian(offset)
+                    : posOfSemicolonBigEndian(offset);
         }
 
         private static final long BROADCAST_0x01 = broadcastByte(0x01);
@@ -331,7 +331,7 @@ public class CalculateAverage_mtopolnik {
 
         // Adapted from https://jameshfisher.com/2017/01/24/bitwise-check-for-zero-byte/
         // and https://github.com/ashvardanian/StringZilla/blob/14e7a78edcc16b031c06b375aac1f66d8f19d45a/stringzilla/stringzilla.h#L139-L169
-        long bytePosLittleEndian(long offset) {
+        long posOfSemicolonLittleEndian(long offset) {
             final long limit = inputSize - Long.BYTES + 1;
             for (; offset < limit; offset += Long.BYTES) {
                 var block = UNSAFE.getLong(inputBase + offset);
@@ -347,7 +347,7 @@ public class CalculateAverage_mtopolnik {
         private static final long BROADCAST_0x7F = broadcastByte(0x7F);
 
         // Adapted from https://richardstartin.github.io/posts/finding-bytes
-        long bytePosBigEndian(long offset) {
+        long posOfSemicolonBigEndian(long offset) {
             final long limit = inputSize - Long.BYTES + 1;
             for (; offset < limit; offset += Long.BYTES) {
                 var block = UNSAFE.getLong(inputBase + offset);
