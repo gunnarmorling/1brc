@@ -28,8 +28,8 @@ import java.util.stream.Collectors;
 public class CalculateAverage_mariuslarsen {
     private static final Byte DELIMITER = ';';
     private static final Byte NEWLINE = '\n';
-    private static final int N_THREADS = Runtime.getRuntime().availableProcessors() - 1;
-    private static final int MAX_NUMBER_OF_DESTINATIONS = 1024;
+    private static final int N_THREADS = Runtime.getRuntime().availableProcessors();
+    private static final int MAX_NUMBER_OF_DESTINATIONS = 10000;
     private static final int MIN_BLOCK_SIZE = 1 << 15;
     private static final int MAX_LINE_WIDTH = 108;
 
@@ -44,15 +44,12 @@ public class CalculateAverage_mariuslarsen {
 
     private static void readMeasurements(Path path) {
         try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
-
             Map<String, Stats> res = createBuffers(channel).parallelStream()
                     .map(CalculateAverage_mariuslarsen::parseBuffer)
                     .flatMap(Collection::stream)
                     .collect(Collectors.toMap(s -> new String(s.city), Function.identity(), Stats::join, TreeMap::new));
             System.out.println(res);
-
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
@@ -62,8 +59,7 @@ public class CalculateAverage_mariuslarsen {
         long blockSize;
         if (N_THREADS * MIN_BLOCK_SIZE > channelSize) {
             blockSize = MIN_BLOCK_SIZE;
-        }
-        else {
+        } else {
             long wantedBlockSize = Math.ceilDiv(channelSize, N_THREADS) + MAX_LINE_WIDTH;
             blockSize = Math.min(Integer.MAX_VALUE, wantedBlockSize);
         }
@@ -82,7 +78,7 @@ public class CalculateAverage_mariuslarsen {
     }
 
     private static Collection<Stats> parseBuffer(ByteBuffer buffer) {
-        Map<Integer, Stats> destinations = new HashMap<>(MAX_NUMBER_OF_DESTINATIONS);
+        Map<Integer, Stats> destinations = HashMap.newHashMap(MAX_NUMBER_OF_DESTINATIONS);
         Stats currentStats;
         int size;
         int hashCode;
@@ -108,8 +104,7 @@ public class CalculateAverage_mariuslarsen {
             while ((current = buffer.get()) != NEWLINE) {
                 if (current == '-') {
                     negative = -1;
-                }
-                else if (current != '.') {
+                } else if (current != '.') {
                     temperature = temperature * 10 + current - '0';
                 }
             }
@@ -149,7 +144,9 @@ public class CalculateAverage_mariuslarsen {
 
         @Override
         public boolean equals(Object o) {
-            return Arrays.equals(city, ((Stats) (o)).city);
+            if (o instanceof Stats s)
+                return hashCode == s.hashCode() && Arrays.equals(city, s.city);
+            return false;
         }
 
         @Override
