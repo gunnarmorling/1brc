@@ -199,8 +199,6 @@ public class CalculateAverage_mtopolnik {
                 stats.setCount(1);
                 stats.setMin((short) temperature);
                 stats.setMax((short) temperature);
-                // var nameBlock = namesMem.asSlice(tableIndex * NAME_SLOT_SIZE, NAME_SLOT_SIZE);
-                // nameBlock.copyFrom(nameSlice);
                 UNSAFE.copyMemory(inputBase + namePos, namesBase + tableIndex * NAME_SLOT_SIZE, nameLen);
                 return;
             }
@@ -238,7 +236,6 @@ public class CalculateAverage_mtopolnik {
 
             // Temperature plus the following newline is at least 4 chars, so this is always safe:
             int fourCh = UNSAFE.getInt(inputBase + startOffset);
-            // int fourCh = inputMem.get(JAVA_INT_UNALIGNED, startOffset);
             if (ORDER_IS_BIG_ENDIAN) {
                 fourCh = Integer.reverseBytes(fourCh);
             }
@@ -268,7 +265,6 @@ public class CalculateAverage_mtopolnik {
                 // The last character may be past the four loaded bytes, load it from memory.
                 // Checking that with another `if` is self-defeating for performance.
                 ch = UNSAFE.getByte(inputBase + startOffset + (shift / 8));
-                // ch = inputMem.get(JAVA_BYTE, startOffset + (shift / 8));
             }
             temperature = 10 * temperature + (ch - zero);
             // `shift` holds the number of bits in the temperature field.
@@ -279,12 +275,10 @@ public class CalculateAverage_mtopolnik {
         }
 
         private long hash(long startOffset, long limit) {
-            UNSAFE.putLong(hashBufBase, 0); // hashBuf.set(JAVA_LONG, 0, 0);
-            // UNSAFE.putLong(hashBuf.address() + 8, 0); // hashBuf.set(JAVA_LONG, 8, 0);
+            UNSAFE.putLong(hashBufBase, 0);
             UNSAFE.copyMemory(inputBase + startOffset, hashBufBase, Long.min(HASHBUF_SIZE, limit - startOffset));
-            // hashBuf.copyFrom(inputMem.asSlice(startOffset, Long.min(HASHBUF_SIZE, limit - startOffset)));
-            long n1 = UNSAFE.getLong(hashBufBase); // long n1 = hashBuf.get(JAVA_LONG, 0);
-            // long n2 = hashBuf.get(JAVA_LONG, 8);
+            long n1 = UNSAFE.getLong(hashBufBase);
+//            long n1 = UNSAFE.getLong(hashBufBase + Long.BYTES);
             long seed = 0x51_7c_c1_b7_27_22_0a_95L;
             int rotDist = 19;
             long hash = n1;
@@ -331,7 +325,7 @@ public class CalculateAverage_mtopolnik {
         long bytePosLittleEndian(long offset) {
             final long limit = inputSize - Long.BYTES + 1;
             for (; offset < limit; offset += Long.BYTES) {
-                var block = UNSAFE.getLong(inputBase + offset); // haystack.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+                var block = UNSAFE.getLong(inputBase + offset);
                 final long diff = block ^ BROADCAST_SEMICOLON;
                 long matchIndicators = (diff - 0x0101010101010101L) & ~diff & 0x8080808080808080L;
                 if (matchIndicators != 0) {
@@ -345,7 +339,7 @@ public class CalculateAverage_mtopolnik {
         long bytePosBigEndian(long offset) {
             final long limit = inputSize - Long.BYTES + 1;
             for (; offset < limit; offset += Long.BYTES) {
-                var block = UNSAFE.getLong(inputBase + offset); // haystack.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+                var block = UNSAFE.getLong(inputBase + offset);
                 final long diff = block ^ BROADCAST_SEMICOLON;
                 long matchIndicators = (diff & 0x7F7F7F7F7F7F7F7FL) + 0x7F7F7F7F7F7F7F7FL;
                 matchIndicators = ~(matchIndicators | diff | 0x7F7F7F7F7F7F7F7FL);
@@ -358,7 +352,7 @@ public class CalculateAverage_mtopolnik {
 
         private long simpleSearch(long offset) {
             for (; offset < inputSize; offset++) {
-                if (UNSAFE.getByte(inputBase + offset) /* haystack.get(JAVA_BYTE, offset) */ == SEMICOLON) {
+                if (UNSAFE.getByte(inputBase + offset) == SEMICOLON) {
                     return offset;
                 }
             }
