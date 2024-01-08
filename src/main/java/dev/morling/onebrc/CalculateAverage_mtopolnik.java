@@ -163,7 +163,7 @@ public class CalculateAverage_mtopolnik {
         private void processChunk() {
             while (cursor < inputSize) {
                 long semicolonPos = bytePosOfSemicolon(cursor);
-                final long hash = hash(cursor, semicolonPos);
+                final long hash = hash(semicolonPos);
                 long nameLen = semicolonPos - cursor;
                 assert nameLen <= 100 : "nameLen > 100";
                 final long namePos = cursor;
@@ -290,11 +290,28 @@ public class CalculateAverage_mtopolnik {
             return sign * temperature;
         }
 
-        private long hash(long startOffset, long limit) {
-            UNSAFE.putLong(hashBufBase, 0);
-            UNSAFE.copyMemory(inputBase + startOffset, hashBufBase, Long.min(HASHBUF_SIZE, limit - startOffset));
-            long n1 = UNSAFE.getLong(hashBufBase);
-            // long n1 = UNSAFE.getLong(hashBufBase + Long.BYTES);
+        private long hash(long limit) {
+            long n1;
+            if (cursor <= inputSize - Long.BYTES) {
+                n1 = UNSAFE.getLong(inputBase + cursor);
+                long nameSize = limit - cursor;
+                long shiftDistance = 8 * (Long.BYTES - nameSize);
+                long mask = ~0L;
+                if (!ORDER_IS_BIG_ENDIAN) {
+                    mask >>>= shiftDistance;
+                }
+                else {
+                    mask <<= shiftDistance;
+                }
+                n1 &= mask;
+            }
+            else {
+                UNSAFE.putLong(hashBufBase, 0);
+                // UNSAFE.putLong(hashBufBase + Long.BYTES, 0);
+                UNSAFE.copyMemory(inputBase + cursor, hashBufBase, Long.min(HASHBUF_SIZE, limit - cursor));
+                n1 = UNSAFE.getLong(hashBufBase);
+                // long n2 = UNSAFE.getLong(hashBufBase + Long.BYTES);
+            }
             long seed = 0x51_7c_c1_b7_27_22_0a_95L;
             int rotDist = 19;
             long hash = n1;
