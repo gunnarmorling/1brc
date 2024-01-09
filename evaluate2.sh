@@ -25,6 +25,15 @@ if [ -z "$1" ]
     exit 1
 fi
 
+BOLD_WHITE='\033[1;37m'
+CYAN='\033[0;36m'
+GREEN='\033[0;32m'
+PURPLE='\033[0;35m'
+BOLD_RED='\033[1;31m'
+RED='\033[0;31m'
+BOLD_YELLOW='\033[1;33m'
+RESET='\033[0m' # No Color
+
 function check_command_installed {
   if ! [ -x "$(command -v $1)" ]; then
     echo "Error: $1 is not installed." >&2
@@ -35,6 +44,20 @@ function check_command_installed {
 check_command_installed java
 check_command_installed hyperfine
 check_command_installed jq
+
+# Check if SMT is enabled (we want it disabled)
+if [ -f "/sys/devices/system/cpu/smt/active" ]; then
+  if [ "$(cat /sys/devices/system/cpu/smt/active)" != "0" ]; then
+    echo -e "${BOLD_YELLOW}WARNING${RESET} SMT is enabled"
+  fi
+fi
+
+# Check if Turbo Boost is enabled (we want it disabled)
+if [ -f "/sys/devices/system/cpu/cpufreq/boost" ]; then
+  if [ "$(cat /sys/devices/system/cpu/cpufreq/boost)" != "0" ]; then
+    echo -e "${BOLD_YELLOW}WARNING${RESET} Turbo Boost is enabled"
+  fi
+fi
 
 set -o xtrace
 
@@ -48,14 +71,6 @@ ln -s measurements_1B.txt measurements.txt
 set +o xtrace
 
 echo ""
-
-BOLD_WHITE='\033[1;37m'
-CYAN='\033[0;36m'
-GREEN='\033[0;32m'
-PURPLE='\033[0;35m'
-BOLD_RED='\033[1;31m'
-RED='\033[0;31m'
-RESET='\033[0m' # No Color
 
 # check if out_expected.txt exists
 if [ ! -f "out_expected.txt" ]; then
