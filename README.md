@@ -175,11 +175,11 @@ To submit your own implementation to 1BRC, follow these steps:
 * Create a fork of the [onebrc](https://github.com/gunnarmorling/onebrc/) GitHub repository.
 * Create a copy of _CalculateAverage.java_, named _CalculateAverage\_<your_GH_user>.java_, e.g. _CalculateAverage\_doloreswilson.java_.
 * Make that implementation fast. Really fast.
-* Create a copy of _calculate_average_baseline.sh_, named _calculate\_average\_<your_GH_user>.sh_, e.g. _calculate\_average\_doloreswilson.sh_.
+* Create a copy of _calculate\_average\_baseline.sh_, named _calculate\_average\_<your_GH_user>.sh_, e.g. _calculate\_average\_doloreswilson.sh_.
 * Adjust that script so that it references your implementation class name. If needed, provide any JVM arguments via the `JAVA_OPTS` variable in that script.
   Make sure that script does not write anything to standard output other than calculation results.
-* OpenJDK 21 is the default. If a custom JDK build is required, include the SDKMAN command `sdk use java [version]` in the launch shell script prior to application start.
-* (Optional) If you'd like to use native binaries (GraalVM), adjust the _pom.xml_ file so that it builds that binary.
+* (Optional) OpenJDK 21 is used by default. If a custom JDK build is required, create a copy of _prepare\_baseline.sh_, named _prepare\_<your_GH_user>.sh_, e.g. _prepare\_doloreswilson.sh_. Include the SDKMAN command `sdk use java [version]` in the your prepare script.
+* (Optional) If you'd like to use native binaries (GraalVM), create a script named _additional\_build\_step\_<your_GH_user>.sh_, e.g. _additional\_build\_step\_doloreswilson.sh_ and add all the required build logic there
 * Run the test suite by executing _/test.sh <your_GH_user>_; if any differences are reported, fix them before submitting your implementation.
 * Create a pull request against the upstream repository, clearly stating
   * The name of your implementation class.
