@@ -16,5 +16,5 @@
 #
 
 
-JAVA_OPTS="--enable-preview --add-modules=jdk.incubator.vector" # -XX:+UnlockDiagnosticVMOptions -XX:PrintAssemblyOptions=intel -XX:CompileCommand=print,*.CalculateAverage_merykitty::iterate"
+JAVA_OPTS="--enable-preview --add-modules=jdk.incubator.vector -XX:-TieredCompilation" # -XX:+UnlockDiagnosticVMOptions -XX:PrintAssemblyOptions=intel -XX:CompileCommand=print,*.CalculateAverage_merykitty::iterate"
 time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_merykitty
