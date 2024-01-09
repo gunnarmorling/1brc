@@ -25,12 +25,17 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class CalculateAverage_JamalMulla {
 
+    static Map<String, ResultRow> global = new HashMap<>();
     private static final String FILE = "./measurements.txt";
     private static final Unsafe UNSAFE = initUnsafe();
+    private static final Lock lock = new ReentrantLock();
+    private static final int FNV_32_INIT = 0x811c9dc5;
+    private static final int FNV_32_PRIME = 0x01000193;
 
     private static Unsafe initUnsafe() {
         try {
@@ -96,12 +101,10 @@ public class CalculateAverage_JamalMulla {
     private static class CalculateTask implements Runnable {
 
         private final SimplerHashMap results;
-        private final Map<String, ResultRow> global;
         private final Chunk chunk;
 
-        public CalculateTask(Map<String, ResultRow> global, Chunk chunk) {
+        public CalculateTask(Chunk chunk) {
             this.results = new SimplerHashMap();
-            this.global = global;
             this.chunk = chunk;
         }
 
@@ -112,7 +115,7 @@ public class CalculateAverage_JamalMulla {
             short nameIndex = 0;
             int ot;
             // fnv hash
-            int hash = 0x811c9dc5;
+            int hash = FNV_32_INIT;
 
             long i = chunk.start;
             final long cl = chunk.start + chunk.length;
@@ -121,7 +124,7 @@ public class CalculateAverage_JamalMulla {
                 while ((c = UNSAFE.getByte(i++)) != 0x3B /* semi-colon */) {
                     nameBytes[nameIndex++] = c;
                     hash ^= c;
-                    hash *= 0x01000193;
+                    hash *= FNV_32_PRIME;
                 }
 
                 // temperature value follows
@@ -164,27 +167,31 @@ public class CalculateAverage_JamalMulla {
             }
 
             // merge results with overall results
-            for (MapEntry me : results.getAll()) {
-                ResultRow rr;
-                ResultRow lr = me.row;
-                if ((rr = global.get(me.key)) != null) {
-                    rr.min = Math.min(rr.min, lr.min);
-                    rr.max = Math.max(rr.max, lr.max);
-                    rr.count += lr.count;
-                    rr.sum += lr.sum;
+            List<MapEntry> all = results.getAll();
+            lock.lock();
+            try {
+                for (MapEntry me : all) {
+                    ResultRow rr;
+                    ResultRow lr = me.row;
+                    if ((rr = global.get(me.key)) != null) {
+                        rr.min = Math.min(rr.min, lr.min);
+                        rr.max = Math.max(rr.max, lr.max);
+                        rr.count += lr.count;
+                        rr.sum += lr.sum;
+                    }
+                    else {
+                        global.put(me.key, lr);
+                    }
                 }
-                else {
-                    global.put(me.key, lr);
-                }
+            }
+            finally {
+                lock.unlock();
             }
         }
     }
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        Map<String, ResultRow> results = new ConcurrentHashMap<>();
-
-        RandomAccessFile raFile = new RandomAccessFile(FILE, "r");
-        FileChannel channel = raFile.getChannel();
+        FileChannel channel = new RandomAccessFile(FILE, "r").getChannel();
         int numThreads = 1;
         if (channel.size() > 64000) {
             numThreads = Runtime.getRuntime().availableProcessors();
@@ -192,7 +199,8 @@ public class CalculateAverage_JamalMulla {
         List<Chunk> chunks = getChunks(numThreads, channel);
         List<Thread> threads = new ArrayList<>();
         for (Chunk chunk : chunks) {
-            Thread thread = new Thread(new CalculateTask(results, chunk));
+            Thread thread = new Thread(new CalculateTask(chunk));
+            thread.setPriority(Thread.MAX_PRIORITY);
             thread.start();
             threads.add(thread);
         }
@@ -200,18 +208,17 @@ public class CalculateAverage_JamalMulla {
             t.join();
         }
         // create treemap just to sort
-        System.out.println(new TreeMap<>(results));
+        System.out.println(new TreeMap<>(global));
     }
 
     record MapEntry(String key, ResultRow row) {
     }
 
     static class SimplerHashMap {
-        // based on spullara'ss
-        // can't have more than 10000 unique keys butwant to match max hash
-        int MAPSIZE = 65536;
-        ResultRow[] slots = new ResultRow[MAPSIZE];
-        byte[][] keys = new byte[MAPSIZE][];
+        // can't have more than 10000 unique keys but want to match max hash
+        final int MAPSIZE = 65536;
+        final ResultRow[] slots = new ResultRow[MAPSIZE];
+        final byte[][] keys = new byte[MAPSIZE][];
 
         public void putOrMerge(final byte[] key, final short length, final int hash, final int temp) {
             int slot = hash;
@@ -273,7 +280,7 @@ public class CalculateAverage_JamalMulla {
 
         // Get all pairs
         public List<MapEntry> getAll() {
-            List<MapEntry> result = new ArrayList<>(slots.length);
+            final List<MapEntry> result = new ArrayList<>(slots.length);
             for (int i = 0; i < slots.length; i++) {
                 ResultRow slotValue = slots[i];
                 if (slotValue != null) {
