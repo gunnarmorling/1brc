@@ -84,6 +84,8 @@ for fork in "$@"; do
   # Use hyperfine to run the benchmarks for each fork
   HYPERFINE_OPTS="--warmup 1 --runs 5 --export-json $fork-$filetimestamp-timing.json --output ./$fork-$filetimestamp.out"
 
+  set +e # we don't want hyperfine or diff failing on 1 fork to exit the script early
+
   # check if this script is running on a Linux box
   if [ "$(uname -s)" == "Linux" ]; then
     check_command_installed numactl
@@ -96,7 +98,6 @@ for fork in "$@"; do
   fi
 
   # Verify output
-  set +e
   diff <(grep Hamburg $fork-$filetimestamp.out) <(grep Hamburg out_expected.txt) > /dev/null
   if [ $? -ne 0 ]; then
     echo ""
