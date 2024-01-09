@@ -16,5 +16,5 @@
 #
 
 
-JAVA_OPTS="--enable-preview -XX:+UseParallelGC -Xms4g -Xmx4g"
+JAVA_OPTS="--enable-preview -XX:+UseParallelGC"
 time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_felix19350

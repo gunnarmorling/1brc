@@ -24,6 +24,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -74,62 +75,73 @@ public class CalculateAverage_felix19350 {
     }
 
   private record AverageAggregatorTask(MemorySegment memSegment) {
+    private static final int[] INT_PARSE_FACTORS = new int[]{1, 10, 100};
+    private static final int HASH_FACTOR = 607; // Mersenne prime
+    private static final int EXPECTED_MAX_NUM_CITIES = 15_000; // 10K cities + a buffer no to trigger the load factor
 
     public static Stream<AverageAggregatorTask> createStreamOf(List<MemorySegment> memorySegments) {
       return memorySegments.stream().map(AverageAggregatorTask::new);
     }
 
     public Map<String, ResultRow> processChunk() {
-      final var result = new TreeMap<String, ResultRow>();
+      final var measurements = new Hashtable<Integer, ResultRow>(EXPECTED_MAX_NUM_CITIES);
+      final var cityNames = new Hashtable<Integer, String>(EXPECTED_MAX_NUM_CITIES);
       var offset = 0L;
       var lineStart = 0L;
+      // process line by line
       while (offset < memSegment.byteSize()) {
         byte nextByte = memSegment.get(ValueLayout.OfByte.JAVA_BYTE, offset);
         if ((char) nextByte == '\n') {
-          this.processLine(result, memSegment.asSlice(lineStart, (offset - lineStart)).asByteBuffer());
+          this.processLine(measurements, cityNames, memSegment.asSlice(lineStart, (offset - lineStart)).asByteBuffer());
           lineStart = offset + ValueLayout.JAVA_BYTE.byteSize();
         }
         offset += ValueLayout.OfByte.JAVA_BYTE.byteSize();
       }
 
+      // at the end merge the city names with the measurements:
+      final var result = new Hashtable<String, ResultRow>(EXPECTED_MAX_NUM_CITIES);
+      cityNames.forEach((key, value) -> result.put(value, measurements.get(key)));
       return result;
     }
 
-    private void processLine(Map<String, ResultRow> result, ByteBuffer lineBytes) {
+    private void processLine(Map<Integer, ResultRow> measurements, Map<Integer, String> cities, ByteBuffer lineBytes) {
+      // Find separator
+      var fingerPrint = 0;
       var separatorIdx = -1;
       for (int i = 0; i < lineBytes.limit(); i++) {
-        if ((char) lineBytes.get() == ';') {
+        final var currentByte = (char) lineBytes.get();
+        if (currentByte == ';') {
           separatorIdx = i;
           lineBytes.clear();
           break;
+        } else {
+          fingerPrint = HASH_FACTOR * fingerPrint + currentByte;
         }
       }
       assert (separatorIdx > 0);
 
-      var valueCapacity = lineBytes.capacity() - (separatorIdx + 1);
-      var cityBytes = new byte[separatorIdx];
-      var valueBytes = new byte[valueCapacity];
-      lineBytes.get(cityBytes, 0, separatorIdx);
-      lineBytes.get(separatorIdx + 1, valueBytes);
-
-      var city = new String(cityBytes, StandardCharsets.UTF_8);
-      var value = parseInt(valueBytes);
-
-      var latestValue = result.get(city);
+      final var value = parseInt(lineBytes, separatorIdx + 1, lineBytes.capacity());
+      final var latestValue = measurements.get(fingerPrint);
       if (latestValue != null) {
         latestValue.mergeValue(value);
       } else {
-        result.put(city, new ResultRow(value));
+        measurements.put(fingerPrint, new ResultRow(value));
+        lineBytes.clear();
+        final var cityNameBytes = new byte[separatorIdx];
+        lineBytes.get(cityNameBytes);
+        final var cityName = new String(cityNameBytes, StandardCharsets.UTF_8);
+        cities.put(fingerPrint, cityName);
       }
     }
 
-    private static int parseInt(byte[] valueBytes) {
+    private static int parseInt(ByteBuffer valueBytes, int start, int end) {
       int multiplier = 1;
       int digitValue = 0;
-      var numDigits = valueBytes.length-1; // there is always one decimal place
-      var ds = new int[]{1,10,100};
+      int numDigits = end - start - 1; // there is always one decimal place
 
-      for (byte valueByte : valueBytes) {
+      valueBytes.position(start);
+      while (valueBytes.hasRemaining()) {
+        var valueByte = valueBytes.get();
         switch ((char) valueByte) {
           case '-':
             multiplier = -1;
@@ -138,24 +150,24 @@ public class CalculateAverage_felix19350 {
           case '.':
             break;
           default:
-            digitValue += ((int) valueByte - 48) * (ds[numDigits - 1]);
+            digitValue += ((int) valueByte - '0') * (INT_PARSE_FACTORS[numDigits - 1]);
             numDigits -= 1;
-            break;// TODO continue here
+            break;
         }
       }
-      return multiplier*digitValue;
+      return multiplier * digitValue;
     }
   }
 
     public static void main(String[] args) throws IOException {
         // memory map the files and divide by number of cores
-        var numProcessors = Runtime.getRuntime().availableProcessors();
-        var memorySegments = calculateMemorySegments(numProcessors);
-        var tasks = AverageAggregatorTask.createStreamOf(memorySegments);
+        final var numProcessors = Runtime.getRuntime().availableProcessors();
+        final var memorySegments = calculateMemorySegments(numProcessors);
+        final var tasks = AverageAggregatorTask.createStreamOf(memorySegments);
         assert (memorySegments.size() == numProcessors);
 
         try (var pool = Executors.newFixedThreadPool(numProcessors)) {
-            var results = tasks
+            final var results = tasks
                     .parallel()
                     .map(task -> CompletableFuture.supplyAsync(task::processChunk, pool))
                     .map(CompletableFuture::join)
