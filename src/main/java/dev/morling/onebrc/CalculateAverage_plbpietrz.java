@@ -28,12 +28,12 @@ public class CalculateAverage_plbpietrz {
         Path inputFilePath = Path.of(FILE);
         Map<Integer, TemperatureStats> results;// = new HashMap<>();
         try (RandomAccessFile inputFile = new RandomAccessFile(inputFilePath.toFile(), "r")) {
-            results = partitionInput(inputFile)
+            var parsedBuffers = partitionInput(inputFile)
                     .stream()
                     .parallel()
                     .map(fp -> getMappedByteBuffer(fp, inputFile))
-                    .map(CalculateAverage_plbpietrz::parseBuffer)
-                    .flatMap(m -> m.entrySet().stream())
+                    .map(CalculateAverage_plbpietrz::parseBuffer);
+            results = parsedBuffers.flatMap(m -> m.entrySet().stream())
                     .collect(
                             Collectors.groupingBy(
                                     Map.Entry::getKey,
@@ -41,9 +41,9 @@ public class CalculateAverage_plbpietrz {
                                             new TemperatureStats(),
                                             Map.Entry::getValue,
                                             CalculateAverage_plbpietrz::mergeTemperatureStats)));
-        }
-        try (PrintWriter pw = new PrintWriter(new BufferedOutputStream(System.out))) {
-            formatResults(pw, results);
+            try (PrintWriter pw = new PrintWriter(new BufferedOutputStream(System.out))) {
+                formatResults(pw, results);
+            }
         }
     }
 
@@ -81,6 +81,7 @@ public class CalculateAverage_plbpietrz {
     }
 
     private static Map<Integer, TemperatureStats> parseBuffer(MappedByteBuffer buffer) {
+        byte[] readLong = new byte[Long.BYTES];
         byte[] stationName = new byte[64];
         byte[] temperature = new byte[32];
         int stationLineNameLenght = 0;
@@ -91,45 +92,65 @@ public class CalculateAverage_plbpietrz {
         boolean readingName = true;
         Map<Integer, TemperatureStats> temperatures = new HashMap<>();
         Map<Integer, String> stationNames = new HashMap<>();
-        while (buffer.position() != limit) {
-            byte aChar = buffer.get();
 
-            if (readingName) {
-                if (aChar != ';') {
-                    if (aChar != '\n') {
-                        stationName[stationLineNameLenght++] = aChar;
-                        stationNameHash = stationNameHash * 31 + aChar;
+        int bytesToRead = Math.min(8, limit - buffer.position());
+        while (bytesToRead > 0) {
+            if (bytesToRead == 8) {
+                long aLong = buffer.getLong();
+                readLong[7] = (byte) (aLong >> 0);
+                readLong[6] = (byte) (aLong >> 8);
+                readLong[5] = (byte) (aLong >> 16);
+                readLong[4] = (byte) (aLong >> 24);
+                readLong[3] = (byte) (aLong >> 32);
+                readLong[2] = (byte) (aLong >> 40);
+                readLong[1] = (byte) (aLong >> 48);
+                readLong[0] = (byte) (aLong >> 56);
+            } else {
+                for (int j = 0; j < bytesToRead; ++j)
+                    readLong[j] = buffer.get();
+            }
+
+            for (int i = 0; i < bytesToRead; ++i) {
+                byte aChar = readLong[i];
+                if (readingName) {
+                    if (aChar != ';') {
+                        if (aChar != '\n') {
+                            stationName[stationLineNameLenght++] = aChar;
+                            stationNameHash = stationNameHash * 31 + aChar;
+                        }
+                    }
+                    else {
+                        readingName = false;
                     }
                 }
                 else {
-                    readingName = false;
+                    if (aChar != '\n') {
+                        temperature[temperatureLineLenght++] = aChar;
+                    }
+                    else {
+                        int len = stationLineNameLenght;
+                        Integer pos = stationNameHash;
+
+                        TemperatureStats weatherStats = temperatures.computeIfAbsent(pos, _ignored_ -> new TemperatureStats());
+
+                        double temp = parseTemperature(temperature, temperatureLineLenght);
+
+                        weatherStats.min = Math.min(weatherStats.min, temp);
+                        weatherStats.max = Math.max(weatherStats.max, temp);
+                        weatherStats.accumulated += temp;
+                        weatherStats.count++;
+
+                        stationLineNameLenght = 0;
+                        temperatureLineLenght = 0;
+                        stationNameHash = 0;
+                        readingName = true;
+
+                        stationNames.putIfAbsent(pos, new String(stationName, 0, len, Charset.defaultCharset()));
+                    }
                 }
             }
-            else {
-                if (aChar != '\n') {
-                    temperature[temperatureLineLenght++] = aChar;
-                }
-                else {
-                    int len = stationLineNameLenght;
-                    Integer pos = stationNameHash;
 
-                    TemperatureStats weatherStats = temperatures.computeIfAbsent(pos, _ignored_ -> new TemperatureStats());
-
-                    double temp = parseTemperature(temperature, temperatureLineLenght);
-
-                    weatherStats.min = Math.min(weatherStats.min, temp);
-                    weatherStats.max = Math.max(weatherStats.max, temp);
-                    weatherStats.accumulated += temp;
-                    weatherStats.count++;
-
-                    stationLineNameLenght = 0;
-                    temperatureLineLenght = 0;
-                    stationNameHash = 0;
-                    readingName = true;
-
-                    stationNames.putIfAbsent(pos, new String(stationName, 0, len, Charset.defaultCharset()));
-                }
-            }
+            bytesToRead = Math.min(8, limit - buffer.position());
         }
         STATION_NAMES.putAll(stationNames);
         return temperatures;
