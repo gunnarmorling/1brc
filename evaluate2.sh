@@ -45,6 +45,33 @@ check_command_installed java
 check_command_installed hyperfine
 check_command_installed jq
 
+## SDKMAN Setup
+# 1. Custom check for sdkman installed; not sure why check_command_installed doesn't detect it properly
+if [ ! -f "$HOME/.sdkman/bin/sdkman-init.sh" ]; then
+    echo "Error: sdkman is not installed." >&2
+    exit 1
+fi
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+
+# 2. make sure the default java version is installed
+if [ ! -d "$HOME/.sdkman/candidates/java/21.0.1-open" ]; then
+  echo "+ sdk install java 21.0.1-open"
+  sdk install java 21.0.1-open
+fi
+
+# 3. Install missing SDK java versions in any of the prepare_*.sh scripts for the provided forks
+for fork in "$@"; do
+  if [ -f "./prepare_$fork.sh" ]; then
+    grep -h "^sdk use" "./prepare_$fork.sh" | cut -d' ' -f4 | sort | uniq | while read -r version; do
+      if [ ! -d "$HOME/.sdkman/candidates/java/$version" ]; then
+        echo "+ sdk install java $version"
+        sdk install java $version
+      fi
+    done
+  fi
+done
+## END - SDKMAN Setup
+
 # Check if SMT is enabled (we want it disabled)
 if [ -f "/sys/devices/system/cpu/smt/active" ]; then
   if [ "$(cat /sys/devices/system/cpu/smt/active)" != "0" ]; then
@@ -90,7 +117,6 @@ for fork in "$@"; do
     source "./prepare_$fork.sh"
   else
     echo "+ sdk use java 21.0.1-open"
-    source "$HOME/.sdkman/bin/sdkman-init.sh"
     sdk use java 21.0.1-open
   fi
 
