@@ -32,10 +32,10 @@ import java.util.stream.IntStream;
  * Simple solution that memory maps the input file, then splits it into one segment per available core and uses
  * sun.misc.Unsafe to directly access the mapped memory. Uses a long at a time when checking for collision.
  *
- * Runs in 0.86s on my Intel i9-13900K
+ * Runs in 0.84s on my Intel i9-13900K
  * Perf stats:
- *     54,563,984,225      cpu_core/cycles/
- *     66,295,004,807      cpu_atom/cycles/
+ *     56,216,315,723      cpu_core/cycles/
+ *     67,605,798,701      cpu_atom/cycles/
  */
 public class CalculateAverage_thomaswue {
     private static final String FILE = "./measurements.txt";
@@ -119,39 +119,29 @@ public class CalculateAverage_thomaswue {
         byte b;
         while (scanPtr < chunkEnd) {
             long nameAddress = scanPtr;
-            int hash = 0;
+            long hash = 0;
 
-            // Skip first letter.
-            scanPtr++;
-
-            // Scan for ';' delimiter, always 4 bytes at a time.
+            // Search for ';', one long at a time.
             while (true) {
-                int nextVal = UNSAFE.getInt(scanPtr);
-                if ((nextVal & 0x3B) == 0x3B) {
-                    scanPtr++;
+                long word = UNSAFE.getLong(scanPtr);
+                long input = word ^ 0x3B3B3B3B3B3B3B3BL;
+                long tmp = (input & 0x7F7F7F7F7F7F7F7FL) + 0x7F7F7F7F7F7F7F7FL;
+                tmp = ~(tmp | input | 0x7F7F7F7F7F7F7F7FL);
+                int pos = Long.numberOfTrailingZeros(tmp) >>> 3;
+                if (pos != 8) {
+                    scanPtr += pos;
+                    word = word & (-1L >>> ((8 - pos - 1) << 3));
+                    hash ^= word;
                     break;
                 }
-                else if ((nextVal & 0x3B00) == 0x3B00) {
-                    scanPtr += 2;
-                    hash = hash ^ (nextVal & 0xFF);
-                    break;
+                else {
+                    scanPtr += 8;
+                    hash ^= word;
                 }
-                else if ((nextVal & 0x3B0000) == 0x3B0000) {
-                    scanPtr += 3;
-                    hash = hash ^ (nextVal & 0xFFFF);
-                    break;
-                }
-                else if (((nextVal & 0x3B000000) == 0x3B000000)) {
-                    scanPtr += 4;
-                    hash = hash ^ (nextVal & 0xFFFFFF);
-                    break;
-                }
-                scanPtr += 4;
-                hash = hash ^ nextVal;
             }
-
             // Save length of name for later.
-            int nameLength = (int) (scanPtr - nameAddress - 1);
+            int nameLength = (int) (scanPtr - nameAddress);
+            scanPtr++;
 
             // Parse number.
             int number;
@@ -175,7 +165,9 @@ public class CalculateAverage_thomaswue {
             }
 
             // Final calculation for index into hash table.
-            int tableIndex = (((hash ^ (hash >>> 18)) & (results.length - 1)));
+            int hashAsInt = (int) (hash ^ (hash >>> 32));
+            int finalHash = (hashAsInt ^ (hashAsInt >>> 18));
+            int tableIndex = (finalHash & (results.length - 1));
             outer: while (true) {
                 Result existingResult = results[tableIndex];
                 if (existingResult == null) {
@@ -215,7 +207,8 @@ public class CalculateAverage_thomaswue {
         results[hash] = r;
         byte[] bytes = new byte[nameLength];
         UNSAFE.copyMemory(null, nameAddress, bytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, nameLength);
-        cities.put(new String(bytes, StandardCharsets.UTF_8), r);
+        String nameAsString = new String(bytes, StandardCharsets.UTF_8);
+        cities.put(nameAsString, r);
     }
 
     private static long[] getSegments(int numberOfChunks) throws IOException {
