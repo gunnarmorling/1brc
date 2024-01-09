@@ -88,6 +88,10 @@ for fork in "$@"; do
   if [ -f "./prepare_$fork.sh" ]; then
     echo "+ source ./prepare_$fork.sh"
     source "./prepare_$fork.sh"
+  else
+    echo "+ sdk use java 21.0.1-open"
+    source "$HOME/.sdkman/bin/sdkman-init.sh"
+    sdk use java 21.0.1-open
   fi
 
   # Optional additional build steps
@@ -161,8 +165,8 @@ for fork in "$@"; do
 
   trimmed_mean=$(jq -r '.results[0].times | .[1:-1] | add / length' $fork-$filetimestamp-timing.json)
 
-  # Read java version from prepare_$fork.sh if it exists
-  java_version="unknown"
+  # Read java version from prepare_$fork.sh if it exists, otherwise assume 21.0.1-open
+  java_version="21.0.1-open"
   if [ -f "./prepare_$fork.sh" ]; then
     java_version=$(grep "sdk use java" ./prepare_$fork.sh | cut -d' ' -f4)
   fi
