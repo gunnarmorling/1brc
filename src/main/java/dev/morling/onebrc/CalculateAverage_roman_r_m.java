@@ -29,6 +29,7 @@ import java.util.TreeMap;
 
 public class CalculateAverage_roman_r_m {
 
+    public static final int DOT_3_RD_BYTE_MASK = (byte) '.' << 16;
     private static final String FILE = "./measurements.txt";
 
     public static void main(String[] args) throws IOException {
@@ -51,22 +52,47 @@ public class CalculateAverage_roman_r_m {
             station.hash = 0;
 
             offset += i + 1; // skip semicolon
-            boolean neg = ms.get(ValueLayout.JAVA_BYTE, offset) == '-';
-            if (neg) {
-                offset++;
+            long val;
+            if (fileSize - offset >= 8) {
+                long encodedVal = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+
+                boolean neg = (encodedVal & (byte) '-') == (byte) '-';
+                if (neg) {
+                    encodedVal >>= 8;
+                    offset++;
+                }
+
+                if ((encodedVal & DOT_3_RD_BYTE_MASK) == DOT_3_RD_BYTE_MASK) {
+                    val = (encodedVal & 0xFF - 0x30) * 100 + (encodedVal >> 8 & 0xFF - 0x30) * 10 + (encodedVal >> 24 & 0xFF - 0x30);
+                    offset += 5;
+                }
+                else {
+                    val = (encodedVal & 0xFF - 0x30) * 10 + (encodedVal >> 16 & 0xFF - 0x30);
+                    offset += 4;
+                }
+
+                if (neg) {
+                    val = -val;
+                }
             }
-            long val = ms.get(ValueLayout.JAVA_BYTE, offset++) - '0';
-            byte b;
-            while ((b = ms.get(ValueLayout.JAVA_BYTE, offset++)) != '.') {
+            else {
+                boolean neg = ms.get(ValueLayout.JAVA_BYTE, offset) == '-';
+                if (neg) {
+                    offset++;
+                }
+                val = ms.get(ValueLayout.JAVA_BYTE, offset++) - '0';
+                byte b;
+                while ((b = ms.get(ValueLayout.JAVA_BYTE, offset++)) != '.') {
+                    val = val * 10 + (b - '0');
+                }
+                b = ms.get(ValueLayout.JAVA_BYTE, offset);
                 val = val * 10 + (b - '0');
-            }
-            b = ms.get(ValueLayout.JAVA_BYTE, offset);
-            val = val * 10 + (b - '0');
 
-            offset += 2;
+                offset += 2;
 
-            if (neg) {
-                val = -val;
+                if (neg) {
+                    val = -val;
+                }
             }
 
             var a = resultStore.get(station);
