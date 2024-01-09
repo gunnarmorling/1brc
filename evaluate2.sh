@@ -133,7 +133,38 @@ for fork in "$@"; do
 
   echo -e "  ${color}$fork${RESET}: trimmed mean ${BOLD_WHITE}$trimmed_mean${RESET}, raw times ${BOLD_WHITE}$raw_times${RESET}"
 done
+echo ""
 
+# Leaderboard
+echo -e "${BOLD_WHITE}Leaderboard${RESET}"
+for fork in "$@"; do
+  # skip reporting results for failed forks
+  if [[ " ${failed[@]} " =~ " ${fork} " ]]; then
+    continue
+  fi
+
+  trimmed_mean=$(jq -r '.results[0].times | .[1:-1] | add / length' $fork-$filetimestamp-timing.json)
+
+  # Read java version from prepare_$fork.sh if it exists
+  java_version="unknown"
+  if [ -f "./prepare_$fork.sh" ]; then
+    java_version=$(grep "sdk use java" ./prepare_$fork.sh | cut -d' ' -f4)
+  fi
+
+  # trimmed_mean is in seconds
+  # Format trimmed_mean as MM::SS.mmm
+  # using bc
+  trimmed_mean_minutes=$(echo "$trimmed_mean / 60" | bc)
+  trimmed_mean_seconds=$(echo "$trimmed_mean % 60 / 1" | bc)
+  trimmed_mean_ms=$(echo "($trimmed_mean - $trimmed_mean_minutes * 60 - $trimmed_mean_seconds) * 1000 / 1" | bc)
+  trimmed_mean_formatted=$(printf "%02d:%02d.%03d" $trimmed_mean_minutes $trimmed_mean_seconds $trimmed_mean_ms)
+
+  # var result = String.format("%02d:%02d.%.0f", mean.toMinutesPart(), mean.toSecondsPart(), (double) mean.toNanosPart() / 1_000_000);
+  # var author = actualFile.replace(".out", "")
+  # System.out.println(String.format("\n|   |        %s| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_%s.java)| 21.0.1-open | [%s](https://github.com/%s)|", result, author, author, author));
+
+  echo "|   |        $trimmed_mean_formatted| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_$fork.java)| $java_version | [$fork](https://github.com/$fork)|"
+done
 echo ""
 
 # Apped $fork-$filetimestamp-timing.json to $fork-$filetimestamp.out
