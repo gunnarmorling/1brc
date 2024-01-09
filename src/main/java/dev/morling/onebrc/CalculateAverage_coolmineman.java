@@ -31,14 +31,14 @@ public class CalculateAverage_coolmineman {
     private static final String FILE = "./measurements.txt";
 
     private static class MeasurementAggregator {
-        private double min = Double.POSITIVE_INFINITY;
-        private double max = Double.NEGATIVE_INFINITY;
-        private double sum;
-        private long count;
+        private long min = Long.MAX_VALUE;
+        private long max = Long.MIN_VALUE;
+        private long sum;
+        private int count;
 
-        void add(double value) {
-            min = Math.min(min, value);
-            max = Math.max(max, value);
+        void add(long value) {
+            min = Long.min(min, value);
+            max = Long.max(max, value);
             sum += value;
             count++;
         }
@@ -51,7 +51,7 @@ public class CalculateAverage_coolmineman {
         }
 
         public String toString() {
-            return round(min) + "/" + round(sum / count) + "/" + round(max);
+            return round(min * .1) + "/" + round((sum * .1) / count) + "/" + round(max * .1);
         }
 
         private double round(double value) {
@@ -113,7 +113,7 @@ public class CalculateAverage_coolmineman {
                     doubleEnd = pos;
 
                     BytesKey station = new BytesKey(Arrays.copyOfRange(aa, nameStart, nameEnd));
-                    double value = parseDouble(aa, doubleStart, doubleEnd);
+                    long value = parseDouble(aa, doubleStart, doubleEnd);
                     MeasurementAggregator ma = map.get(station);
                     if (ma == null)
                         map.put(station, ma = new MeasurementAggregator());
@@ -144,7 +144,7 @@ public class CalculateAverage_coolmineman {
                     doubleEnd = pos;
 
                     BytesKey station = new BytesKey(ofRange(a, as, b, bs, nameStart, nameEnd));
-                    double value = parseDouble(ofRange(a, as, b, bs, doubleStart, doubleEnd), 0, doubleEnd - doubleStart);
+                    long value = parseDouble(ofRange(a, as, b, bs, doubleStart, doubleEnd), 0, doubleEnd - doubleStart);
                     map.computeIfAbsent(station, k -> new MeasurementAggregator()).add(value);
 
                     return;
@@ -178,13 +178,13 @@ public class CalculateAverage_coolmineman {
         return r;
     }
 
-    static double parseDouble(byte[] b, int start, int end) {
+    static long parseDouble(byte[] b, int start, int end) {
         boolean negative = false;
         if (b[start] == (byte) '-') {
             negative = true;
             start += 1;
         }
-        double result = 0;
+        long result = 0;
         for (int i = start; i < end; i++) {
             if (b[i] != (byte) '.') {
                 result *= 10;
@@ -193,7 +193,7 @@ public class CalculateAverage_coolmineman {
         }
         if (negative)
             result *= -1;
-        return result * .1;
+        return result;
     }
 
     public static void main(String[] args) throws Exception {
@@ -202,7 +202,7 @@ public class CalculateAverage_coolmineman {
         try (AsynchronousFileChannel fc = AsynchronousFileChannel.open(Paths.get(FILE), Set.of(StandardOpenOption.READ), Executors.newCachedThreadPool())) {
             var cp = Executors.newWorkStealingPool(Runtime.getRuntime().availableProcessors());
 
-            var bbs = new ByteBuffer[Runtime.getRuntime().availableProcessors() * 8];
+            var bbs = new ByteBuffer[Runtime.getRuntime().availableProcessors() * 16];
             for (int i = 0; i < bbs.length; i++) {
                 bbs[i] = ByteBuffer.allocate(pageSize);
             }
