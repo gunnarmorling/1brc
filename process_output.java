@@ -17,8 +17,10 @@
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.time.Duration;
 
 public class process_output {
 
@@ -63,5 +65,25 @@ public class process_output {
             .map(t -> t.substring(5))
             .map(t -> t.replace("s", "").replace("m", ":"))
             .collect(Collectors.joining(System.lineSeparator())));
+
+        var asDurations = times.stream()
+            .map(t -> t.substring(5))
+            .map(t -> t.replace("s", "S").replace("m", "M"))
+            .map(t -> "PT" + t)
+            .map(Duration::parse)
+            .collect(Collectors.toList());
+
+        var min = asDurations.stream().min(Comparator.naturalOrder()).get();
+        var max = asDurations.stream().max(Comparator.naturalOrder()).get();
+
+        var evaluated = asDurations.stream()
+            .filter(d -> d != min && d != max)
+            .collect(Collectors.toList());
+
+        var mean = evaluated.get(0).plus(evaluated.get(1)).plus(evaluated.get(2)).dividedBy(3);
+        var result = String.format("%02d:%02d.%.0f", mean.toMinutesPart(), mean.toSecondsPart(), (double) mean.toNanosPart() / 1_000_000);
+        var author = actualFile.replace(".out", "");
+
+        System.out.println(String.format("\n|   |        %s| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_%s.java)| 21.0.1-open | [%s](https://github.com/%s)|", result, author, author, author));
     }
 }
