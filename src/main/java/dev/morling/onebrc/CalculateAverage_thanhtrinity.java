@@ -31,7 +31,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.TreeMap;
@@ -104,7 +103,7 @@ public class CalculateAverage_thanhtrinity {
     }
 
     private static List<City> processBufferData(MappedByteBuffer buffer, long taskIdx) {
-        final int chunkSize = 4000;
+        final int chunkSize = 100000;
         var breakLineIndex = 0;
 
         var cities = new City[chunkSize];
@@ -180,6 +179,7 @@ public class CalculateAverage_thanhtrinity {
 
         }
         var citiesList = Arrays.stream(cities).filter(Objects::nonNull).toList();
+        //  System.out.println(citiesList.size());
         return citiesList;
     }
 
@@ -190,12 +190,9 @@ public class CalculateAverage_thanhtrinity {
                                 City::getKey,
                                 city -> city,
                                 City::combine));
+        // System.out.println(cities.size());
         System.out.println(new TreeMap<>(cities));
     }
-
-    record CitiesTempChunk(List<City> cities, byte[] header, byte[] footer) {
-    }
-
 }
 
 class DataProcessor {
@@ -251,7 +248,7 @@ class City {
     private byte[] name;
     private String key;
     private double min = Double.MAX_VALUE;
-    private double max = Double.MIN_VALUE;
+    private double max = -Double.MAX_VALUE;
     private double sum = 0L;
     private int count = 0;
 
