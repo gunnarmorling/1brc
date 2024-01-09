@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 #
 #  Copyright 2023 The original authors
 #
@@ -15,13 +15,7 @@
 #  limitations under the License.
 #
 
-if [ -f ./image_calculateaverage_mtopolnik ]; then
-    echo "Using Graal native image: image_calculateaverage_mtopolnik; delete to run with JVM instead." 1>&2
-    time ./image_calculateaverage_mtopolnik
-else
-  echo "Graal native image not found, using the JVM. Run additional_build_step_mtopolnik.sh to create." 1>&2
-  source "$HOME/.sdkman/bin/sdkman-init.sh"
-  sdk use java 21.0.1-graal 1>&2
-  time java -Xmx256m --enable-preview -XX:InlineSmallCode=10000\
-    --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_mtopolnik
-fi
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+sdk use java 21.0.1-graal 1>&2
+NATIVE_IMAGE_OPTS="--gc=epsilon -O3 -march=native --enable-preview"
+native-image $NATIVE_IMAGE_OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o image_calculateaverage_mtopolnik dev.morling.onebrc.CalculateAverage_mtopolnik
