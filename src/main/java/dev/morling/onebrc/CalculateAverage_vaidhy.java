@@ -369,7 +369,7 @@ public class CalculateAverage_vaidhy<T> {
                 ChunkProcessorImpl::new,
                 CalculateAverage_vaidhy::combineOutputs);
 
-        int proc = ForkJoinPool.commonPool().getParallelism();
+        int proc = 2 * ForkJoinPool.commonPool().getParallelism();
         long fileSize = diskFileService.length();
         long chunkSize = Math.ceilDiv(fileSize, proc);
         Map<EfficientString, IntSummaryStatistics> output = calculateAverageVaidhy.master(chunkSize,
