@@ -22,12 +22,14 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.TreeMap;
 
 public class CalculateAverage_roman_r_m {
 
-    private static final int SIZE = 10000;
-    private static final int DOT_3RD_BYTE_MASK = (byte) '.' << 16;
+    public static final int DOT_3_RD_BYTE_MASK = (byte) '.' << 16;
     private static final String FILE = "./measurements.txt";
 
     public static void main(String[] args) throws IOException {
@@ -60,10 +62,11 @@ public class CalculateAverage_roman_r_m {
                     offset++;
                 }
 
-                if ((encodedVal & DOT_3RD_BYTE_MASK) == DOT_3RD_BYTE_MASK) {
+                if ((encodedVal & DOT_3_RD_BYTE_MASK) == DOT_3_RD_BYTE_MASK) {
                     val = (encodedVal & 0xFF - 0x30) * 100 + (encodedVal >> 8 & 0xFF - 0x30) * 10 + (encodedVal >> 24 & 0xFF - 0x30);
                     offset += 5;
-                } else {
+                }
+                else {
                     val = (encodedVal & 0xFF - 0x30) * 10 + (encodedVal >> 16 & 0xFF - 0x30);
                     offset += 4;
                 }
@@ -71,7 +74,8 @@ public class CalculateAverage_roman_r_m {
                 if (neg) {
                     val = -val;
                 }
-            } else {
+            }
+            else {
                 boolean neg = ms.get(ValueLayout.JAVA_BYTE, offset) == '-';
                 if (neg) {
                     offset++;
@@ -157,8 +161,6 @@ public class CalculateAverage_roman_r_m {
     }
 
     private static final class ResultRow {
-        private final ByteString station = new ByteString();
-
         long min = 1000;
         long sum = 0;
         long max = -1000;
@@ -174,30 +176,25 @@ public class CalculateAverage_roman_r_m {
     }
 
     static class ResultStore {
-
-        private final ResultRow[] results = new ResultRow[SIZE];
-
-        {
-            for (int i = 0; i < SIZE; i++) {
-                results[i] = new ResultRow();
-            }
-        }
+        private final ArrayList<ResultRow> results = new ArrayList<>(10000);
+        private final Map<ByteString, Integer> indices = new HashMap<>(10000);
 
         ResultRow get(ByteString s) {
-            int idx = (SIZE - 1) & s.hashCode();
-            while (results[idx].station.len > 0 && !results[idx].station.equals(s)) {
-                idx = (idx + 1) % SIZE;
+            var idx = indices.get(s);
+            if (idx != null) {
+                return results.get(idx);
             }
-            return results[idx];
+            else {
+                ResultRow next = new ResultRow();
+                results.add(next);
+                indices.put(s.copy(), results.size() - 1);
+                return next;
+            }
         }
 
         TreeMap<String, ResultRow> toMap() {
             var result = new TreeMap<String, ResultRow>();
-            for (int i = 0; i < SIZE; i++) {
-                if (results[i] != null) {
-                    result.put(results[i].station.toString(), results[i]);
-                }
-            }
+            indices.forEach((name, idx) -> result.put(name.toString(), results.get(idx)));
             return result;
         }
     }
