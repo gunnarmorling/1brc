@@ -157,15 +157,15 @@ public class CalculateAverage_mtopolnik {
             while (cursor < inputSize) {
                 long posOfSemicolon = posOfSemicolon();
                 long hash = hash(posOfSemicolon);
+                long namePos = cursor;
                 long nameLen = posOfSemicolon - cursor;
                 assert nameLen <= 100 : "nameLen > 100";
-                final long namePos = cursor;
                 int temperature = parseTemperatureAndAdvanceCursor(posOfSemicolon);
-                updateStats(hash, nameLen, temperature, namePos);
+                updateStats(hash, namePos, nameLen, temperature);
             }
         }
 
-        private void updateStats(long hash, long nameLen, int temperature, long namePos) {
+        private void updateStats(long hash, long namePos, long nameLen, int temperature) {
             int tableIndex = (int) (hash % STATS_TABLE_SIZE);
             while (true) {
                 stats.gotoIndex(tableIndex);
@@ -271,6 +271,8 @@ public class CalculateAverage_mtopolnik {
                 if (ORDER_IS_BIG_ENDIAN) {
                     n1 = Long.reverseBytes(n1);
                 }
+
+                // Mask out bytes not belonging to name
                 long nameSize = posOfSemicolon - offset;
                 long shiftDistance = 8 * Long.max(0, Long.BYTES - nameSize);
                 long mask = ~0L >>> shiftDistance;
@@ -327,10 +329,10 @@ public class CalculateAverage_mtopolnik {
                     return offset + Long.numberOfTrailingZeros(matchIndicators) / 8;
                 }
             }
-            return simpleSearch(offset);
+            return posOfSemicolonSimple(offset);
         }
 
-        private long simpleSearch(long offset) {
+        private long posOfSemicolonSimple(long offset) {
             for (; offset < inputSize; offset++) {
                 if (UNSAFE.getByte(inputBase + offset) == SEMICOLON) {
                     return offset;
