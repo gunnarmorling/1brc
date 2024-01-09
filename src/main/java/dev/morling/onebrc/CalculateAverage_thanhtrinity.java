@@ -27,7 +27,6 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -39,39 +38,36 @@ import java.util.stream.Collectors;
 public class CalculateAverage_thanhtrinity {
 
     private static final String FILE = "./measurements.txt";
-    private static final int TOTAL_PROCCESSOR = Runtime.getRuntime().availableProcessors();
+    private static final int TOTAL_PROCESSOR = 8;// Runtime.getRuntime().availableProcessors();
 
     public static void main(String[] args) throws IOException, InterruptedException {
 
-        // System.out.println("Num Of Proccessor:" + TOTAL_PROCCESSOR);
+        // System.out.println("Num Of Processor:" + TOTAL_PROCESSOR);
         var threads = new ArrayList<Thread>();
 
         var fileChannel = FileChannel.open(Path.of(FILE), READ);
         long fullSize = fileChannel.size();
         // System.out.println("FullSize:" + fullSize);
 
-        var standardChunkSize = fullSize / TOTAL_PROCCESSOR;
+        var standardChunkSize = fullSize / TOTAL_PROCESSOR;
         // System.out.println("StandardChunkSize:" + standardChunkSize);
+        var chunkDataList = new ChunkData[TOTAL_PROCESSOR];
 
-        var citiesTempChunks = new ArrayList<City>();
         var start = 0L;
         var end = standardChunkSize;
-        for (int index = 0; index < TOTAL_PROCCESSOR; index++) {
+        for (int index = 0; index < TOTAL_PROCESSOR; index++) {
             long newStart = start;
-            end = adjustBreaklinePosition(start + standardChunkSize) + 1;
+            end = adjustBreakLinePosition(start + standardChunkSize) + 1;
             end = end >= fullSize ? fullSize : end;
             var chunkSize = end - start;
 
             // Have checked with virtual thread but it slower than normal thread
-            int taskId = index + 1;
+            int taskIdx = index;
             var thread = new Thread(() -> {
-                try {
-                    var buffer = fileChannel.map(READ_ONLY, newStart, chunkSize);
-                    // byte[] byteArray = new byte[buffer.remaining()];
-                    // buffer.get(byteArray);
-                    // var string = new String(byteArray, UTF_8);
-                    // System.out.println(string);
-                    citiesTempChunks.addAll(processBufferData(buffer, taskId));
+                try (var file = new RandomAccessFile(FILE, "r");
+                        var fc = file.getChannel()) {
+                    var buffer = fc.map(READ_ONLY, newStart, chunkSize);
+                    chunkDataList[taskIdx] = processBufferData(buffer, taskIdx + 1);
                 }
                 catch (IOException e) {
                     e.printStackTrace();
@@ -88,10 +84,10 @@ public class CalculateAverage_thanhtrinity {
         for (var thread : threads) {
             thread.join();
         }
-        consolidateData(citiesTempChunks);
+        consolidateData(chunkDataList);
     }
 
-    private static long adjustBreaklinePosition(long position) throws IOException {
+    private static long adjustBreakLinePosition(long position) throws IOException {
         try (var file = new RandomAccessFile(FILE, "r")) {
             file.seek(position);
             while (file.read() != '\n' && position < file.length()) {
@@ -102,11 +98,12 @@ public class CalculateAverage_thanhtrinity {
 
     }
 
-    private static List<City> processBufferData(MappedByteBuffer buffer, long taskIdx) {
-        final int chunkSize = 100000;
+    private static ChunkData processBufferData(MappedByteBuffer buffer, long taskIdx) {
+
+        final int citySize = 100000;
         var breakLineIndex = 0;
 
-        var cities = new City[chunkSize];
+        var cities = new City[citySize];
         City city = null;
         var isProcessKey = true;
         var hashKey = 0;
@@ -116,12 +113,12 @@ public class CalculateAverage_thanhtrinity {
         boolean isFractional = false;
         double divisorForFraction = 1;
         boolean isNegative = false;
-        while (buffer.hasRemaining()) {
+        for (int i = 0; i < buffer.limit(); i++) {
             var b = buffer.get();
-            var position = buffer.position();
+            var position = i + 1;
             if (isProcessKey) {
                 if (b == ';') {
-                    int cIdx = abs(hashKey % chunkSize);
+                    int cIdx = abs(hashKey % citySize);
                     city = cities[cIdx];
                     if (city == null) {
                         var name = new byte[position - breakLineIndex];
@@ -178,69 +175,25 @@ public class CalculateAverage_thanhtrinity {
             }
 
         }
+        buffer = null;
+        System.gc();
         var citiesList = Arrays.stream(cities).filter(Objects::nonNull).toList();
-        //  System.out.println(citiesList.size());
-        return citiesList;
+        return new ChunkData(citiesList);
     }
 
-    private static void consolidateData(List<City> citiesTempChunk) {
-        var cities = citiesTempChunk.stream()
+    private static void consolidateData(ChunkData[] citiesTempChunk) {
+
+        var cities = Arrays.stream(citiesTempChunk).filter(Objects::nonNull)
+                .flatMap(chunkData -> chunkData.cities().stream())
                 .collect(
                         Collectors.toMap(
                                 City::getKey,
                                 city -> city,
                                 City::combine));
-        // System.out.println(cities.size());
         System.out.println(new TreeMap<>(cities));
     }
-}
 
-class DataProcessor {
-    // Tempurature Parsing Param
-    private double result = 0;
-    private int integerPart = 0;
-    private double fractionalPart = 0;
-    private boolean isFractional = false;
-    private double divisorForFraction = 1;
-    private boolean isNegative = false;
-
-    public double calculateTemp() {
-        fractionalPart /= divisorForFraction;
-        result = integerPart + fractionalPart;
-        if (isNegative) {
-            result *= -1;
-        }
-        return result;
-    }
-
-    public void updateParsingParams(byte b) {
-        switch (b) {
-            case '-':
-                isNegative = true;
-                break;
-            case '.':
-                isFractional = true;
-                break;
-            default:
-                if (!isFractional) {
-                    integerPart = integerPart * 10 + (b - '0');
-                }
-                else {
-                    divisorForFraction *= 10;
-                    fractionalPart = fractionalPart * 10 + (b - '0');
-                }
-                break;
-        }
-
-    }
-
-    public void resetParsingParams() {
-        result = 0;
-        integerPart = 0;
-        fractionalPart = 0;
-        isFractional = false;
-        divisorForFraction = 1;
-        isNegative = false;
+    record ChunkData(List<City> cities) {
     }
 }
 
@@ -286,7 +239,7 @@ class City {
 
     @Override
     public String toString() {
-        return roundNumber(min) + "/" + roundNumber((sum) / count) + "/" + roundNumber(max);
+        return roundNumber(min) + "/" + roundNumber(sum / count) + "/" + roundNumber(max);
     }
 
     public void setName(byte[] name) {
