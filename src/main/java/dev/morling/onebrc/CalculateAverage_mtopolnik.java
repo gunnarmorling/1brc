@@ -115,7 +115,7 @@ public class CalculateAverage_mtopolnik {
     }
 
     private static class ChunkProcessor implements Runnable {
-        private static final long HASHBUF_SIZE = 8;
+        private static final long HASHBUF_SIZE = Long.BYTES;
 
         private final long chunkStart;
         private final long chunkLimit;
@@ -127,6 +127,7 @@ public class CalculateAverage_mtopolnik {
         private long inputBase;
         private long inputSize;
         private long hashBufBase;
+        private long hash;
         private long cursor;
 
         ChunkProcessor(RandomAccessFile raf, long chunkStart, long chunkLimit, StationStats[][] results, int myIndex) {
@@ -155,12 +156,12 @@ public class CalculateAverage_mtopolnik {
 
         private void processChunk() {
             while (cursor < inputSize) {
-                long semicolonPos = posOfSemicolon(cursor);
-                final long hash = hash(semicolonPos);
-                long nameLen = semicolonPos - cursor;
+                long posOfSemicolon = buildHashAndFindSemicolon();
+                buildHash(posOfSemicolon);
+                long nameLen = posOfSemicolon - cursor;
                 assert nameLen <= 100 : "nameLen > 100";
                 final long namePos = cursor;
-                int temperature = parseTemperatureAndAdvanceCursor(semicolonPos);
+                int temperature = parseTemperatureAndAdvanceCursor(posOfSemicolon);
                 updateStats(hash, nameLen, temperature, namePos);
             }
         }
@@ -263,25 +264,22 @@ public class CalculateAverage_mtopolnik {
             return sign * temperature;
         }
 
-        private long hash(long limit) {
+        private void buildHash(long posOfSemicolon) {
             long n1;
             if (cursor <= inputSize - Long.BYTES) {
                 n1 = UNSAFE.getLong(inputBase + cursor);
-                long nameSize = limit - cursor;
+                if (ORDER_IS_BIG_ENDIAN) {
+                    n1 = Long.reverseBytes(n1);
+                }
+                long nameSize = posOfSemicolon - cursor;
                 long shiftDistance = 8 * Long.max(0, Long.BYTES - nameSize);
-                long mask = ~0L;
-                if (!ORDER_IS_BIG_ENDIAN) {
-                    mask >>>= shiftDistance;
-                }
-                else {
-                    mask <<= shiftDistance;
-                }
+                long mask = ~0L >>> shiftDistance;
                 n1 &= mask;
             }
             else {
                 UNSAFE.putLong(hashBufBase, 0);
                 // UNSAFE.putLong(hashBufBase + Long.BYTES, 0);
-                UNSAFE.copyMemory(inputBase + cursor, hashBufBase, Long.min(HASHBUF_SIZE, limit - cursor));
+                UNSAFE.copyMemory(inputBase + cursor, hashBufBase, Long.min(HASHBUF_SIZE, posOfSemicolon - cursor));
                 n1 = UNSAFE.getLong(hashBufBase);
                 // long n2 = UNSAFE.getLong(hashBufBase + Long.BYTES);
             }
@@ -293,7 +291,64 @@ public class CalculateAverage_mtopolnik {
             // hash ^= n2;
             // hash *= seed;
             // hash = Long.rotateLeft(hash, rotDist);
-            return hash != 0 ? hash & (~Long.MIN_VALUE) : 1;
+            this.hash = hash != 0 ? hash & (~Long.MIN_VALUE) : 1;
+        }
+
+        private static final long BROADCAST_0x01 = broadcastByte(0x01);
+        private static final long BROADCAST_0x80 = broadcastByte(0x80);
+
+        // Adapted from https://jameshfisher.com/2017/01/24/bitwise-check-for-zero-byte/
+        // and https://github.com/ashvardanian/StringZilla/blob/14e7a78edcc16b031c06b375aac1f66d8f19d45a/stringzilla/stringzilla.h#L139-L169
+        long buildHashAndFindSemicolon() {
+            long offset = cursor;
+            long hash = 0;
+            for (; offset <= inputSize - Long.BYTES; offset += Long.BYTES) {
+                var block = UNSAFE.getLong(inputBase + offset);
+                if (ORDER_IS_BIG_ENDIAN) {
+                    block = Long.reverseBytes(block);
+                }
+                final long diff = block ^ BROADCAST_SEMICOLON;
+                long matchIndicators = (diff - BROADCAST_0x01) & ~diff & BROADCAST_0x80;
+                if (matchIndicators != 0) {
+                    long posOfSemicolon = offset + Long.numberOfTrailingZeros(matchIndicators) / 8;
+                    long lenOfNamePartInBlock = posOfSemicolon - offset;
+                    long shiftDistance = 8 * Long.max(0, Long.BYTES - lenOfNamePartInBlock);
+                    long namePartMask = ~0L >>> shiftDistance;
+                    block &= namePartMask;
+                    hash = accumulateHash(hash, block);
+                    this.hash = hash != 0 ? hash & (~Long.MIN_VALUE) : 1;
+                    return posOfSemicolon;
+                }
+                else {
+                    hash = accumulateHash(hash, block);
+                }
+            }
+            long posOfSemicolon = simpleSearch(offset);
+            UNSAFE.putLong(hashBufBase, 0);
+            UNSAFE.copyMemory(inputBase + offset, hashBufBase, Long.min(HASHBUF_SIZE, posOfSemicolon - offset));
+            long block = UNSAFE.getLong(hashBufBase);
+            hash = accumulateHash(hash, block);
+            this.hash = hash != 0 ? hash & (~Long.MIN_VALUE) : 1;
+            return posOfSemicolon;
+        }
+
+        private static final long SEED = 0x51_7c_c1_b7_27_22_0a_95L;
+        private static final int ROT_DIST = 17;
+
+        private static long accumulateHash(long hash, long block) {
+            hash ^= block;
+            hash *= SEED;
+            hash = Long.rotateLeft(hash, ROT_DIST);
+            return hash;
+        }
+
+        private long simpleSearch(long offset) {
+            for (; offset < inputSize; offset++) {
+                if (UNSAFE.getByte(inputBase + offset) == SEMICOLON) {
+                    return offset;
+                }
+            }
+            throw new RuntimeException("Semicolon not found");
         }
 
         // Copies the results from native memory to Java heap and puts them into the results array.
@@ -318,56 +373,6 @@ public class CalculateAverage_mtopolnik {
                 exportedStats.add(stationStats);
             }
             results[myIndex] = exportedStats.toArray(new StationStats[0]);
-        }
-
-        long posOfSemicolon(long offset) {
-            return !ORDER_IS_BIG_ENDIAN
-                    ? posOfSemicolonLittleEndian(offset)
-                    : posOfSemicolonBigEndian(offset);
-        }
-
-        private static final long BROADCAST_0x01 = broadcastByte(0x01);
-        private static final long BROADCAST_0x80 = broadcastByte(0x80);
-
-        // Adapted from https://jameshfisher.com/2017/01/24/bitwise-check-for-zero-byte/
-        // and https://github.com/ashvardanian/StringZilla/blob/14e7a78edcc16b031c06b375aac1f66d8f19d45a/stringzilla/stringzilla.h#L139-L169
-        long posOfSemicolonLittleEndian(long offset) {
-            final long limit = inputSize - Long.BYTES + 1;
-            for (; offset < limit; offset += Long.BYTES) {
-                var block = UNSAFE.getLong(inputBase + offset);
-                final long diff = block ^ BROADCAST_SEMICOLON;
-                long matchIndicators = (diff - BROADCAST_0x01) & ~diff & BROADCAST_0x80;
-                if (matchIndicators != 0) {
-                    return offset + Long.numberOfTrailingZeros(matchIndicators) / 8;
-                }
-            }
-            return simpleSearch(offset);
-        }
-
-        private static final long BROADCAST_0x7F = broadcastByte(0x7F);
-
-        // Adapted from https://richardstartin.github.io/posts/finding-bytes
-        long posOfSemicolonBigEndian(long offset) {
-            final long limit = inputSize - Long.BYTES + 1;
-            for (; offset < limit; offset += Long.BYTES) {
-                var block = UNSAFE.getLong(inputBase + offset);
-                final long diff = block ^ BROADCAST_SEMICOLON;
-                long matchIndicators = (diff & BROADCAST_0x7F) + BROADCAST_0x7F;
-                matchIndicators = ~(matchIndicators | diff | BROADCAST_0x7F);
-                if (matchIndicators != 0) {
-                    return offset + Long.numberOfLeadingZeros(matchIndicators) / 8;
-                }
-            }
-            return simpleSearch(offset);
-        }
-
-        private long simpleSearch(long offset) {
-            for (; offset < inputSize; offset++) {
-                if (UNSAFE.getByte(inputBase + offset) == SEMICOLON) {
-                    return offset;
-                }
-            }
-            throw new RuntimeException("Semicolon not found");
         }
     }
 
