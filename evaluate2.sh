@@ -69,7 +69,17 @@ for fork in "$@"; do
   HYPERFINE_OPTS="--warmup 0 --runs 5 --export-json $fork-$filetimestamp.out"
   # For debugging:
   # HYPERFINE_OPTS="$HYPERFINE_OPTS --show-output"
-  hyperfine $HYPERFINE_OPTS "./calculate_average_$fork.sh 2>&1"
+
+  # check if this script is running on a Linux box
+  if [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
+    check_command_installed numactl
+
+    # Linux platform
+    # prepend this with numactl --physcpubind=0-7 for running it only with 8 cores
+    numactl --physcpubind=0-7 hyperfine $HYPERFINE_OPTS "./calculate_average_$fork.sh 2>&1"
+  else
+    hyperfine $HYPERFINE_OPTS "./calculate_average_$fork.sh 2>&1"
+  fi
 done
 
 # Print the 'Summary' in bold and white
