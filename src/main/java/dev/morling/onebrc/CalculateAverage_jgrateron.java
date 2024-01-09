@@ -248,7 +248,7 @@ public class CalculateAverage_jgrateron {
         @Override
         public String toString() {
             double tempPro = tempSum / count;
-            return "%s=%.1f/%.1f/%.1f".formatted(estacion, tempMin, tempMax, tempPro);
+            return "%s=%.1f/%.1f/%.1f".formatted(estacion, tempMin, tempPro, tempMax);
         }
     }
 }
