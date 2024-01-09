@@ -115,7 +115,7 @@ public class CalculateAverage_mtopolnik {
     }
 
     private static class ChunkProcessor implements Runnable {
-        private static final long HASHBUF_SIZE = Long.BYTES;
+        private static final long HASHBUF_SIZE = 2 * Long.BYTES;
 
         private final long chunkStart;
         private final long chunkLimit;
@@ -264,33 +264,49 @@ public class CalculateAverage_mtopolnik {
         }
 
         private long hash(long posOfSemicolon) {
-            long n1;
-            if (cursor <= inputSize - Long.BYTES) {
-                n1 = UNSAFE.getLong(inputBase + cursor);
+            long n1, n2;
+            if (cursor <= inputSize - HASHBUF_SIZE) {
+                long offset = cursor;
+                n1 = UNSAFE.getLong(inputBase + offset);
                 if (ORDER_IS_BIG_ENDIAN) {
                     n1 = Long.reverseBytes(n1);
                 }
-                long nameSize = posOfSemicolon - cursor;
+                long nameSize = posOfSemicolon - offset;
                 long shiftDistance = 8 * Long.max(0, Long.BYTES - nameSize);
                 long mask = ~0L >>> shiftDistance;
                 n1 &= mask;
+
+                // offset += Long.BYTES;
+                // n2 = UNSAFE.getLong(inputBase + offset);
+                // if (ORDER_IS_BIG_ENDIAN) {
+                // n2 = Long.reverseBytes(n2);
+                // }
+                // nameSize = Long.max(0, posOfSemicolon - offset);
+                // shiftDistance = 8 * Long.max(0, Long.BYTES - nameSize);
+                // mask = shiftDistance < 64 ? (~0L >>> shiftDistance) : 0;
+                // n2 &= mask;
             }
             else {
                 UNSAFE.putLong(hashBufBase, 0);
                 // UNSAFE.putLong(hashBufBase + Long.BYTES, 0);
                 UNSAFE.copyMemory(inputBase + cursor, hashBufBase, Long.min(HASHBUF_SIZE, posOfSemicolon - cursor));
                 n1 = UNSAFE.getLong(hashBufBase);
-                // long n2 = UNSAFE.getLong(hashBufBase + Long.BYTES);
+                // n2 = UNSAFE.getLong(hashBufBase + Long.BYTES);
+                if (ORDER_IS_BIG_ENDIAN) {
+                    n1 = Long.reverseBytes(n1);
+                    // n2 = Long.reverseBytes(n2);
+                }
             }
             long seed = 0x51_7c_c1_b7_27_22_0a_95L;
-            int rotDist = 19;
+            int rotDist = 17;
             long hash = n1;
             hash *= seed;
             hash = Long.rotateLeft(hash, rotDist);
             // hash ^= n2;
             // hash *= seed;
             // hash = Long.rotateLeft(hash, rotDist);
-            return hash != 0 ? hash & (~Long.MIN_VALUE) : 1;
+            hash &= (~Long.MIN_VALUE); // make hash positive
+            return hash != 0 ? hash : 1;
         }
 
         private static final long BROADCAST_0x01 = broadcastByte(0x01);
