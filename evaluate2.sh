@@ -34,6 +34,8 @@ RED='\033[0;31m'
 BOLD_YELLOW='\033[1;33m'
 RESET='\033[0m' # No Color
 
+DEFAULT_JAVA_VERSION="21.0.1-open"
+
 function check_command_installed {
   if ! [ -x "$(command -v $1)" ]; then
     echo "Error: $1 is not installed." >&2
@@ -44,6 +46,35 @@ function check_command_installed {
 check_command_installed java
 check_command_installed hyperfine
 check_command_installed jq
+
+## SDKMAN Setup
+# 1. Custom check for sdkman installed; not sure why check_command_installed doesn't detect it properly
+if [ ! -f "$HOME/.sdkman/bin/sdkman-init.sh" ]; then
+    echo "Error: sdkman is not installed." >&2
+    exit 1
+fi
+
+# 2. Init sdkman in this script
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+
+# 3. make sure the default java version is installed
+if [ ! -d "$HOME/.sdkman/candidates/java/$DEFAULT_JAVA_VERSION" ]; then
+  echo "+ sdk install java $DEFAULT_JAVA_VERSION"
+  sdk install java $DEFAULT_JAVA_VERSION
+fi
+
+# 4. Install missing SDK java versions in any of the prepare_*.sh scripts for the provided forks
+for fork in "$@"; do
+  if [ -f "./prepare_$fork.sh" ]; then
+    grep -h "^sdk use" "./prepare_$fork.sh" | cut -d' ' -f4 | while read -r version; do
+      if [ ! -d "$HOME/.sdkman/candidates/java/$version" ]; then
+        echo "+ sdk install java $version"
+        sdk install java $version
+      fi
+    done
+  fi
+done
+## END - SDKMAN Setup
 
 # Check if SMT is enabled (we want it disabled)
 if [ -f "/sys/devices/system/cpu/smt/active" ]; then
@@ -88,6 +119,9 @@ for fork in "$@"; do
   if [ -f "./prepare_$fork.sh" ]; then
     echo "+ source ./prepare_$fork.sh"
     source "./prepare_$fork.sh"
+  else
+    echo "+ sdk use java $DEFAULT_JAVA_VERSION"
+    sdk use java $DEFAULT_JAVA_VERSION
   fi
 
   # Optional additional build steps
@@ -151,8 +185,9 @@ for fork in "$@"; do
 done
 echo ""
 
-# Leaderboard
+# Leaderboard - prints the leaderboard in Markdown table format
 echo -e "${BOLD_WHITE}Leaderboard${RESET}"
+temp_file=$(mktemp)
 for fork in "$@"; do
   # skip reporting results for failed forks
   if [[ " ${failed[@]} " =~ " ${fork} " ]]; then
@@ -160,12 +195,6 @@ for fork in "$@"; do
   fi
 
   trimmed_mean=$(jq -r '.results[0].times | .[1:-1] | add / length' $fork-$filetimestamp-timing.json)
-
-  # Read java version from prepare_$fork.sh if it exists
-  java_version="unknown"
-  if [ -f "./prepare_$fork.sh" ]; then
-    java_version=$(grep "sdk use java" ./prepare_$fork.sh | cut -d' ' -f4)
-  fi
 
   # trimmed_mean is in seconds
   # Format trimmed_mean as MM::SS.mmm
@@ -175,12 +204,50 @@ for fork in "$@"; do
   trimmed_mean_ms=$(echo "($trimmed_mean - $trimmed_mean_minutes * 60 - $trimmed_mean_seconds) * 1000 / 1" | bc)
   trimmed_mean_formatted=$(printf "%02d:%02d.%03d" $trimmed_mean_minutes $trimmed_mean_seconds $trimmed_mean_ms)
 
-  # var result = String.format("%02d:%02d.%.0f", mean.toMinutesPart(), mean.toSecondsPart(), (double) mean.toNanosPart() / 1_000_000);
-  # var author = actualFile.replace(".out", "")
-  # System.out.println(String.format("\n|   |        %s| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_%s.java)| 21.0.1-open | [%s](https://github.com/%s)|", result, author, author, author));
+  # Get Github user's name from public Github API (rate limited after ~50 calls, so results are cached in github_users.txt)
+  set +e
+  github_user__name=$(grep "^$fork;" github_users.txt | cut -d ';' -f2)
+  if [ -z "$github_user__name" ]; then
+    github_user__name=$(curl -s https://api.github.com/users/$fork | jq -r '.name' | tr -d '"')
+    if [ "$github_user__name" != "null" ]; then
+      echo "$fork;$github_user__name" >> github_users.txt
+    else
+      github_user__name=$fork
+    fi
+  fi
+  set -e
 
-  echo "|   |        $trimmed_mean_formatted| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_$fork.java)| $java_version | [$fork](https://github.com/$fork)|"
+  # Read java version from prepare_$fork.sh if it exists, otherwise assume 21.0.1-open
+  java_version="21.0.1-open"
+  if [ -f "./prepare_$fork.sh" ]; then
+    java_version=$(grep "sdk use java" ./prepare_$fork.sh | cut -d' ' -f4)
+  fi
+
+  # Hard-coding the note message for now
+  notes=""
+  if [ -f "./additional_build_steps_$fork.sh" ]; then
+    notes="GraalVM native binary"
+  fi
+
+  echo -n "$trimmed_mean;" >> $temp_file # for sorting
+  echo -n "| # " >> $temp_file
+  echo -n "| $trimmed_mean_formatted " >> $temp_file
+  echo -n "| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_$fork.java)" >> $temp_file
+  echo -n "| $java_version " >> $temp_file
+  echo -n "| [$github_user__name](https://github.com/$fork) " >> $temp_file
+  echo -n "| $notes " >> $temp_file
+  echo "|" >> $temp_file
 done
+
+sort -n $temp_file | cut -d ';' -f 2 > $temp_file.sorted
+
+echo ""
+echo "| # | Result (m:s.ms) | Implementation     | JDK | Submitter     | Notes     |"
+echo "|---|-----------------|--------------------|-----|---------------|-----------|"
+head -n 1 $temp_file.sorted | tr '#' 1
+head -n 2 $temp_file.sorted | tail -n 1 | tr '#' 2
+head -n 3 $temp_file.sorted | tail -n 1 | tr '#' 3
+tail -n+4 $temp_file.sorted | tr '#' ' '
 echo ""
 
 # Finalize .out files
