@@ -30,6 +30,7 @@ import java.util.stream.Collectors;
 
 public class CalculateAverage_jgrateron {
     private static final String FILE = "./measurements.txt";
+    private static final int MAX_LENGTH_LINE = 110;
 
     public record Particion(long offset, long size) {
     }
@@ -39,9 +40,10 @@ public class CalculateAverage_jgrateron {
      */
     public static List<Particion> dividirArchivo(File archivo) throws IOException {
         var particiones = new ArrayList<Particion>();
-        var buffer = new byte[255];
+        var buffer = new byte[MAX_LENGTH_LINE];
         var length = archivo.length();
-        var sizeParticion = length / 12;
+        int cores = Runtime.getRuntime().availableProcessors();
+        var sizeParticion = length / (cores * 2);
         var ini = 0l;
         try (var rfile = new RandomAccessFile(archivo, "r")) {
             for (;;) {
@@ -78,15 +80,15 @@ public class CalculateAverage_jgrateron {
 
     public static void main(String[] args) throws InterruptedException, IOException {
         // var startTime = System.nanoTime();
-
+        var archivo = new File(FILE);
         var totalMediciones = new HashMap<Integer, Medicion>();
         var tareas = new ArrayList<Thread>();
-        var particiones = dividirArchivo(new File(FILE));
+        var particiones = dividirArchivo(archivo);
 
         for (var p : particiones) {
             var hilo = Thread.ofVirtual().start(() -> {
                 var mediciones = new HashMap<Integer, Medicion>();
-                try (var miArchivo = new MiArchivo(new File(FILE), p)) {
+                try (var miArchivo = new MiArchivo(archivo, p)) {
                     for (;;) {
                         var lineas = miArchivo.readLines();
                         if (lineas.isEmpty()) {
@@ -153,8 +155,8 @@ public class CalculateAverage_jgrateron {
     static class MiArchivo implements AutoCloseable {
         private final RandomAccessFile rFile;
         private final byte buffer[] = new byte[1024 * 4];
-        private final byte line[] = new byte[255];
-        private final byte rest[] = new byte[255];
+        private final byte line[] = new byte[MAX_LENGTH_LINE];
+        private final byte rest[] = new byte[MAX_LENGTH_LINE];
         private int lenRest = 0;
         private long maxRead = 0;
         private long totalRead = 0;
@@ -246,7 +248,7 @@ public class CalculateAverage_jgrateron {
         @Override
         public String toString() {
             double tempPro = tempSum / count;
-            return "%s=%.2f/%.2f/%.2f".formatted(estacion, tempMin, tempMax, tempPro);
+            return "%s=%.1f/%.1f/%.1f".formatted(estacion, tempMin, tempMax, tempPro);
         }
     }
 }
