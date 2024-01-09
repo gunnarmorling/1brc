@@ -63,7 +63,8 @@ public class CalculateAverage_roman_r_m {
                 if ((encodedVal & DOT_3RD_BYTE_MASK) == DOT_3RD_BYTE_MASK) {
                     val = (encodedVal & 0xFF - 0x30) * 100 + (encodedVal >> 8 & 0xFF - 0x30) * 10 + (encodedVal >> 24 & 0xFF - 0x30);
                     offset += 5;
-                } else {
+                }
+                else {
                     val = (encodedVal & 0xFF - 0x30) * 10 + (encodedVal >> 16 & 0xFF - 0x30);
                     offset += 4;
                 }
@@ -71,7 +72,8 @@ public class CalculateAverage_roman_r_m {
                 if (neg) {
                     val = -val;
                 }
-            } else {
+            }
+            else {
                 boolean neg = ms.get(ValueLayout.JAVA_BYTE, offset) == '-';
                 if (neg) {
                     offset++;
