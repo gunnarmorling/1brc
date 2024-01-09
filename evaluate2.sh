@@ -49,9 +49,25 @@ set +o xtrace
 
 echo ""
 
+BOLD_WHITE='\033[1;37m'
+CYAN='\033[0;36m'
+GREEN='\033[0;32m'
+PURPLE='\033[0;35m'
+BOLD_RED='\033[1;31m'
+RED='\033[0;31m'
+RESET='\033[0m' # No Color
+
+# check if out_expected.txt exists
+if [ ! -f "out_expected.txt" ]; then
+  echo "Error: out_expected.txt does not exist." >&2
+  echo "Please create it with:"
+  echo "  ./calculate_average_baseline.sh > out_expected.txt"
+  exit 1
+fi
+
 # Prepare commands for running benchmarks for each of the forks
 filetimestamp=$(date  +"%Y%m%d%H%M%S") # same for all fork.out files from this run
-forks=()
+failed=()
 for fork in "$@"; do
   # Use prepare script to invoke SDKMAN
   if [ -f "./prepare_$fork.sh" ]; then
@@ -66,12 +82,10 @@ for fork in "$@"; do
   fi
 
   # Use hyperfine to run the benchmarks for each fork
-  HYPERFINE_OPTS="--warmup 1 --runs 5 --export-json $fork-$filetimestamp.out"
-  # For debugging:
-  # HYPERFINE_OPTS="$HYPERFINE_OPTS --show-output"
+  HYPERFINE_OPTS="--warmup 1 --runs 5 --export-json $fork-$filetimestamp-timing.json --output ./$fork-$filetimestamp.out"
 
   # check if this script is running on a Linux box
-  if [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
+  if [ "$(uname -s)" == "Linux" ]; then
     check_command_installed numactl
 
     # Linux platform
@@ -80,23 +94,34 @@ for fork in "$@"; do
   else
     hyperfine $HYPERFINE_OPTS "./calculate_average_$fork.sh 2>&1"
   fi
+
+  # Verify output
+  set +e
+  diff <(grep Hamburg $fork-$filetimestamp.out) <(grep Hamburg out_expected.txt) > /dev/null
+  if [ $? -ne 0 ]; then
+    echo ""
+    echo -e "${BOLD_RED}FAILURE${RESET}: output of ${BOLD_WHITE}$fork-$filetimestamp.out${RESET} does not match ${BOLD_WHITE}out_expected.txt${RESET}"
+    echo ""
+
+    # add $fork to $failed array
+    failed+=("$fork")
+  fi
+  set -e
 done
 
-# Print the 'Summary' in bold and white
-BOLD_WHITE='\033[1;37m'
-CYAN='\033[0;36m'
-GREEN='\033[0;32m'
-PURPLE='\033[0;35m'
-RESET='\033[0m' # No Color
-
+# Summary
 echo -e "${BOLD_WHITE}Summary${RESET}"
-
-forks=()
 for fork in "$@"; do
+  # skip reporting results for failed forks
+  if [[ " ${failed[@]} " =~ " ${fork} " ]]; then
+    echo -e "  ${RED}$fork${RESET}: output did not match"
+    continue
+  fi
+
   # Trimmed mean = The slowest and the fastest runs are discarded, the
   # mean value of the remaining three runs is the result for that contender
-  trimmed_mean=$(jq -r '.results[0].times | .[1:-1] | add / length' $fork-$filetimestamp.out)
-  raw_times=$(jq -r '.results[0].times | join(",")' $fork-$filetimestamp.out)
+  trimmed_mean=$(jq -r '.results[0].times | .[1:-1] | add / length' $fork-$filetimestamp-timing.json)
+  raw_times=$(jq -r '.results[0].times | join(",")' $fork-$filetimestamp-timing.json)
 
   if [ "$fork" == "$1" ]; then
     color=$CYAN
@@ -110,6 +135,11 @@ for fork in "$@"; do
 done
 
 echo ""
+
+# Apped $fork-$filetimestamp-timing.json to $fork-$filetimestamp.out
+cat $fork-$filetimestamp-timing.json >> $fork-$filetimestamp.out
+rm $fork-$filetimestamp-timing.json
+
 echo "Raw results saved to file(s):"
 for fork in "$@"; do
   echo "  $fork-$filetimestamp.out"
