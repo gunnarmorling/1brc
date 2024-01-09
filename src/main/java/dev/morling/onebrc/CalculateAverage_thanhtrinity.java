@@ -73,7 +73,8 @@ public class CalculateAverage_thanhtrinity {
                     // var string = new String(byteArray, UTF_8);
                     // System.out.println(string);
                     citiesTempChunks.addAll(processBufferData(buffer, taskId));
-                } catch (IOException e) {
+                }
+                catch (IOException e) {
                     e.printStackTrace();
                 }
             });
@@ -130,10 +131,12 @@ public class CalculateAverage_thanhtrinity {
                     }
                     hashKey = 0;
                     isProcessKey = false;
-                } else {
+                }
+                else {
                     hashKey = 31 * hashKey + b;
                 }
-            } else {
+            }
+            else {
                 if (b == '\n') {
                     fractionalPart /= divisorForFraction;
                     result = integerPart + fractionalPart;
@@ -153,7 +156,8 @@ public class CalculateAverage_thanhtrinity {
                     isNegative = false;
                     isProcessKey = true;
 
-                } else {
+                }
+                else {
                     switch (b) {
                         case '-':
                             isNegative = true;
@@ -164,7 +168,8 @@ public class CalculateAverage_thanhtrinity {
                         default:
                             if (!isFractional) {
                                 integerPart = integerPart * 10 + (b - '0');
-                            } else {
+                            }
+                            else {
                                 divisorForFraction *= 10;
                                 fractionalPart = fractionalPart * 10 + (b - '0');
                             }
@@ -222,7 +227,8 @@ class DataProcessor {
             default:
                 if (!isFractional) {
                     integerPart = integerPart * 10 + (b - '0');
-                } else {
+                }
+                else {
                     divisorForFraction *= 10;
                     fractionalPart = fractionalPart * 10 + (b - '0');
                 }
