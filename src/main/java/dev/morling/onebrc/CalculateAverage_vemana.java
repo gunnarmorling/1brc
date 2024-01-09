@@ -17,13 +17,11 @@ package dev.morling.onebrc;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel.MapMode;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -38,59 +36,379 @@ import java.util.stream.Collectors;
 
 public class CalculateAverage_vemana {
 
+    public static void checkArg(boolean condition) {
+        if (!condition) {
+            throw new IllegalArgumentException();
+        }
+    }
+
     public static void main(String[] args) throws Exception {
-        System.out.println(new Runner(Path.of("measurements.txt"),
-                24 /* chunkSizeBits */,
-                14 /* hashtableSizeBits */).getSummaryStatistics());
-    }
+        // First process in large chunks without coordination among threads
+        // Use chunkSizeBits for the large-chunk size
+        int chunkSizeBits = 24;
 
-    public record ByteRange(MappedByteBuffer byteBuffer, long start, long end) {
+        // For the last commonChunkFraction fraction of total work, use smaller chunk sizes
+        // Use commonChunkSizeBits for the small-chunk size
+        double commonChunkFraction = 0.03;
+        int commonChunkSizeBits = 18;
 
-    }
+        // Size of the hashtable (attempt to fit in L3)
+        int hashtableSizeBits = 14;
 
-    public static class ChunkProcessor {
-
-        private final SerialLazyChunkQueue chunkQueue;
-        private final ChunkProcessorState state;
-        private final int threadIdx;
-
-        public ChunkProcessor(
-                              SerialLazyChunkQueue chunkQueue, int hashtableSizeBits, int threadIdx) {
-            this.chunkQueue = chunkQueue;
-            this.threadIdx = threadIdx;
-            this.state = new ChunkProcessorState(hashtableSizeBits);
+        if (args.length > 0) {
+            chunkSizeBits = Integer.parseInt(args[0]);
         }
 
-        public Result processChunk() {
+        if (args.length > 1) {
+            commonChunkFraction = Double.parseDouble(args[1]);
+        }
+
+        if (args.length > 2) {
+            commonChunkSizeBits = Integer.parseInt(args[2]);
+        }
+
+        if (args.length > 3) {
+            hashtableSizeBits = Integer.parseInt(args[3]);
+        }
+
+        // System.err.println(STR."""
+        // Using the following parameters:
+        // - chunkSizeBits = \{chunkSizeBits}
+        // - commonChunkFraction = \{commonChunkFraction}
+        // - commonChunkSizeBits = \{commonChunkSizeBits}
+        // - hashtableSizeBits = \{hashtableSizeBits}
+        // """);
+
+        System.out.println(new Runner(Path.of("measurements.txt"),
+                chunkSizeBits,
+                commonChunkFraction,
+                commonChunkSizeBits,
+                hashtableSizeBits).getSummaryStatistics());
+    }
+
+    interface LazyShardQueue {
+
+        ByteRange take(int shardIdx);
+    }
+
+    // Mutable to avoid allocation
+    public static class ByteRange {
+
+        private static final int BUF_SIZE = 1 << 30;
+
+        private final long fileSize;
+        private final RandomAccessFile raf;
+
+        // ***************** What this is doing and why *****************
+        // Reading from ByteBuffer appears faster from MemorySegment, but ByteBuffer can only be
+        // Integer.MAX_VALUE long; Creating one byteBuffer per chunk kills native memory quota
+        // and JVM crashes without futher parameters.
+        //
+        // So, in this solution, create a sliding window of bytebuffers:
+        // - Create a large bytebuffer that spans the chunk
+        // - If the next chunk falls outside the byteBuffer, create another byteBuffer that spans the
+        // chunk. Because chunks are allocated serially, a single large (1<<30) byteBuffer spans
+        // many successive chunks.
+        // - In fact, for serial chunk allocation (which is friendly to page faulting anyway),
+        // the number of created ByteBuffers doesn't exceed [size of shard/(1<<30)] which is less than
+        // 100/thread and is comfortably below what the JVM can handle (65K) without further param
+        // tuning
+        // - This enables (relatively) allocation free chunking implementation. Our chunking impl uses
+        // fine grained chunking for the last say X% of work to avoid being hostage to stragglers
+
+        // The PUBLIC API
+        public MappedByteBuffer byteBuffer;
+        public int endInBuf; // where the chunk ends inside the buffer
+        public int startInBuf; // where the chunk starts inside the buffer
+
+        // Private State
+        private long bufferEnd; // byteBuffer's ending coordinate
+        private long bufferStart; // byteBuffer's begin coordinate
+
+        // Uninitialized; for mutability
+        public ByteRange(RandomAccessFile raf) {
+            this.raf = raf;
+            try {
+                this.fileSize = raf.length();
+            }
+            catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            bufferEnd = bufferStart = -1;
+        }
+
+        public void setRange(long rangeStart, long rangeEnd) {
+            if (rangeEnd + 1024 > bufferEnd || rangeStart < bufferStart) {
+                bufferStart = rangeStart;
+                bufferEnd = Math.min(bufferStart + BUF_SIZE, fileSize);
+                try {
+                    byteBuffer = raf.getChannel()
+                            .map(MapMode.READ_ONLY, bufferStart, bufferEnd - bufferStart);
+                }
+                catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+            if (rangeStart > 0) {
+                rangeStart = 1 + nextNewLine(rangeStart);
+            }
+
+            if (rangeEnd < fileSize) {
+                rangeEnd = 1 + nextNewLine(rangeEnd);
+            }
+            else {
+                rangeEnd = fileSize;
+            }
+
+            startInBuf = (int) (rangeStart - bufferStart);
+            endInBuf = (int) (rangeEnd - bufferStart);
+            // assertInvariants();
+        }
+
+    @Override
+    public String toString() {
+      return STR."""
+          ByteRange {
+            startInBuf = \{startInBuf}
+            endInBuf = \{endInBuf}
+          }
+          """;
+    }
+
+    private void assertInvariants() {
+      if (startInBuf > endInBuf) {
+        throw new IllegalArgumentException("reversed");
+      }
+      if (startInBuf < 0 || startInBuf + bufferStart >= bufferEnd) {
+        throw new IllegalArgumentException("bufferStart exception");
+      }
+      if (endInBuf < 0) {
+        throw new IllegalArgumentException("negative bufferEnd exception");
+      }
+      if (bufferStart + endInBuf > bufferEnd) {
+        System.err.println(STR."""
+        Bad data:
+        bufferStart = \{bufferStart}
+        endInBuf=\{endInBuf}
+        bufferEnd = \{bufferEnd}
+        bufferSize = \{bufferEnd - bufferStart}
+        """);
+        throw new IllegalArgumentException("bad bufferEnd exception");
+      }
+    }
+
+        private long nextNewLine(long pos) {
+            int nextPos = (int) (pos - bufferStart);
+            while (byteBuffer.get(nextPos) != '\n') {
+                nextPos++;
+            }
+            return nextPos + bufferStart;
+        }
+    }
+
+  public record Result(Map<String, Stat> tempStats) {
+
+    @Override
+    public String toString() {
+      return this.tempStats().entrySet().stream().sorted(Entry.comparingByKey())
+                 .map(entry -> "%s=%s".formatted(entry.getKey(), entry.getValue()))
+                 .collect(Collectors.joining(", ", "{", "}"));
+    }
+  }
+
+    public static class Runner {
+
+        private final double commonChunkFraction;
+        private final int commonChunkSizeBits;
+        private final int hashtableSizeBits;
+        private final Path inputFile;
+        private final int shardSizeBits;
+
+        public Runner(
+                      Path inputFile, int chunkSizeBits, double commonChunkFraction,
+                      int commonChunkSizeBits, int hashtableSizeBits) {
+            this.inputFile = inputFile;
+            this.shardSizeBits = chunkSizeBits;
+            this.commonChunkFraction = commonChunkFraction;
+            this.commonChunkSizeBits = commonChunkSizeBits;
+            this.hashtableSizeBits = hashtableSizeBits;
+        }
+
+        Result getSummaryStatistics() throws Exception {
+            int processors = Runtime.getRuntime().availableProcessors();
+            LazyShardQueue shardQueue = new SerialLazyShardQueue(1L << shardSizeBits,
+                    inputFile,
+                    processors,
+                    commonChunkFraction,
+                    commonChunkSizeBits);
+
+            List<Future<Result>> results = new ArrayList<>();
+            ExecutorService executorService = Executors.newFixedThreadPool(processors,
+                    runnable -> {
+                        Thread thread = new Thread(runnable);
+                        thread.setDaemon(true);
+                        return thread;
+                    });
+
+            long[] finishTimes = new long[processors];
+
+            for (int i = 0; i < processors; i++) {
+                final int I = i;
+                final Callable<Result> callable = () -> {
+                    Result result = new ShardProcessor(shardQueue,
+                            hashtableSizeBits,
+                            I).processShard();
+                    finishTimes[I] = System.nanoTime();
+                    return result;
+                };
+                results.add(executorService.submit(callable));
+            }
+            Result root = merge(results);
+            // printFinishTimes(finishTimes);
+            return root;
+        }
+
+        private Result merge(List<Future<Result>> results)
+                throws ExecutionException, InterruptedException {
+            // Merge the results
+            Map<String, Stat> map = null;
+            for (int i = 0; i < results.size(); i++) {
+                if (i == 0) {
+                    map = new TreeMap<>(results.get(0).get().tempStats());
+                }
+                else {
+                    for (Entry<String, Stat> entry : results.get(i).get().tempStats().entrySet()) {
+                        map.compute(entry.getKey(), (key, value) -> value == null
+                                ? entry.getValue()
+                                : Stat.merge(value, entry.getValue()));
+                    }
+                }
+            }
+            return new Result(map);
+        }
+
+    private void printFinishTimes(long[] finishTimes) {
+      Arrays.sort(finishTimes);
+      int n = finishTimes.length;
+      System.err.println(STR."Finish time delta between threads: \{(finishTimes[n - 1] - finishTimes[0]) / 1_000_000}ms");
+    }
+    }
+
+    public static class SerialLazyShardQueue implements LazyShardQueue {
+
+        private static long roundToNearestHigherMultipleOf(long divisor, long value) {
+            return (value + divisor - 1) / divisor * divisor;
+        }
+
+        private final ByteRange[] byteRanges;
+        private final long chunkSize;
+        private final long commonChunkSize;
+        private final AtomicLong commonPool;
+        private final long fileSize;
+        private final long[] nextStarts;
+
+        public SerialLazyShardQueue(
+                                    long chunkSize, Path filePath, int shards, double commonChunkFraction,
+                                    int commonChunkSizeBits)
+                throws IOException {
+            checkArg(commonChunkFraction < 0.9 && commonChunkFraction >= 0);
+            var raf = new RandomAccessFile(filePath.toFile(), "r");
+            this.fileSize = raf.length();
+
+            // Common pool
+            long commonPoolStart = Math.min(roundToNearestHigherMultipleOf(
+                    chunkSize, (long) (fileSize * (1 - commonChunkFraction))),
+                    fileSize);
+            this.commonPool = new AtomicLong(commonPoolStart);
+            this.commonChunkSize = 1L << commonChunkSizeBits;
+
+            // Distribute chunks to shards
+            this.nextStarts = new long[shards << 4]; // thread idx -> 16*idx to avoid cache line conflict
+            for (long i = 0,
+                    currentStart = 0,
+                    remainingChunks = (commonPoolStart + chunkSize - 1) / chunkSize; i < shards; i++) {
+                long remainingShards = shards - i;
+                long currentChunks = (remainingChunks + remainingShards - 1) / remainingShards;
+                // Shard i handles: [currentStart, currentStart + currentChunks * chunkSize)
+                int pos = (int) i << 4;
+                nextStarts[pos] = currentStart;
+                nextStarts[pos + 1] = currentStart + currentChunks * chunkSize;
+                // System.err.println(STR."""
+                // Allocated to shard \{i}: \{nextStarts[pos]} -- \{nextStarts[pos + 1]}
+                // Num chunks: \{currentChunks}
+                // Shard Size: \{currentChunks * chunkSize}
+                // Common pool start: \{commonPoolStart}
+                // """);
+                currentStart += currentChunks * chunkSize;
+                remainingChunks -= currentChunks;
+            }
+            this.chunkSize = chunkSize;
+
+            this.byteRanges = new ByteRange[shards << 4];
+            for (int i = 0; i < shards; i++) {
+                byteRanges[i << 4] = new ByteRange(raf);
+            }
+        }
+
+        @Override
+        public ByteRange take(int idx) {
+            // Try for thread local range
+            int pos = idx << 4;
+            long rangeStart = nextStarts[pos];
+            long chunkEnd = nextStarts[pos + 1];
+
+            final long rangeEnd;
+            if (rangeStart < chunkEnd) {
+                rangeEnd = rangeStart + chunkSize;
+            }
+            else {
+                rangeStart = commonPool.getAndAdd(commonChunkSize);
+                rangeEnd = rangeStart + commonChunkSize;
+                // If that's exhausted too, nothing remains!
+                if (rangeStart >= fileSize) {
+                    return null;
+                }
+            }
+
+            nextStarts[pos] += chunkSize;
+            ByteRange chunk = byteRanges[pos];
+            chunk.setRange(rangeStart, rangeEnd);
+            // System.err.println(STR."""
+            // Shard: \{idx}
+            // rangeStart: \{rangeStart}
+            // rangeEnd: \{rangeEnd}
+            // Chunk: \{chunk}
+            // """);
+            return chunk;
+        }
+    }
+
+    public static class ShardProcessor {
+
+        private final LazyShardQueue shardQueue;
+        private final ShardProcessorState state;
+        private final int threadIdx;
+
+        public ShardProcessor(LazyShardQueue shardQueue, int hashtableSizeBits, int threadIdx) {
+            this.shardQueue = shardQueue;
+            this.threadIdx = threadIdx;
+            this.state = new ShardProcessorState(hashtableSizeBits);
+        }
+
+        public Result processShard() {
             ByteRange range;
-            while ((range = chunkQueue.take(threadIdx)) != null) {
+            while ((range = shardQueue.take(threadIdx)) != null) {
                 processRange(range);
-                // justRead(range);
             }
             return result();
         }
 
-        private byte justRead(ByteRange range) {
-            MappedByteBuffer mmb = range.byteBuffer;
-            int pos = 0, len = mmb.capacity();
-            // System.err.println(STR."""
-            // Handling byterange in Thread \{threadIdx}: \{range.start()} to \{range.end()}.
-            // Capacity = \{mmb.capacity()}
-            // Limit = \{mmb.limit()}
-            // """);
-            byte ret = 0;
-            while (pos < len) {
-                ret |= mmb.get(pos++);
-            }
-            return ret;
-        }
-
         private void processRange(ByteRange range) {
-            MappedByteBuffer mbb = range.byteBuffer;
-            int nextPos = 0;
-            int end = mbb.capacity();
+            MappedByteBuffer mmb = range.byteBuffer;
+            int nextPos = range.startInBuf;
+            int end = range.endInBuf;
             while (nextPos < end) {
-                nextPos = state.processLine(mbb, nextPos, end);
+                nextPos = state.processLine(mmb, nextPos);
             }
         }
 
@@ -99,20 +417,19 @@ public class CalculateAverage_vemana {
         }
     }
 
-    public static class ChunkProcessorState {
+    public static class ShardProcessorState {
 
         private final byte[][] cityNames;
         private final int slotsMask;
         private final Stat[] stats;
-        private int hashHits = 0, hashMisses = 0;
 
-        public ChunkProcessorState(int slotsBits) {
+        public ShardProcessorState(int slotsBits) {
             this.stats = new Stat[1 << slotsBits];
             this.cityNames = new byte[1 << slotsBits][];
             this.slotsMask = (1 << slotsBits) - 1;
         }
 
-        public int processLine(MappedByteBuffer mmb, int nextPos, int endPos) {
+        public int processLine(MappedByteBuffer mmb, int nextPos) {
             int originalPos = nextPos;
             byte nextByte;
             int hash = 0;
@@ -153,7 +470,6 @@ public class CalculateAverage_vemana {
                     map.put(new String(cityNames[i]), stats[i]);
                 }
             }
-            // System.err.println(STR."Hashhits = \{hashHits}, misses = \{hashMisses}");
             return new Result(map);
         }
 
@@ -174,7 +490,7 @@ public class CalculateAverage_vemana {
             return true;
         }
 
-        // DEATH BY a 1000 cuts
+        // ***************** Representative timings ****************** //
         // 15 ms for stat merging
         // 20 ms for slot probing
         // 20 ms for copying city name into needle (avoided this, but paying in manual arrayequals)
@@ -188,7 +504,6 @@ public class CalculateAverage_vemana {
                 if (curBytes == null) {
                     // We can no longer do cityNames[i] =Arrays.copyOf(..) since the cityname is encoded
                     // as (mmb, offsetInMmb, len) instead of in a previously allocated byte[]
-                    // Even still, this allocation appears very costly
                     cityNames[i] = copyFrom(mmb, offsetInMmb, len);
                     stats[i] = Stat.firstReading(temp);
                     return;
@@ -205,141 +520,6 @@ public class CalculateAverage_vemana {
                     }
                 }
             }
-        }
-    }
-
-  public record Result(Map<String, Stat> tempStats) {
-
-    @Override
-    public String toString() {
-      return this.tempStats().entrySet().stream().sorted(Entry.comparingByKey())
-                 .map(entry -> "%s=%s".formatted(entry.getKey(), entry.getValue()))
-                 .collect(Collectors.joining(", ", "{", "}"));
-    }
-  }
-
-    public static class Runner {
-
-        private final int chunkSizeBits;
-        private final int hashtableSizeBits;
-        private final Path inputFile;
-
-        public Runner(Path inputFile, int chunkSizeBits, int hashtableSizeBits) {
-            this.inputFile = inputFile;
-            this.chunkSizeBits = chunkSizeBits;
-            this.hashtableSizeBits = hashtableSizeBits;
-        }
-
-        Result getSummaryStatistics() throws Exception {
-            int processors = Runtime.getRuntime().availableProcessors();
-            SerialLazyChunkQueue chunkQueue = new SerialLazyChunkQueue(1L << chunkSizeBits, inputFile, processors);
-
-            List<Future<Result>> results = new ArrayList<>();
-            ExecutorService executorService = Executors.newFixedThreadPool(processors);
-            for (int i = 0; i < processors; i++) {
-                final int I = i;
-                final Callable<Result> callable = () -> new ChunkProcessor(chunkQueue,
-                        hashtableSizeBits,
-                        I).processChunk();
-                results.add(executorService.submit(callable));
-            }
-            executorService.shutdown();
-            return merge(results);
-        }
-
-        private Result merge(List<Future<Result>> results)
-                throws ExecutionException, InterruptedException {
-            // Merge the results
-            Map<String, Stat> map = null;
-            for (int i = 0; i < results.size(); i++) {
-                if (i == 0) {
-                    map = new TreeMap<>(results.get(0).get().tempStats());
-                }
-                else {
-                    for (Entry<String, Stat> entry : results.get(i).get().tempStats().entrySet()) {
-                        map.compute(entry.getKey(), (key, value) -> value == null
-                                ? entry.getValue()
-                                : Stat.merge(value, entry.getValue()));
-                    }
-                }
-            }
-            return new Result(map);
-        }
-    }
-
-    public static class SerialLazyChunkQueue {
-
-        private static long roundToNearestHigherMultipleOf(long divisor, long value) {
-            return (value + divisor - 1) / divisor * divisor;
-        }
-
-        private final long chunkSize;
-        private final AtomicLong commonPool;
-        private final long commonPoolStart;
-        private final long fileSize;
-        private final long jumpSize;
-        private final MemorySegment memory;
-        private final long[] nextStarts;
-        private final RandomAccessFile raf;
-        private final int threads;
-
-        public SerialLazyChunkQueue(long chunkSize, Path filePath, int threads) throws IOException {
-            this.chunkSize = chunkSize;
-            this.raf = new RandomAccessFile(filePath.toFile(), "r");
-            this.fileSize = raf.length();
-            this.memory = raf.getChannel().map(MapMode.READ_ONLY, 0, fileSize, Arena.global());
-            this.threads = threads;
-            this.jumpSize = chunkSize * threads;
-            this.nextStarts = new long[threads * 8]; // thread idx -> 8*idx to avoid cache line conflict
-            this.commonPoolStart = Math.min(roundToNearestHigherMultipleOf(chunkSize,
-                    fileSize * 90 / 100),
-                    fileSize);
-            this.commonPool = new AtomicLong(commonPoolStart);
-            for (int i = 0; i < threads; i++) {
-                nextStarts[i << 3] = chunkSize * i;
-            }
-        }
-
-        public ByteRange take(int idx) {
-            // Try for thread local range
-            int pos = idx << 3;
-            long rangeStart = nextStarts[pos];
-            nextStarts[pos] += jumpSize;
-
-            // If that's over, try from shared range
-            if (rangeStart >= commonPoolStart) {
-                rangeStart = commonPool.getAndAdd(chunkSize);
-                // If that's exhausted too, nothing remains!
-                if (rangeStart >= fileSize) {
-                    return null;
-                }
-            }
-
-            // Align to line boundaries
-            if (rangeStart > 0) {
-                rangeStart = 1 + nextNewLine(rangeStart, fileSize);
-            }
-
-            long rangeEnd = Math.min(rangeStart + chunkSize, fileSize);
-            if (rangeEnd < fileSize) {
-                rangeEnd = 1 + nextNewLine(rangeEnd, fileSize);
-            }
-
-            try {
-                return new ByteRange(raf.getChannel()
-                        .map(MapMode.READ_ONLY, rangeStart, rangeEnd - rangeStart),
-                        rangeStart, rangeEnd);
-            }
-            catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        private long nextNewLine(long position, long maxPos) {
-            while (position < maxPos && memory.get(ValueLayout.JAVA_BYTE, position) != '\n') {
-                position++;
-            }
-            return position;
         }
     }
 

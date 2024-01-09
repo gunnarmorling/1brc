@@ -18,11 +18,16 @@
 JAVA_OPTS=""
 JAVA_OPTS="$JAVA_OPTS --enable-preview"
 JAVA_OPTS="$JAVA_OPTS -XX:+UseParallelGC"
-#JAVA_OPTS="$JAVA_OPTS -XX:+PrintCompilation"
 JAVA_OPTS="$JAVA_OPTS -XX:+AlwaysCompileLoopMethods"
+#JAVA_OPTS="$JAVA_OPTS -XX:C1MaxInlineSize=500"
+#JAVA_OPTS="$JAVA_OPTS -XX:FreqInlineSize=500"
+
+#JAVA_OPTS="$JAVA_OPTS -XX:+PrintCompilation"
+#JAVA_OPTS="$JAVA_OPTS -XX:+UnlockDiagnosticVMOptions -XX:+PrintInlining"
+#JAVA_OPTS="$JAVA_OPTS -Xlog:async"
+
 #JAVA_OPTS="$JAVA_OPTS -XX:CompileThreshold=20 "
 #JAVA_OPTS="$JAVA_OPTS -XX:-TieredCompilation -XX:TieredStopAtLevel=4"
-#JAVA_OPTS="$JAVA_OPTS -XX:+UnlockDiagnosticVMOptions"
 #JAVA_OPTS="$JAVA_OPTS -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -Xlog:all=off"
 #JAVA_OPTS="$JAVA_OPTS -Xlog:gc*=debug:file=/tmp/gc.log"
 
@@ -30,4 +35,4 @@ source "$HOME/.sdkman/bin/sdkman-init.sh"
 #sdk use java 21.0.1-open 1>&2
 sdk use java 21.0.1-graal 1>&2
 #sdk use java 21.0.1-graalce 1>&2
-time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_vemana
+time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_vemana "$@"
