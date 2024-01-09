@@ -116,6 +116,7 @@ public class CalculateAverage_mtopolnik {
 
     private static class ChunkProcessor implements Runnable {
         private static final long HASHBUF_SIZE = 2 * Long.BYTES;
+        private static final int CACHELINE_SIZE = 64;
 
         private final long chunkStart;
         private final long chunkLimit;
@@ -143,7 +144,7 @@ public class CalculateAverage_mtopolnik {
                 final var inputMem = raf.getChannel().map(MapMode.READ_ONLY, chunkStart, chunkLimit - chunkStart, confinedArena);
                 inputBase = inputMem.address();
                 inputSize = inputMem.byteSize();
-                stats = new StatsAccessor(confinedArena.allocate(STATS_TABLE_SIZE * StatsAccessor.SIZEOF, Long.BYTES));
+                stats = new StatsAccessor(confinedArena.allocate(STATS_TABLE_SIZE * StatsAccessor.SIZEOF, CACHELINE_SIZE));
                 hashBufBase = confinedArena.allocate(HASHBUF_SIZE).address();
                 processChunk();
                 exportResults();
