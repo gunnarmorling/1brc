@@ -203,7 +203,6 @@ public class CalculateAverage_vaidhy<T> {
 
         for (long offset = 0; offset < len; offset += chunkSize) {
             long workerLength = Math.min(len, offset + chunkSize) - offset;
-            System.out.println("Worker length: " + workerLength);
             MapReduce<T> mr = chunkProcessCreator.get();
             final long transferOffset = offset;
             ForkJoinTask<T> task = commonPool.submit(() -> {
