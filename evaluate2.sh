@@ -51,18 +51,20 @@ if [ ! -f "$HOME/.sdkman/bin/sdkman-init.sh" ]; then
     echo "Error: sdkman is not installed." >&2
     exit 1
 fi
+
+# 2. Init sdkman in this script
 source "$HOME/.sdkman/bin/sdkman-init.sh"
 
-# 2. make sure the default java version is installed
+# 3. make sure the default java version is installed
 if [ ! -d "$HOME/.sdkman/candidates/java/21.0.1-open" ]; then
   echo "+ sdk install java 21.0.1-open"
   sdk install java 21.0.1-open
 fi
 
-# 3. Install missing SDK java versions in any of the prepare_*.sh scripts for the provided forks
+# 4. Install missing SDK java versions in any of the prepare_*.sh scripts for the provided forks
 for fork in "$@"; do
   if [ -f "./prepare_$fork.sh" ]; then
-    grep -h "^sdk use" "./prepare_$fork.sh" | cut -d' ' -f4 | sort | uniq | while read -r version; do
+    grep -h "^sdk use" "./prepare_$fork.sh" | cut -d' ' -f4 | while read -r version; do
       if [ ! -d "$HOME/.sdkman/candidates/java/$version" ]; then
         echo "+ sdk install java $version"
         sdk install java $version
