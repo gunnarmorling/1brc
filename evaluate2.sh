@@ -66,7 +66,7 @@ for fork in "$@"; do
   fi
 
   # Use hyperfine to run the benchmarks for each fork
-  HYPERFINE_OPTS="--warmup 0 --runs 5 --export-json $fork-$filetimestamp.out"
+  HYPERFINE_OPTS="--warmup 1 --runs 5 --export-json $fork-$filetimestamp.out"
   # For debugging:
   # HYPERFINE_OPTS="$HYPERFINE_OPTS --show-output"
 
