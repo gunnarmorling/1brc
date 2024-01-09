@@ -67,7 +67,12 @@ public class CalculateAverage_yavuztas {
             final Record record = (Record) o;
             if (this.length != record.length || this.hash != record.hash)
                 return false;
-            return this.buffer.equals(record.buffer);
+
+            int i = 0; // naive buffer mismatch check
+            while (i < this.length && this.buffer.get(this.start + i) == record.buffer.get(record.start + i)) {
+                i++;
+            }
+            return i == this.length;
         }
 
         @Override
@@ -129,8 +134,8 @@ public class CalculateAverage_yavuztas {
                 return;
             }
 
-            if (!existing.equals(key)) { // collision
-                // linear probing to find a slot
+            if (!existing.equals(key)) {
+                // collision, linear probing to find a slot
                 while ((existing = this.keys[++bucket & BITMASK]) != null && !existing.equals(key)) {
                     // can be stuck here if all the buckets are full :(
                     // However, since the data set is max 10K (unique keys) this shouldn't happen
@@ -156,8 +161,8 @@ public class CalculateAverage_yavuztas {
                 return;
             }
 
-            if (!existing.equals(key)) { // collision
-                // linear probing to find a slot
+            if (!existing.equals(key)) {
+                // collision, linear probing to find a slot
                 while ((existing = this.keys[++bucket & BITMASK]) != null && !existing.equals(key)) {
                     // can be stuck here if all the buckets are full :(
                     // However, since the data set is max 10K (unique keys) this shouldn't happen
