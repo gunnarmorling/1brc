@@ -20,38 +20,39 @@ import java.lang.foreign.Arena;
 import java.lang.reflect.Field;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
-import java.util.Objects;
-import java.util.TreeMap;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import java.util.stream.Stream;
 
 import sun.misc.Unsafe;
 
 /**
  * Changelog:
  *
- * Initial submission:          62000 ms
- * Chunked reader:              16000 ms
- * Optimized parser:            13000 ms
- * Branchless methods:          11000 ms
- * Adding memory mapped files:  6500 ms (based on bjhara's submission)
- * Skipping string creation:    4700 ms
- * Custom hashmap...            4200 ms
- * Added SWAR token checks:     3900 ms
- * Skipped String creation:     3500 ms (idea from kgonia)
- * Improved String skip:        3250 ms
- * Segmenting files:            3150 ms (based on spullara's code)
- * Not using SWAR for EOL:      2850 ms
- * Inlining hash calculation:   2450 ms
- * Replacing branchless code:   2200 ms (sometimes we need to kill the things we love)
- * Added unsafe memory access:  1900 ms (keeping the long[] small and local)
- *
- * Best performing JVM on MacBook M2 Pro: 21.0.1-graal
- * `sdk use java 21.0.1-graal`
+ * Initial submission:               62000 ms
+ * Chunked reader:                   16000 ms
+ * Optimized parser:                 13000 ms
+ * Branchless methods:               11000 ms
+ * Adding memory mapped files:       6500 ms (based on bjhara's submission)
+ * Skipping string creation:         4700 ms
+ * Custom hashmap...                 4200 ms
+ * Added SWAR token checks:          3900 ms
+ * Skipped String creation:          3500 ms (idea from kgonia)
+ * Improved String skip:             3250 ms
+ * Segmenting files:                 3150 ms (based on spullara's code)
+ * Not using SWAR for EOL:           2850 ms
+ * Inlining hash calculation:        2450 ms
+ * Replacing branchless code:        2200 ms (sometimes we need to kill the things we love)
+ * Added unsafe memory access:       1900 ms (keeping the long[] small and local)
+ * Fixed bug, UNSAFE bytes String:   1850 ms
+ * Separate hash from entries:       1550 ms
+ * Various tweaks for Linux/cache    1550 ms (should/could make a difference on target machine)
  *
  */
 public class CalculateAverage_royvanrijn {
@@ -63,7 +64,7 @@ public class CalculateAverage_royvanrijn {
 
     private static Unsafe initUnsafe() {
         try {
-            Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
+            final Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
             theUnsafe.setAccessible(true);
             return (Unsafe) theUnsafe.get(Unsafe.class);
         }
@@ -79,26 +80,39 @@ public class CalculateAverage_royvanrijn {
     public void run() throws Exception {
 
         // Calculate input segments.
-        int numberOfChunks = Runtime.getRuntime().availableProcessors();
-        long[] chunks = getSegments(numberOfChunks);
+        final int numberOfChunks = Runtime.getRuntime().availableProcessors();
+        final long[] chunks = getSegments(numberOfChunks);
 
-        // Parallel processing of segments.
-        TreeMap<String, Measurement> results = IntStream.range(0, chunks.length - 1)
-                .mapToObj(chunkIndex -> process(chunks[chunkIndex], chunks[chunkIndex + 1])).parallel()
-                .flatMap(MeasurementRepository::get)
-                .collect(Collectors.toMap(e -> e.city, MeasurementRepository.Entry::measurement, Measurement::updateWith, TreeMap::new));
+        final List<MeasurementRepository> repositories = IntStream.range(0, chunks.length - 1)
+                .mapToObj(chunkIndex -> processMemoryArea(chunks[chunkIndex], chunks[chunkIndex + 1]))
+                .parallel()
+                .toList();
 
-        System.out.println(results);
+        // Sometimes simple is better:
+        final HashMap<String, MeasurementRepository.Entry> measurements = HashMap.newHashMap(1 << 10);
+        for (MeasurementRepository repository : repositories) {
+            for (MeasurementRepository.Entry entry : repository.table) {
+                if (entry != null)
+                    measurements.merge(entry.city, entry, MeasurementRepository.Entry::mergeWith);
+            }
+        }
+
+        System.out.print("{" +
+                measurements.entrySet().stream().sorted(Map.Entry.comparingByKey()).map(Object::toString).collect(Collectors.joining(", ")));
+        System.out.println("}");
     }
 
-    private static long[] getSegments(int numberOfChunks) throws IOException {
+    /**
+     * Simpler way to get the segments and launch parallel processing by thomaswue
+     */
+    private static long[] getSegments(final int numberOfChunks) throws IOException {
         try (var fileChannel = FileChannel.open(Path.of(FILE), StandardOpenOption.READ)) {
-            long fileSize = fileChannel.size();
-            long segmentSize = (fileSize + numberOfChunks - 1) / numberOfChunks;
-            long[] chunks = new long[numberOfChunks + 1];
-            long mappedAddress = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, Arena.global()).address();
+            final long fileSize = fileChannel.size();
+            final long segmentSize = (fileSize + numberOfChunks - 1) / numberOfChunks;
+            final long[] chunks = new long[numberOfChunks + 1];
+            final long mappedAddress = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, Arena.global()).address();
             chunks[0] = mappedAddress;
-            long endAddress = mappedAddress + fileSize;
+            final long endAddress = mappedAddress + fileSize;
             for (int i = 1; i < numberOfChunks; ++i) {
                 long chunkAddress = mappedAddress + i * segmentSize;
                 // Align to first row start.
@@ -112,13 +126,14 @@ public class CalculateAverage_royvanrijn {
         }
     }
 
-    private MeasurementRepository process(long fromAddress, long toAddress) {
+    private MeasurementRepository processMemoryArea(final long fromAddress, final long toAddress) {
 
         MeasurementRepository repository = new MeasurementRepository();
         long ptr = fromAddress;
-        long[] dataBuffer = new long[16];
-        while ((ptr = processEntity(dataBuffer, ptr, toAddress, repository)) < toAddress)
-            ;
+        final long[] dataBuffer = new long[16];
+        while ((ptr = processName(dataBuffer, ptr, toAddress, repository)) < toAddress) {
+            // empty loop
+        }
 
         return repository;
     }
@@ -128,7 +143,7 @@ public class CalculateAverage_royvanrijn {
     /**
      * Already looping the longs here, lets shoehorn in making a hash
      */
-    private long processEntity(final long[] data, final long start, final long limit, final MeasurementRepository measurementRepository) {
+    private long processName(final long[] data, final long start, final long limit, final MeasurementRepository measurementRepository) {
         int hash = 1;
         long i;
         int dataPtr = 0;
@@ -141,13 +156,11 @@ public class CalculateAverage_royvanrijn {
             long mask = ((match - 0x0101010101010101L) & ~match) & 0x8080808080808080L;
 
             if (mask != 0) {
-
                 final long partialWord = word & ((mask >> 7) - 1);
                 hash = longHashStep(hash, partialWord);
                 data[dataPtr] = partialWord;
-
                 final int index = Long.numberOfTrailingZeros(mask) >> 3;
-                return process(start, i + index, hash, data, measurementRepository);
+                return processNumber(start, i + index, hash, data, measurementRepository);
             }
             data[dataPtr++] = word;
             hash = longHashStep(hash, word);
@@ -160,10 +173,10 @@ public class CalculateAverage_royvanrijn {
             if ((read = UNSAFE.getByte(i)) == ';') {
                 hash = longHashStep(hash, partialWord);
                 data[dataPtr] = partialWord;
-                return process(start, i, hash, data, measurementRepository);
+                return processNumber(start, i, hash, data, measurementRepository);
             }
-            partialWord = partialWord | ((long) read << (len << 3));
-            len++;
+            partialWord = partialWord | ((long) read << len);
+            len += 8;
         }
         return limit;
     }
@@ -171,12 +184,17 @@ public class CalculateAverage_royvanrijn {
     private static final long DOT_BITS = 0x10101000;
     private static final long MAGIC_MULTIPLIER = (100 * 0x1000000 + 10 * 0x10000 + 1);
 
-    private long process(final long startAddress, final long delimiterAddress, final int hash, final long[] data, final MeasurementRepository measurementRepository) {
+    /**
+     * Awesome branchless parser by merykitty.
+     */
+    private long processNumber(final long startAddress, final long delimiterAddress, final int hash, final long[] data,
+                               final MeasurementRepository measurementRepository) {
 
         long word = UNSAFE.getLong(delimiterAddress + 1);
         if (isBigEndian) {
             word = Long.reverseBytes(word);
         }
+
         final long invWord = ~word;
         final int decimalSepPos = Long.numberOfTrailingZeros(invWord & DOT_BITS);
         final long signed = (invWord << 59) >> 63;
@@ -185,45 +203,11 @@ public class CalculateAverage_royvanrijn {
         final long absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
         final int measurement = (int) ((absValue ^ signed) - signed);
 
-        // Store:
+        // Store this entity:
         measurementRepository.update(startAddress, data, (int) (delimiterAddress - startAddress), hash, measurement);
 
-        return delimiterAddress + (decimalSepPos >> 3) + 4; // Determine next start:
-        // return nextAddress;
-    }
-
-    static final class Measurement {
-        int min, max, count;
-        long sum;
-
-        public Measurement() {
-            this.min = 1000;
-            this.max = -1000;
-        }
-
-        public Measurement updateWith(int measurement) {
-            min = min(min, measurement);
-            max = max(max, measurement);
-            sum += measurement;
-            count++;
-            return this;
-        }
-
-        public Measurement updateWith(Measurement measurement) {
-            min = min(min, measurement.min);
-            max = max(max, measurement.max);
-            sum += measurement.sum;
-            count += measurement.count;
-            return this;
-        }
-
-        public String toString() {
-            return round(min) + "/" + round((1.0 * sum) / count) + "/" + round(max);
-        }
-
-        private double round(double value) {
-            return Math.round(value) / 10.0;
-        }
+        // Return the next address:
+        return delimiterAddress + (decimalSepPos >> 3) + 4;
     }
 
     // branchless max (unprecise for large numbers, but good enough)
@@ -250,72 +234,105 @@ public class CalculateAverage_royvanrijn {
     }
 
     /**
-     * A normal Java HashMap does all these safety things like boundary checks... we don't need that, we need speeeed.
-     *
-     * So I've written an extremely simple linear probing hashmap that should work well enough.
+     * Extremely simple linear probing hashmap that should work well enough.
      */
-    class MeasurementRepository {
-        private int tableSize = 1 << 20; // large enough for the contest.
-        private int tableMask = (tableSize - 1);
+    static class MeasurementRepository {
+        private static final int TABLE_SIZE = 1 << 18; // large enough for the contest.
+        private static final int TABLE_MASK = (TABLE_SIZE - 1);
 
-        private MeasurementRepository.Entry[] table = new MeasurementRepository.Entry[tableSize];
+        private final Entry[] table = new Entry[TABLE_SIZE];
+        /**
+         * Separated hashtable, keeps memory local, idea of from franz1981.
+         * And colocate measurements in Entry:
+         */
+        private final int[] hashTable = new int[TABLE_SIZE];
 
-        record Entry(long address, long[] data, int length, int hash, String city, Measurement measurement) {
+        static final class Entry {
+            private final long[] data;
+            private final String city;
+            private int min, max, count;
+            private long sum;
 
-            @Override
+            Entry(long[] data, String city) {
+                this.data = data;
+                this.city = city;
+                this.min = 1000;
+                this.max = -1000;
+            }
+
+            public void updateWith(int measurement) {
+                min = min(min, measurement);
+                max = max(max, measurement);
+                sum += measurement;
+                count++;
+            }
+
+            public Entry mergeWith(Entry entry) {
+                min = min(min, entry.min);
+                max = max(max, entry.max);
+                sum += entry.sum;
+                count += entry.count;
+                return this;
+            }
+
             public String toString() {
-                return city + "=" + measurement;
+                return round(min) + "/" + round((1.0 * sum) / count) + "/" + round(max);
+            }
+
+            private static double round(double value) {
+                return Math.round(value) / 10.0;
             }
         }
 
-        public void update(long address, long[] data, int length, int hash, int temperature) {
+        public void update(final long address, final long[] data, final int length, final int hash, final int temperature) {
 
-            int dataLength = length >> 3;
-            int index = hash & tableMask;
-            MeasurementRepository.Entry tableEntry;
-            while ((tableEntry = table[index]) != null
-                    && (tableEntry.hash != hash || tableEntry.length != length || !arrayEquals(tableEntry.data, data, dataLength))) { // search for the right spot
-                index = (index + 1) & tableMask;
+            final int dataLength = (length >> 3) + 1;
+
+            int index = hash & TABLE_MASK;
+            Entry tableEntry = null;
+
+            // Find the entry:
+            while (true) {
+                int hashTableEntry;
+                if ((hashTableEntry = hashTable[index]) == 0) {
+                    // Slot is empty
+                    break;
+                }
+                else if (hashTableEntry == hash) {
+                    tableEntry = table[index];
+                    // Match the entire long[] with all name-bytes:
+                    if (Arrays.mismatch(tableEntry.data, 0, dataLength, data, 0, dataLength) < 0) {
+                        // Found a matching entry
+                        break;
+                    }
+                }
+                // Move to the next index
+                index = (index + 1) & TABLE_MASK;
             }
 
-            if (tableEntry != null) {
-                tableEntry.measurement.updateWith(temperature);
-                return;
+            if (tableEntry == null) {
+                tableEntry = createNewEntry(address, data, length, hash, dataLength, index);
             }
+
+            tableEntry.updateWith(temperature);
+        }
+
+        private Entry createNewEntry(final long address, final long[] data, final int length, final int hash, final int dataLength, final int index) {
 
             // --- This is a brand new entry, insert into the hashtable and do the extra calculations (once!) do slower calculations here.
-            Measurement measurement = new Measurement();
+            final byte[] bytes = new byte[length];
+            UNSAFE.copyMemory(null, address, bytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, length);
+            final String city = new String(bytes, StandardCharsets.UTF_8);
 
-            byte[] bytes = new byte[length];
-            for (int i = 0; i < length; i++) {
-                bytes[i] = UNSAFE.getByte(address + i);
-            }
-            String city = new String(bytes);
-
-            long[] dataCopy = new long[dataLength];
+            final long[] dataCopy = new long[dataLength];
             System.arraycopy(data, 0, dataCopy, 0, dataLength);
 
-            // And add entry:
-            MeasurementRepository.Entry toAdd = new MeasurementRepository.Entry(address, dataCopy, length, hash, city, measurement);
-            table[index] = toAdd;
-
-            toAdd.measurement.updateWith(temperature);
+            // Add the entry:
+            final Entry tableEntry = new Entry(dataCopy, city);
+            table[index] = tableEntry;
+            hashTable[index] = hash;
+            return tableEntry;
         }
-
-        public Stream<MeasurementRepository.Entry> get() {
-            return Arrays.stream(table).filter(Objects::nonNull);
-        }
-    }
-
-    /**
-     * For case multiple hashes are equal (however unlikely) check the actual key (using longs)
-     */
-    private boolean arrayEquals(final long[] a, final long[] b, final int length) {
-        for (int i = 0; i < length; i++) {
-            if (a[i] != b[i])
-                return false;
-        }
-        return true;
     }
 
 }

@@ -18,5 +18,11 @@
 source "$HOME/.sdkman/bin/sdkman-init.sh"
 sdk use java 21.0.1-graal 1>&2
 
-JAVA_OPTS="--enable-preview"
+JAVA_OPTS="--enable-preview -XX:+UnlockExperimentalVMOptions -XX:+TrustFinalNonStaticFields -XX:+UseNUMA"
+
+if [[ ! "$(uname -s)" = "Darwin" ]]; then
+    # On OS/X, my machine, this errors:
+    JAVA_OPTS="$JAVA_OPTS -XX:+UseTransparentHugePages"
+fi
+
 time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_royvanrijn
