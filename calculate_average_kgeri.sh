@@ -17,4 +17,4 @@
 
 
 JAVA_OPTS="--enable-preview"
-time java $JAVA_OPTS -Xmx99M --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_kgeri
+java $JAVA_OPTS -Xmx99M --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_kgeri

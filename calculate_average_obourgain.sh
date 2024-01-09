@@ -28,4 +28,4 @@ JAVA_OPTS="$JAVA_OPTS -XX:InlineSmallCode=10000"
 # seems to be a bit faster
 JAVA_OPTS="$JAVA_OPTS -XX:-TieredCompilation -XX:CICompilerCount=2 -XX:CompileThreshold=1000"
 
-time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_obourgain
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_obourgain

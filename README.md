@@ -94,6 +94,7 @@ Submit your implementation by Jan 31 2024 and become part of the leaderboard!
 |   |        04:13.449| [link](https://github.com/gunnarmorling/onebrc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage.java) (baseline)| 21.0.1-open   | [Gunnar Morling](https://github.com/gunnarmorling)|
 
 See [below](#entering-the-challenge) for instructions how to enter the challenge with your own implementation.
+The [Show & Tell](https://github.com/gunnarmorling/1brc/discussions/categories/show-and-tell) features a wide range of 1BRC entries built using other languages, databases, and tools.
 
 ## Prerequisites
 
@@ -174,11 +175,11 @@ To submit your own implementation to 1BRC, follow these steps:
 * Create a fork of the [onebrc](https://github.com/gunnarmorling/onebrc/) GitHub repository.
 * Create a copy of _CalculateAverage.java_, named _CalculateAverage\_<your_GH_user>.java_, e.g. _CalculateAverage\_doloreswilson.java_.
 * Make that implementation fast. Really fast.
-* Create a copy of _calculate_average_baseline.sh_, named _calculate\_average\_<your_GH_user>.sh_, e.g. _calculate\_average\_doloreswilson.sh_.
+* Create a copy of _calculate\_average\_baseline.sh_, named _calculate\_average\_<your_GH_user>.sh_, e.g. _calculate\_average\_doloreswilson.sh_.
 * Adjust that script so that it references your implementation class name. If needed, provide any JVM arguments via the `JAVA_OPTS` variable in that script.
   Make sure that script does not write anything to standard output other than calculation results.
-* OpenJDK 21 is the default. If a custom JDK build is required, include the SDKMAN command `sdk use java [version]` in the launch shell script prior to application start.
-* (Optional) If you'd like to use native binaries (GraalVM), adjust the _pom.xml_ file so that it builds that binary.
+* (Optional) OpenJDK 21 is used by default. If a custom JDK build is required, create a copy of _prepare\_baseline.sh_, named _prepare\_<your_GH_user>.sh_, e.g. _prepare\_doloreswilson.sh_. Include the SDKMAN command `sdk use java [version]` in the your prepare script.
+* (Optional) If you'd like to use native binaries (GraalVM), create a script named _additional\_build\_step\_<your_GH_user>.sh_, e.g. _additional\_build\_step\_doloreswilson.sh_ and add all the required build logic there
 * Run the test suite by executing _/test.sh <your_GH_user>_; if any differences are reported, fix them before submitting your implementation.
 * Create a pull request against the upstream repository, clearly stating
   * The name of your implementation class.
@@ -196,7 +197,10 @@ Any submissions (i.e. pull requests) created after Jan 31 2024 23:59 UTC will no
 
 ## Evaluating Results
 
-Results are determined by running the program on a [Hetzner Cloud CCX33 instance](https://www.hetzner.com/cloud) (8 dedicated vCPU, 32 GB RAM).
+~~Results are determined by running the program on a [Hetzner Cloud CCX33 instance](https://www.hetzner.com/cloud) (8 dedicated vCPU, 32 GB RAM).~~
+This instance has proven to yield unreliable results due to being moved do a different host.
+I am in the process of setting up a dedicated box instead ([Hetzner AX161](https://www.hetzner.com/dedicated-rootserver/ax161), 32 core AMD EPYC™ 7502P (Zen2), 128 GB RAM).
+
 The `time` program is used for measuring execution times, i.e. end-to-end times are measured.
 Each contender will be run five times in a row.
 The slowest and the fastest runs are discarded.
@@ -246,6 +250,10 @@ A: Probably not :) 1BRC results are reported in wallclock time, thus results of 
 _Q: Why_ 1️⃣🐝🏎️ _?_\
 A: It's the abbreviation of the project name: **One** **B**illion **R**ow **C**hallenge.
 
+## Sponsorship
+
+A big thank you to my employer [Decodable](https://www.decodable.co/) for funding the evaluation environment and supporting this challenge!
+ 
 ## License
 
 This code base is available under the Apache License, version 2.
