@@ -73,4 +73,8 @@ public class FastRandom {
     public int nextInt() {
         return next(32);
     }
+
+    public double nextDouble() {
+        return (double) Math.abs(this.nextInt()) / (double) Integer.MAX_VALUE;
+    }
 }
