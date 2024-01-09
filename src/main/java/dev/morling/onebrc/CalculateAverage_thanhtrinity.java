@@ -38,7 +38,7 @@ import java.util.stream.Collectors;
 public class CalculateAverage_thanhtrinity {
 
     private static final String FILE = "./measurements.txt";
-    private static final int TOTAL_PROCESSOR = 8;// Runtime.getRuntime().availableProcessors();
+    private static final int TOTAL_PROCESSOR = Runtime.getRuntime().availableProcessors();
 
     public static void main(String[] args) throws IOException, InterruptedException {
 
