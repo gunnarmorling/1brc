@@ -15,13 +15,10 @@
 #  limitations under the License.
 #
 
-if [ -f ./image_calculateaverage_mtopolnik ]; then
-    echo "Using Graal native image: image_calculateaverage_mtopolnik; delete to run with JVM instead." 1>&2
-    time ./image_calculateaverage_mtopolnik
-else
-  echo "Graal native image not found, using the JVM. Run additional_build_step_mtopolnik.sh to create." 1>&2
-  source "$HOME/.sdkman/bin/sdkman-init.sh"
-  sdk use java 21.0.1-graal 1>&2
-  time java -Xmx256m --enable-preview -XX:InlineSmallCode=10000\
-    --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_mtopolnik
-fi
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+sdk use java 21.0.1-graal 1>&2
+# -XX:+UnlockDiagnosticVMOptions -XX:PrintAssemblyOptions=intel -XX:CompileCommand=print,*.CalculateAverage_mtopolnik::recordMeasurementAndAdvanceCursor"
+# -XX:InlineSmallCode=10000 -XX:-TieredCompilation -XX:CICompilerCount=2 -XX:CompileThreshold=1000\
+time java -Xmx256m --enable-preview\
+  -XX:InlineSmallCode=10000\
+  --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_mtopolnik
