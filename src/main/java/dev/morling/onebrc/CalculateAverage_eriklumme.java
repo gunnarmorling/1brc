@@ -35,7 +35,7 @@ import java.util.concurrent.Future;
 public class CalculateAverage_eriklumme {
 
     private static final String FILE = "./measurements.txt";
-    private static final int NUM_CPUS = 8;
+    private static final int NUM_CPUS = Runtime.getRuntime().availableProcessors();
     private static final int LINE_OVERHEAD = 200;
     private static final int NUM_TASKS = NUM_CPUS * 6;
 
