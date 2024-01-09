@@ -183,11 +183,12 @@ for fork in "$@"; do
 done
 echo ""
 
-# Apped $fork-$filetimestamp-timing.json to $fork-$filetimestamp.out
-cat $fork-$filetimestamp-timing.json >> $fork-$filetimestamp.out
-rm $fork-$filetimestamp-timing.json
-
+# Finalize .out files
 echo "Raw results saved to file(s):"
 for fork in "$@"; do
+  # Append $fork-$filetimestamp-timing.json to $fork-$filetimestamp.out and rm $fork-$filetimestamp-timing.json
+  cat $fork-$filetimestamp-timing.json >> $fork-$filetimestamp.out
+  rm $fork-$filetimestamp-timing.json
+
   echo "  $fork-$filetimestamp.out"
 done
