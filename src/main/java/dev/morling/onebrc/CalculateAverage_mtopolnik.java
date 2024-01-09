@@ -127,7 +127,6 @@ public class CalculateAverage_mtopolnik {
         private long inputBase;
         private long inputSize;
         private long hashBufBase;
-        private long hash;
         private long cursor;
 
         ChunkProcessor(RandomAccessFile raf, long chunkStart, long chunkLimit, StationStats[][] results, int myIndex) {
@@ -156,8 +155,8 @@ public class CalculateAverage_mtopolnik {
 
         private void processChunk() {
             while (cursor < inputSize) {
-                long posOfSemicolon = buildHashAndFindSemicolon();
-                buildHash(posOfSemicolon);
+                long posOfSemicolon = posOfSemicolon();
+                long hash = hash(posOfSemicolon);
                 long nameLen = posOfSemicolon - cursor;
                 assert nameLen <= 100 : "nameLen > 100";
                 final long namePos = cursor;
@@ -264,7 +263,7 @@ public class CalculateAverage_mtopolnik {
             return sign * temperature;
         }
 
-        private void buildHash(long posOfSemicolon) {
+        private long hash(long posOfSemicolon) {
             long n1;
             if (cursor <= inputSize - Long.BYTES) {
                 n1 = UNSAFE.getLong(inputBase + cursor);
@@ -291,7 +290,7 @@ public class CalculateAverage_mtopolnik {
             // hash ^= n2;
             // hash *= seed;
             // hash = Long.rotateLeft(hash, rotDist);
-            this.hash = hash != 0 ? hash & (~Long.MIN_VALUE) : 1;
+            return hash != 0 ? hash & (~Long.MIN_VALUE) : 1;
         }
 
         private static final long BROADCAST_0x01 = broadcastByte(0x01);
@@ -299,9 +298,8 @@ public class CalculateAverage_mtopolnik {
 
         // Adapted from https://jameshfisher.com/2017/01/24/bitwise-check-for-zero-byte/
         // and https://github.com/ashvardanian/StringZilla/blob/14e7a78edcc16b031c06b375aac1f66d8f19d45a/stringzilla/stringzilla.h#L139-L169
-        long buildHashAndFindSemicolon() {
+        long posOfSemicolon() {
             long offset = cursor;
-            long hash = 0;
             for (; offset <= inputSize - Long.BYTES; offset += Long.BYTES) {
                 var block = UNSAFE.getLong(inputBase + offset);
                 if (ORDER_IS_BIG_ENDIAN) {
@@ -310,36 +308,10 @@ public class CalculateAverage_mtopolnik {
                 final long diff = block ^ BROADCAST_SEMICOLON;
                 long matchIndicators = (diff - BROADCAST_0x01) & ~diff & BROADCAST_0x80;
                 if (matchIndicators != 0) {
-                    long posOfSemicolon = offset + Long.numberOfTrailingZeros(matchIndicators) / 8;
-                    long lenOfNamePartInBlock = posOfSemicolon - offset;
-                    long shiftDistance = 8 * Long.max(0, Long.BYTES - lenOfNamePartInBlock);
-                    long namePartMask = ~0L >>> shiftDistance;
-                    block &= namePartMask;
-                    hash = accumulateHash(hash, block);
-                    this.hash = hash != 0 ? hash & (~Long.MIN_VALUE) : 1;
-                    return posOfSemicolon;
-                }
-                else {
-                    hash = accumulateHash(hash, block);
+                    return offset + Long.numberOfTrailingZeros(matchIndicators) / 8;
                 }
             }
-            long posOfSemicolon = simpleSearch(offset);
-            UNSAFE.putLong(hashBufBase, 0);
-            UNSAFE.copyMemory(inputBase + offset, hashBufBase, Long.min(HASHBUF_SIZE, posOfSemicolon - offset));
-            long block = UNSAFE.getLong(hashBufBase);
-            hash = accumulateHash(hash, block);
-            this.hash = hash != 0 ? hash & (~Long.MIN_VALUE) : 1;
-            return posOfSemicolon;
-        }
-
-        private static final long SEED = 0x51_7c_c1_b7_27_22_0a_95L;
-        private static final int ROT_DIST = 17;
-
-        private static long accumulateHash(long hash, long block) {
-            hash ^= block;
-            hash *= SEED;
-            hash = Long.rotateLeft(hash, ROT_DIST);
-            return hash;
+            return simpleSearch(offset);
         }
 
         private long simpleSearch(long offset) {
