@@ -30,28 +30,28 @@ import java.util.stream.IntStream;
 
 /**
  * Simple solution that memory maps the input file, then splits it into one segment per available core and uses
- * sun.misc.Unsafe to directly access the mapped memory.
+ * sun.misc.Unsafe to directly access the mapped memory. Uses a long at a time when checking for collision.
  *
- * Runs in 0.92s on my Intel i9-13900K
+ * Runs in 0.86s on my Intel i9-13900K
  * Perf stats:
- *     65,004,666,383      cpu_core/cycles/
- *     71,141,249,972      cpu_atom/cycles/
+ *     54,563,984,225      cpu_core/cycles/
+ *     66,295,004,807      cpu_atom/cycles/
  */
 public class CalculateAverage_thomaswue {
     private static final String FILE = "./measurements.txt";
 
     // Holding the current result for a single city.
     private static class Result {
-        short min;
-        short max;
+        int min;
+        int max;
         long sum;
         int count;
         final long nameAddress;
 
         private Result(long nameAddress, int value) {
             this.nameAddress = nameAddress;
-            this.min = (short) value;
-            this.max = (short) value;
+            this.min = value;
+            this.max = value;
             this.sum = value;
             this.count = 1;
         }
@@ -66,8 +66,8 @@ public class CalculateAverage_thomaswue {
 
         // Accumulate another result into this one.
         private void add(Result other) {
-            min = (short) Math.min(min, other.min);
-            max = (short) Math.max(max, other.max);
+            min = Math.min(min, other.min);
+            max = Math.max(max, other.max);
             sum += other.sum;
             count += other.count;
         }
@@ -176,7 +176,7 @@ public class CalculateAverage_thomaswue {
 
             // Final calculation for index into hash table.
             int tableIndex = (((hash ^ (hash >>> 18)) & (results.length - 1)));
-            while (true) {
+            outer: while (true) {
                 Result existingResult = results[tableIndex];
                 if (existingResult == null) {
                     newEntry(results, cities, nameAddress, number, tableIndex, nameLength);
@@ -184,33 +184,14 @@ public class CalculateAverage_thomaswue {
                 }
                 else {
                     // Check for collision.
-                    boolean result = true;
                     int i = 0;
-                    if ((long) nameLength >= 8) {
-                        if (UNSAFE.getLong(existingResult.nameAddress) != UNSAFE.getLong(nameAddress)) {
-                            result = false;
-                        }
-                        else {
-                            i += 8;
+                    for (; i < nameLength - 8; i += 8) {
+                        if (UNSAFE.getLong(existingResult.nameAddress + i) != UNSAFE.getLong(nameAddress + i)) {
+                            tableIndex = (tableIndex + 1) & (results.length - 1);
+                            continue outer;
                         }
                     }
-                    else if ((long) nameLength >= 4) {
-                        if (UNSAFE.getInt(existingResult.nameAddress) != UNSAFE.getInt(nameAddress)) {
-                            result = false;
-                        }
-                        else {
-                            i += 4;
-                        }
-                    }
-                    if (result) {
-                        for (; i < (long) nameLength; ++i) {
-                            if (UNSAFE.getByte(existingResult.nameAddress + i) != UNSAFE.getByte(nameAddress + i)) {
-                                result = false;
-                                break;
-                            }
-                        }
-                    }
-                    if (result) {
+                    if (((UNSAFE.getLong(existingResult.nameAddress + i) ^ UNSAFE.getLong(nameAddress + i)) << (64 - (nameLength - i) << 3)) == 0) {
                         existingResult.min = (short) Math.min(existingResult.min, number);
                         existingResult.max = (short) Math.max(existingResult.max, number);
                         existingResult.sum += number;
