@@ -15,5 +15,9 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="-Xms1g -Xmx1g"
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_yavuztas
+
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+sdk use java 21.0.1-graal 1>&2
+
+JAVA_OPTS="-Xms128m -Xmx128m -XX:-AlwaysPreTouch"
+time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_yavuztas

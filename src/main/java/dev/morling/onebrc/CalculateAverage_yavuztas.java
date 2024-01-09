@@ -24,68 +24,55 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 public class CalculateAverage_yavuztas {
 
     private static final Path FILE = Path.of("./measurements.txt");
 
-    static class Measurement {
-
-        // Only accessed by a single thread, so it is safe to share
-        private static final StringBuilder STRING_BUILDER = new StringBuilder(14);
-
-        private int min; // calculations over int is faster than double, we convert to double in the end only once
-        private int max;
-        private long sum;
-        private long count = 1;
-
-        public Measurement(int initial) {
-            this.min = initial;
-            this.max = initial;
-            this.sum = initial;
-        }
-
-        public String toString() {
-            STRING_BUILDER.setLength(0); // clear the builder to reuse
-            STRING_BUILDER.append(this.min / 10.0); // convert to double while generating the string output
-            STRING_BUILDER.append("/");
-            STRING_BUILDER.append(round((this.sum / 10.0) / this.count));
-            STRING_BUILDER.append("/");
-            STRING_BUILDER.append(this.max / 10.0);
-            return STRING_BUILDER.toString();
-        }
-
-        private double round(double value) {
-            return Math.round(value * 10.0) / 10.0;
-        }
+    private static double round(double value) {
+        return Math.round(value * 10.0) / 10.0;
     }
 
-    static class KeyBuffer {
+    /**
+     * Merged into one class: Key + Measurements, this way less object creation
+     */
+    static class Record {
 
+        // direct ref to underlying buffer, no copy is faster
+        // It's safe as long as we make absolute get
         ByteBuffer buffer;
+        int start;
         int length;
         int hash;
 
-        public KeyBuffer(ByteBuffer buffer, int length, int hash) {
+        private int min = 1000; // calculations over int is faster than double, we convert to double in the end only once
+        private int max = -1000;
+        private long sum;
+        private long count;
+
+        public Record(ByteBuffer buffer, int start, int length, int hash) {
             this.buffer = buffer;
+            this.start = start;
             this.length = length;
             this.hash = hash;
         }
 
         @Override
         public boolean equals(Object o) {
-            final KeyBuffer keyBuffer = (KeyBuffer) o;
-            if (this.length != keyBuffer.length || this.hash != keyBuffer.hash)
+            final Record record = (Record) o;
+            if (this.length != record.length || this.hash != record.hash)
                 return false;
 
-            return this.buffer.equals(keyBuffer.buffer);
+            int i = 0; // naive buffer mismatch check
+            while (i < this.length && this.buffer.get(this.start + i) == record.buffer.get(record.start + i)) {
+                i++;
+            }
+            return i == this.length;
         }
 
         @Override
@@ -96,9 +83,117 @@ public class CalculateAverage_yavuztas {
         @Override
         public String toString() {
             final byte[] bytes = new byte[this.length];
-            this.buffer.get(bytes);
-            return new String(bytes, 0, this.length, StandardCharsets.UTF_8);
+            this.buffer.get(this.start, bytes);
+            return new String(bytes, StandardCharsets.UTF_8);
         }
+
+        public void collect(int temp) {
+            this.min = Math.min(this.min, temp);
+            this.max = Math.max(this.max, temp);
+            this.sum += temp;
+            this.count++;
+        }
+
+        public void merge(Record other) {
+            this.min = Math.min(this.min, other.min);
+            this.max = Math.max(this.max, other.max);
+            this.sum += other.sum;
+            this.count += other.count;
+        }
+
+        public String measurements() {
+            final StringBuilder sb = new StringBuilder(14);
+            sb.append(this.min / 10.0); // convert to double while generating the string output
+            sb.append("/");
+            sb.append(round((this.sum / 10.0) / this.count));
+            sb.append("/");
+            sb.append(this.max / 10.0);
+            return sb.toString();
+        }
+    }
+
+    // Inspired by @spullara - customized hashmap on purpose
+    // The main difference is this map holds only one array instead of two
+    static class KeyBufferMap {
+
+        static final int SIZE = 1 << 15; // 32k - bigger bucket size less collisions
+        static final int BITMASK = SIZE - 1;
+        Record[] keys = new Record[SIZE];
+
+        int hashBucket(int hash) {
+            hash = hash ^ (hash >>> 16); // naive bit spreading but greatly decreases collision
+            return hash & BITMASK; // fast modulo, to find bucket
+        }
+
+        void putAndCollect(Record key, int temp) {
+            int bucket = hashBucket(key.hash);
+            Record existing = this.keys[bucket];
+            if (existing == null) {
+                this.keys[bucket] = key;
+                key.collect(temp);
+                return;
+            }
+
+            if (!existing.equals(key)) {
+                // collision, linear probing to find a slot
+                while ((existing = this.keys[++bucket & BITMASK]) != null && !existing.equals(key)) {
+                    // can be stuck here if all the buckets are full :(
+                    // However, since the data set is max 10K (unique keys) this shouldn't happen
+                    // So, I'm happily leave here branchless :)
+                }
+                if (existing == null) {
+                    this.keys[bucket] = key;
+                    key.collect(temp);
+                    return;
+                }
+                existing.collect(temp);
+            }
+            else {
+                existing.collect(temp);
+            }
+        }
+
+        void putOrMerge(Record key) {
+            int bucket = hashBucket(key.hash);
+            Record existing = this.keys[bucket];
+            if (existing == null) {
+                this.keys[bucket] = key;
+                return;
+            }
+
+            if (!existing.equals(key)) {
+                // collision, linear probing to find a slot
+                while ((existing = this.keys[++bucket & BITMASK]) != null && !existing.equals(key)) {
+                    // can be stuck here if all the buckets are full :(
+                    // However, since the data set is max 10K (unique keys) this shouldn't happen
+                    // So, I'm happily leave here branchless :)
+                }
+                if (existing == null) {
+                    this.keys[bucket] = key;
+                    return;
+                }
+                existing.merge(key);
+            }
+            else {
+                existing.merge(key);
+            }
+        }
+
+        void forEach(Consumer<Record> consumer) {
+            int pos = 0;
+            Record key;
+            while (pos < this.keys.length) {
+                if ((key = this.keys[pos++]) == null) {
+                    continue;
+                }
+                consumer.accept(key);
+            }
+        }
+
+        void merge(KeyBufferMap other) {
+            other.forEach(this::putOrMerge);
+        }
+
     }
 
     static class FixedRegionDataAccessor {
@@ -106,7 +201,6 @@ public class CalculateAverage_yavuztas {
         long startPos;
         long size;
         ByteBuffer buffer;
-        int position; // relative
 
         public FixedRegionDataAccessor(long startPos, long size, ByteBuffer buffer) {
             this.startPos = startPos;
@@ -114,93 +208,54 @@ public class CalculateAverage_yavuztas {
             this.buffer = buffer;
         }
 
-        void traverse(BiConsumer<KeyBuffer, Integer> consumer) {
+        void accumulate(KeyBufferMap collector) {
+            int start;
             int keyHash;
             int length;
             while (this.buffer.hasRemaining()) {
 
-                this.position = this.buffer.position(); // save line start pos
-
                 byte b;
                 keyHash = 0;
                 length = 0;
+                start = this.buffer.position(); // save line start position
                 while ((b = this.buffer.get()) != ';') { // read until semicolon
                     keyHash = 31 * keyHash + b; // calculate key hash ahead, eleminates one more loop later
                     length++;
                 }
 
-                final ByteBuffer station = this.buffer.slice(this.position, length);
-                final KeyBuffer key = new KeyBuffer(station, length, keyHash);
+                final Record key = new Record(this.buffer, start, length, keyHash);
+                final int temp = readTemperature();
+                this.buffer.get(); // skip linebreak
 
-                this.buffer.mark(); // semicolon pos
-                skip(3); // skip more since minimum temperature length is 3
-                length = 4; // +1 for semicolon
-
-                while (this.buffer.get() != '\n') {
-                    length++; // read until linebreak
-                    // TODO how to read temperature here
-                }
-
-                this.buffer.reset(); // set to after semicolon
-                consumer.accept(key, readTemperature(length));
+                collector.putAndCollect(key, temp);
             }
         }
 
-        Map<KeyBuffer, Measurement> accumulate(Map<KeyBuffer, Measurement> initial) {
-
-            traverse((station, temperature) -> {
-                initial.compute(station, (k, m) -> {
-                    if (m == null) {
-                        return new Measurement(temperature);
-                    }
-                    // aggregate
-                    m.min = Math.min(m.min, temperature);
-                    m.max = Math.max(m.max, temperature);
-                    m.sum += temperature;
-                    m.count++;
-                    return m;
-                });
-            });
-
-            return initial;
-        }
-
-        // caching Math.pow calculation improves a lot!
-        // interestingly, instance field access is much faster than static field access
-        final int[] powerOfTenCache = new int[]{ 1, 10, 100 };
-
-        int readTemperature(int length) {
+        // Inspired by @yemreinci - Reading temparature value without Double.parse
+        int readTemperature() {
             int temp = 0;
-            final byte b1 = this.buffer.get(); // get first byte
-
-            int digits = length - 4; // digit position
-            final boolean negative = b1 == '-';
-            if (!negative) {
-                temp += this.powerOfTenCache[digits + 1] * (b1 - 48); // add first digit ahead
+            final byte b1 = this.buffer.get(); // first byte
+            final byte b2 = this.buffer.get(); // second byte
+            final byte b3 = this.buffer.get(); // third byte
+            if (b1 == '-') {
+                if (b3 == '.') {
+                    temp -= 10 * (b2 - '0') + this.buffer.get() - '0'; // fourth byte
+                }
+                else {
+                    this.buffer.get(); // skip dot
+                    temp -= 100 * (b2 - '0') + 10 * (b3 - '0') + this.buffer.get() - '0'; // fifth byte
+                }
             }
-
-            byte b;
-            while ((b = this.buffer.get()) != '.') { // read until dot
-                temp += this.powerOfTenCache[digits--] * (b - 48);
+            else {
+                if (b2 == '.') {
+                    temp = 10 * (b1 - '0') + b3 - '0';
+                }
+                else {
+                    temp = 100 * (b1 - '0') + 10 * (b2 - '0') + this.buffer.get() - '0'; // fourth byte
+                }
             }
-            b = this.buffer.get(); // read after dot, only one digit no loop
-            temp += this.powerOfTenCache[digits] * (b - 48);
-            this.buffer.get(); // skip line break
-
-            return (negative) ? -temp : temp;
+            return temp;
         }
-
-        ByteBuffer getKeyRef(int length) {
-            final ByteBuffer slice = this.buffer.slice().limit(length - 1);
-            skip(length);
-            return slice;
-        }
-
-        void skip(int length) {
-            final int pos = this.buffer.position();
-            this.buffer.position(pos + length);
-        }
-
     }
 
     static class FastDataReader implements Closeable {
@@ -219,7 +274,7 @@ public class CalculateAverage_yavuztas {
                 concurrency *= 2;
                 regionSize = fileSize / concurrency;
             }
-            if (regionSize <= 256) { // small file, no need concurrency
+            if (regionSize <= 8192) { // small file, no need concurrency
                 concurrency = 1;
                 regionSize = fileSize;
             }
@@ -232,7 +287,7 @@ public class CalculateAverage_yavuztas {
                     final long maxSize = startPosition + regionSize > fileSize ? fileSize - startPosition : regionSize;
                     final MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_ONLY, startPosition, maxSize);
                     this.accessors[i] = new FixedRegionDataAccessor(startPosition, maxSize, buffer);
-                    // adjust positions back and forth until we find a linebreak!
+                    // shift position to back we find a linebreak
                     final int closestPos = findClosestLineEnd((int) maxSize - 1, buffer);
                     buffer.limit(closestPos + 1);
                     startPosition += closestPos + 1;
@@ -249,11 +304,12 @@ public class CalculateAverage_yavuztas {
             this.accessorPool = Executors.newFixedThreadPool(concurrency);
         }
 
-        void readAndCollect(Map<KeyBuffer, Measurement> output) {
+        void readAndCollect(KeyBufferMap output) {
             for (final FixedRegionDataAccessor accessor : this.accessors) {
                 this.accessorPool.submit(() -> {
-                    final Map<KeyBuffer, Measurement> partial = accessor.accumulate(new HashMap<>(1 << 10, 1)); // aka 1k
-                    this.mergerThread.submit(() -> mergeMaps(output, partial));
+                    final KeyBufferMap partial = new KeyBufferMap();
+                    accessor.accumulate(partial);
+                    this.mergerThread.submit(() -> output.merge(partial));
                 });
             }
         }
@@ -284,31 +340,20 @@ public class CalculateAverage_yavuztas {
             return position;
         }
 
-        private static Map<KeyBuffer, Measurement> mergeMaps(Map<KeyBuffer, Measurement> map1, Map<KeyBuffer, Measurement> map2) {
-            map2.forEach((s, measurement) -> {
-                map1.merge(s, measurement, (m1, m2) -> {
-                    m1.min = Math.min(m1.min, m2.min);
-                    m1.max = Math.max(m1.max, m2.max);
-                    m1.sum += m2.sum;
-                    m1.count += m2.count;
-                    return m1;
-                });
-            });
-
-            return map1;
-        }
-
     }
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        final Map<KeyBuffer, Measurement> output = new HashMap<>(1 << 10, 1); // aka 1k
+
+        final KeyBufferMap collector = new KeyBufferMap();
         try (final FastDataReader reader = new FastDataReader(FILE)) {
-            reader.readAndCollect(output);
+            reader.readAndCollect(collector);
         }
 
-        final TreeMap<String, Measurement> sorted = new TreeMap<>();
-        output.forEach((s, measurement) -> sorted.put(s.toString(), measurement));
+        final TreeMap<String, String> sorted = new TreeMap<>();
+        collector.forEach(key -> sorted.put(key.toString(), key.measurements()));
+
         System.out.println(sorted);
+
     }
 
 }
