@@ -34,6 +34,8 @@ RED='\033[0;31m'
 BOLD_YELLOW='\033[1;33m'
 RESET='\033[0m' # No Color
 
+DEFAULT_JAVA_VERSION="21.0.1-open"
+
 function check_command_installed {
   if ! [ -x "$(command -v $1)" ]; then
     echo "Error: $1 is not installed." >&2
@@ -56,9 +58,9 @@ fi
 source "$HOME/.sdkman/bin/sdkman-init.sh"
 
 # 3. make sure the default java version is installed
-if [ ! -d "$HOME/.sdkman/candidates/java/21.0.1-open" ]; then
-  echo "+ sdk install java 21.0.1-open"
-  sdk install java 21.0.1-open
+if [ ! -d "$HOME/.sdkman/candidates/java/$DEFAULT_JAVA_VERSION" ]; then
+  echo "+ sdk install java $DEFAULT_JAVA_VERSION"
+  sdk install java $DEFAULT_JAVA_VERSION
 fi
 
 # 4. Install missing SDK java versions in any of the prepare_*.sh scripts for the provided forks
@@ -118,8 +120,8 @@ for fork in "$@"; do
     echo "+ source ./prepare_$fork.sh"
     source "./prepare_$fork.sh"
   else
-    echo "+ sdk use java 21.0.1-open"
-    sdk use java 21.0.1-open
+    echo "+ sdk use java $DEFAULT_JAVA_VERSION"
+    sdk use java $DEFAULT_JAVA_VERSION
   fi
 
   # Optional additional build steps
