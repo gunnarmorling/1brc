@@ -15,10 +15,12 @@
  */
 package dev.morling.onebrc;
 
+import sun.misc.Unsafe;
+
 import java.io.IOException;
-import java.nio.ByteBuffer;
+import java.lang.foreign.Arena;
+import java.lang.reflect.Field;
 import java.nio.channels.FileChannel;
-import java.nio.channels.WritableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -34,6 +36,19 @@ public class CalculateAverage_vaidhy<T> {
 
     private static final String FILE = "./measurements.txt";
 
+    private static final Unsafe UNSAFE = initUnsafe();
+
+    private static Unsafe initUnsafe() {
+        try {
+            Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
+            theUnsafe.setAccessible(true);
+            return (Unsafe) theUnsafe.get(Unsafe.class);
+        }
+        catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     private final FileService fileService;
     private final Supplier<MapReduce<T>> chunkProcessCreator;
     private final Function<List<T>, T> reducer;
@@ -43,23 +58,9 @@ public class CalculateAverage_vaidhy<T> {
     }
 
     interface FileService {
-        /**
-         * Returns the size of the file in number of characters.
-         * (Extra credit: assume byte size instead of char size)
-         */
-        // Possible implementation for byte case in HTTP:
-        // byte size = Content-Length header. using HEAD or empty Range.
         long length();
 
-        /**
-         * Returns substring of the file from character indices.
-         * Expects 0 <= start <= start + length <= fileSize
-         * (Extra credit: assume sub-byte array instead of sub char array)
-         */
-        // Possible implementation for byte case in HTTP:
-        // Using Http Request header "Range", typically used for continuing
-        // partial downloads.
-        byte[] range(long offset, int length);
+        byte getByte(long position);
     }
 
     public CalculateAverage_vaidhy(FileService fileService,
@@ -84,49 +85,24 @@ public class CalculateAverage_vaidhy<T> {
     static class ByteStream {
 
         private final FileService fileService;
-        private long offset;
-        private final long scanSize;
-        private int index = 0;
-        private byte[] currentChunk = new byte[0];
-        private final long fileLength;
+        private long position;
+        private long fileLength;
 
-        public ByteStream(FileService fileService, long offset, int scanSize) {
+        public ByteStream(FileService fileService, long offset) {
             this.fileService = fileService;
-            this.offset = offset;
-            this.scanSize = scanSize;
             this.fileLength = fileService.length();
-            if (scanSize <= 0) {
-                throw new IllegalArgumentException("scan size must be > 0");
-            }
+            this.position = offset;
             if (offset < 0) {
                 throw new IllegalArgumentException("offset must be >= 0");
             }
         }
 
         public boolean hasNext() {
-            while (index >= currentChunk.length) {
-                if (offset < fileLength) {
-                    int scanWindow = (int) (Math.min(offset + scanSize, fileLength) - offset);
-                    currentChunk = fileService.range(offset, scanWindow);
-                    offset += scanWindow;
-                    index = 0;
-                }
-                else {
-                    return false;
-                }
-            }
-            return true;
+            return position < fileLength;
         }
 
         public byte next() {
-            if (hasNext()) {
-                byte ch = currentChunk[index];
-                index++;
-                return ch;
-            }
-            else {
-                throw new NoSuchElementException();
-            }
+            return fileService.getByte(position++);
         }
     }
 
@@ -175,8 +151,8 @@ public class CalculateAverage_vaidhy<T> {
     }
 
     // Space complexity: O(scanSize) + O(max line length)
-    public void worker(long offset, long chunkSize, int scanSize, Consumer<EfficientString> lineConsumer) {
-        ByteStream byteStream = new ByteStream(fileService, offset, scanSize);
+    public void worker(long offset, long chunkSize, Consumer<EfficientString> lineConsumer) {
+        ByteStream byteStream = new ByteStream(fileService, offset);
         Iterator<EfficientString> lineStream = new LineStream(byteStream, chunkSize);
 
         if (offset != 0) {
@@ -196,7 +172,7 @@ public class CalculateAverage_vaidhy<T> {
 
     // Space complexity: O(number of workers), not counting
     // workers space assuming they are running in different hosts.
-    public T master(long chunkSize, int scanSize) {
+    public T master(long chunkSize) {
         long len = fileService.length();
         List<ForkJoinTask<T>> summaries = new ArrayList<>();
         ForkJoinPool commonPool = ForkJoinPool.commonPool();
@@ -206,7 +182,7 @@ public class CalculateAverage_vaidhy<T> {
             MapReduce<T> mr = chunkProcessCreator.get();
             final long transferOffset = offset;
             ForkJoinTask<T> task = commonPool.submit(() -> {
-                worker(transferOffset, workerLength, scanSize, mr);
+                worker(transferOffset, workerLength, mr);
                 return mr.result();
             });
             summaries.add(task);
@@ -229,10 +205,13 @@ public class CalculateAverage_vaidhy<T> {
     static class DiskFileService implements FileService {
 
         private final FileChannel fileChannel;
+        private final long mappedAddress;
 
         DiskFileService(String fileName) throws IOException {
             this.fileChannel = FileChannel.open(Path.of(fileName),
                     StandardOpenOption.READ);
+            this.mappedAddress = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0,
+                    fileChannel.size(), Arena.global()).address();
         }
 
         @Override
@@ -246,32 +225,8 @@ public class CalculateAverage_vaidhy<T> {
         }
 
         @Override
-        public byte[] range(long offset, int length) {
-            byte[] newArr = new byte[length];
-            ByteBuffer outputBuffer = ByteBuffer.wrap(newArr);
-            try {
-                fileChannel.transferTo(offset, length, new WritableByteChannel() {
-                    @Override
-                    public int write(ByteBuffer src) {
-                        int rem = src.remaining();
-                        outputBuffer.put(src);
-                        return rem;
-                    }
-
-                    @Override
-                    public boolean isOpen() {
-                        return true;
-                    }
-
-                    @Override
-                    public void close() {
-                    }
-                });
-            }
-            catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-            return newArr;
+        public byte getByte(long position) {
+            return UNSAFE.getByte(mappedAddress + position);
         }
     }
 
@@ -369,11 +324,10 @@ public class CalculateAverage_vaidhy<T> {
                 ChunkProcessorImpl::new,
                 CalculateAverage_vaidhy::combineOutputs);
 
-        int proc = 2 * ForkJoinPool.commonPool().getParallelism();
+        int proc = 16 * ForkJoinPool.commonPool().getParallelism();
         long fileSize = diskFileService.length();
         long chunkSize = Math.ceilDiv(fileSize, proc);
-        Map<EfficientString, IntSummaryStatistics> output = calculateAverageVaidhy.master(chunkSize,
-                Math.min(10 * 1024 * 1024, (int) chunkSize));
+        Map<EfficientString, IntSummaryStatistics> output = calculateAverageVaidhy.master(chunkSize);
         Map<String, String> outputStr = toPrintMap(output);
         System.out.println(outputStr);
     }
