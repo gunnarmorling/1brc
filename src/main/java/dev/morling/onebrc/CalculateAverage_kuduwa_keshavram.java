@@ -83,11 +83,20 @@ public class CalculateAverage_kuduwa_keshavram {
                 MEASUREMENTS[index][i] = measurement;
                 return;
             }
-            if (Arrays.equals(existingMeasurement.city, measurement.city)) {
+            if (equals(existingMeasurement.city, measurement.city)) {
                 existingMeasurement.merge(measurement);
                 return;
             }
         }
+    }
+
+    private static boolean equals(byte[] city1, byte[] city2) {
+        for (int i = 0; i < city1.length; i++) {
+            if (city1[i] != city2[i]) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static Iterator<Measurement> getMeasurementIterator(MappedByteBuffer byteBuffer) {
@@ -133,9 +142,6 @@ public class CalculateAverage_kuduwa_keshavram {
     private record FileSegment(long start, long end) {
     }
 
-    private record Result(String key, String value) {
-    }
-
     private static final class Measurement {
 
         private int hash;
@@ -162,7 +168,7 @@ public class CalculateAverage_kuduwa_keshavram {
     }
 
     private static List<FileSegment> getFileSegments(final File file) throws IOException {
-        final int numberOfSegments = Runtime.getRuntime().availableProcessors() * 2;
+        final int numberOfSegments = Runtime.getRuntime().availableProcessors() * 4;
         final long fileSize = file.length();
         final long segmentSize = fileSize / numberOfSegments;
         if (segmentSize < 1000) {
