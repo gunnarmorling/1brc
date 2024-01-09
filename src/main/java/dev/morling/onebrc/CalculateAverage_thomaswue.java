@@ -31,11 +31,11 @@ import java.util.stream.IntStream;
 /**
  * Simple solution that memory maps the input file, then splits it into one segment per available core and uses
  * sun.misc.Unsafe to directly access the mapped memory. Uses a long at a time when checking for collision.
- *
- * Runs in 0.84s on my Intel i9-13900K
+ * <p>
+ * Runs in 0.80s on my Intel i9-13900K
  * Perf stats:
- *     56,216,315,723      cpu_core/cycles/
- *     67,605,798,701      cpu_atom/cycles/
+ * 53,344,113,388      cpu_core/cycles/
+ * 66,193,198,848      cpu_atom/cycles/
  */
 public class CalculateAverage_thomaswue {
     private static final String FILE = "./measurements.txt";
@@ -81,8 +81,7 @@ public class CalculateAverage_thomaswue {
         // Parallel processing of segments.
         List<HashMap<String, Result>> allResults = IntStream.range(0, chunks.length - 1).mapToObj(chunkIndex -> {
             HashMap<String, Result> cities = HashMap.newHashMap(1 << 10);
-            Result[] results = new Result[1 << 18];
-            parseLoop(chunks[chunkIndex], chunks[chunkIndex + 1], results, cities);
+            parseLoop(chunks[chunkIndex], chunks[chunkIndex + 1], cities);
             return cities;
         }).parallel().toList();
 
@@ -114,7 +113,8 @@ public class CalculateAverage_thomaswue {
         }
     }
 
-    private static void parseLoop(long chunkStart, long chunkEnd, Result[] results, HashMap<String, Result> cities) {
+    private static void parseLoop(long chunkStart, long chunkEnd, HashMap<String, Result> cities) {
+        Result[] results = new Result[1 << 18];
         long scanPtr = chunkStart;
         byte b;
         while (scanPtr < chunkEnd) {
@@ -122,23 +122,32 @@ public class CalculateAverage_thomaswue {
             long hash = 0;
 
             // Search for ';', one long at a time.
-            while (true) {
-                long word = UNSAFE.getLong(scanPtr);
-                long input = word ^ 0x3B3B3B3B3B3B3B3BL;
-                long tmp = (input & 0x7F7F7F7F7F7F7F7FL) + 0x7F7F7F7F7F7F7F7FL;
-                tmp = ~(tmp | input | 0x7F7F7F7F7F7F7F7FL);
-                int pos = Long.numberOfTrailingZeros(tmp) >>> 3;
-                if (pos != 8) {
-                    scanPtr += pos;
-                    word = word & (-1L >>> ((8 - pos - 1) << 3));
-                    hash ^= word;
-                    break;
-                }
-                else {
-                    scanPtr += 8;
-                    hash ^= word;
+            long word = UNSAFE.getLong(scanPtr);
+            int pos = findDelimiter(word);
+            if (pos != 8) {
+                scanPtr += pos;
+                word = word & (-1L >>> ((8 - pos - 1) << 3));
+                hash ^= word;
+            }
+            else {
+                scanPtr += 8;
+                hash ^= word;
+                while (true) {
+                    word = UNSAFE.getLong(scanPtr);
+                    pos = findDelimiter(word);
+                    if (pos != 8) {
+                        scanPtr += pos;
+                        word = word & (-1L >>> ((8 - pos - 1) << 3));
+                        hash ^= word;
+                        break;
+                    }
+                    else {
+                        scanPtr += 8;
+                        hash ^= word;
+                    }
                 }
             }
+
             // Save length of name for later.
             int nameLength = (int) (scanPtr - nameAddress);
             scanPtr++;
@@ -200,6 +209,13 @@ public class CalculateAverage_thomaswue {
             // Skip new line.
             scanPtr++;
         }
+    }
+
+    private static int findDelimiter(long word) {
+        long input = word ^ 0x3B3B3B3B3B3B3B3BL;
+        long tmp = (input & 0x7F7F7F7F7F7F7F7FL) + 0x7F7F7F7F7F7F7F7FL;
+        tmp = ~(tmp | input | 0x7F7F7F7F7F7F7F7FL);
+        return Long.numberOfTrailingZeros(tmp) >>> 3;
     }
 
     private static void newEntry(Result[] results, HashMap<String, Result> cities, long nameAddress, int number, int hash, int nameLength) {
