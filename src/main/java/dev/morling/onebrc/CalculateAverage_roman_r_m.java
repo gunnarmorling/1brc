@@ -35,79 +35,48 @@ public class CalculateAverage_roman_r_m {
         long fileSize = new File(FILE).length();
 
         var station = new ByteString();
-        var value = new ValueDecoder();
-        var parsingStation = true;
 
         long offset = 0;
         var channel = FileChannel.open(Paths.get(FILE));
         var resultStore = new ResultStore();
         MemorySegment ms = channel.map(FileChannel.MapMode.READ_ONLY, offset, fileSize, Arena.ofAuto());
         while (offset < fileSize) {
-            byte c = ms.get(ValueLayout.JAVA_BYTE, offset);
-            offset++;
-            if (c == ';') {
-                value.reset();
-                parsingStation = false;
+            int i = 0;
+            while (ms.get(ValueLayout.JAVA_BYTE, offset + i) != ';') {
+                i++;
             }
-            else if (c == '\r') {
-            }
-            else if (c == '\n') {
-                long val = value.get();
-                var a = resultStore.get(station);
 
-                a.min = Math.min(a.min, val);
-                a.max = Math.max(a.max, val);
-                a.sum += val;
-                a.count++;
+            MemorySegment.copy(ms, ValueLayout.JAVA_BYTE, offset, station.buf, 0, i);
+            station.len = i;
+            station.hash = 0;
 
-                parsingStation = true;
-                station.reset();
-                value.reset();
+            offset += i + 1; // skip semicolon
+            boolean neg = ms.get(ValueLayout.JAVA_BYTE, offset) == '-';
+            if (neg) {
+                offset++;
             }
-            else if (parsingStation) {
-                station.append(c);
+            long val = ms.get(ValueLayout.JAVA_BYTE, offset++) - '0';
+            byte b;
+            while ((b = ms.get(ValueLayout.JAVA_BYTE, offset++)) != '.') {
+                val = val * 10 + (b - '0');
             }
-            else {
-                value.add(c);
+            b = ms.get(ValueLayout.JAVA_BYTE, offset);
+            val = val * 10 + (b - '0');
+
+            offset += 2;
+
+            if (neg) {
+                val = -val;
             }
+
+            var a = resultStore.get(station);
+            a.min = Math.min(a.min, val);
+            a.max = Math.max(a.max, val);
+            a.sum += val;
+            a.count++;
         }
 
         System.out.println(resultStore.toMap());
-    }
-
-    static final class ValueDecoder {
-        private boolean negative;
-        private final byte[] buf = new byte[3];
-        private int len;
-
-        void reset() {
-            negative = false;
-            len = 0;
-        }
-
-        void add(byte b) {
-            if (b == '-') {
-                negative = true;
-            }
-            else if (b == '.') {
-
-            }
-            else {
-                buf[len++] = (byte) (b - '0');
-            }
-        }
-
-        long get() {
-            long res;
-            if (len == 3) {
-                res = buf[2] + buf[1] * 10 + buf[0] * 100;
-            } else if (len == 2) {
-                res = buf[1] + buf[0] * 10;
-            } else {
-                throw new IllegalStateException(STR."buf=\{buf}, len=\{len}");
-            }
-            return negative ? -res : res;
-        }
     }
 
     static final class ByteString {
@@ -115,16 +84,6 @@ public class CalculateAverage_roman_r_m {
         private byte[] buf = new byte[100];
         private int len = 0;
         private int hash = 0;
-
-        void append(byte b) {
-            buf[len++] = b;
-            hash = 31 * hash + (b & 255);
-        }
-
-        void reset() {
-            len = 0;
-            hash = 0;
-        }
 
         @Override
         public String toString() {
@@ -166,6 +125,11 @@ public class CalculateAverage_roman_r_m {
 
         @Override
         public int hashCode() {
+            if (hash == 0) {
+                for (int i = 0; i < len; i++) {
+                    hash = 31 * hash + (buf[i] & 255);
+                }
+            }
             return hash;
         }
     }
