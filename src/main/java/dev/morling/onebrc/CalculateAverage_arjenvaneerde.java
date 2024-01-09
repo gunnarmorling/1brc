@@ -79,7 +79,7 @@ public class CalculateAverage_arjenvaneerde {
 
         void add(byte[] bytes, int startPos, int endPos, int temp) {
             int len = endPos - startPos;
-            int index = ((len - 2) & 0x1f | // 4 bits of the length
+            int index = ((len - 2) & 0x0f | // 4 bits of the length
                     ((bytes[startPos + 0] & 0x1f) << 4) | // 5 bits of first char
                     ((bytes[startPos + 2] & 0x1f) << 9) // 5 bits of third char
             // ((bytes[startPos + 1] & 0x1f) << 14) // 5 bits of second char
@@ -256,7 +256,7 @@ public class CalculateAverage_arjenvaneerde {
     private static final String FILE = "./measurements.txt";
     // private static final String FILE = "./src/test/resources/samples/measurements-1.txt";
     // private static final String FILE = "./src/test/resources/samples/measurements-10000-unique-keys.txt";
-    private static final int NUM_THREADS = 8;
+    private static final int NUM_THREADS = 8; // Runtime.getRuntime().availableProcessors();
     private static final int BYTE_BUFFER_SIZE = 16 * 1024 * 1024;
     private static final ExecutorService threads = Executors.newFixedThreadPool(NUM_THREADS);
     private static final List<Future<Integer>> futures = new ArrayList<>(NUM_THREADS);
@@ -318,7 +318,7 @@ public class CalculateAverage_arjenvaneerde {
                     }
                     // Read next set from channel.
                     numBytesRead = inChannel.read(byteBuffers[nextByteBuffer]);
-                    byteBuffers[currrentByteBuffer].flip();
+                    byteBuffers[nextByteBuffer].flip();
                     // Wait for all threads to finish.
                     for (Future<Integer> future : futures) {
                         future.get();
