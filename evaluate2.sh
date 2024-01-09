@@ -15,6 +15,8 @@
 #  limitations under the License.
 #
 
+set -eo pipefail
+
 if [ -z "$1" ]
   then
     echo "Usage: evaluate2.sh <fork name> (<fork name 2> ...)"
@@ -31,7 +33,6 @@ function check_command_installed {
 }
 
 check_command_installed java
-check_command_installed mvn
 check_command_installed hyperfine
 check_command_installed jq
 
@@ -39,7 +40,7 @@ set -o xtrace
 
 java --version
 
-mvn --quiet clean verify
+./mvnw --quiet clean verify
 
 rm -f measurements.txt
 ln -s measurements_1B.txt measurements.txt
@@ -53,19 +54,19 @@ filetimestamp=$(date  +"%Y%m%d%H%M%S") # same for all fork.out files from this r
 forks=()
 for fork in "$@"; do
   # Use prepare script to invoke SDKMAN
-  if [ ! -f "./prepare_$fork.sh" ]; then
-    echo "Error: prepare script for $fork not found, expecting file ./prepare_$fork.sh"
-    exit 1
+  if [ -f "./prepare_$fork.sh" ]; then
+    echo "+ source ./prepare_$fork.sh"
+    source "./prepare_$fork.sh"
   fi
-  source "./prepare_$fork.sh"
 
   # Optional additional build steps
   if [ -f "./additional_build_steps_$fork.sh" ]; then
+    echo "+ ./additional_build_steps_$fork.sh"
     ./additional_build_steps_$fork.sh
   fi
 
   # Use hyperfine to run the benchmarks for each fork
-  HYPERFINE_OPTS="--warmup 1 --runs 5 --export-json $fork-$filetimestamp.out"
+  HYPERFINE_OPTS="--warmup 0 --runs 5 --export-json $fork-$filetimestamp.out"
   # For debugging:
   # HYPERFINE_OPTS="$HYPERFINE_OPTS --show-output"
   hyperfine $HYPERFINE_OPTS "./calculate_average_$fork.sh 2>&1"
