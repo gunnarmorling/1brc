@@ -19,6 +19,7 @@ import sun.misc.Unsafe;
 
 import java.io.IOException;
 import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
 import java.lang.reflect.Field;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
@@ -131,22 +132,17 @@ public class CalculateAverage_vaidhy<T> {
 
         @Override
         public EfficientString next() {
-            if (hasNext()) {
-                byte[] line = new byte[128];
-                int i = 0;
-                while (byteStream.hasNext()) {
-                    byte ch = byteStream.next();
-                    readIndex++;
-                    if (ch == 0x0a) {
-                        break;
-                    }
-                    line[i++] = ch;
+            byte[] line = new byte[128];
+            int i = 0;
+            while (byteStream.hasNext()) {
+                byte ch = byteStream.next();
+                readIndex++;
+                if (ch == 0x0a) {
+                    break;
                 }
-                return new EfficientString(line, i);
+                line[i++] = ch;
             }
-            else {
-                throw new NoSuchElementException();
-            }
+            return new EfficientString(line, i);
         }
     }
 
@@ -250,8 +246,12 @@ public class CalculateAverage_vaidhy<T> {
             if (eso.length != this.length) {
                 return false;
             }
-            return Arrays.equals(this.arr, 0, this.length,
-                    eso.arr, 0, eso.length);
+            for (int i = 0; i < length; i++) {
+                if (arr[i] != eso.arr[i]) {
+                    return false;
+                }
+            }
+            return true;
         }
     }
 
@@ -263,18 +263,15 @@ public class CalculateAverage_vaidhy<T> {
 
         @Override
         public void accept(EfficientString line) {
-            EfficientString station = EMPTY;
+            EfficientString station = getStation(line);
 
-            int i;
-            for (i = 0; i < line.length; i++) {
-                if (line.arr[i] == ';') {
-                    station = new EfficientString(line.arr, i);
-                    break;
-                }
-            }
+            int normalized = parseDouble(line.arr,
+                    station.length + 1, line.length);
 
-            int normalized = parseDoubleNew(line.arr, i + 1, line.length);
+            updateStats(station, normalized);
+        }
 
+        private void updateStats(EfficientString station, int normalized) {
             IntSummaryStatistics stats = statistics.get(station);
             if (stats == null) {
                 stats = new IntSummaryStatistics();
@@ -283,7 +280,16 @@ public class CalculateAverage_vaidhy<T> {
             stats.accept(normalized);
         }
 
-        private static int parseDoubleNew(byte[] value, int offset, int length) {
+        private static EfficientString getStation(EfficientString line) {
+            for (int i = 0; i < line.length; i++) {
+                if (line.arr[i] == ';') {
+                    return new EfficientString(line.arr, i);
+                }
+            }
+            return EMPTY;
+        }
+
+        private static int parseDouble(byte[] value, int offset, int length) {
             int normalized = 0;
             int index = offset;
             boolean sign = true;
@@ -324,7 +330,7 @@ public class CalculateAverage_vaidhy<T> {
                 ChunkProcessorImpl::new,
                 CalculateAverage_vaidhy::combineOutputs);
 
-        int proc = 16 * ForkJoinPool.commonPool().getParallelism();
+        int proc = ForkJoinPool.commonPool().getParallelism();
         long fileSize = diskFileService.length();
         long chunkSize = Math.ceilDiv(fileSize, proc);
         Map<EfficientString, IntSummaryStatistics> output = calculateAverageVaidhy.master(chunkSize);
