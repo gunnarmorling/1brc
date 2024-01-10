@@ -46,13 +46,4 @@ JAVA_OPTS="$JAVA_OPTS -XX:+UseParallelGC"
 #JAVA_OPTS="$JAVA_OPTS -XX:+UseEpsilonGC -Xlog:all=off"
 #JAVA_OPTS="$JAVA_OPTS -XX:+PrintGC -XX:+PrintGCDetails"
 
-
-# Set JVM and Version
-source "$HOME/.sdkman/bin/sdkman-init.sh"
-#sdk use java 21.0.1-open 1>&2
-sdk use java 21.0.1-graal 1>&2
-#sdk use java 21.0.1-zulu 1>&2
-#sdk use java 21.0.1-graalce 1>&2
-
-
-time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_vemana "$@"
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_vemana "$@"
