@@ -276,13 +276,13 @@ public class CalculateAverage_mtopolnik {
                 // Mask out bytes not belonging to name
                 n1 = maskWord(n1, posOfSemicolon - offset);
 
-//                offset += Long.BYTES;
-//                n2 = UNSAFE.getLong(inputBase + offset);
-//                if (ORDER_IS_BIG_ENDIAN) {
-//                    n2 = Long.reverseBytes(n2);
-//                }
-//                nameSize = Long.max(0, posOfSemicolon - offset);
-//                n2 = maskWord(n2, nameSize);
+                // offset += Long.BYTES;
+                // n2 = UNSAFE.getLong(inputBase + offset);
+                // if (ORDER_IS_BIG_ENDIAN) {
+                // n2 = Long.reverseBytes(n2);
+                // }
+                // nameSize = Long.max(0, posOfSemicolon - offset);
+                // n2 = maskWord(n2, nameSize);
             }
             else {
                 UNSAFE.putLong(hashBufBase, 0);
