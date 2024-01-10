@@ -18,17 +18,19 @@ package dev.morling.onebrc;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
+import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.lang.foreign.ValueLayout.OfChar;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
-import java.nio.channels.SeekableByteChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
-import java.util.Collection;
-import java.util.Collections;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -40,17 +42,50 @@ public final class CalculateAverage_michaljonko {
     private static final Path PATH = Paths.get(FILE);
 
     public static void main(String[] args) throws IOException {
+        System.out.println("cpus:" + Runtime.getRuntime().availableProcessors());
+        System.out.println("file size:" + Files.size(PATH));
+        System.out.println("partition size:~" + Files.size(PATH) / Runtime.getRuntime().availableProcessors());
+        System.out.println();
+
+        System.out.println("-------------- PARSER --------------------");
+
         final var cache = new ParsingCache();
-        try (var lines = Files.lines(PATH).limit(10_000)) {
+        try (var lines = Files.lines(PATH).limit(10)) {
             lines
                     .map(line -> line.split(";")[1])
                     .map(cache::parseIfAbsent)
                     .forEach(System.out::println);
         }
 
-        System.out.println("cpus:" + Runtime.getRuntime().availableProcessors());
-        System.out.println("file size:" + Files.size(PATH));
-        System.out.println("partition size:~" + Files.size(PATH) / Runtime.getRuntime().availableProcessors());
+        System.out.println("-------------- PARTITIONS --------------------");
+
+        var partitions = Math.max(1, Runtime.getRuntime().availableProcessors());
+        var filePartitioner = new FilePartitioner(partitions);
+        var mappedFiles = filePartitioner.createPartitions(PATH);
+        try {
+            mappedFiles.forEach(mappedFile -> {
+                try {
+                    final var aChar = mappedFile.memorySegment().get(OfChar.JAVA_BYTE, 0);
+                    System.out.println(aChar);
+                }
+                catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
+            // final var decoder = StandardCharsets.UTF_8.newDecoder();
+            // var mappedFile = mappedFiles.get(0);
+            // var memorySegment = mappedFile.memorySegment();
+        }
+        finally {
+            mappedFiles.forEach(x -> {
+                try {
+                    x.close();
+                }
+                catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
+        }
 
         // try (var channel = FileChannel.open(Paths.get(FILE), StandardOpenOption.READ);
         // Arena arena = Arena.ofShared();) {
@@ -63,23 +98,39 @@ public final class CalculateAverage_michaljonko {
 
     static final class FilePartitioner {
 
-        public Collection<MappedFile> partitionsByAvailableCpus(Path path) {
+        private final int partitionsAmount;
+
+        FilePartitioner(int partitionsAmount) {
+            this.partitionsAmount = partitionsAmount;
+        }
+
+        public List<MappedFile> createPartitions(Path path) {
             try {
                 final var size = Files.size(path);
-                final var partitions = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
 
-                if(partitions < 2){
+                if (partitionsAmount < 2) {
                     return List.of(new MappedFile(PATH, 0, size));
                 }
 
-                final var partitionSize = size / partitions;
-
-//                try (var channel = Files.newByteChannel(PATH, StandardOpenOption.READ)) {
-//                    var position = partitionSize;
-//                    FileChannel.open(PATH, StandardOpenOption.READ).position(position).
-//                    channel.position(position);
-//                }
-                return List.of();
+                final var partitionSize = size / partitionsAmount;
+                final var partitions = new MappedFile[partitionsAmount];
+                var startPosition = 0L;
+                var endPosition = partitionSize;
+                final var buffer = ByteBuffer.allocateDirect(256);
+                try (var channel = FileChannel.open(PATH, StandardOpenOption.READ)) {
+                    for (var partitionIndex = 0; partitionIndex < partitionsAmount; partitionIndex++) {
+                        channel.read(buffer.clear(), endPosition >= size ? endPosition = (size - 1) : endPosition);
+                        buffer.flip();
+                        while (buffer.get() != '\n' && endPosition < size) {
+                            endPosition++;
+                        }
+                        System.out.println("MappedFile start:" + startPosition + " end:" + endPosition + " size:" + (endPosition - startPosition));
+                        partitions[partitionIndex] = new MappedFile(PATH, startPosition, endPosition - startPosition);
+                        startPosition = ++endPosition;
+                        endPosition += partitionSize;
+                    }
+                }
+                return Arrays.asList(partitions);
             }
             catch (IOException e) {
                 throw new UncheckedIOException(e);
@@ -87,7 +138,7 @@ public final class CalculateAverage_michaljonko {
         }
     }
 
-    public static final class MappedFile implements AutoCloseable {
+    private static final class MappedFile implements AutoCloseable {
 
         private final FileChannel channel;
         private final Arena arena;
@@ -96,21 +147,24 @@ public final class CalculateAverage_michaljonko {
         private final long size;
         private final AtomicBoolean mapped = new AtomicBoolean(false);
 
-        public MappedFile(Path path, long position, long size) throws IOException {
+        private MappedFile(Path path, long position, long size) throws IOException {
             this.position = position;
             this.size = size;
             this.channel = FileChannel.open(path, StandardOpenOption.READ);
             this.arena = Arena.ofShared();
         }
 
-        public MemorySegment memorySegment() throws IOException {
-            return (memorySegment ==null && mapped.compareAndSet(false, true))
+        private MemorySegment memorySegment() throws IOException {
+            return (memorySegment == null && mapped.compareAndSet(false, true))
                     ? (memorySegment = channel.map(MapMode.READ_ONLY, position, size, arena))
                     : memorySegment;
         }
 
         @Override
-        public void close() throws Exception {
+        public void close() throws IOException {
+            if (memorySegment != null) {
+                memorySegment.unload();
+            }
             arena.close();
             channel.close();
         }
