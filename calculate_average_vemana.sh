@@ -15,24 +15,44 @@
 #  limitations under the License.
 #
 
+# Basics
 JAVA_OPTS=""
 JAVA_OPTS="$JAVA_OPTS --enable-preview"
-JAVA_OPTS="$JAVA_OPTS -XX:+UseParallelGC"
-JAVA_OPTS="$JAVA_OPTS -XX:+AlwaysCompileLoopMethods"
-#JAVA_OPTS="$JAVA_OPTS -XX:C1MaxInlineSize=500"
-#JAVA_OPTS="$JAVA_OPTS -XX:FreqInlineSize=500"
+JAVA_OPTS="$JAVA_OPTS -XX:+UnlockDiagnosticVMOptions"
 
+# JIT parameters
+#JAVA_OPTS="$JAVA_OPTS -Xlog:class+load=info"
+#JAVA_OPTS="$JAVA_OPTS -XX:+LogCompilation"
+JAVA_OPTS="$JAVA_OPTS -XX:+AlwaysCompileLoopMethods"
+#JAVA_OPTS="$JAVA_OPTS -XX:TieredStopAtLevel=1"
+#JAVA_OPTS="$JAVA_OPTS -XX:TieredStopAtLevel=1"
+#JAVA_OPTS="$JAVA_OPTS -XX:CompileCommand=inline,*State.processLine()"
+#JAVA_OPTS="$JAVA_OPTS -XX:+PrintAssembly"
+#JAVA_OPTS="$JAVA_OPTS -XX:LogFile=../hotspot.log"
+#JAVA_OPTS="$JAVA_OPTS -XX:+DebugNonSafepoints"
+#JAVA_OPTS="$JAVA_OPTS -XX:C1MaxInlineSize=150"
+#JAVA_OPTS="$JAVA_OPTS -XX:C1InlineStackLimit=40"
+
+#JAVA_OPTS="$JAVA_OPTS -XX:FreqInlineSize=500"
 #JAVA_OPTS="$JAVA_OPTS -XX:+PrintCompilation"
-#JAVA_OPTS="$JAVA_OPTS -XX:+UnlockDiagnosticVMOptions -XX:+PrintInlining"
+#JAVA_OPTS="$JAVA_OPTS -XX:+PrintInlining"
+#JAVA_OPTS="$JAVA_OPTS -XX:CompileThreshold=20 "
 #JAVA_OPTS="$JAVA_OPTS -Xlog:async"
 
-#JAVA_OPTS="$JAVA_OPTS -XX:CompileThreshold=20 "
-#JAVA_OPTS="$JAVA_OPTS -XX:-TieredCompilation -XX:TieredStopAtLevel=4"
-#JAVA_OPTS="$JAVA_OPTS -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -Xlog:all=off"
-#JAVA_OPTS="$JAVA_OPTS -Xlog:gc*=debug:file=/tmp/gc.log"
+# GC parameters
+JAVA_OPTS="$JAVA_OPTS -XX:+UseParallelGC"
 
+#JAVA_OPTS="$JAVA_OPTS -Xlog:gc*=debug:file=/tmp/gc.log"
+#JAVA_OPTS="$JAVA_OPTS -XX:+UseEpsilonGC -Xlog:all=off"
+#JAVA_OPTS="$JAVA_OPTS -XX:+PrintGC -XX:+PrintGCDetails"
+
+
+# Set JVM and Version
 source "$HOME/.sdkman/bin/sdkman-init.sh"
 #sdk use java 21.0.1-open 1>&2
 sdk use java 21.0.1-graal 1>&2
+#sdk use java 21.0.1-zulu 1>&2
 #sdk use java 21.0.1-graalce 1>&2
+
+
 time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_vemana "$@"
