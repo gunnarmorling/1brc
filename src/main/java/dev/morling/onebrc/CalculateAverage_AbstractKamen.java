@@ -51,15 +51,15 @@ public class CalculateAverage_AbstractKamen {
 
     public static void main(String[] args) throws IOException {
         try (final FileChannel fc = FileChannel.open(Paths.get(FILE), StandardOpenOption.READ);
-             final RandomAccessFile raf = new RandomAccessFile(new File(FILE), "r")) {
+                final RandomAccessFile raf = new RandomAccessFile(new File(FILE), "r")) {
             final Map<String, Measurement> res = getParallelBufferStream(raf, fc)
-                .map(CalculateAverage_AbstractKamen::getMeasurements)
-                .flatMap(m -> m.entrySet().stream())
-                .collect(Collectors.collectingAndThen(
-                    Collectors.toMap(Map.Entry::getKey,
-                                     Map.Entry::getValue,
-                                     CalculateAverage_AbstractKamen::aggregateMeasurements),
-                    TreeMap::new));
+                    .map(CalculateAverage_AbstractKamen::getMeasurements)
+                    .flatMap(m -> m.entrySet().stream())
+                    .collect(Collectors.collectingAndThen(
+                            Collectors.toMap(Map.Entry::getKey,
+                                    Map.Entry::getValue,
+                                    CalculateAverage_AbstractKamen::aggregateMeasurements),
+                            TreeMap::new));
             System.out.println(res);
         }
     }
@@ -89,9 +89,11 @@ public class CalculateAverage_AbstractKamen {
             while (byteBuffer.hasRemaining() && ((b = byteBuffer.get()) != '\n')) {
                 if (b == '-') {
                     neg = -1;
-                } else if (b == '.' || b == '\r') {
+                }
+                else if (b == '.' || b == '\r') {
                     // skip the dot and retart char
-                } else {
+                }
+                else {
                     bytes[valueLen++] = b;
                 }
             }
@@ -118,7 +120,8 @@ public class CalculateAverage_AbstractKamen {
             measurement.max = Math.max(measurement.max, temperature);
             measurement.sum += temperature;
             measurement.count++;
-        } else {
+        }
+        else {
             measurement = new Measurement();
             map.put(name, measurement);
             measurement.min = temperature;
@@ -131,12 +134,13 @@ public class CalculateAverage_AbstractKamen {
     private static Stream<BufferSupplier> getParallelBufferStream(RandomAccessFile raf, FileChannel fc) throws IOException {
         final int availableProcessors = Runtime.getRuntime().availableProcessors();
         return StreamSupport.stream(
-            StreamSupport.stream(
-                    Spliterators.spliterator(
-                        new BufferSupplierIterator(raf, fc, availableProcessors), availableProcessors,
-                        Spliterator.IMMUTABLE | Spliterator.SIZED | Spliterator.SUBSIZED)
-                    , false)
-                .spliterator(), true);
+                StreamSupport.stream(
+                        Spliterators.spliterator(
+                                new BufferSupplierIterator(raf, fc, availableProcessors), availableProcessors,
+                                Spliterator.IMMUTABLE | Spliterator.SIZED | Spliterator.SUBSIZED),
+                        false)
+                        .spliterator(),
+                true);
     }
 
 }
@@ -171,10 +175,12 @@ class BufferSupplierIterator implements Iterator<BufferSupplier> {
                 long s = start;
                 this.start = end;
                 return getBufferSupplier(s, end);
-            } else {
+            }
+            else {
                 throw new NoSuchElementException();
             }
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
@@ -183,7 +189,8 @@ class BufferSupplierIterator implements Iterator<BufferSupplier> {
         long end = Math.min(start + chunkSize, fileLength);
         while (end < fileLength) {
             raf.seek(end++);
-            if (raf.read() == '\n') break;
+            if (raf.read() == '\n')
+                break;
         }
         return end;
     }
@@ -199,10 +206,12 @@ class BufferSupplierIterator implements Iterator<BufferSupplier> {
                 try {
                     if (bb == null) {
                         return (bb = fc.map(MapMode.READ_ONLY, position, size));
-                    } else {
+                    }
+                    else {
                         return bb;
                     }
-                } catch (IOException e) {
+                }
+                catch (IOException e) {
                     throw new RuntimeException(e);
                 }
             }
