@@ -75,10 +75,16 @@ public class CalculateAverage_ricardopieper {
     // will break lol
     public static List<FileChunk> splitFile(Path path, int numChunks) throws IOException {
         try (var fileChannel = FileChannel.open(path, StandardOpenOption.READ)) {
+            var chunks = new ArrayList<FileChunk>();
             long size = fileChannel.size();
+
+            if (numChunks == 1 && size <= Integer.MAX_VALUE) {
+                chunks.add(new FileChunk(path, 0, (int) size));
+                return chunks;
+            }
             long approxSizePerChunk = size / numChunks;
             var buffer = ByteBuffer.allocate(1024); // in practice records are max 20 chars long
-            var chunks = new ArrayList<FileChunk>();
+
             long curOffset = 0;
             for (int i = 0; i < numChunks; i++) {
                 long targetOffset = curOffset + approxSizePerChunk;
@@ -150,7 +156,7 @@ public class CalculateAverage_ricardopieper {
 
         var averageSizePerChunk = 16 * 1024 * 1024;
         var fileSize = Files.size(path);
-        var numChunks = fileSize / averageSizePerChunk;
+        var numChunks = Math.max(1, fileSize / averageSizePerChunk);
         var chunks = splitFile(path, (int) numChunks);
         TreeMap<String, StationMeasurements> result = null;
         if (debugMode) {
