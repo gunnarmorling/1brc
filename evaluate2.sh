@@ -177,7 +177,7 @@ echo -e "${BOLD_WHITE}Summary${RESET}"
 for fork in "$@"; do
   # skip reporting results for failed forks
   if [[ " ${failed[@]} " =~ " ${fork} " ]]; then
-    echo -e "  ${RED}$fork${RESET}: output did not match"
+    echo -e "  ${RED}$fork${RESET}: command failed or output did not match"
     continue
   fi
 
