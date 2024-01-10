@@ -70,7 +70,7 @@ public class CalculateAverage_jatingala {
         while (mappedByteBuffer.hasRemaining()) {
             final String key = parseKey(mappedByteBuffer);
             final double value = parseNumber(mappedByteBuffer);
-            statisticsMap.computeIfAbsent(key, k -> new Statistics()).update(value);
+            statisticsMap.computeIfAbsent(key, _ -> new Statistics()).update(value);
         }
 
         return statisticsMap;
