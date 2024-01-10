@@ -31,11 +31,12 @@ import java.util.stream.Collectors;
 public class CalculateAverage_jgrateron {
     private static final String FILE = "./measurements.txt";
     private static final int MAX_LENGTH_LINE = 115;
+    private static boolean DEBUG = false;
 
     public record Particion(long offset, long size) {
     }
 
-    public record Tupla(String str, Double num) {
+    public record Tupla(String str, double num) {
     }
 
     /*
@@ -88,19 +89,20 @@ public class CalculateAverage_jgrateron {
         for (var p : particiones) {
             var hilo = Thread.ofVirtual().start(() -> {
                 var mediciones = new HashMap<Integer, Medicion>();
-                try (var miArchivo = new MiArchivo(archivo, p)) {
+                try (var miArchivo = new MiArchivo(archivo)) {
+                    miArchivo.seek(p);
                     for (;;) {
-                        var lineas = miArchivo.readLines();
-                        if (lineas.isEmpty()) {
+                        var tuples = miArchivo.readTuples();
+                        if (tuples.isEmpty()) {
                             break;
                         }
                         for (;;) {
-                            var linea = lineas.poll();
-                            if (linea == null) {
+                            var tuple = tuples.poll();
+                            if (tuple == null) {
                                 break;
                             }
-                            var estacion = linea.str;
-                            var temp = linea.num;
+                            var estacion = tuple.str;
+                            var temp = tuple.num;
                             var hashCode = estacion.hashCode();
                             var medicion = mediciones.get(hashCode);
                             if (medicion == null) {
@@ -145,7 +147,10 @@ public class CalculateAverage_jgrateron {
                 .collect(Collectors.joining(", "));
 
         System.out.println("{" + result + "}");
-        System.out.println("Total: " + (System.nanoTime() - startTime) / 1000000 + "ms");
+        if (DEBUG) {
+            System.out.println("Total: " + (System.nanoTime() - startTime) / 1000000 + "ms");
+        }
+
     }
 
     /*
@@ -157,13 +162,13 @@ public class CalculateAverage_jgrateron {
         boolean esNegativo = false;
         for (int i = posSeparator + 1; i < len; i++) {
             switch (linea[i]) {
-                case '-':
-                    esNegativo = true;
-                    break;
                 case '0', '1', '2', '3', '4':
                 case '5', '6', '7', '8', '9':
                     number[pos] = number[pos] * 10;
-                    number[pos] = number[pos] + (linea[i] - '0');
+                    number[pos] = number[pos] + (linea[i] - 48);
+                    break;
+                case '-':
+                    esNegativo = true;
                     break;
                 case '.':
                     pos = 1;
@@ -172,7 +177,7 @@ public class CalculateAverage_jgrateron {
         }
         double num = number[0];
         if (number[1] > 0) {
-            num += (number[1] / 100);
+            num += (number[1] / 10);
         }
         if (esNegativo) {
             num = num * -1;
@@ -193,9 +198,12 @@ public class CalculateAverage_jgrateron {
         private long totalRead = 0;
         private Queue<Tupla> lineas = new LinkedList<Tupla>();
 
-        public MiArchivo(File file, Particion particion) throws IOException {
-            maxRead = particion.size;
+        public MiArchivo(File file) throws IOException {
             rFile = new RandomAccessFile(file, "r");
+        }
+
+        public void seek(Particion particion) throws IOException {
+            maxRead = particion.size;
             rFile.seek(particion.offset);
         }
 
@@ -204,7 +212,7 @@ public class CalculateAverage_jgrateron {
             rFile.close();
         }
 
-        public Queue<Tupla> readLines() throws IOException {
+        public Queue<Tupla> readTuples() throws IOException {
             lineas.clear();
             long numBytes = rFile.read(buffer);
             if (numBytes == -1) {
