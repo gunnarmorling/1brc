@@ -23,10 +23,12 @@ import java.io.RandomAccessFile;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.reflect.Field;
+import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel.MapMode;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.TreeMap;
 
 public class CalculateAverage_mtopolnik {
@@ -171,7 +173,7 @@ public class CalculateAverage_mtopolnik {
                 stats.gotoIndex(tableIndex);
                 long foundHash = stats.hash();
                 if (foundHash == hash && stats.nameLen() == nameLen
-                        && strcmp(stats.nameAddress(), inputBase + namePos, nameLen)) {
+                        && nameEquals(stats.nameAddress(), inputBase + namePos, nameLen)) {
                     stats.setSum(stats.sum() + temperature);
                     stats.setCount(stats.count() + 1);
                     stats.setMin((short) Integer.min(stats.min(), temperature));
@@ -275,7 +277,7 @@ public class CalculateAverage_mtopolnik {
                 // Mask out bytes not belonging to name
                 long nameSize = posOfSemicolon - offset;
                 long shiftDistance = 8 * Long.max(0, Long.BYTES - nameSize);
-                long mask = ~0L >>> shiftDistance;
+                long mask = shiftDistance < 64 ? (~0L >>> shiftDistance) : 0;
                 n1 &= mask;
 
                 // offset += Long.BYTES;
@@ -309,6 +311,33 @@ public class CalculateAverage_mtopolnik {
             // hash = Long.rotateLeft(hash, rotDist);
             hash &= (~Long.MIN_VALUE); // make hash positive
             return hash != 0 ? hash : 1;
+        }
+
+        private static boolean wordMismatch(long inputAddr, long statsAddr, long len) {
+            long shiftDistance = 8 * Long.max(0, Long.BYTES - len);
+            long mask = shiftDistance < 64 ? (~0L >>> shiftDistance) : 0;
+            long inputWord = UNSAFE.getLong(inputAddr) & mask;
+            long statsWord = UNSAFE.getLong(statsAddr);
+            // System.err.println("Compare '" + longToString(inputWord) + "' and '" + longToString(statsWord) + "'");
+            return inputWord != statsWord;
+        }
+
+        private boolean nameEquals(long statsAddr, long inputAddr, long len) {
+            int i = 0;
+            if (inputAddr + 2 * Long.BYTES <= inputBase + inputSize) {
+                boolean mismatch = wordMismatch(inputAddr, statsAddr, len)
+                        | wordMismatch(inputAddr + Long.BYTES, statsAddr + Long.BYTES, len - Long.BYTES);
+                if (mismatch) {
+                    return false;
+                }
+                i = 2 * Long.BYTES;
+            }
+            for (; i < len; i++) {
+                if (UNSAFE.getByte(statsAddr + i) != UNSAFE.getByte(inputAddr + i)) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         private static final long BROADCAST_0x01 = broadcastByte(0x01);
@@ -364,26 +393,14 @@ public class CalculateAverage_mtopolnik {
             }
             results[myIndex] = exportedStats.toArray(new StationStats[0]);
         }
-    }
 
-    private static boolean strcmp(long addr1, long addr2, long len) {
-        int i = 0;
-        for (; i <= len - Long.BYTES; i += Long.BYTES) {
-            if (UNSAFE.getLong(addr1 + i) != UNSAFE.getLong(addr2 + i)) {
-                return false;
-            }
+        private final ByteBuffer buf = ByteBuffer.allocate(8).order(ByteOrder.nativeOrder());
+
+        private String longToString(long word) {
+            buf.clear();
+            buf.putLong(word);
+            return new String(buf.array(), StandardCharsets.UTF_8); // + "|" + Arrays.toString(buf.array());
         }
-        for (; i <= len - Integer.BYTES; i += Integer.BYTES) {
-            if (UNSAFE.getInt(addr1 + i) != UNSAFE.getInt(addr2 + i)) {
-                return false;
-            }
-        }
-        for (; i < len; i++) {
-            if (UNSAFE.getByte(addr1 + i) != UNSAFE.getByte(addr2 + i)) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private static long broadcastByte(int b) {
