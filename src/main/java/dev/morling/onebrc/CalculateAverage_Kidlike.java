@@ -15,7 +15,6 @@
  */
 package dev.morling.onebrc;
 
-import static java.lang.Double.parseDouble;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.io.File;
@@ -39,6 +38,7 @@ import java.util.stream.Collectors;
  *     <li>2m34s: parallel file read -> load byte chunks in memory -> sequentially process bytes for result</li>
  *     <li>0m59s: process byte chunks in parallel (had to introduce smarter byte chunking so it splits only on newlines)</li>
  *     <li>0m46s: smaller numeric types for MeasurementAggregator</li>
+ *     <li>0m39s: implement custom byte[] to int parsing, instead of Double.parseDouble(new String(bytes))</li>
  * </ol>
  *
  * <p>
@@ -95,8 +95,7 @@ public class CalculateAverage_Kidlike {
         System.out.println(new TreeMap(calculateMeasurements(byteBuffers)));
     }
 
-    private static Map<String, MeasurementAggregator> calculateMeasurements(
-            Map<Long, MappedByteBuffer> buffers) {
+    private static Map<String, MeasurementAggregator> calculateMeasurements(Map<Long, MappedByteBuffer> buffers) {
         return buffers.values().parallelStream()
                 .map(buffer -> {
                     var results = new HashMap<String, MeasurementAggregator>();
@@ -116,11 +115,11 @@ public class CalculateAverage_Kidlike {
 
                         if (c == '\n') {
                             String city = new String(citySink.getBytes(), UTF_8);
-                            double measurement = parseDouble(new String(measurementSink.getBytes()));
+                            int measurement = bytesToInt(measurementSink.getBytes());
                             results.compute(city, (k, v) -> {
                                 var entry = Optional.ofNullable(v).orElse(new MeasurementAggregator());
                                 entry.count++;
-                                entry.sum += (long) measurement;
+                                entry.sum += measurement;
                                 entry.min = (short) Math.min(entry.min, measurement);
                                 entry.max = (short) Math.max(entry.max, measurement);
                                 return entry;
@@ -144,11 +143,37 @@ public class CalculateAverage_Kidlike {
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, MeasurementAggregator::merge));
     }
 
+    /**
+     * Removes decimal points and returns an integer. For example -12.3 would return -123
+     */
+    static int bytesToInt(byte[] bytes) {
+        short index = (short) (bytes.length - 1);
+
+        boolean isNegative = (bytes[0] == '-');
+        int number = (bytes[index] - '0');
+        index -= 2;
+
+        number += (10 * (bytes[index--] - '0'));
+
+        if (index == 1 || (!isNegative && index == 0)) {
+            number += (100 * (bytes[index] - '0'));
+        }
+
+        if (isNegative) {
+            return -number;
+        } else {
+            return number;
+        }
+    }
+
     private enum State {
         NEXT_READ_CITY,
         NEXT_READ_MEASUREMENT
     }
 
+    /**
+     * Numbers are stored as integers, because of {@link #bytesToInt}, and then divided by 10.0 to restore their decimal point.
+     */
     private static class MeasurementAggregator {
 
         private static final DecimalFormat rounder = new DecimalFormat("#.#");
@@ -168,11 +193,14 @@ public class CalculateAverage_Kidlike {
 
         @Override
         public String toString() {
-            return rounder.format(min) + "/" + rounder.format(sum / count) + "/" + rounder.format(max);
+            return rounder.format(min / 10.0)
+                    + "/" + rounder.format((sum / 10.0) / count)
+                    + "/" + rounder.format(max / 10.0);
         }
     }
 
     private static class CheapByteBuffer {
+
         private final byte[] data;
         private int length;
 
