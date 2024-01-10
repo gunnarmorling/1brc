@@ -17,7 +17,7 @@ public class CalculateAverage_jatingala {
         try (final RandomAccessFile randomAccessFile = new RandomAccessFile(FILE, "r")) {
             final long[][] chunks = getChunkPositions(randomAccessFile, processorCount);
             final Map<String, Statistics> result = Arrays.stream(chunks)
-                    // .parallel()
+                    .parallel()
                     .map(chunk -> {
                         try {
                             final MappedByteBuffer mappedByteBuffer =
