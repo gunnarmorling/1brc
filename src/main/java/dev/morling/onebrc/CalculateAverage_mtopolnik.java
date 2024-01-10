@@ -325,9 +325,9 @@ public class CalculateAverage_mtopolnik {
         private boolean nameEquals(long statsAddr, long inputAddr, long len) {
             int i = 0;
             if (inputAddr + 2 * Long.BYTES <= inputBase + inputSize) {
-                boolean mismatch = wordMismatch(inputAddr, statsAddr, len)
-                        | wordMismatch(inputAddr + Long.BYTES, statsAddr + Long.BYTES, len - Long.BYTES);
-                if (mismatch) {
+                boolean mismatch1 = wordMismatch(inputAddr, statsAddr, len);
+                boolean mismatch2 = wordMismatch(inputAddr + Long.BYTES, statsAddr + Long.BYTES, len - Long.BYTES);
+                if (mismatch1 | mismatch2) {
                     return false;
                 }
                 i = 2 * Long.BYTES;
