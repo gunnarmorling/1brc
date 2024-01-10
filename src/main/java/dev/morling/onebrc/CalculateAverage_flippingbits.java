@@ -41,11 +41,10 @@ public class CalculateAverage_flippingbits {
     private static final int MAX_STATION_NAME_LENGTH = 100;
 
     public static void main(String[] args) throws IOException {
-        // Process chunks
-        var result = Arrays.asList(getChunkBoundaries()).stream()
-                .map(chunk -> {
+        var result = Arrays.asList(getSegments()).stream()
+                .map(segment -> {
                     try {
-                        return processChunk(chunk[0], chunk[1]);
+                        return processSegment(segment[0], segment[1]);
                     }
                     catch (IOException e) {
                         throw new RuntimeException(e);
@@ -69,45 +68,45 @@ public class CalculateAverage_flippingbits {
         System.out.println(result);
     }
 
-    private static long[][] getChunkBoundaries() throws IOException {
+    private static long[][] getSegments() throws IOException {
         try (var file = new RandomAccessFile(FILE, "r")) {
             var fileSize = file.length();
-            // Split file into chunks, so we can work around the size limitation of channels
-            var chunks = (int) (fileSize / CHUNK_SIZE);
+            // Split file into segments, so we can work around the size limitation of channels
+            var numSegments = (int) (fileSize / CHUNK_SIZE);
 
-            var chunkBoundaries = new long[chunks + 1][2];
+            var boundaries = new long[numSegments + 1][2];
             var endPointer = 0L;
 
-            for (var i = 0; i < chunks; i++) {
-                // Start of chunk
-                chunkBoundaries[i][0] = Math.min(Math.max(endPointer, i * CHUNK_SIZE), fileSize);
+            for (var i = 0; i < numSegments; i++) {
+                // Start of segment
+                boundaries[i][0] = Math.min(Math.max(endPointer, i * CHUNK_SIZE), fileSize);
 
-                // Seek end of chunk, limited by the end of the file
-                file.seek(Math.min(chunkBoundaries[i][0] + CHUNK_SIZE - 1, fileSize));
+                // Seek end of segment, limited by the end of the file
+                file.seek(Math.min(boundaries[i][0] + CHUNK_SIZE - 1, fileSize));
 
-                // Extend chunk until end of line or file
+                // Extend segment until end of line or file
                 while (file.read() != '\n') {
                 }
 
-                // End of chunk
+                // End of segment
                 endPointer = file.getFilePointer();
-                chunkBoundaries[i][1] = endPointer;
+                boundaries[i][1] = endPointer;
             }
 
-            chunkBoundaries[chunks][0] = Math.max(endPointer, chunks * CHUNK_SIZE);
-            chunkBoundaries[chunks][1] = fileSize;
+            boundaries[numSegments][0] = Math.max(endPointer, numSegments * CHUNK_SIZE);
+            boundaries[numSegments][1] = fileSize;
 
-            return chunkBoundaries;
+            return boundaries;
         }
     }
 
-    private static Map<String, PartitionAggregate> processChunk(long startOfChunk, long endOfChunk)
+    private static Map<String, PartitionAggregate> processSegment(long startOfSegment, long endOfSegment)
             throws IOException {
-        Map<String, PartitionAggregate> stationAggregates = new HashMap<>(10_000);
-        var byteChunk = new byte[(int) (endOfChunk - startOfChunk)];
+        Map<String, PartitionAggregate> stationAggregates = new HashMap<>(50_000);
+        var byteChunk = new byte[(int) (endOfSegment - startOfSegment)];
         var stationBuffer = new byte[MAX_STATION_NAME_LENGTH];
         try (var file = new RandomAccessFile(FILE, "r")) {
-            file.seek(startOfChunk);
+            file.seek(startOfSegment);
             file.read(byteChunk);
             var i = 0;
             while (i < byteChunk.length) {
@@ -203,7 +202,7 @@ public class CalculateAverage_flippingbits {
                     Locale.US,
                     "%.1f/%.1f/%.1f",
                     (min / 10.0),
-                    (sum / 10.0) / count,
+                    ((sum / 10.0) / count),
                     (max / 10.0));
         }
     }
