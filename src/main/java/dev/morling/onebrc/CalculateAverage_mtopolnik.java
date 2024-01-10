@@ -36,6 +36,7 @@ public class CalculateAverage_mtopolnik {
     private static final boolean ORDER_IS_BIG_ENDIAN = ByteOrder.nativeOrder() == ByteOrder.BIG_ENDIAN;
     private static final int MAX_NAME_LEN = 100;
     private static final int STATS_TABLE_SIZE = 1 << 16;
+    private static final int TABLE_INDEX_MASK = STATS_TABLE_SIZE - 1;
     private static final String MEASUREMENTS_TXT = "measurements.txt";
     private static final byte SEMICOLON = ';';
     private static final long BROADCAST_SEMICOLON = broadcastByte(SEMICOLON);
@@ -168,7 +169,7 @@ public class CalculateAverage_mtopolnik {
         }
 
         private void updateStats(long hash, long namePos, long nameLen, int temperature) {
-            int tableIndex = (int) (hash % STATS_TABLE_SIZE);
+            int tableIndex = (int) (hash & TABLE_INDEX_MASK);
             while (true) {
                 stats.gotoIndex(tableIndex);
                 long foundHash = stats.hash();
@@ -181,7 +182,7 @@ public class CalculateAverage_mtopolnik {
                     return;
                 }
                 if (foundHash != 0) {
-                    tableIndex = (tableIndex + 1) % STATS_TABLE_SIZE;
+                    tableIndex = (tableIndex + 1) & TABLE_INDEX_MASK;
                     continue;
                 }
                 stats.setHash(hash);
