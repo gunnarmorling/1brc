@@ -32,7 +32,6 @@ import java.util.TreeMap;
 
 public class CalculateAverage_mtopolnik {
     private static final Unsafe UNSAFE = unsafe();
-    private static final boolean ORDER_IS_BIG_ENDIAN = ByteOrder.nativeOrder() == ByteOrder.BIG_ENDIAN;
     private static final int MAX_NAME_LEN = 100;
     private static final int STATS_TABLE_SIZE = 1 << 16;
     private static final int TABLE_INDEX_MASK = STATS_TABLE_SIZE - 1;
@@ -170,10 +169,6 @@ public class CalculateAverage_mtopolnik {
                     word1 = UNSAFE.getLong(nameBufBase);
                     word2 = UNSAFE.getLong(nameBufBase + Long.BYTES);
                 }
-                if (ORDER_IS_BIG_ENDIAN) {
-                    word1 = Long.reverseBytes(word1);
-                    word2 = Long.reverseBytes(word2);
-                }
                 long posOfSemicolon = posOfSemicolon(word1, word2);
                 word1 = maskWord(word1, posOfSemicolon - cursor);
                 word2 = maskWord(word2, posOfSemicolon - cursor - Long.BYTES);
@@ -225,9 +220,6 @@ public class CalculateAverage_mtopolnik {
         // Credit: merykitty
         private int parseTemperatureSwarAndAdvanceCursor(long startOffset) {
             long word = UNSAFE.getLong(inputBase + startOffset);
-            if (ORDER_IS_BIG_ENDIAN) {
-                word = Long.reverseBytes(word);
-            }
             final long negated = ~word;
             final int dotPos = Long.numberOfTrailingZeros(negated & 0x10101000);
             final long signed = (negated << 59) >> 63;
@@ -246,9 +238,6 @@ public class CalculateAverage_mtopolnik {
 
             // Temperature plus the following newline is at least 4 chars, so this is always safe:
             int fourCh = UNSAFE.getInt(inputBase + startOffset);
-            if (ORDER_IS_BIG_ENDIAN) {
-                fourCh = Integer.reverseBytes(fourCh);
-            }
             final int mask = 0xFF;
             byte ch = (byte) (fourCh & mask);
             int shift = 0;
@@ -340,9 +329,6 @@ public class CalculateAverage_mtopolnik {
             long offset = cursor + 2 * Long.BYTES;
             for (; offset <= inputSize - Long.BYTES; offset += Long.BYTES) {
                 var block = UNSAFE.getLong(inputBase + offset);
-                if (ORDER_IS_BIG_ENDIAN) {
-                    block = Long.reverseBytes(block);
-                }
                 diff = block ^ BROADCAST_SEMICOLON;
                 long matchBits = (diff - BROADCAST_0x01) & ~diff & BROADCAST_0x80;
                 if (matchBits != 0) {
