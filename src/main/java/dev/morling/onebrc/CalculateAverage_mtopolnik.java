@@ -28,7 +28,6 @@ import java.nio.ByteOrder;
 import java.nio.channels.FileChannel.MapMode;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.TreeMap;
 
 public class CalculateAverage_mtopolnik {
@@ -274,22 +273,16 @@ public class CalculateAverage_mtopolnik {
                 if (ORDER_IS_BIG_ENDIAN) {
                     n1 = Long.reverseBytes(n1);
                 }
-
                 // Mask out bytes not belonging to name
-                long nameSize = posOfSemicolon - offset;
-                long shiftDistance = 8 * Long.max(0, Long.BYTES - nameSize);
-                long mask = shiftDistance < 64 ? (~0L >>> shiftDistance) : 0;
-                n1 &= mask;
+                n1 = maskWord(n1, posOfSemicolon - offset);
 
-                // offset += Long.BYTES;
-                // n2 = UNSAFE.getLong(inputBase + offset);
-                // if (ORDER_IS_BIG_ENDIAN) {
-                // n2 = Long.reverseBytes(n2);
-                // }
-                // nameSize = Long.max(0, posOfSemicolon - offset);
-                // shiftDistance = 8 * Long.max(0, Long.BYTES - nameSize);
-                // mask = shiftDistance < 64 ? (~0L >>> shiftDistance) : 0;
-                // n2 &= mask;
+//                offset += Long.BYTES;
+//                n2 = UNSAFE.getLong(inputBase + offset);
+//                if (ORDER_IS_BIG_ENDIAN) {
+//                    n2 = Long.reverseBytes(n2);
+//                }
+//                nameSize = Long.max(0, posOfSemicolon - offset);
+//                n2 = maskWord(n2, nameSize);
             }
             else {
                 UNSAFE.putLong(hashBufBase, 0);
@@ -314,15 +307,6 @@ public class CalculateAverage_mtopolnik {
             return hash != 0 ? hash : 1;
         }
 
-        private static boolean wordMismatch(long inputAddr, long statsAddr, long len) {
-            long shiftDistance = 8 * Long.max(0, Long.BYTES - len);
-            long mask = shiftDistance < 64 ? (~0L >>> shiftDistance) : 0;
-            long inputWord = UNSAFE.getLong(inputAddr) & mask;
-            long statsWord = UNSAFE.getLong(statsAddr);
-            // System.err.println("Compare '" + longToString(inputWord) + "' and '" + longToString(statsWord) + "'");
-            return inputWord != statsWord;
-        }
-
         private boolean nameEquals(long statsAddr, long inputAddr, long len) {
             int i = 0;
             if (inputAddr + 2 * Long.BYTES <= inputBase + inputSize) {
@@ -339,6 +323,19 @@ public class CalculateAverage_mtopolnik {
                 }
             }
             return true;
+        }
+
+        private static boolean wordMismatch(long inputAddr, long statsAddr, long len) {
+            long inputWord = maskWord(UNSAFE.getLong(inputAddr), len);
+            long statsWord = UNSAFE.getLong(statsAddr);
+            // System.err.println("Compare '" + longToString(inputWord) + "' and '" + longToString(statsWord) + "'");
+            return inputWord != statsWord;
+        }
+
+        private static long maskWord(long word, long len) {
+            long halfShiftDistance = 4 * Long.max(0, Long.BYTES - len);
+            long mask = (~0L >>> halfShiftDistance) >>> halfShiftDistance; // avoid Java trap of shiftDist % 64
+            return word & mask;
         }
 
         private static final long BROADCAST_0x01 = broadcastByte(0x01);
