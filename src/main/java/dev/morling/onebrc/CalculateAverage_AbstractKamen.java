@@ -35,13 +35,13 @@ public class CalculateAverage_AbstractKamen {
     private static final String FILE = "./measurements.txt";
 
     private static class Measurement {
-        private double min = Double.POSITIVE_INFINITY;
-        private double max = Double.NEGATIVE_INFINITY;
-        private double sum;
+        private int min = Integer.MAX_VALUE;
+        private int max = Integer.MIN_VALUE;
+        private int sum;
         private long count;
 
         public String toString() {
-            return round(min) + "/" + round(sum / count) + "/" + round(max);
+            return round(min / 10.0) + "/" + round(sum / 10.0 / count) + "/" + round(max / 10.0);
         }
 
         private double round(double value) {
@@ -55,11 +55,12 @@ public class CalculateAverage_AbstractKamen {
             final Map<String, Measurement> res = getParallelBufferStream(raf, fc)
                 .map(CalculateAverage_AbstractKamen::getMeasurements)
                 .flatMap(m -> m.entrySet().stream())
-                .collect(Collectors.collectingAndThen(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue,
-                                                                       CalculateAverage_AbstractKamen::aggregateMeasurements),
-                                                      TreeMap::new));
+                .collect(Collectors.collectingAndThen(
+                    Collectors.toMap(Map.Entry::getKey,
+                                     Map.Entry::getValue,
+                                     CalculateAverage_AbstractKamen::aggregateMeasurements),
+                    TreeMap::new));
             System.out.println(res);
-
         }
     }
 
@@ -74,50 +75,43 @@ public class CalculateAverage_AbstractKamen {
     private static Map<String, Measurement> getMeasurements(BufferSupplier getBuffer) {
         final Map<String, Measurement> map = new HashMap<>(50_000);
         final ByteBuffer byteBuffer = getBuffer.get();
-        int start = byteBuffer.position();
-        final int end = byteBuffer.limit();
-        final byte[] bytes = new byte[128];
-        for (int i = start; i < end; ++i) {
+        final byte[] bytes = new byte[512];
+        while (byteBuffer.hasRemaining()) {
             int nameLen = 0;
             String name;
             byte b;
-            while ((b = byteBuffer.get(i++)) != ';') {
+            while ((b = byteBuffer.get()) != ';') {
                 bytes[nameLen++] = b;
             }
             name = new String(bytes, 0, nameLen, StandardCharsets.UTF_8);
             int valueLen = 0;
             int neg = 1;
-            while (((b = byteBuffer.get(i++)) != '\r')) {
+            while (byteBuffer.hasRemaining() && ((b = byteBuffer.get()) != '\n')) {
                 if (b == '-') {
                     neg = -1;
-                } else if (b == '.') {
-                    // skip the dot
+                } else if (b == '.' || b == '\r') {
+                    // skip the dot and retart char
                 } else {
                     bytes[valueLen++] = b;
                 }
             }
-            final double val = parseDouble(valueLen, bytes);
+            final int val = parseAsInt(valueLen, bytes);
             takeMeasurement(val * neg, map, name);
         }
         return map;
     }
 
-    private static double parseDouble(int valueLen, byte[] bytes) {
-        double val;
+    private static int parseAsInt(int valueLen, byte[] bytes) {
+        int val;
         switch (valueLen) {
-            case 1 -> val = getDigitAsInt(bytes[0]);
-            case 2 -> val = getDigitAsInt(bytes[0]) + getDigitAsInt(bytes[1]) / 10.0;
-            case 3 -> val = (getDigitAsInt(bytes[0]) * 10 + getDigitAsInt(bytes[1])) + getDigitAsInt(bytes[2]) / 10.0;
+            case 2 -> val = (bytes[0] - 48) * 10 + (bytes[1] - 48);
+            case 3 -> val = (bytes[0] - 48) * 100 + (bytes[1] - 48) * 10 + (bytes[2] - 48);
             default -> val = 0;
         }
         return val;
     }
 
-    private static int getDigitAsInt(byte b) {
-        return b - 48;
-    }
-
-    private static void takeMeasurement(double temperature, Map<String, Measurement> map, String name) {
+    private static void takeMeasurement(int temperature, Map<String, Measurement> map, String name) {
         Measurement measurement = map.get(name);
         if (measurement != null) {
             measurement.min = Math.min(measurement.min, temperature);
@@ -161,7 +155,7 @@ class BufferSupplierIterator implements Iterator<BufferSupplier> {
         this.raf = raf;
         this.fc = fc;
         this.fileLength = fc.size();
-        this.chunkSize = fileLength / numberOfParts;
+        this.chunkSize = Math.min(fileLength / numberOfParts, 1073741824);
     }
 
     @Override
