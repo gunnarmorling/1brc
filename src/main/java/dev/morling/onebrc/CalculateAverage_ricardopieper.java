@@ -248,7 +248,7 @@ public class CalculateAverage_ricardopieper {
         int nameStart = 0, nameEnd = 0;
         int tempStart = 0, tempEnd = 0;
 
-        byte[] nameBytes = new byte[100];
+        byte[] nameBytes = new byte[1000]; // ample space for weird unicode characters
 
         long vector = 0;
         while (chunk.hasRemaining()) {
