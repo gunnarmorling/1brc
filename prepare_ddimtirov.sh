@@ -15,5 +15,6 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="-Xmx16G"
-time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_nstng
+# also tried: 23.ea.3-open, 21.0.1-graalce, 21.0.1-graal, 21.0.1.crac-librca (tried CRaC API to see if it preserves JIT state)
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+sdk use java 21.0.1-tem

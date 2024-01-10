@@ -18,4 +18,4 @@
 
 #JAVA_OPTS="-XX:+UseZGC -server -Xms700m -Xlog:gc"
 JAVA_OPTS="-XX:+UseZGC -Xms700m"
-time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_criccomini
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_criccomini
