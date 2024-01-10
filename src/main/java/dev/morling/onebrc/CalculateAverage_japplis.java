@@ -17,7 +17,6 @@ package dev.morling.onebrc;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -29,9 +28,18 @@ import java.util.concurrent.*;
  *  - the first lines can start with comments lines using '#'
  *  - the temperatures can have more than one fraction digit but it needs to be constant in the file
  *  - it does not require much RAM
+ *  - Java 8 as minimal Java version
  * Assumptions
  *  - No temperatures are above 100 or below -100
  *  - the last character of the file is \n
+ *
+ * Changelog:
+ * - First local attempt with FileReader and TreeMap: Way too long
+ * - Switched to InputStream and ConcurrentHashMap: 23"
+ * - Added Semaphore to avoid OOMException: 23"
+ * - Replaced String with my own ByteText class: a bit slower (~10%)
+ * - Replaced compute lambda call with synchronized(city.intern()): 43" (due to intern())
+ * - Removed BufferedInputStream and replaced Measurement with IntSummaryStatistics (thanks davecom): still 23" but cleaner code
  *
  * @author Anthony Goubard - Japplis
  */
@@ -44,20 +52,19 @@ public class CalculateAverage_japplis {
     private int precision = -1;
     private int precisionLimitTenth;
 
-    private Map<String, Measurement> cityMeasurementMap = new ConcurrentHashMap<>();
+    private Map<String, IntSummaryStatistics> cityMeasurementMap = new ConcurrentHashMap<>();
     private List<Byte> previousBlockLastLine = new ArrayList<>();
 
     private Semaphore readFileLock = new Semaphore(MAX_COMPUTE_THREADS);
 
-    private void parseTemperatures(Path measurementsFile) throws Exception {
-        try (InputStream measurementsFileIS = new FileInputStream(measurementsFile.toFile());
-                BufferedInputStream measurementsBufferIS = new BufferedInputStream(measurementsFileIS, BUFFER_SIZE)) {
+    private void parseTemperatures(File measurementsFile) throws Exception {
+        try (InputStream measurementsFileIS = new FileInputStream(measurementsFile)) {
             int readCount = BUFFER_SIZE;
             ExecutorService threadPool = Executors.newFixedThreadPool(MAX_COMPUTE_THREADS);
             List<Future> parseBlockTasks = new ArrayList<>();
             while (readCount > 0) {
                 byte[] buffer = new byte[BUFFER_SIZE];
-                readCount = measurementsBufferIS.read(buffer);
+                readCount = measurementsFileIS.read(buffer);
                 if (readCount > 0) {
                     readFileLock.acquire(); // Wait if all threads are busy
 
@@ -91,7 +98,7 @@ public class CalculateAverage_japplis {
 
     private int handleSplitLine(byte[] buffer, int readCount) {
         int bufferIndex = readFirstLines(buffer);
-        List<Byte> lastLine = new ArrayList<>();
+        List<Byte> lastLine = new ArrayList<>(); // Store the last (partial) line of the block
         int tailIndex = readCount;
         if (tailIndex == buffer.length) {
             byte car = buffer[--tailIndex];
@@ -163,7 +170,7 @@ public class CalculateAverage_japplis {
         return bufferIndex;
     }
 
-    int readTemperature(byte[] text, int measurementIndex) {
+    private int readTemperature(byte[] text, int measurementIndex) {
         boolean negative = text[measurementIndex] == '-';
         if (negative)
             measurementIndex++;
@@ -181,11 +188,11 @@ public class CalculateAverage_japplis {
     }
 
     private void addTemperature(String city, int temperature) {
-        cityMeasurementMap.compute(city, (c, m) -> {
-            if (m == null)
-                return new Measurement(temperature);
-            m.add(temperature);
-            return m;
+        cityMeasurementMap.compute(city, (town, measurement) -> {
+            if (measurement == null)
+                measurement = new IntSummaryStatistics();
+            measurement.accept(temperature);
+            return measurement;
         });
     }
 
@@ -194,7 +201,7 @@ public class CalculateAverage_japplis {
         StringBuilder result = new StringBuilder(cityMeasurementMap.size() * 40);
         result.append('{');
         sortedCities.forEach(city -> {
-            Measurement measurement = cityMeasurementMap.get(city);
+            IntSummaryStatistics measurement = cityMeasurementMap.get(city);
             result.append(city);
             result.append(getTemperatureStats(measurement));
         });
@@ -204,15 +211,15 @@ public class CalculateAverage_japplis {
         System.out.println(temperaturesByCity);
     }
 
-    private String getTemperatureStats(Measurement measurement) {
+    private String getTemperatureStats(IntSummaryStatistics measurement) {
         StringBuilder stats = new StringBuilder(19);
         stats.append('=');
-        appendTemperature(stats, measurement.min);
+        appendTemperature(stats, measurement.getMin());
         stats.append('/');
-        int average = (int) (Math.round(measurement.total / (double) measurement.count));
+        int average = (int) Math.round(measurement.getAverage());
         appendTemperature(stats, average);
         stats.append('/');
-        appendTemperature(stats, measurement.max);
+        appendTemperature(stats, measurement.getMax());
         stats.append(", ");
         return stats.toString();
     }
@@ -229,33 +236,9 @@ public class CalculateAverage_japplis {
     }
 
     public static final void main(String... args) throws Exception {
-        CalculateAverage_japplis averageCalculator = new CalculateAverage_japplis();
+        CalculateAverage_japplis cityTemperaturesCalculator = new CalculateAverage_japplis();
         String measurementFile = args.length == 1 ? args[0] : DEFAULT_MEASUREMENT_FILE;
-        averageCalculator.parseTemperatures(Path.of(measurementFile));
-        averageCalculator.printTemperatureStatsByCity();
-    }
-
-    private class Measurement {
-
-        private int min;
-        private int max;
-        private long total;
-        private int count = 1;
-
-        // The initial measurement
-        private Measurement(int value) {
-            min = value;
-            max = value;
-            total = value;
-        }
-
-        private void add(int temperature) {
-            if (temperature < min)
-                min = temperature;
-            if (temperature > max)
-                max = temperature;
-            total += temperature;
-            count++;
-        }
+        cityTemperaturesCalculator.parseTemperatures(new File(measurementFile));
+        cityTemperaturesCalculator.printTemperatureStatsByCity();
     }
 }
