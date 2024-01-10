@@ -47,6 +47,7 @@ function check_command_installed {
 check_command_installed java
 check_command_installed hyperfine
 check_command_installed jq
+check_command_installed bc
 
 # Validate that ./calculate_average_<fork>.sh exists for each fork
 for fork in "$@"; do
