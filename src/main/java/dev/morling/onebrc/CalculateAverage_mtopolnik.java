@@ -33,7 +33,6 @@ public class CalculateAverage_mtopolnik {
     private static final Unsafe UNSAFE = unsafe();
     private static final boolean ORDER_IS_BIG_ENDIAN = ByteOrder.nativeOrder() == ByteOrder.BIG_ENDIAN;
     private static final int MAX_NAME_LEN = 100;
-    private static final int NAME_SLOT_SIZE = 104;
     private static final int STATS_TABLE_SIZE = 1 << 16;
     private static final String MEASUREMENTS_TXT = "measurements.txt";
     private static final byte SEMICOLON = ';';
@@ -396,6 +395,7 @@ public class CalculateAverage_mtopolnik {
     }
 
     static class StatsAccessor {
+        static final int NAME_SLOT_SIZE = 104;
         static final long HASH_OFFSET = 0;
         static final long NAMELEN_OFFSET = HASH_OFFSET + Long.BYTES;
         static final long SUM_OFFSET = NAMELEN_OFFSET + Integer.BYTES;
@@ -411,6 +411,7 @@ public class CalculateAverage_mtopolnik {
         private long slotBase;
 
         StatsAccessor(MemorySegment memSeg) {
+            memSeg.fill((byte) 0);
             this.address = memSeg.address();
         }
 
