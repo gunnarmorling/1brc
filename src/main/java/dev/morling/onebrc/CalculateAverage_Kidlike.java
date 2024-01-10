@@ -39,6 +39,7 @@ import java.util.stream.Collectors;
  *     <li>0m59s: process byte chunks in parallel (had to introduce smarter byte chunking so it splits only on newlines)</li>
  *     <li>0m46s: smaller numeric types for MeasurementAggregator</li>
  *     <li>0m39s: implement custom byte[] to int parsing, instead of Double.parseDouble(new String(bytes))</li>
+ *     <li>0m18s: run with GraalVM native-image</li>
  * </ol>
  *
  * <p>
