@@ -30,9 +30,12 @@ import java.util.stream.Collectors;
 
 public class CalculateAverage_jgrateron {
     private static final String FILE = "./measurements.txt";
-    private static final int MAX_LENGTH_LINE = 110;
+    private static final int MAX_LENGTH_LINE = 115;
 
     public record Particion(long offset, long size) {
+    }
+
+    public record Tupla(String str, Double num) {
     }
 
     /*
@@ -43,7 +46,7 @@ public class CalculateAverage_jgrateron {
         var buffer = new byte[MAX_LENGTH_LINE];
         var length = archivo.length();
         int cores = Runtime.getRuntime().availableProcessors();
-        var sizeParticion = length / (cores * 2);
+        var sizeParticion = length / cores;
         var ini = 0l;
         try (var rfile = new RandomAccessFile(archivo, "r")) {
             for (;;) {
@@ -59,12 +62,9 @@ public class CalculateAverage_jgrateron {
                     break;
                 }
                 for (int i = 0; i < count; i++) {
+                    size++;
                     if (buffer[i] == '\n' || buffer[i] == '\r') {
-                        size++;
                         break;
-                    }
-                    else {
-                        size++;
                     }
                 }
                 var particion = new Particion(ini, size);
@@ -79,7 +79,7 @@ public class CalculateAverage_jgrateron {
     }
 
     public static void main(String[] args) throws InterruptedException, IOException {
-        // var startTime = System.nanoTime();
+        var startTime = System.nanoTime();
         var archivo = new File(FILE);
         var totalMediciones = new HashMap<Integer, Medicion>();
         var tareas = new ArrayList<Thread>();
@@ -99,9 +99,8 @@ public class CalculateAverage_jgrateron {
                             if (linea == null) {
                                 break;
                             }
-                            int pos = linea.indexOf(";");
-                            var estacion = linea.substring(0, pos);
-                            var temp = Double.parseDouble(linea.substring(pos + 1));
+                            var estacion = linea.str;
+                            var temp = linea.num;
                             var hashCode = estacion.hashCode();
                             var medicion = mediciones.get(hashCode);
                             if (medicion == null) {
@@ -146,7 +145,39 @@ public class CalculateAverage_jgrateron {
                 .collect(Collectors.joining(", "));
 
         System.out.println("{" + result + "}");
-        // System.out.println("Total: " + (System.nanoTime() - startTime) / 1000000 + "ms");
+        System.out.println("Total: " + (System.nanoTime() - startTime) / 1000000 + "ms");
+    }
+
+    /*
+     * 
+     */
+    public static double strToDouble(byte linea[], int posSeparator, int len) {
+        double number[] = { 0, 0 };
+        int pos = 0;
+        boolean esNegativo = false;
+        for (int i = posSeparator + 1; i < len; i++) {
+            switch (linea[i]) {
+                case '-':
+                    esNegativo = true;
+                    break;
+                case '0', '1', '2', '3', '4':
+                case '5', '6', '7', '8', '9':
+                    number[pos] = number[pos] * 10;
+                    number[pos] = number[pos] + (linea[i] - '0');
+                    break;
+                case '.':
+                    pos = 1;
+                    break;
+            }
+        }
+        double num = number[0];
+        if (number[1] > 0) {
+            num += (number[1] / 100);
+        }
+        if (esNegativo) {
+            num = num * -1;
+        }
+        return num;
     }
 
     /*
@@ -154,13 +185,13 @@ public class CalculateAverage_jgrateron {
      */
     static class MiArchivo implements AutoCloseable {
         private final RandomAccessFile rFile;
-        private final byte buffer[] = new byte[1024 * 4];
+        private final byte buffer[] = new byte[1024 * 8];
         private final byte line[] = new byte[MAX_LENGTH_LINE];
         private final byte rest[] = new byte[MAX_LENGTH_LINE];
         private int lenRest = 0;
         private long maxRead = 0;
         private long totalRead = 0;
-        private Queue<String> lineas = new LinkedList<String>();
+        private Queue<Tupla> lineas = new LinkedList<Tupla>();
 
         public MiArchivo(File file, Particion particion) throws IOException {
             maxRead = particion.size;
@@ -173,7 +204,7 @@ public class CalculateAverage_jgrateron {
             rFile.close();
         }
 
-        public Queue<String> readLines() throws IOException {
+        public Queue<Tupla> readLines() throws IOException {
             lineas.clear();
             long numBytes = rFile.read(buffer);
             if (numBytes == -1) {
@@ -198,7 +229,16 @@ public class CalculateAverage_jgrateron {
                     else {
                         System.arraycopy(buffer, idx, line, 0, len);
                     }
-                    lineas.add(new String(line, 0, len));
+                    int semicolon = 0;
+                    for (int i = 0; i < len; i++) {
+                        if (line[i] == ';') {
+                            semicolon = i;
+                            break;
+                        }
+                    }
+                    var temperatura = strToDouble(line, semicolon, len);
+                    var tupla = new Tupla(new String(line, 0, semicolon), temperatura);
+                    lineas.add(tupla);
                     idx = pos + 1;
                     len = 0;
                 }
