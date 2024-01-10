@@ -37,7 +37,7 @@ import java.util.*;
 @SuppressWarnings("unchecked")
 public class CalculateAverage_ricardopieper {
 
-    private static final String FILE = "./measurements.txt";
+    private static final String FILE = "./measurements_original_dataset.txt";
 
     public static final class StationMeasurements {
         public long min;
@@ -154,7 +154,7 @@ public class CalculateAverage_ricardopieper {
         var chunks = splitFile(path, (int) numChunks);
         TreeMap<String, StationMeasurements> result = null;
         if (debugMode) {
-            for (var chunk : chunks) {
+            for (var chunk: chunks) {
                 result = processFileChunk(chunk).asTreeMap();
                 System.out.println("Processed chunk " + chunk.start);
             }
@@ -169,7 +169,7 @@ public class CalculateAverage_ricardopieper {
                             throw new RuntimeException(e);
                         }
                     })
-                    // .peek(x -> x.printStats())
+                     .peek(x -> x.printStats())
                     .map(MeasureMap::asTreeMap)
                     .reduce((map1, map2) -> {
                         for (var kv : map1.entrySet()) {
@@ -264,7 +264,7 @@ public class CalculateAverage_ricardopieper {
             channel.read(byteBuffer.array(), 0, chunk.size);
         }
         byteBuffer.position(0);
-        long lastNameVector = 0;
+
         while (byteBuffer.hasRemaining()) {
 
             long nameVector = byteBuffer.getLong();
@@ -278,7 +278,6 @@ public class CalculateAverage_ricardopieper {
                 tempStart = nameEnd + 1;
             }
             else {
-
                 continue;
             }
 
@@ -319,23 +318,14 @@ public class CalculateAverage_ricardopieper {
     // to actually copy the underlying buffer, but the profiler showed it allocated
     // way too much memory. Performance was kind of the same though...
     public static class MeasureMap {
+
+        // For names that are up to 8 bytes long, I just use the long I read from the file
+        // and shift it around to keep only the relevant bytes.
+        // Small strings are thus compared quickly.
         public record Entry(byte[] bytes, long nameVector, StationMeasurements measurements) {
         }
 
-        public static byte[] loongToBytes(long vector) {
-            byte b0 = (byte) (vector >> 64 - 8),
-                    b1 = (byte) (vector >> 64 - 16),
-                    b2 = (byte) (vector >> 64 - 24),
-                    b3 = (byte) (vector >> 64 - 32),
-                    b4 = (byte) (vector >> 64 - 40),
-                    b5 = (byte) (vector >> 64 - 48),
-                    b6 = (byte) (vector >> 64 - 56),
-                    b7 = (byte) (vector);
-
-            return new byte[]{
-                    b0, b1, b2, b3, b4, b5, b6, b7
-            };
-        }
+        ;
 
         ArrayList<Entry>[] buckets;
 
@@ -351,7 +341,8 @@ public class CalculateAverage_ricardopieper {
         // but I think this gets vectorized anyway because the performance is
         // either better or the same.
         public static int hashCode(byte[] array, int offset, int length) {
-            int result = 1;
+            int result = 0;
+
             for (int i = offset; i < offset + length; i++) {
                 result = 31 * result + array[i];
             }
@@ -366,40 +357,41 @@ public class CalculateAverage_ricardopieper {
             // like comparing first and last before the loop.
             // It's useless. Maybe slower. Because when strings are the same length
             // it's a pretty high chance they are the same...
-            for (int i = 0; i < a1len; i++) {
+
+            for (int i = 1; i < a1len - 1; i++) {
                 if (a1[a1offset + i] != a2[i]) {
                     return false;
                 }
             }
             return true;
         }
-
+        int hits = 0;
         public StationMeasurements getOrAdd(byte[] bytes, long nameVector, int offset, int length) {
-            // System.out.println(new String(loongToBytes(nameVector)));
-            long shift = (64 - (length * 8L));
-            long actualNameVector = nameVector >> shift << shift;
-            // System.out.println(new String(loongToBytes(actualNameVector)));
-
+            hits++;
+            if (hits % 1000000 == 0) {
+                System.out.println(hits+ " at " + offset);
+            }
+            // if the name is 3 letters, only the bottom 3 bytes are valid
+            // so let's shift left by 5
+            long shift = (64 - (length * 8));
+            long actualNameVector = nameVector << shift >> shift;
             var hash = hashCode(bytes, offset, length);
 
             // this is a modulo operation because:
-            // buckets.lenght is a power of 2 (like 01000000, only 1 bit is set)
+            // buckets.length is a power of 2 (like 01000000, only 1 bit is set)
             // -1 makes all the bits right to that 1 become 1 (like 00111111)
             // the & will select only those 1s, and due to math, it is the remainder
-            // this has also the benefit of not needing a positive hash
-            int bucketIndex = (buckets.length - 1) & hash;
+            // this has also the benefit of not requiring a positive hash
+            int bucketIndex = ((buckets.length - 1) & hash);
 
             var bucket = buckets[bucketIndex];
             for (int i = 0; i < bucket.size(); i++) {
-
                 var item = bucket.get(i);
 
-                boolean found = length <= 7 ? (actualNameVector == item.nameVector) : equals(bytes, offset, length, item.bytes);
-
+                boolean found = length > 8 ? equals(bytes, offset, length, item.bytes) : (actualNameVector == item.nameVector);
                 if (found) {
                     return item.measurements;
                 }
-
             }
 
             // new item, consolidate
@@ -427,5 +419,31 @@ public class CalculateAverage_ricardopieper {
             return result;
         }
 
+        public void printStats() {
+            int empty = 0;
+            int one = 0;
+            int two = 0;
+            int moreThan2 = 0;
+            int moreThan5 = 0;
+            for (var bucket : this.buckets) {
+                if (bucket.isEmpty()) {
+                    empty++;
+                } else if (bucket.size() > 5) {
+                    moreThan5++;
+                } else if (bucket.size() > 2) {
+                    moreThan2++;
+                } else if (bucket.size() == 2) {
+                    two++;
+                }
+                else {
+                    one++;
+                }
+            }
+
+            System.out.println(
+                    STR."Stats: Empty = \{empty}, 1 = \{one}, 2 = \{two}, >2 = \{moreThan2}, >5 = \{moreThan5} "
+            );
+
+        }
     }
 }
