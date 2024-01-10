@@ -16,5 +16,5 @@
 #
 
 # also tried: 23.ea.3-open, 21.0.1-graalce, 21.0.1-graal, 21.0.1.crac-librca (tried CRaC API to see if it preserves JIT state)
-. "$HOME/.sdkman/bin/sdkman-init.sh"
+source "$HOME/.sdkman/bin/sdkman-init.sh"
 sdk use java 21.0.1-tem
