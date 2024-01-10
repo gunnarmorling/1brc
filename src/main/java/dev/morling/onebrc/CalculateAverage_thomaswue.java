@@ -32,21 +32,23 @@ import java.util.stream.IntStream;
  * Simple solution that memory maps the input file, then splits it into one segment per available core and uses
  * sun.misc.Unsafe to directly access the mapped memory. Uses a long at a time when checking for collision.
  * <p>
- * Runs in 0.74s on my Intel i9-13900K
+ * Runs in 0.71s on my Intel i9-13900K
  * Perf stats:
- *    46,672,260,532      cpu_core/cycles/
- *    55,933,117,345      cpu_atom/cycles/
+ *     44,012,747,147      cpu_core/cycles/
+ *     50,881,628,573      cpu_atom/cycles/
  */
 public class CalculateAverage_thomaswue {
     private static final String FILE = "./measurements.txt";
 
     // Holding the current result for a single city.
     private static class Result {
+        final long nameAddress;
+        long lastNameLong;
+        int remainingShift;
         int min;
         int max;
         long sum;
         int count;
-        final long nameAddress;
 
         private Result(long nameAddress, int value) {
             this.nameAddress = nameAddress;
@@ -181,7 +183,7 @@ public class CalculateAverage_thomaswue {
                             continue outer;
                         }
                     }
-                    if (((UNSAFE.getLong(existingResult.nameAddress + i) ^ UNSAFE.getLong(nameAddress + i)) << (64 - (nameLength + 1 - i) << 3)) == 0) {
+                    if (((existingResult.lastNameLong ^ UNSAFE.getLong(nameAddress + i)) << existingResult.remainingShift) == 0) {
                         existingResult.min = Math.min(existingResult.min, number);
                         existingResult.max = Math.max(existingResult.max, number);
                         existingResult.sum += number;
@@ -231,6 +233,12 @@ public class CalculateAverage_thomaswue {
         Result r = new Result(nameAddress, number);
         results[hash] = r;
         byte[] bytes = new byte[nameLength];
+
+        int i = 0;
+        for (; i < nameLength + 1 - 8; i += 8) {
+        }
+        r.lastNameLong = UNSAFE.getLong(nameAddress + i);
+        r.remainingShift = (64 - (nameLength + 1 - i) << 3);
         UNSAFE.copyMemory(null, nameAddress, bytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, nameLength);
         String nameAsString = new String(bytes, StandardCharsets.UTF_8);
         cities.put(nameAsString, r);
