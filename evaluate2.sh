@@ -82,7 +82,6 @@ for fork in "$@"; do
     done || true # grep returns exit code 1 when no match, `|| true` prevents the script from exiting early
   fi
 done
-echo "SUCCESS"
 ## END - SDKMAN Setup
 
 # Check if SMT is enabled (we want it disabled)
