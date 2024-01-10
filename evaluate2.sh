@@ -185,9 +185,13 @@ for fork in "$@"; do
 done
 echo ""
 
-# Leaderboard - prints the leaderboard in Markdown table format
+## Leaderboard - prints the leaderboard in Markdown table format
 echo -e "${BOLD_WHITE}Leaderboard${RESET}"
-temp_file=$(mktemp)
+
+# 1. Create a temp file to store the leaderboard entries
+leaderboard_temp_file=$(mktemp)
+
+# 2. Process each fork and append the 1-line entry to the temp file
 for fork in "$@"; do
   # skip reporting results for failed forks
   if [[ " ${failed[@]} " =~ " ${fork} " ]]; then
@@ -229,26 +233,38 @@ for fork in "$@"; do
     notes="GraalVM native binary"
   fi
 
-  echo -n "$trimmed_mean;" >> $temp_file # for sorting
-  echo -n "| # " >> $temp_file
-  echo -n "| $trimmed_mean_formatted " >> $temp_file
-  echo -n "| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_$fork.java)" >> $temp_file
-  echo -n "| $java_version " >> $temp_file
-  echo -n "| [$github_user__name](https://github.com/$fork) " >> $temp_file
-  echo -n "| $notes " >> $temp_file
-  echo "|" >> $temp_file
+  echo -n "$trimmed_mean;" >> $leaderboard_temp_file # for sorting
+  echo -n "| # " >> $leaderboard_temp_file
+  echo -n "| $trimmed_mean_formatted " >> $leaderboard_temp_file
+  echo -n "| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_$fork.java)" >> $leaderboard_temp_file
+  echo -n "| $java_version " >> $leaderboard_temp_file
+  echo -n "| [$github_user__name](https://github.com/$fork) " >> $leaderboard_temp_file
+  echo -n "| $notes " >> $leaderboard_temp_file
+  echo "|" >> $leaderboard_temp_file
 done
 
-sort -n $temp_file | cut -d ';' -f 2 > $temp_file.sorted
+# 3. Sort leaderboard_temp_file by trimmed_mean and remove the sorting column
+sort -n $leaderboard_temp_file | cut -d ';' -f 2 > $leaderboard_temp_file.sorted
 
+# 4. Print the leaderboard
 echo ""
 echo "| # | Result (m:s.ms) | Implementation     | JDK | Submitter     | Notes     |"
 echo "|---|-----------------|--------------------|-----|---------------|-----------|"
-head -n 1 $temp_file.sorted | tr '#' 1
-head -n 2 $temp_file.sorted | tail -n 1 | tr '#' 2
-head -n 3 $temp_file.sorted | tail -n 1 | tr '#' 3
-tail -n+4 $temp_file.sorted | tr '#' ' '
+# If $leaderboard_temp_file.sorted has more than 3 entires, include rankings
+if [ $(wc -l < $leaderboard_temp_file.sorted) -gt 3 ]; then
+  head -n 1 $leaderboard_temp_file.sorted | tr '#' 1
+  head -n 2 $leaderboard_temp_file.sorted | tail -n 1 | tr '#' 2
+  head -n 3 $leaderboard_temp_file.sorted | tail -n 1 | tr '#' 3
+  tail -n+4 $leaderboard_temp_file.sorted | tr '#' ' '
+else
+  # Don't show rankings
+  cat $leaderboard_temp_file.sorted | tr '#' ' '
+fi
 echo ""
+
+# 5. Cleanup
+rm $leaderboard_temp_file
+## END - Leaderboard
 
 # Finalize .out files
 echo "Raw results saved to file(s):"
