@@ -333,7 +333,6 @@ public class CalculateAverage_ricardopieper {
         // but I think this gets vectorized anyway because the performance is
         // either better or the same.
         public static int hashCode(byte[] array, int length) {
-
             int result = 1;
             for (int i = 0; i < length; i++) {
                 result = 31 * result + array[i];
