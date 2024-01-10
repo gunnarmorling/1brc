@@ -45,11 +45,12 @@ public class CalculateAverage_vemana {
     public static void main(String[] args) throws Exception {
         // First process in large chunks without coordination among threads
         // Use chunkSizeBits for the large-chunk size
-        int chunkSizeBits = 24;
+        int chunkSizeBits = 16;
 
         // For the last commonChunkFraction fraction of total work, use smaller chunk sizes
+        double commonChunkFraction = 0;
+
         // Use commonChunkSizeBits for the small-chunk size
-        double commonChunkFraction = 0.03;
         int commonChunkSizeBits = 18;
 
         // Size of the hashtable (attempt to fit in L3)
@@ -118,9 +119,9 @@ public class CalculateAverage_vemana {
 
         // The PUBLIC API
         public MappedByteBuffer byteBuffer;
+        public boolean byteBufferRangeIsExact; // true iff byteBuffer is the exact whole range
         public int endInBuf; // where the chunk ends inside the buffer
         public int startInBuf; // where the chunk starts inside the buffer
-
         // Private State
         private long bufferEnd; // byteBuffer's ending coordinate
         private long bufferStart; // byteBuffer's begin coordinate
@@ -137,18 +138,13 @@ public class CalculateAverage_vemana {
             bufferEnd = bufferStart = -1;
         }
 
-        public void setRange(long rangeStart, long rangeEnd) {
+        public void setRange(long rangeStart, long rangeEnd, boolean sizeBufferExactly) {
             if (rangeEnd + 1024 > bufferEnd || rangeStart < bufferStart) {
                 bufferStart = rangeStart;
                 bufferEnd = Math.min(bufferStart + BUF_SIZE, fileSize);
-                try {
-                    byteBuffer = raf.getChannel()
-                            .map(MapMode.READ_ONLY, bufferStart, bufferEnd - bufferStart);
-                }
-                catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
+                setByteBufferToRange(bufferStart, bufferEnd);
             }
+
             if (rangeStart > 0) {
                 rangeStart = 1 + nextNewLine(rangeStart);
             }
@@ -160,8 +156,15 @@ public class CalculateAverage_vemana {
                 rangeEnd = fileSize;
             }
 
+            if (sizeBufferExactly) {
+                bufferStart = rangeStart;
+                bufferEnd = rangeEnd;
+                setByteBufferToRange(bufferStart, bufferEnd);
+            }
+
             startInBuf = (int) (rangeStart - bufferStart);
             endInBuf = (int) (rangeEnd - bufferStart);
+            byteBufferRangeIsExact = sizeBufferExactly;
             // assertInvariants();
         }
 
@@ -203,6 +206,16 @@ public class CalculateAverage_vemana {
                 nextPos++;
             }
             return nextPos + bufferStart;
+        }
+
+        private void setByteBufferToRange(long start, long end) {
+            try {
+                byteBuffer = raf.getChannel()
+                        .map(MapMode.READ_ONLY, start, end - start);
+            }
+            catch (IOException e) {
+                throw new RuntimeException(e);
+            }
         }
     }
 
@@ -263,28 +276,34 @@ public class CalculateAverage_vemana {
                 };
                 results.add(executorService.submit(callable));
             }
-            Result root = merge(results);
             // printFinishTimes(finishTimes);
-            return root;
+            return executorService.submit(() -> merge(results)).get();
         }
 
         private Result merge(List<Future<Result>> results)
                 throws ExecutionException, InterruptedException {
-            // Merge the results
-            Map<String, Stat> map = null;
-            for (int i = 0; i < results.size(); i++) {
-                if (i == 0) {
-                    map = new TreeMap<>(results.get(0).get().tempStats());
-                }
-                else {
-                    for (Entry<String, Stat> entry : results.get(i).get().tempStats().entrySet()) {
-                        map.compute(entry.getKey(), (key, value) -> value == null
-                                ? entry.getValue()
-                                : Stat.merge(value, entry.getValue()));
+            Map<String, Stat> output = null;
+            boolean[] isDone = new boolean[results.size()];
+            int remaining = results.size();
+            while (remaining > 0) {
+                for (int i = 0; i < results.size(); i++) {
+                    if (!isDone[i] && results.get(i).isDone()) {
+                        isDone[i] = true;
+                        remaining--;
+                        if (output == null) {
+                            output = new TreeMap<>(results.get(i).get().tempStats());
+                        }
+                        else {
+                            for (Entry<String, Stat> entry : results.get(i).get().tempStats().entrySet()) {
+                                output.compute(entry.getKey(), (key, value) -> value == null
+                                        ? entry.getValue()
+                                        : Stat.merge(value, entry.getValue()));
+                            }
+                        }
                     }
                 }
             }
-            return new Result(map);
+            return new Result(output);
         }
 
     private void printFinishTimes(long[] finishTimes) {
@@ -353,26 +372,30 @@ public class CalculateAverage_vemana {
         @Override
         public ByteRange take(int idx) {
             // Try for thread local range
-            int pos = idx << 4;
+            final int pos = idx << 4;
             long rangeStart = nextStarts[pos];
-            long chunkEnd = nextStarts[pos + 1];
+            final long chunkEnd = nextStarts[pos + 1];
 
+            final boolean sizeExactly;
             final long rangeEnd;
+
             if (rangeStart < chunkEnd) {
                 rangeEnd = rangeStart + chunkSize;
+                sizeExactly = false;
+                nextStarts[pos] = rangeEnd;
             }
             else {
                 rangeStart = commonPool.getAndAdd(commonChunkSize);
-                rangeEnd = rangeStart + commonChunkSize;
                 // If that's exhausted too, nothing remains!
                 if (rangeStart >= fileSize) {
                     return null;
                 }
+                rangeEnd = rangeStart + commonChunkSize;
+                sizeExactly = false;
             }
 
-            nextStarts[pos] += chunkSize;
             ByteRange chunk = byteRanges[pos];
-            chunk.setRange(rangeStart, rangeEnd);
+            chunk.setRange(rangeStart, rangeEnd, sizeExactly);
             // System.err.println(STR."""
             // Shard: \{idx}
             // rangeStart: \{rangeStart}
@@ -407,6 +430,7 @@ public class CalculateAverage_vemana {
             MappedByteBuffer mmb = range.byteBuffer;
             int nextPos = range.startInBuf;
             int end = range.endInBuf;
+
             while (nextPos < end) {
                 nextPos = state.processLine(mmb, nextPos);
             }
