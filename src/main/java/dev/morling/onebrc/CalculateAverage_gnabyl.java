@@ -21,13 +21,10 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 public class CalculateAverage_gnabyl {
 
-	private static final String FILE = "./measurements-saved.txt";
+	private static final String FILE = "./measurements.txt";
 
 	private static final int NB_CHUNKS = 8;
 
@@ -50,6 +47,30 @@ public class CalculateAverage_gnabyl {
 		}
 	};
 
+	private static int reduceSizeToFitLineBreak(FileChannel channel, long startPosition, int startSize)
+			throws IOException {
+		long currentPosition = startPosition + startSize - 1;
+		int realSize = startSize;
+
+		if (currentPosition >= channel.size()) {
+			currentPosition = channel.size() - 1;
+			realSize = (int) (currentPosition - startPosition);
+		}
+
+		while (currentPosition >= startPosition) {
+			channel.position(currentPosition);
+			byte byteValue = channel.map(FileChannel.MapMode.READ_ONLY, currentPosition, 1).get();
+			if (byteValue == '\n') {
+				// found line break
+				break;
+			}
+
+			realSize--;
+			currentPosition--;
+		}
+		return realSize;
+	}
+
 	private static List<Chunk> readChunks(long nbChunks) {
 		try (RandomAccessFile file = new RandomAccessFile(FILE, "rw")) {
 			List<Chunk> res = new ArrayList<>();
@@ -59,13 +80,28 @@ public class CalculateAverage_gnabyl {
 
 			// Memory map the file in read-only mode
 			// TODO: Optimize using threads
+			long currentPosition = 0;
 			for (int i = 0; i < nbChunks; i++) {
-				long position = i * bytesPerChunk;
-				int size = (int) ((i == nbChunks - 1) ? (bytesCount - position) : bytesPerChunk);
+				int startSize = (int) bytesPerChunk;
+				int realSize = startSize;
 
-				MappedByteBuffer mappedByteBuffer = channel.map(FileChannel.MapMode.READ_ONLY, position, size);
+				if (i == nbChunks - 1) {
+					realSize = (int) (bytesCount - currentPosition);
+					MappedByteBuffer mappedByteBuffer = channel.map(FileChannel.MapMode.READ_ONLY, currentPosition,
+							realSize);
 
-				res.add(new Chunk(i, position, size, mappedByteBuffer));
+					res.add(new Chunk(i, currentPosition, realSize, mappedByteBuffer));
+					break;
+				}
+
+				// Adjust size so that it ends on a newline
+				realSize = reduceSizeToFitLineBreak(channel, currentPosition, startSize);
+
+				MappedByteBuffer mappedByteBuffer = channel.map(FileChannel.MapMode.READ_ONLY, currentPosition,
+						realSize);
+
+				res.add(new Chunk(i, currentPosition, realSize, mappedByteBuffer));
+				currentPosition += realSize;
 			}
 
 			channel.close();
@@ -83,29 +119,17 @@ public class CalculateAverage_gnabyl {
 
 		// Perform processing on the chunk data
 		byte[] data = new byte[chunk.bytesCount()];
-		var chunkBuffer = chunk.mappedByteBuffer().get(data);
+		chunk.mappedByteBuffer().get(data);
 	}
 
-	private static void processChunksInParallel(List<Chunk> chunks) {
-		ExecutorService executorService = Executors.newFixedThreadPool(chunks.size());
-
-		try {
-			// Submit tasks to process each chunk
-			for (var chunk : chunks) {
-				executorService.submit(() -> processChunk(chunk));
-			}
-
-			// Shutdown the executor and wait for all tasks to complete
-			executorService.shutdown();
-			executorService.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
-
-		} catch (InterruptedException e) {
-			e.printStackTrace();
+	private static void processAllChunks(List<Chunk> chunks) {
+		for (var chunk : chunks) {
+			processChunk(chunk);
 		}
 	}
 
 	public static void main(String[] args) throws IOException {
 		var chunks = readChunks(NB_CHUNKS);
-		processChunksInParallel(chunks);
+		processAllChunks(chunks);
 	}
 }
