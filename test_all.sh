@@ -17,14 +17,30 @@
 
 set -euo pipefail
 
+INPUT=${1:-""}
+
+if [ "$INPUT" = "-h" ] || [ "$#" -gt 1 ]; then
+  echo "Usage: ./test_all.sh [input file pattern]"
+  echo
+  echo "For each available fork run ./test.sh <fork name> [input file pattern]."
+  echo "Note that optional <input file pattern> should be quoted if contains wild cards."
+  echo
+  echo "Examples:"
+  echo "./test_all.sh"
+  echo "./test_all.sh 2>/dev/null"
+  echo "./test_all.sh src/test/resources/samples/measurements-1.txt"
+  echo "./test_all.sh 'src/test/resources/samples/measurements-*.txt'"
+  exit 1
+fi
+
 for impl in $(ls calculate_average_*.sh | sort); do
   noext="${impl%%.sh}"
-  name=${noext##calculate_average_}
+  fork=${noext##calculate_average_}
 
-  if output=$(./test.sh "$name" 2>&1); then
-    echo "PASS $name"
+  if output=$(./test.sh "$fork" "$INPUT" 2>&1); then
+    echo "PASS $fork"
   else
-    echo "FAIL $name"
+    echo "FAIL $fork"
     echo "$output" 1>&2
   fi
 done
