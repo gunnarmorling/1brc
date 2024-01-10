@@ -86,16 +86,38 @@ public class CalculateAverage_AbstractKamen {
             }
             name = new String(bytes, 0, nameLen, StandardCharsets.UTF_8);
             int valueLen = 0;
+            int neg = 1;
             while (((b = byteBuffer.get(i++)) != '\r')) {
-                bytes[valueLen++] = b;
+                if (b == '-') {
+                    neg = -1;
+                } else if (b == '.') {
+                    // skip the dot
+                } else {
+                    bytes[valueLen++] = b;
+                }
             }
-            takeMeasurement(bytes, valueLen, map, name);
+            final double val = parseDouble(valueLen, bytes);
+            takeMeasurement(val * neg, map, name);
         }
         return map;
     }
 
-    private static void takeMeasurement(byte[] bytes, int valueLen, Map<String, Measurement> map, String name) {
-        final double temperature = Double.parseDouble(new String(bytes, 0, valueLen, StandardCharsets.UTF_8));
+    private static double parseDouble(int valueLen, byte[] bytes) {
+        double val;
+        switch (valueLen) {
+            case 1 -> val = getDigitAsInt(bytes[0]);
+            case 2 -> val = getDigitAsInt(bytes[0]) + getDigitAsInt(bytes[1]) / 10.0;
+            case 3 -> val = (getDigitAsInt(bytes[0]) * 10 + getDigitAsInt(bytes[1])) + getDigitAsInt(bytes[2]) / 10.0;
+            default -> val = 0;
+        }
+        return val;
+    }
+
+    private static int getDigitAsInt(byte b) {
+        return b - 48;
+    }
+
+    private static void takeMeasurement(double temperature, Map<String, Measurement> map, String name) {
         Measurement measurement = map.get(name);
         if (measurement != null) {
             measurement.min = Math.min(measurement.min, temperature);
