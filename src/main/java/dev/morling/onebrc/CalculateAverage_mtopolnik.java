@@ -116,7 +116,7 @@ public class CalculateAverage_mtopolnik {
     }
 
     private static class ChunkProcessor implements Runnable {
-        private static final long HASHBUF_SIZE = 2 * Long.BYTES;
+        private static final long NAMEBUF_SIZE = 2 * Long.BYTES;
         private static final int CACHELINE_SIZE = 64;
 
         private final long chunkStart;
@@ -128,7 +128,7 @@ public class CalculateAverage_mtopolnik {
         private StatsAccessor stats;
         private long inputBase;
         private long inputSize;
-        private long hashBufBase;
+        private long nameBufBase;
         private long cursor;
 
         ChunkProcessor(RandomAccessFile raf, long chunkStart, long chunkLimit, StationStats[][] results, int myIndex) {
@@ -146,7 +146,7 @@ public class CalculateAverage_mtopolnik {
                 inputBase = inputMem.address();
                 inputSize = inputMem.byteSize();
                 stats = new StatsAccessor(confinedArena.allocate(STATS_TABLE_SIZE * StatsAccessor.SIZEOF, CACHELINE_SIZE));
-                hashBufBase = confinedArena.allocate(HASHBUF_SIZE).address();
+                nameBufBase = confinedArena.allocate(NAMEBUF_SIZE).address();
                 processChunk();
                 exportResults();
             }
@@ -157,23 +157,42 @@ public class CalculateAverage_mtopolnik {
 
         private void processChunk() {
             while (cursor < inputSize) {
-                long posOfSemicolon = posOfSemicolon();
-                long hash = hash(posOfSemicolon);
+                long word1;
+                long word2;
+                if (cursor + 2 * Long.BYTES <= inputSize) {
+                    word1 = UNSAFE.getLong(inputBase + cursor);
+                    word2 = UNSAFE.getLong(inputBase + cursor + Long.BYTES);
+                }
+                else {
+                    UNSAFE.putLong(nameBufBase, 0);
+                    UNSAFE.putLong(nameBufBase + Long.BYTES, 0);
+                    UNSAFE.copyMemory(inputBase + cursor, nameBufBase, Long.min(NAMEBUF_SIZE, inputSize - cursor));
+                    word1 = UNSAFE.getLong(nameBufBase);
+                    word2 = UNSAFE.getLong(nameBufBase + Long.BYTES);
+                }
+                if (ORDER_IS_BIG_ENDIAN) {
+                    word1 = Long.reverseBytes(word1);
+                    word2 = Long.reverseBytes(word2);
+                }
+                long posOfSemicolon = posOfSemicolon(word1, word2);
+                word1 = maskWord(word1, posOfSemicolon - cursor);
+                word2 = maskWord(word2, posOfSemicolon - cursor - Long.BYTES);
+                long hash = hash(word1, word2);
                 long namePos = cursor;
                 long nameLen = posOfSemicolon - cursor;
                 assert nameLen <= 100 : "nameLen > 100";
                 int temperature = parseTemperatureAndAdvanceCursor(posOfSemicolon);
-                updateStats(hash, namePos, nameLen, temperature);
+                updateStats(hash, namePos, nameLen, word1, word2, temperature);
             }
         }
 
-        private void updateStats(long hash, long namePos, long nameLen, int temperature) {
+        private void updateStats(long hash, long namePos, long nameLen, long nameWord1, long nameWord2, int temperature) {
             int tableIndex = (int) (hash & TABLE_INDEX_MASK);
             while (true) {
                 stats.gotoIndex(tableIndex);
                 long foundHash = stats.hash();
                 if (foundHash == hash && stats.nameLen() == nameLen
-                        && nameEquals(stats.nameAddress(), inputBase + namePos, nameLen)) {
+                        && nameEquals(stats.nameAddress(), inputBase + namePos, nameLen, nameWord1, nameWord2)) {
                     stats.setSum(stats.sum() + temperature);
                     stats.setCount(stats.count() + 1);
                     stats.setMin((short) Integer.min(stats.min(), temperature));
@@ -265,71 +284,32 @@ public class CalculateAverage_mtopolnik {
             return sign * temperature;
         }
 
-        private long hash(long posOfSemicolon) {
-            long n1, n2;
-            if (cursor <= inputSize - HASHBUF_SIZE) {
-                long offset = cursor;
-                n1 = UNSAFE.getLong(inputBase + offset);
-                if (ORDER_IS_BIG_ENDIAN) {
-                    n1 = Long.reverseBytes(n1);
-                }
-                // Mask out bytes not belonging to name
-                n1 = maskWord(n1, posOfSemicolon - offset);
-
-                // offset += Long.BYTES;
-                // n2 = UNSAFE.getLong(inputBase + offset);
-                // if (ORDER_IS_BIG_ENDIAN) {
-                // n2 = Long.reverseBytes(n2);
-                // }
-                // nameSize = Long.max(0, posOfSemicolon - offset);
-                // n2 = maskWord(n2, nameSize);
-            }
-            else {
-                UNSAFE.putLong(hashBufBase, 0);
-                // UNSAFE.putLong(hashBufBase + Long.BYTES, 0);
-                UNSAFE.copyMemory(inputBase + cursor, hashBufBase, Long.min(HASHBUF_SIZE, posOfSemicolon - cursor));
-                n1 = UNSAFE.getLong(hashBufBase);
-                // n2 = UNSAFE.getLong(hashBufBase + Long.BYTES);
-                if (ORDER_IS_BIG_ENDIAN) {
-                    n1 = Long.reverseBytes(n1);
-                    // n2 = Long.reverseBytes(n2);
-                }
-            }
+        private static long hash(long word1, long word2) {
             long seed = 0x51_7c_c1_b7_27_22_0a_95L;
             int rotDist = 17;
-            long hash = n1;
+
+            long hash = word1;
             hash *= seed;
             hash = Long.rotateLeft(hash, rotDist);
-            // hash ^= n2;
+            // hash ^= word2;
             // hash *= seed;
             // hash = Long.rotateLeft(hash, rotDist);
             hash &= (~Long.MIN_VALUE); // make hash positive
             return hash != 0 ? hash : 1;
         }
 
-        private boolean nameEquals(long statsAddr, long inputAddr, long len) {
-            int i = 0;
-            if (inputAddr + 2 * Long.BYTES <= inputBase + inputSize) {
-                boolean mismatch1 = wordMismatch(inputAddr, statsAddr, len);
-                boolean mismatch2 = wordMismatch(inputAddr + Long.BYTES, statsAddr + Long.BYTES, len - Long.BYTES);
-                if (mismatch1 | mismatch2) {
-                    return false;
-                }
-                i = 2 * Long.BYTES;
+        private static boolean nameEquals(long statsAddr, long inputAddr, long len, long inputWord1, long inputWord2) {
+            boolean mismatch1 = maskWord(inputWord1, len) != UNSAFE.getLong(statsAddr);
+            boolean mismatch2 = maskWord(inputWord2, len - Long.BYTES) != UNSAFE.getLong(statsAddr + Long.BYTES);
+            if (mismatch1 | mismatch2) {
+                return false;
             }
-            for (; i < len; i++) {
-                if (UNSAFE.getByte(statsAddr + i) != UNSAFE.getByte(inputAddr + i)) {
+            for (int i = 2 * Long.BYTES; i < len; i++) {
+                if (UNSAFE.getByte(inputAddr + i) != UNSAFE.getByte(statsAddr + i)) {
                     return false;
                 }
             }
             return true;
-        }
-
-        private static boolean wordMismatch(long inputAddr, long statsAddr, long len) {
-            long inputWord = maskWord(UNSAFE.getLong(inputAddr), len);
-            long statsWord = UNSAFE.getLong(statsAddr);
-            // System.err.println("Compare '" + longToString(inputWord) + "' and '" + longToString(statsWord) + "'");
-            return inputWord != statsWord;
         }
 
         private static long maskWord(long word, long len) {
@@ -343,17 +323,30 @@ public class CalculateAverage_mtopolnik {
 
         // Adapted from https://jameshfisher.com/2017/01/24/bitwise-check-for-zero-byte/
         // and https://github.com/ashvardanian/StringZilla/blob/14e7a78edcc16b031c06b375aac1f66d8f19d45a/stringzilla/stringzilla.h#L139-L169
-        long posOfSemicolon() {
-            long offset = cursor;
+        long posOfSemicolon(long word1, long word2) {
+            long diff = word1 ^ BROADCAST_SEMICOLON;
+            long matchBits1 = (diff - BROADCAST_0x01) & ~diff & BROADCAST_0x80;
+            diff = word2 ^ BROADCAST_SEMICOLON;
+            long matchBits2 = (diff - BROADCAST_0x01) & ~diff & BROADCAST_0x80;
+            if ((matchBits1 | matchBits2) != 0) {
+                int trailing1 = Long.numberOfTrailingZeros(matchBits1);
+                int match1IsNonZero = trailing1 & 63;
+                match1IsNonZero |= match1IsNonZero >>> 3;
+                match1IsNonZero |= match1IsNonZero >>> 1;
+                match1IsNonZero |= match1IsNonZero >>> 1;
+                int trailing2 = Long.numberOfTrailingZeros(matchBits2 | match1IsNonZero) & 63;
+                return cursor + trailing1 / 8 + trailing2 / 8;
+            }
+            long offset = cursor + 2 * Long.BYTES;
             for (; offset <= inputSize - Long.BYTES; offset += Long.BYTES) {
                 var block = UNSAFE.getLong(inputBase + offset);
                 if (ORDER_IS_BIG_ENDIAN) {
                     block = Long.reverseBytes(block);
                 }
-                final long diff = block ^ BROADCAST_SEMICOLON;
-                long matchIndicators = (diff - BROADCAST_0x01) & ~diff & BROADCAST_0x80;
-                if (matchIndicators != 0) {
-                    return offset + Long.numberOfTrailingZeros(matchIndicators) / 8;
+                diff = block ^ BROADCAST_SEMICOLON;
+                long matchBits = (diff - BROADCAST_0x01) & ~diff & BROADCAST_0x80;
+                if (matchBits != 0) {
+                    return offset + Long.numberOfTrailingZeros(matchBits) / 8;
                 }
             }
             return posOfSemicolonSimple(offset);
