@@ -32,6 +32,27 @@ public class CalculateAverage_roman_r_m {
     public static final int DOT_3_RD_BYTE_MASK = (byte) '.' << 16;
     private static final String FILE = "./measurements.txt";
 
+    // based on http://0x80.pl/notesen/2023-03-06-swar-find-any.html
+    static long hasZeroByte(long l) {
+        return ((l - 0x0101010101010101L) & ~(l) & 0x8080808080808080L);
+    }
+
+    static long firstSetByteIndex(long l) {
+        return ((((l - 1) & 0x101010101010101L) * 0x101010101010101L) >> 56) - 1;
+    }
+
+    static long broadcast(byte b) {
+        return 0x101010101010101L * b;
+    }
+
+    static long SEMICOLON_MASK = broadcast((byte) ';');
+
+    static long findSemicolon(long l) {
+        long xor = l ^ SEMICOLON_MASK;
+        long match = hasZeroByte(xor);
+        return match != 0 ? firstSetByteIndex(match) : -1;
+    }
+
     public static void main(String[] args) throws IOException {
         long fileSize = new File(FILE).length();
 
@@ -42,16 +63,30 @@ public class CalculateAverage_roman_r_m {
         var resultStore = new ResultStore();
         MemorySegment ms = channel.map(FileChannel.MapMode.READ_ONLY, offset, fileSize, Arena.ofAuto());
         while (offset < fileSize) {
-            int i = 0;
-            while (ms.get(ValueLayout.JAVA_BYTE, offset + i) != ';') {
-                i++;
+            long start = offset;
+            long next = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+            long pos;
+            while ((pos = findSemicolon(next)) < 0) {
+                offset += 8;
+                if (fileSize - offset >= 8) {
+                    next = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+                }
+                else {
+                    while (ms.get(ValueLayout.JAVA_BYTE, offset + pos) != ';') {
+                        pos++;
+                    }
+                    break;
+                }
             }
+            offset += pos;
 
-            MemorySegment.copy(ms, ValueLayout.JAVA_BYTE, offset, station.buf, 0, i);
-            station.len = i;
+            int len = (int) (offset - start);
+            // TODO can we not copy and use a reference into the memory segment to perform table lookup?
+            MemorySegment.copy(ms, ValueLayout.JAVA_BYTE, start, station.buf, 0, len);
+            station.len = len;
             station.hash = 0;
 
-            offset += i + 1; // skip semicolon
+            offset++;
             long val;
             if (fileSize - offset >= 8) {
                 long encodedVal = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
@@ -67,7 +102,9 @@ public class CalculateAverage_roman_r_m {
                     offset += 5;
                 }
                 else {
-                    val = (encodedVal & 0xFF - 0x30) * 10 + (encodedVal >> 16 & 0xFF - 0x30);
+                    // based on http://0x80.pl/articles/simd-parsing-int-sequences.html#parsing-and-conversion-of-signed-numbers
+                    val = Long.compress(encodedVal, 0xFF00FFL) - 0x303030;
+                    val = ((val * 2561) >> 8) & 0xff;
                     offset += 4;
                 }
 
