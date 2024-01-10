@@ -19,7 +19,6 @@ package dev.morling.onebrc;
 import java.io.File;
 import java.io.FileInputStream;
 import java.nio.ByteBuffer;
-import java.nio.LongBuffer;
 import java.nio.channels.FileChannel;
 import java.util.Arrays;
 import java.util.Map;
@@ -30,105 +29,43 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 
 public class CalculateAverage_jbachorik {
-    interface Sliceable {
-        Sliceable reset();
-
-        void get(byte[] bytes);
-
-        long getLong();
-
-        int len();
-
-        boolean hasAvailable();
-    }
-
-    private static final class ByteBufferSlice implements Sliceable {
-        private final ByteBuffer buffer;
-        private final int len;
-
-        public ByteBufferSlice(ByteBuffer buffer, int offset, int len) {
-            this.buffer = buffer.slice(offset, len);
-            this.len = len;
-        }
-
-        @Override
-        public Sliceable reset() {
-            buffer.rewind();
-            return this;
-        }
-
-        @Override
-        public void get(byte[] bytes) {
-            buffer.get(bytes);
-        }
-
-        @Override
-        public long getLong() {
-            return buffer.getLong();
-        }
-
-        @Override
-        public int len() {
-            return len;
-        }
-
-        @Override
-        public boolean hasAvailable() {
-            return buffer.remaining() > 0;
-        }
-    }
-
-    private static final class FastSlice implements Sliceable {
-        final ByteBuffer buffer;
+    private static final class Key {
+        final ByteBuffer bb;
         final int offset;
         final int len;
-        final int limit;
-        final int softLimit;
-        private int pos;
+        final long v0, v1;
+        final int hash;
 
-        public FastSlice(ByteBuffer buffer, int offset, int len) {
-            this.buffer = buffer;
+        Key(ByteBuffer bb, int offset, int len, long v0, long v1, int hash) {
+            this.bb = bb;
             this.offset = offset;
             this.len = len;
-            this.limit = offset + len;
-            this.softLimit = limit - 8;
-            this.pos = offset;
+            this.v0 = v0;
+            this.v1 = v1;
+            this.hash = hash;
         }
 
-        public Sliceable reset() {
-            pos = offset;
-            return this;
-        }
+        public boolean equals(int offset, int len, long v0, long v1) {
+            // byte[] bytes = new byte[len];
+            // bb.get(offset, bytes);
+            // String str = new String(bytes);
 
-        public void get(byte[] bytes) {
-            buffer.get(pos, bytes);
-        }
-
-        public long getLong() {
-            if (pos < softLimit) {
-                int p = pos;
-                pos += 8;
-                return buffer.getLong(p);
+            if (this.len != len || this.v0 != v0 || this.v1 != v1) {
+                return false;
             }
-            else if (softLimit >= 0) {
-                long mask = 0xFFFFFFFFFFFFFFFFL >>> ((8 - len % 8) * 8);
-                pos = limit;
-                return buffer.getLong(softLimit) & mask;
+            for (int i = 0; i < (len / 8); i++) {
+                if (bb.getLong(this.offset + i * 8) != bb.getLong(offset + i * 8)) {
+                    return false;
+                }
             }
-            else {
-                long mask = 0xFFFFFFFFFFFFFFFFL << (-softLimit * 8);
-                pos = len;
-                return buffer.getLong(0) & mask;
-            }
-        }
-
-        public int len() {
-            return len;
+            return true;
         }
 
         @Override
-        public boolean hasAvailable() {
-            return pos < limit;
+        public String toString() {
+            byte[] bytes = new byte[len];
+            bb.get(offset, bytes);
+            return new String(bytes);
         }
     }
 
@@ -171,12 +108,20 @@ public class CalculateAverage_jbachorik {
 
     private static final class StatsMap {
         private static class StatsHolder {
-            private final Sliceable slice;
+            private final Key key;
             private final Stats stats;
 
-            StatsHolder(Sliceable slice, Stats stats) {
-                this.slice = slice;
+            StatsHolder(Key slice, Stats stats) {
+                this.key = slice;
                 this.stats = stats;
+            }
+
+            @Override
+            public String toString() {
+                return "StatsHolder{" +
+                        "key=" + key +
+                        ", stats=" + stats +
+                        '}';
             }
         }
 
@@ -184,147 +129,43 @@ public class CalculateAverage_jbachorik {
         private static final int BUCKET_SIZE = 4;
         private final StatsHolder[][] map = new StatsHolder[BUCKETS][BUCKET_SIZE];
 
-        public Stats getOrInsert(ByteBuffer buffer, int len) {
-            buffer.mark();
-            int pos = buffer.position();
-            int idx = bucketIndex(buffer, len);
-            int target = pos + len;
-            buffer.reset();
+        public Stats getOrInsert(ByteBuffer buffer, int offset, int len, int hash, long v0, long v1) {
+            int idx = Math.abs(hash % BUCKETS);
 
-            try {
-                StatsHolder[] bucket = map[idx];
-                if (bucket[0] == null) {
-                    Stats stats = new Stats();
-                    bucket[0] = new StatsHolder(new FastSlice(buffer, pos, len), stats);
-                    return stats;
-                }
-                int offset = 0;
-                while (offset < BUCKET_SIZE && bucket[offset] != null && !equals(bucket[offset].slice, buffer, len)) {
-                    offset++;
-                }
-                assert (offset <= BUCKET_SIZE);
-                if (bucket[offset] != null) {
-                    return bucket[offset].stats;
-                }
-                else {
-                    Stats stats = new Stats();
-                    bucket[offset] = new StatsHolder(new FastSlice(buffer, pos, len), stats);
-                    return stats;
-                }
+            StatsHolder[] bucket = map[idx];
+            if (bucket[0] == null) {
+                Stats stats = new Stats();
+                bucket[0] = new StatsHolder(new Key(buffer, offset, len, v0, v1, hash), stats);
+                return stats;
             }
-            finally {
-                buffer.position(target);
+            int bucketOffset = 0;
+            while (bucketOffset < BUCKET_SIZE && bucket[bucketOffset] != null && !bucket[bucketOffset].key.equals(offset, len, v0, v1)) {
+                bucketOffset++;
             }
-        }
-
-        private static boolean equals(Sliceable leftSlice, ByteBuffer rightSlice, int len) {
-            int limit = leftSlice.len();
-            if (limit != len) {
-                return false;
-            }
-
-            leftSlice.reset();
-
-            try {
-                int i = 0;
-                int bbpos = rightSlice.position();
-                int bblimit = bbpos + len - 8;
-                while (leftSlice.hasAvailable() && i++ < len) {
-                    long l = leftSlice.getLong();
-                    long mask = 0xFFFFFFFFFFFFFFFFL;
-                    if (bbpos > bblimit) {
-                        int remainder = bbpos - bblimit;
-                        mask = mask >>> (remainder * 8);
-                        bbpos = bblimit;
-                    }
-                    long r = rightSlice.getLong(bbpos) & mask;
-                    bbpos += 8;
-                    if (l != r) {
-                        return false;
-                    }
-                }
-                // for (; i + 7 < limit; i += 8) {
-                // long l = leftSlice.getLong();
-                // long r = rightSlice.getLong();
-                // if (l != r) {
-                // return false;
-                // }
-                // }
-                // for (; i < limit; i++) {
-                // if (leftSlice.get() != rightSlice.get()) {
-                // return false;
-                // }
-                // }
-                return true;
-            }
-            finally {
-                leftSlice.reset();
-                rightSlice.reset();
-            }
-        }
-
-        private static int bucketIndex(ByteBuffer buffer, int len) {
-            long hashCode = hashCode(buffer, len);
-
-            return (int) (hashCode % BUCKETS);
-        }
-
-        private static long hashCode(ByteBuffer buffer, int len) {
-            int i = 0;
-            long h = 0;
-            for (; i + 7 < len; i += 8) {
-                long l = buffer.getLong();
-                h = 31L * 31 * 31 * 31 * 31 * 31 * 31 * 31 * h
-                        + 31L * 31 * 31 * 31 * 31 * 31 * 31 * ((l >> 56 & 0xFF))
-                        + 31 * 31 * 31 * 31 * 31 * 31 * ((l >> 48 & 0xFF))
-                        + 31 * 31 * 31 * 31 * 31 * ((l >> 40 & 0xFF))
-                        + 31 * 31 * 31 * 31 * ((l >> 32 & 0xFF))
-                        + 31 * 31 * 31 * ((l >> 24 & 0xFF))
-                        + 31 * 31 * ((l >> 16) & 0xFF)
-                        + 31 * ((l >> 8) & 0xFF)
-                        + (l & 0xFF);
-            }
-            int pos = buffer.position();
-            if (pos + 8 < buffer.limit()) {
-                long l = buffer.getLong();
-                int maskShift = 7;
-                for (; i < len; i++) {
-                    h = 31 * h + ((l >> 8 * maskShift--) & 0xff);
-                }
-                // h = 31L * 31 * 31 * 31 * 31 * 31 * 31 * 31 * h
-                // + 31L * 31 * 31 * 31 * 31 * 31 * 31 * ((l >> 56 & 0xFF))
-                // + 31 * 31 * 31 * 31 * 31 * 31 * ((l >> 48 & 0xFF))
-                // + 31 * 31 * 31 * 31 * 31 * ((l >> 40 & 0xFF))
-                // + 31 * 31 * 31 * 31 * ((l >> 32 & 0xFF))
-                // + 31 * 31 * 31 * ((l >> 24 & 0xFF))
-                // + 31 * 31 * ((l >> 16) & 0xFF)
-                // + 31 * ((l >> 8) & 0xFF)
-                // + (l & 0xFF);
-                buffer.position(pos);
+            assert (bucketOffset <= BUCKET_SIZE);
+            if (bucket[bucketOffset] != null) {
+                return bucket[bucketOffset].stats;
             }
             else {
-                for (; i < len; i++) {
-                    h = 31 * h + buffer.get();
-                }
+                Stats stats = new Stats();
+                bucket[bucketOffset] = new StatsHolder(new Key(buffer, offset, len, v0, v1, hash), stats);
+                return stats;
             }
-            return h & 0xFFFFFFFFL;
         }
 
-        public void forEach(BiConsumer<Sliceable, Stats> consumer) {
+        public void forEach(BiConsumer<Key, Stats> consumer) {
             for (StatsHolder[] bucket : map) {
                 for (StatsHolder statsHolder : bucket) {
                     if (statsHolder != null) {
-                        consumer.accept(statsHolder.slice, statsHolder.stats);
+                        consumer.accept(statsHolder.key, statsHolder.stats);
                     }
                 }
             }
         }
     }
 
-    private static long newLinePattern = compilePattern((byte) '\n');
-    private static long semiPattern = compilePattern((byte) ';');
-
-    private static int GRANULARITY = 32 * 1024 * 1024;
+    private static final long newLinePattern = compilePattern((byte) '\n');
+    private static final long semiPattern = compilePattern((byte) ';');
 
     public static void main(String[] args) throws Exception {
         int workers = Runtime.getRuntime().availableProcessors() - 1;
@@ -337,19 +178,17 @@ public class CalculateAverage_jbachorik {
         ExecutorService mergerPool = Executors.newSingleThreadExecutor();
         try (FileInputStream fis = new FileInputStream(f)) {
             FileChannel fc = fis.getChannel();
-            if ((fc.size() / workers) < GRANULARITY) {
-                workers = (int) (fc.size() / GRANULARITY) + 1;
-            }
-            int chunkSize = (int) Math.min(fc.size() / workers, Integer.MAX_VALUE);
-            chunkSize = ((chunkSize / GRANULARITY) + 1) * GRANULARITY;
-            // System.out.println("Chunk size: " + chunkSize);
-            for (ByteBuffer bb : mmap(fc, chunkSize)) {
+            int granularity = 32 * 1024 * 1024;
+            int targetWorkers = Math.min(Math.max(1, (int) (fc.size() / granularity)), workers);
+            long chunkSize = fc.size() / targetWorkers;
+            // System.out.println("Chunk size: " + chunkSize + ", workers: " + targetWorkers);
+            for (ByteBuffer bb : mmap(fc, (int) chunkSize)) {
                 workerPool.submit(() -> {
                     try {
                         StatsMap data = processChunk(bb);
                         synchronized (map) {
                             data.forEach((k, v) -> {
-                                String str = stringFromBuffer(k);
+                                String str = k.toString();
                                 map.merge(str, v, Stats::merge);
                             });
                         }
@@ -370,124 +209,118 @@ public class CalculateAverage_jbachorik {
         }
     }
 
-    private static String stringFromBuffer(Sliceable slice) {
-        slice.reset();
-        byte[] bytes = new byte[slice.len()];
-        slice.get(bytes);
-        return new String(bytes);
+    private static int longHash(long l, int h) {
+        if (l == 0) {
+            return h;
+        }
+        h = (int) (31 * 31 * 31 * 31 * 31 * 31 * 31 * 31 * h
+                + 31 * 31 * 31 * 31 * 31 * 31 * 31 * ((l >> 56 & 0xFF))
+                + 31 * 31 * 31 * 31 * 31 * 31 * ((l >> 48 & 0xFF))
+                + 31 * 31 * 31 * 31 * 31 * ((l >> 40 & 0xFF))
+                + 31 * 31 * 31 * 31 * ((l >> 32 & 0xFF))
+                + 31 * 31 * 31 * ((l >> 24 & 0xFF))
+                + 31 * 31 * ((l >> 16) & 0xFF)
+                + 31 * ((l >> 8) & 0xFF)
+                + (l & 0xFF));
+        return h;
     }
 
     private static StatsMap processChunk(ByteBuffer bb) {
         StatsMap map = new StatsMap();
 
-        LongBuffer lb = bb.asLongBuffer();
+        int offset = 0;
+        int limit = bb.limit();
+        int readLimit = limit - 8;
+        long v0 = 0;
+        long v1 = 0;
+        int hashCode = 0;
+        int lastNewLine = -1;
 
-        long ptr = 0;
-        long limit = lb.limit();
-        long backstop = limit - 1;
-        int remainder = bb.limit() % 8;
-        byte[] tmp = new byte[remainder];
-        long currentWord = 0;
-        int offset = 8;
-        long keyLen = 0;
-        long valLen = 0;
-        boolean fastParser = true;
-        long lineCnt = 0;
-        while (ptr < limit) {
-            bb.mark();
-            int byteIndex = 8;
-            if (offset == 8) {
-                currentWord = lb.get();
-                offset = 0;
-                ptr++;
-            }
-
-            if ((byteIndex = firstInstance(currentWord, semiPattern)) == 8) {
-                long pos = ptr;
-                while (ptr++ < limit && ((byteIndex = firstInstance((currentWord = lb.get()), semiPattern)) == 8))
-                    ;
-                if (byteIndex == 8) {
-                    break;
-                }
-                keyLen = (8 - offset + byteIndex) + (ptr - pos - 1) * 8;
+        while (offset < limit) {
+            if (offset > readLimit) {
+                int over = offset - readLimit;
+                v1 = bb.getLong(limit - 8);
+                v1 = v1 << (over * 8);
             }
             else {
-                keyLen = byteIndex - offset;
+                v1 = bb.getLong(offset);
             }
-
-            currentWord &= ~(0xFFL << (7 - byteIndex) * 8);
-            offset = byteIndex + 1;
-
-            byteIndex = 8;
-            fastParser = ptr < backstop;
-            if ((byteIndex = firstInstance(currentWord, newLinePattern)) == 8) {
-                long pos = ptr;
-                if (ptr == backstop) {
-                    bb.get((int) ptr * 8, tmp);
-                    for (int i = 0; i < remainder; i++) {
-                        if (tmp[i] == '\n') {
-                            byteIndex = i;
-                            break;
-                        }
-                    }
-                    ptr++;
+            long x = preprocess(v1, newLinePattern);
+            if (x != 0) {
+                long value = 0;
+                int valueLen = 0;
+                int pos = 7 - (Long.numberOfTrailingZeros(x) >>> 3);
+                int yoffset = offset;
+                int semiPos = firstInstance(v1, semiPattern);
+                if (semiPos == 8 || semiPos >= pos) {
+                    yoffset -= 8;
+                    semiPos = firstInstance(v0, semiPattern);
+                    // semiPos will be at least 3 (new line is in the upper word and the value has at most 5 bytes)
+                    long mask = semiPos == 0 ? 0L : (0xFFFFFFFFFFFFFFFFL << (8 - semiPos) * 8);
+                    long newlineMask = pos == 0 ? 0L : (0xFFFFFFFFFFFFFFFFL << ((8 - pos) * 8));
+                    value = semiPos == 7 ? 0L : (v0 << (semiPos + 1) * 8);
+                    value |= ((v1 & newlineMask) >> (7 - semiPos) * 8);
+                    int zeros = (Long.numberOfTrailingZeros(value) >>> 3);
+                    value = value >>> zeros * 8;
+                    valueLen = 8 - zeros;
+                    v0 = v0 & mask;
                 }
                 else {
-                    while (ptr++ < limit && (byteIndex = firstInstance(currentWord = lb.get(), newLinePattern)) == 8)
-                        ;
+                    hashCode += longHash(v0, hashCode);
+                    long valMask = (0xFFFFFFFFFFFFFFFFL << (7 - semiPos) * 8);
+                    v0 = v1 & valMask;
+                    value = v1 & ~valMask;
+                    value = value >> (8 - pos) * 8;
+                    valueLen = pos - semiPos - 1;
                 }
-                if (byteIndex == 8) {
-                    break;
-                }
-                valLen = (8 - offset + byteIndex) + (ptr - pos - 1) * 8;
+                v1 = 0;
+                hashCode += longHash(v0, hashCode);
+                int len = (yoffset + semiPos - 1) - lastNewLine;
+                hashCode += longHash(len, hashCode);
+
+                // byte[] strBuf = new byte[len];
+                // bb.get(lastNewLine + 1, strBuf);
+                // String str = new String(strBuf);
+                // System.out.println("===> " + str + ": " + Long.toHexString(value) + " :: " + fastParse(value, valueLen));
+                map.getOrInsert(bb, lastNewLine + 1, len, hashCode, v0, v1).add(fastParse(value, valueLen));
+
+                offset += pos + 1;
+                lastNewLine = offset - 1;
+                // reset the previous value
+                v0 = 0;
+                // reset the hash
+                hashCode = 0;
             }
             else {
-                valLen = byteIndex - offset;
+                offset += 8;
+                hashCode += longHash(v0, hashCode);
+                v0 = v1;
             }
-            currentWord &= ~(0xFFL << (7 - byteIndex) * 8);
-            offset = byteIndex + 1;
-
-            bb.reset();
-            Stats stats = map.getOrInsert(bb, (int) keyLen);
-            bb.get();
-            short val = fastParse(bb, (int) valLen, fastParser);
-            bb.get();
-
-            lineCnt++;
-            stats.add(val);
         }
-        // System.out.println("Remaining: " + lb.remaining());
-        // System.out.println("Lines: " + lineCnt);
         return map;
     }
 
     private static final long fastParserMask = 0x3030303030303030L;
-    private static final long minusPattern = compilePattern((byte) ('-' ^ 0x30));
-    private static final long dotPattern = compilePattern((byte) ('.' ^ 0x30));
 
-    private static short fastParse(ByteBuffer bb, int len, boolean fast) {
+    private static int fastParse(long word, int len) {
         assert (len <= 5);
-        int pos = bb.position();
-        int targetPos = pos + len - 8;
-        int shift = (8 - len) * 8;
-        long mask = 0xFFFFFFFFFFFFFFFFL >>> shift;
-        bb.position(targetPos);
-        long word = bb.getLong() & mask;
 
-        // 1 when floating point at position len - 2; otherwise 10
-        int multiplier = (9 / ((int) ((word & 0x2e00) >> 10))) + 1;
-        int dotMultiplier = 1 - (multiplier / 9);
-        int negative = ((int) ((word >> (len * 8)) & 0xff) ^ 0x12) / 63;
-        word ^= fastParserMask >>> shift;
-
-        word &= (mask >> 8 * negative) & ~((0xFF * dotMultiplier) << 8);
+        long singChar = (word >> ((len - 1) * 8));
+        long sign = singChar & 0x2dL;
+        int negative = (int) ((sign ^ 0x2d) & 0xff) == 0 ? -1 : 1;
+        int shift = (8 - len - Math.min(negative, 0)) * 8;
+        long mask = (0xFFFFFFFFFFFFFFFFL >>> shift);
+        word = (word ^ fastParserMask) & mask;
 
         int v1 = (int) word & 0xff;
-        int v2 = 10 * ((int) (word >> 8) & 0xff);
-        int v3 = multiplier * 10 * ((int) (word >> 16) & 0xff);
-        int v4 = multiplier * 100 * ((int) (word >> 24) & 0xff);
+        // skip decimal point
+        // int v2 = 10 * ((int) (word >> 8) & 0xff);
+        int v3 = 10 * ((int) (word >> 16) & 0xff);
+        int v4 = 100 * ((int) (word >> 24) & 0xff);
+        // v5 is either the sign or not used
 
-        return (short) ((v1 + v2 + v3 + v4) * multiplier * (negative == 1 ? -1 : 1));
+        int val = ((v1 + v3 + v4) * negative);
+        return val;
     }
 
     private static ByteBuffer[] mmap(FileChannel fc, int splitSize) throws Exception {
@@ -513,14 +346,12 @@ public class CalculateAverage_jbachorik {
                 }
                 assert (adjust != -1);
                 int size = splitSize - adjust;
-                // System.out.println("===> chunk: " + (fc.size() - remaining) + " - " + (fc.size() - remaining + size - 1));
                 buffers[j] = fc.map(FileChannel.MapMode.READ_ONLY, fc.size() - remaining, size);
                 remaining -= size;
                 count = j + 1;
             }
             else {
                 count = j + 1;
-                // System.out.println("===> chunk: " + (fc.size() - remaining) + " - " + fc.size());
                 buffers[j] = fc.map(FileChannel.MapMode.READ_ONLY, fc.size() - remaining, remaining);
                 break;
             }
@@ -546,5 +377,12 @@ public class CalculateAverage_jbachorik {
         long tmp = (input & 0x7F7F7F7F7F7F7F7FL) + 0x7F7F7F7F7F7F7F7FL;
         tmp = ~(tmp | input | 0x7F7F7F7F7F7F7F7FL);
         return Long.numberOfLeadingZeros(tmp) >>> 3;
+    }
+
+    private static long preprocess(long word, long pattern) {
+        long input = word ^ pattern;
+        long tmp = (input & 0x7F7F7F7F7F7F7F7FL) + 0x7F7F7F7F7F7F7F7FL;
+        tmp = ~(tmp | input | 0x7F7F7F7F7F7F7F7FL);
+        return tmp;
     }
 }

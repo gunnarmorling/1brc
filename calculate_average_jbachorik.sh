@@ -15,6 +15,6 @@
 #  limitations under the License.
 #
 
-source ~/.sdkman/bin/sdkman-init.sh
-sdk use java 21.0.1-graal
+source ~/.sdkman/bin/sdkman-init.sh > /dev/null
+sdk use java 21.0.1-graal > /dev/null
 time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_jbachorik $@
