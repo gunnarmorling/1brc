@@ -32,10 +32,10 @@ import java.util.stream.IntStream;
  * Simple solution that memory maps the input file, then splits it into one segment per available core and uses
  * sun.misc.Unsafe to directly access the mapped memory. Uses a long at a time when checking for collision.
  * <p>
- * Runs in 0.71s on my Intel i9-13900K
+ * Runs in 0.70s on my Intel i9-13900K
  * Perf stats:
- *     44,012,747,147      cpu_core/cycles/
- *     50,881,628,573      cpu_atom/cycles/
+ *     40,622,862,783      cpu_core/cycles/
+ *     48,241,929,925      cpu_atom/cycles/
  */
 public class CalculateAverage_thomaswue {
     private static final String FILE = "./measurements.txt";
