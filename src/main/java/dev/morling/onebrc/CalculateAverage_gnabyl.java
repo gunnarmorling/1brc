@@ -15,77 +15,97 @@
  */
 package dev.morling.onebrc;
 
-import static java.util.stream.Collectors.*;
-
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.Map;
-import java.util.TreeMap;
-import java.util.stream.Collector;
+import java.io.RandomAccessFile;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
-public class CalculateAverage {
+public class CalculateAverage_gnabyl {
 
-    private static final String FILE = "./measurements.txt";
+	private static final String FILE = "./measurements-saved.txt";
 
-    private static record Measurement(String station, double value) {
-        private Measurement(String[] parts) {
-            this(parts[0], Double.parseDouble(parts[1]));
-        }
-    }
+	private static final int NB_CHUNKS = 8;
 
-    private static record ResultRow(double min, double mean, double max) {
-        public String toString() {
-            return round(min) + "/" + round(mean) + "/" + round(max);
-        }
+	private static record Chunk(int index, long start, int bytesCount, MappedByteBuffer mappedByteBuffer) {
+	}
 
-        private double round(double value) {
-            return Math.round(value * 10.0) / 10.0;
-        }
-    };
+	private static record Measurement(String station, double value) {
+		private Measurement(String[] parts) {
+			this(parts[0], Double.parseDouble(parts[1]));
+		}
+	}
 
-    private static class MeasurementAggregator {
-        private double min = Double.POSITIVE_INFINITY;
-        private double max = Double.NEGATIVE_INFINITY;
-        private double sum;
-        private long count;
-    }
+	private static record ResultRow(double min, double mean, double max) {
+		public String toString() {
+			return round(min) + "/" + round(mean) + "/" + round(max);
+		}
 
-    public static void main(String[] args) throws IOException {
-        // Map<String, Double> measurements1 = Files.lines(Paths.get(FILE))
-        // .map(l -> l.split(";"))
-        // .collect(groupingBy(m -> m[0], averagingDouble(m -> Double.parseDouble(m[1]))));
-        //
-        // measurements1 = new TreeMap<>(measurements1.entrySet()
-        // .stream()
-        // .collect(toMap(e -> e.getKey(), e -> Math.round(e.getValue() * 10.0) / 10.0)));
-        // System.out.println(measurements1);
+		private double round(double value) {
+			return Math.round(value * 10.0) / 10.0;
+		}
+	};
 
-        Collector<Measurement, MeasurementAggregator, ResultRow> collector = Collector.of(
-                MeasurementAggregator::new,
-                (a, m) -> {
-                    a.min = Math.min(a.min, m.value);
-                    a.max = Math.max(a.max, m.value);
-                    a.sum += m.value;
-                    a.count++;
-                },
-                (agg1, agg2) -> {
-                    var res = new MeasurementAggregator();
-                    res.min = Math.min(agg1.min, agg2.min);
-                    res.max = Math.max(agg1.max, agg2.max);
-                    res.sum = agg1.sum + agg2.sum;
-                    res.count = agg1.count + agg2.count;
+	private static List<Chunk> readChunks(long nbChunks) {
+		try (RandomAccessFile file = new RandomAccessFile(FILE, "rw")) {
+			List<Chunk> res = new ArrayList<>();
+			FileChannel channel = file.getChannel();
+			long bytesCount = channel.size();
+			long bytesPerChunk = bytesCount / nbChunks;
 
-                    return res;
-                },
-                agg -> {
-                    return new ResultRow(agg.min, agg.sum / agg.count, agg.max);
-                });
+			// Memory map the file in read-only mode
+			// TODO: Optimize using threads
+			for (int i = 0; i < nbChunks; i++) {
+				long position = i * bytesPerChunk;
+				int size = (int) ((i == nbChunks - 1) ? (bytesCount - position) : bytesPerChunk);
 
-        Map<String, ResultRow> measurements = new TreeMap<>(Files.lines(Paths.get(FILE))
-                .map(l -> new Measurement(l.split(";")))
-                .collect(groupingBy(m -> m.station(), collector)));
+				MappedByteBuffer mappedByteBuffer = channel.map(FileChannel.MapMode.READ_ONLY, position, size);
 
-        System.out.println(measurements);
-    }
+				res.add(new Chunk(i, position, size, mappedByteBuffer));
+			}
+
+			channel.close();
+			file.close();
+
+			return res;
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		return List.of();
+	}
+
+	private static void processChunk(Chunk chunk) {
+		System.out.println("Processing Chunk " + chunk.index() + " in Thread " + Thread.currentThread().getName());
+
+		// Perform processing on the chunk data
+		byte[] data = new byte[chunk.bytesCount()];
+		var chunkBuffer = chunk.mappedByteBuffer().get(data);
+	}
+
+	private static void processChunksInParallel(List<Chunk> chunks) {
+		ExecutorService executorService = Executors.newFixedThreadPool(chunks.size());
+
+		try {
+			// Submit tasks to process each chunk
+			for (var chunk : chunks) {
+				executorService.submit(() -> processChunk(chunk));
+			}
+
+			// Shutdown the executor and wait for all tasks to complete
+			executorService.shutdown();
+			executorService.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
+
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+	}
+
+	public static void main(String[] args) throws IOException {
+		var chunks = readChunks(NB_CHUNKS);
+		processChunksInParallel(chunks);
+	}
 }
