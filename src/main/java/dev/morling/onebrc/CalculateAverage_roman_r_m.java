@@ -64,18 +64,26 @@ public class CalculateAverage_roman_r_m {
         MemorySegment ms = channel.map(FileChannel.MapMode.READ_ONLY, offset, fileSize, Arena.ofAuto());
         while (offset < fileSize) {
             long start = offset;
-            long next = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
             long pos;
-            while ((pos = findSemicolon(next)) < 0) {
-                offset += 8;
-                if (fileSize - offset >= 8) {
-                    next = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
-                }
-                else {
-                    while (ms.get(ValueLayout.JAVA_BYTE, offset + pos) != ';') {
-                        pos++;
+            if (fileSize - offset >= 8) {
+                long next = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+                while ((pos = findSemicolon(next)) < 0) {
+                    offset += 8;
+                    if (fileSize - offset >= 8) {
+                        next = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
                     }
-                    break;
+                    else {
+                        while (ms.get(ValueLayout.JAVA_BYTE, offset + pos) != ';') {
+                            pos++;
+                        }
+                        break;
+                    }
+                }
+            }
+            else {
+                pos = 0;
+                while (ms.get(ValueLayout.JAVA_BYTE, offset + pos) != ';') {
+                    pos++;
                 }
             }
             offset += pos;
