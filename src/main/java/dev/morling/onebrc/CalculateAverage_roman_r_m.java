@@ -178,7 +178,7 @@ public class CalculateAverage_roman_r_m {
 
     static final class ByteString {
 
-        private byte[] buf = new byte[100];
+        private final byte[] buf = new byte[100];
         private int len = 0;
         private int hash = 0;
 
@@ -191,9 +191,6 @@ public class CalculateAverage_roman_r_m {
             var copy = new ByteString();
             copy.len = this.len;
             copy.hash = this.hash;
-            if (copy.buf.length < this.buf.length) {
-                copy.buf = new byte[this.buf.length];
-            }
             System.arraycopy(this.buf, 0, copy.buf, 0, this.len);
             return copy;
         }
