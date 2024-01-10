@@ -50,7 +50,7 @@ import java.util.stream.Collectors;
  * </ul>
  * </p>
  */
-public class CalculateAverage_kidlike {
+public class CalculateAverage_Kidlike {
 
     public static void main(String[] args) {
         File file = new File("./measurements.txt");
