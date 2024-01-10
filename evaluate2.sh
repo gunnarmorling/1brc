@@ -170,7 +170,7 @@ for fork in "$@"; do
 
   # Trimmed mean = The slowest and the fastest runs are discarded, the
   # mean value of the remaining three runs is the result for that contender
-  trimmed_mean=$(jq -r '.results[0].times | .[1:-1] | add / length' $fork-$filetimestamp-timing.json)
+  trimmed_mean=$(jq -r '.results[0].times | sort_by(.|tonumber) | .[1:-1] | add / length' $fork-$filetimestamp-timing.json)
   raw_times=$(jq -r '.results[0].times | join(",")' $fork-$filetimestamp-timing.json)
 
   if [ "$fork" == "$1" ]; then
@@ -198,7 +198,7 @@ for fork in "$@"; do
     continue
   fi
 
-  trimmed_mean=$(jq -r '.results[0].times | .[1:-1] | add / length' $fork-$filetimestamp-timing.json)
+  trimmed_mean=$(jq -r '.results[0].times | sort_by(.|tonumber) | .[1:-1] | add / length' $fork-$filetimestamp-timing.json)
 
   # trimmed_mean is in seconds
   # Format trimmed_mean as MM::SS.mmm
