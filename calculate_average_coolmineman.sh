@@ -15,16 +15,5 @@
 #  limitations under the License.
 #
 
-# Uncomment below to use sdk
-# source "$HOME/.sdkman/bin/sdkman-init.sh"
-# sdk use java 21.0.1-graal 1>&2
-
-source "$HOME/.sdkman/bin/sdkman-init.sh"
-sdk use java 21.0.1-graal 1>&2
-if [ -f "target/calculate_average_coolmineman.jsa" ]; then
-    JAVA_OPTS="-XX:SharedArchiveFile=target/calculate_average_coolmineman.jsa -Xshare:on"
-else
-    # First run, create the archive:
-    JAVA_OPTS="-XX:ArchiveClassesAtExit=target/calculate_average_coolmineman.jsa"
-fi
-time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_coolmineman
+JAVA_OPTS=""
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_coolmineman

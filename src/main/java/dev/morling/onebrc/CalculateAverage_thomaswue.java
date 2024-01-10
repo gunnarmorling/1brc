@@ -25,27 +25,33 @@ import java.nio.channels.FileChannel.MapMode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.TreeMap;
+import java.util.*;
 import java.util.stream.IntStream;
 
+/**
+ * Simple solution that memory maps the input file, then splits it into one segment per available core and uses
+ * sun.misc.Unsafe to directly access the mapped memory. Uses a long at a time when checking for collision.
+ * <p>
+ * Runs in 0.70s on my Intel i9-13900K
+ * Perf stats:
+ *     40,622,862,783      cpu_core/cycles/
+ *     48,241,929,925      cpu_atom/cycles/
+ */
 public class CalculateAverage_thomaswue {
     private static final String FILE = "./measurements.txt";
 
     // Holding the current result for a single city.
     private static class Result {
+        final long nameAddress;
+        long lastNameLong;
+        int remainingShift;
         int min;
         int max;
         long sum;
         int count;
-        final long nameAddress;
-        final int nameLength;
 
-        private Result(long nameAddress, int nameLength, int value) {
+        private Result(long nameAddress, int value) {
             this.nameAddress = nameAddress;
-            this.nameLength = nameLength;
             this.min = value;
             this.max = value;
             this.sum = value;
@@ -77,8 +83,7 @@ public class CalculateAverage_thomaswue {
         // Parallel processing of segments.
         List<HashMap<String, Result>> allResults = IntStream.range(0, chunks.length - 1).mapToObj(chunkIndex -> {
             HashMap<String, Result> cities = HashMap.newHashMap(1 << 10);
-            Result[] results = new Result[1 << 14];
-            parseLoop(chunks[chunkIndex], chunks[chunkIndex + 1], results, cities);
+            parseLoop(chunks[chunkIndex], chunks[chunkIndex + 1], cities);
             return cities;
         }).parallel().toList();
 
@@ -86,12 +91,9 @@ public class CalculateAverage_thomaswue {
         HashMap<String, Result> result = allResults.getFirst();
         for (int i = 1; i < allResults.size(); ++i) {
             for (Map.Entry<String, Result> entry : allResults.get(i).entrySet()) {
-                Result current = result.get(entry.getKey());
+                Result current = result.putIfAbsent(entry.getKey(), entry.getValue());
                 if (current != null) {
                     current.add(entry.getValue());
-                }
-                else {
-                    result.put(entry.getKey(), entry.getValue());
                 }
             }
         }
@@ -113,80 +115,133 @@ public class CalculateAverage_thomaswue {
         }
     }
 
-    static boolean unsafeEquals(long aStart, long aLength, long bStart, long bLength) {
-        if (aLength != bLength) {
-            return false;
-        }
-        for (int i = 0; i < aLength; ++i) {
-            if (UNSAFE.getByte(aStart + i) != UNSAFE.getByte(bStart + i)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static void parseLoop(long chunkStart, long chunkEnd, Result[] results, HashMap<String, Result> cities) {
+    private static void parseLoop(long chunkStart, long chunkEnd, HashMap<String, Result> cities) {
+        Result[] results = new Result[1 << 18];
         long scanPtr = chunkStart;
-        byte b;
         while (scanPtr < chunkEnd) {
             long nameAddress = scanPtr;
+            long hash = 0;
 
-            int hash = UNSAFE.getByte(scanPtr++);
-            while ((b = UNSAFE.getByte(scanPtr++)) != ';') {
-                hash += b;
-                hash += hash << 10;
-                hash ^= hash >> 6;
-            }
-
-            int nameLength = (int) (scanPtr - 1 - nameAddress);
-            hash = hash & (results.length - 1);
-
-            int number;
-            byte sign = UNSAFE.getByte(scanPtr++);
-            if (sign == '-') {
-                number = UNSAFE.getByte(scanPtr++) - '0';
-                if ((b = UNSAFE.getByte(scanPtr++)) != '.') {
-                    number = number * 10 + (b - '0');
-                    scanPtr++;
-                }
-                number = number * 10 + (UNSAFE.getByte(scanPtr++) - '0');
-                number = -number;
+            // Search for ';', one long at a time.
+            long word = UNSAFE.getLong(scanPtr);
+            int pos = findDelimiter(word);
+            if (pos != 8) {
+                scanPtr += pos;
+                word = word & (-1L >>> ((8 - pos - 1) << 3));
+                hash ^= word;
             }
             else {
-                number = sign - '0';
-                if ((b = UNSAFE.getByte(scanPtr++)) != '.') {
-                    number = number * 10 + (b - '0');
-                    scanPtr++;
+                scanPtr += 8;
+                hash ^= word;
+                while (true) {
+                    word = UNSAFE.getLong(scanPtr);
+                    pos = findDelimiter(word);
+                    if (pos != 8) {
+                        scanPtr += pos;
+                        word = word & (-1L >>> ((8 - pos - 1) << 3));
+                        hash ^= word;
+                        break;
+                    }
+                    else {
+                        scanPtr += 8;
+                        hash ^= word;
+                    }
                 }
-                number = number * 10 + (UNSAFE.getByte(scanPtr++) - '0');
             }
 
-            while (true) {
-                Result existingResult = results[hash];
+            // Save length of name for later.
+            int nameLength = (int) (scanPtr - nameAddress);
+            scanPtr++;
+
+            long numberWord = UNSAFE.getLong(scanPtr);
+            // The 4th binary digit of the ascii of a digit is 1 while
+            // that of the '.' is 0. This finds the decimal separator
+            // The value can be 12, 20, 28
+            int decimalSepPos = Long.numberOfTrailingZeros(~numberWord & 0x10101000);
+            int number = convertIntoNumber(decimalSepPos, numberWord);
+
+            // Skip past new line.
+            // scanPtr++;
+            scanPtr += (decimalSepPos >>> 3) + 3;
+
+            // Final calculation for index into hash table.
+            int hashAsInt = (int) (hash ^ (hash >>> 32));
+            int finalHash = (hashAsInt ^ (hashAsInt >>> 18));
+            int tableIndex = (finalHash & (results.length - 1));
+            outer: while (true) {
+                Result existingResult = results[tableIndex];
                 if (existingResult == null) {
-                    Result r = new Result(nameAddress, nameLength, number);
-                    results[hash] = r;
-                    byte[] bytes = new byte[nameLength];
-                    UNSAFE.copyMemory(null, nameAddress, bytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, nameLength);
-                    cities.put(new String(bytes, StandardCharsets.UTF_8), r);
-                    break;
-                }
-                else if (unsafeEquals(existingResult.nameAddress, existingResult.nameLength, nameAddress, nameLength)) {
-                    existingResult.min = Math.min(existingResult.min, number);
-                    existingResult.max = Math.max(existingResult.max, number);
-                    existingResult.sum += number;
-                    existingResult.count++;
+                    newEntry(results, cities, nameAddress, number, tableIndex, nameLength);
                     break;
                 }
                 else {
-                    // Collision error, try next.
-                    hash = (hash + 1) & (results.length - 1);
+                    // Check for collision.
+                    int i = 0;
+                    for (; i < nameLength + 1 - 8; i += 8) {
+                        if (UNSAFE.getLong(existingResult.nameAddress + i) != UNSAFE.getLong(nameAddress + i)) {
+                            tableIndex = (tableIndex + 1) & (results.length - 1);
+                            continue outer;
+                        }
+                    }
+                    if (((existingResult.lastNameLong ^ UNSAFE.getLong(nameAddress + i)) << existingResult.remainingShift) == 0) {
+                        existingResult.min = Math.min(existingResult.min, number);
+                        existingResult.max = Math.max(existingResult.max, number);
+                        existingResult.sum += number;
+                        existingResult.count++;
+                        break;
+                    }
+                    else {
+                        // Collision error, try next.
+                        tableIndex = (tableIndex + 1) & (results.length - 1);
+                    }
                 }
             }
-
-            // Skip new line.
-            scanPtr++;
         }
+    }
+
+    // Special method to convert a number in the specific format into an int value without branches created by
+    // Quan Anh Mai.
+    private static int convertIntoNumber(int decimalSepPos, long numberWord) {
+        int shift = 28 - decimalSepPos;
+        // signed is -1 if negative, 0 otherwise
+        long signed = (~numberWord << 59) >> 63;
+        long designMask = ~(signed & 0xFF);
+        // Align the number to a specific position and transform the ascii code
+        // to actual digit value in each byte
+        long digits = ((numberWord & designMask) << shift) & 0x0F000F0F00L;
+
+        // Now digits is in the form 0xUU00TTHH00 (UU: units digit, TT: tens digit, HH: hundreds digit)
+        // 0xUU00TTHH00 * (100 * 0x1000000 + 10 * 0x10000 + 1) =
+        // 0x000000UU00TTHH00 +
+        // 0x00UU00TTHH000000 * 10 +
+        // 0xUU00TTHH00000000 * 100
+        // Now TT * 100 has 2 trailing zeroes and HH * 100 + TT * 10 + UU < 0x400
+        // This results in our value lies in the bit 32 to 41 of this product
+        // That was close :)
+        long absValue = ((digits * 0x640a0001) >>> 32) & 0x3FF;
+        long value = (absValue ^ signed) - signed;
+        return (int) value;
+    }
+
+    private static int findDelimiter(long word) {
+        long input = word ^ 0x3B3B3B3B3B3B3B3BL;
+        long tmp = (input - 0x0101010101010101L) & ~input & 0x8080808080808080L;
+        return Long.numberOfTrailingZeros(tmp) >>> 3;
+    }
+
+    private static void newEntry(Result[] results, HashMap<String, Result> cities, long nameAddress, int number, int hash, int nameLength) {
+        Result r = new Result(nameAddress, number);
+        results[hash] = r;
+        byte[] bytes = new byte[nameLength];
+
+        int i = 0;
+        for (; i < nameLength + 1 - 8; i += 8) {
+        }
+        r.lastNameLong = UNSAFE.getLong(nameAddress + i);
+        r.remainingShift = (64 - (nameLength + 1 - i) << 3);
+        UNSAFE.copyMemory(null, nameAddress, bytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, nameLength);
+        String nameAsString = new String(bytes, StandardCharsets.UTF_8);
+        cities.put(nameAsString, r);
     }
 
     private static long[] getSegments(int numberOfChunks) throws IOException {
