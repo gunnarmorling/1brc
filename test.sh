@@ -22,6 +22,10 @@ if [ -z "$1" ]; then
   exit 1
 fi
 
+if [ -f "./prepare_$1.sh" ]; then
+  "./prepare_$1.sh"
+fi
+
 for sample in $(ls src/test/resources/samples/*.txt); do
   echo "Validating calculate_average_$1.sh -- $sample"
 
@@ -30,4 +34,5 @@ for sample in $(ls src/test/resources/samples/*.txt); do
 
   diff <("./calculate_average_$1.sh") ${sample%.txt}.out
 done
+
 rm measurements.txt
