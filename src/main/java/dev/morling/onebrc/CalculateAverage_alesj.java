@@ -30,6 +30,10 @@ public class CalculateAverage_alesj {
             stream.forEach(line -> {
                 String[] split = line.split(";");
                 stations.computeIfAbsent(split[0], k -> new DoubleSummaryStatistics() {
+                    public synchronized void accept(double value) {
+                        super.accept(value);
+                    }
+
                     public String toString() {
                         return String.format("%.1f/%.1f/%.1f", getMin(), getAverage(), getMax());
                     }
