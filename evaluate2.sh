@@ -153,6 +153,11 @@ for fork in "$@"; do
   else
     hyperfine $HYPERFINE_OPTS "./calculate_average_$fork.sh 2>&1"
   fi
+  # Catch hyperfine command failed
+  if [ $? -ne 0 ]; then
+    failed+=("$fork")
+    echo ""
+  fi
 
   # Verify output
   diff <(grep Hamburg $fork-$filetimestamp.out) <(grep Hamburg out_expected.txt) > /dev/null
