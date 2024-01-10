@@ -1,5 +1,7 @@
 # 1️⃣🐝🏎️ The One Billion Row Challenge
 
+_Status Jan 10: I am in the process of moving to another execution environment for this challenge. Once that is done, the leaderboard will be refreshed with the results from that new environment, and I'll continue to evaluate pending submissions._
+
 _Status Jan 1: This challenge is [open for submissions](https://www.morling.dev/blog/one-billion-row-challenge/)!_
 
 The One Billion Row Challenge (1BRC) is a fun exploration of how far modern Java can be pushed for aggregating one billion rows from a text file.
