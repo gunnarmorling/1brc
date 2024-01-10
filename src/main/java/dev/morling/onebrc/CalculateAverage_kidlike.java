@@ -86,7 +86,8 @@ public class CalculateAverage_kidlike {
                         MappedByteBuffer byteBuffer = raf.getChannel().map(MapMode.READ_ONLY, realStart, realLength);
                         byteBuffer.load();
                         byteBuffers.put(realStart, byteBuffer);
-                    } catch (IOException e) {
+                    }
+                    catch (IOException e) {
                         throw new RuntimeException(e);
                     }
                 });
@@ -162,7 +163,8 @@ public class CalculateAverage_kidlike {
 
         if (isNegative) {
             return -number;
-        } else {
+        }
+        else {
             return number;
         }
     }
