@@ -177,7 +177,7 @@ public class CalculateAverage_kidlike {
      */
     private static class MeasurementAggregator {
 
-        private static final DecimalFormat rounder = new DecimalFormat("#.#");
+        private static final DecimalFormat rounder = new DecimalFormat("0.0");
         short min = Short.MAX_VALUE;
         short max = Short.MIN_VALUE;
         long sum;
@@ -195,7 +195,7 @@ public class CalculateAverage_kidlike {
         @Override
         public String toString() {
             return rounder.format(min / 10.0)
-                    + "/" + rounder.format((sum / 10.0) / count)
+                    + "/" + rounder.format(Math.round((double) sum / count) / 10.0)
                     + "/" + rounder.format(max / 10.0);
         }
     }
