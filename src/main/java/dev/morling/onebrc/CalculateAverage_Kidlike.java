@@ -24,25 +24,28 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel.MapMode;
 import java.text.DecimalFormat;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 /**
- * First version.
+ * Versions (correlate to git commits):
+ * <ol>
+ *     <li>2m34s: parallel file read -> load byte chunks in memory -> sequentially process bytes for result</li>
+ *     <li>0m59s: process byte chunks in parallel (had to introduce smarter byte chunking so it splits only on newlines)</li>
+ * </ol>
+ *
  * <p>
- * Read the file in parallel with VirtualThreads, and store all bytes in memory.
- * <p>
- * Then process the bytes serially in the main thread (next version should make this parallel).
- * <p>
- * Results:
- * <pre>
- * real    2m34.461s
- * user    2m19.800s
- * sys     0m16.336s
- * </pre>
+ * Hardware:
+ * <ul>
+ *     <li>CPU: https://www.cpubenchmark.net/cpu.php?cpu=AMD+Ryzen+7+5800H&id=3907</li>
+ *     <li>NVMe: https://www.harddrivebenchmark.net/hdd.php?hdd=SKHynix%20HFS001TDE9X084N&id=28560</li>
+ * </ul>
+ * </p>
  */
 public class CalculateAverage_Kidlike {
 
@@ -59,71 +62,84 @@ public class CalculateAverage_Kidlike {
                 long start = i * chunkSize;
                 long length = (i == processors - 1) ? fileSize - chunkSize * (processors - 1) : chunkSize;
                 executor.execute(() -> {
+                    long realStart = start;
                     try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
-                        MappedByteBuffer byteBuffer = raf.getChannel().map(MapMode.READ_ONLY, start, length);
+                        if (start != 0) {
+                            raf.seek(start);
+                            while (raf.readByte() != '\n') {
+                                // move pointer to newline, so that we can process the byte chunks in parallel later.
+                            }
+                            realStart = raf.getFilePointer();
+                        }
+                        long realLength = fileSize - realStart;
+                        if (realStart + length < fileSize) {
+                            raf.seek(realStart + length);
+                            while (raf.readByte() != '\n') {
+                                // move pointer to newline, so that we can process the byte chunks in parallel later.
+                            }
+                            realLength = raf.getFilePointer() - realStart;
+                        }
+
+                        MappedByteBuffer byteBuffer = raf.getChannel().map(MapMode.READ_ONLY, realStart, realLength);
                         byteBuffer.load();
-                        byteBuffers.put(start, byteBuffer);
-                    }
-                    catch (IOException e) {
+                        byteBuffers.put(realStart, byteBuffer);
+                    } catch (IOException e) {
                         throw new RuntimeException(e);
                     }
                 });
             }
         }
 
-        System.out.println(calculateMeasurements(byteBuffers));
+        System.out.println(new TreeMap(calculateMeasurements(byteBuffers)));
     }
 
-    private static TreeMap<String, MeasurementAggregator> calculateMeasurements(
+    private static Map<String, MeasurementAggregator> calculateMeasurements(
             Map<Long, MappedByteBuffer> buffers) {
-        var results = new TreeMap<String, MeasurementAggregator>();
+        return buffers.values().parallelStream()
+                .map(buffer -> {
+                    var results = new HashMap<String, MeasurementAggregator>();
 
-        var state = State.NEXT_READ_CITY;
-        var citySink = new CheapByteBuffer(100);
-        var measurementSink = new CheapByteBuffer(10);
+                    var state = State.NEXT_READ_CITY;
+                    var citySink = new CheapByteBuffer(100);
+                    var measurementSink = new CheapByteBuffer(10);
 
-        var sortedBuffers = new TreeMap<>(buffers);
+                    while (buffer.hasRemaining()) {
+                        byte b = buffer.get();
+                        char c = (char) b;
 
-        for (MappedByteBuffer buffer : sortedBuffers.values()) {
-            while (buffer.hasRemaining()) {
-                byte b = buffer.get();
-                char c = (char) b;
-
-                if (c == ';') {
-                    state = State.NEXT_READ_MEASUREMENT;
-                    continue;
-                }
-
-                if (c == '\n') {
-                    String city = new String(citySink.getBytes());
-                    double measurement = parseDouble(new String(measurementSink.getBytes()));
-                    results.compute(city, (k, v) -> {
-                        var entry = Optional.ofNullable(v).orElse(new MeasurementAggregator());
-                        entry.count++;
-                        entry.sum += measurement;
-                        if (measurement < entry.min) {
-                            entry.min = measurement;
+                        if (c == ';') {
+                            state = State.NEXT_READ_MEASUREMENT;
+                            continue;
                         }
-                        if (measurement > entry.max) {
-                            entry.max = measurement;
+
+                        if (c == '\n') {
+                            String city = new String(citySink.getBytes());
+                            double measurement = parseDouble(new String(measurementSink.getBytes()));
+                            results.compute(city, (k, v) -> {
+                                var entry = Optional.ofNullable(v).orElse(new MeasurementAggregator());
+                                entry.count++;
+                                entry.sum += measurement;
+                                entry.min = Math.min(entry.min, measurement);
+                                entry.max = Math.max(entry.max, measurement);
+                                return entry;
+                            });
+
+                            citySink.clear();
+                            measurementSink.clear();
+                            state = State.NEXT_READ_CITY;
+                            continue;
                         }
-                        return entry;
-                    });
 
-                    citySink.clear();
-                    measurementSink.clear();
-                    state = State.NEXT_READ_CITY;
-                    continue;
-                }
+                        switch (state) {
+                            case NEXT_READ_CITY -> citySink.append(b);
+                            case NEXT_READ_MEASUREMENT -> measurementSink.append(b);
+                        }
+                    }
 
-                switch (state) {
-                    case NEXT_READ_CITY -> citySink.append(b);
-                    case NEXT_READ_MEASUREMENT -> measurementSink.append(b);
-                }
-            }
-        }
-
-        return results;
+                    return results;
+                })
+                .flatMap(m -> m.entrySet().stream())
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, MeasurementAggregator::merge));
     }
 
     private enum State {
@@ -139,6 +155,15 @@ public class CalculateAverage_Kidlike {
         private double max = Double.NEGATIVE_INFINITY;
         private double sum = 0;
         private long count = 0;
+
+        private MeasurementAggregator merge(MeasurementAggregator other) {
+            min = Math.min(min, other.min);
+            max = Math.max(max, other.max);
+            sum += other.sum;
+            count += other.count;
+
+            return this;
+        }
 
         @Override
         public String toString() {
