@@ -15,5 +15,7 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS=""
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_ebarlas
+
+JAVA_OPTS="--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens java.base/jdk.internal.util=ALL-UNNAMED"
+JAVA_OPTS="$JAVA_OPTS -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -Xms128M -Xmx128M -XX:-AlwaysPreTouch -XX:-TieredCompilation -XX:CICompilerCount=1"
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_raipc

@@ -15,5 +15,6 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS=""
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_ebarlas
+#sdk use java 21.0.1-amzn
+JAVA_OPTS="-Xlog:gc=error --enable-preview --add-modules=jdk.incubator.vector"
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_berry120
