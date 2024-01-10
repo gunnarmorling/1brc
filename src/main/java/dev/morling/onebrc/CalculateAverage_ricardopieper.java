@@ -8,8 +8,9 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
 
-//In some places I took from roy but this is mostly me figuring out stuff.
+//In some places I took inspiration in Roy's submission, but this is mostly me figuring out stuff.
 //ChatGPT 4 did help me a lot figuring out the bit mask stuff, and I gave my best shot at explaining it.
+//Unfortunately with small keys I'm having some perf issues.
 @SuppressWarnings("unchecked")
 public class CalculateAverage_ricardopieper {
 
