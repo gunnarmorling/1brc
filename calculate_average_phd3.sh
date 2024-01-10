@@ -17,4 +17,4 @@
 
 # -agentpath:/Users/phd3/tools/async-profiler-2.9-macos/build/libasyncProfiler.so=start,event=cpu,file=profile.html
 JAVA_OPTS=""
-time java $JAVA_OPTS -XX:+HeapDumpOnOutOfMemoryError --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_phd3
+java $JAVA_OPTS -XX:+HeapDumpOnOutOfMemoryError --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_phd3
