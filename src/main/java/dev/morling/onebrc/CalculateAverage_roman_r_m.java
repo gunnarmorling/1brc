@@ -26,11 +26,13 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.stream.IntStream;
 
 public class CalculateAverage_roman_r_m {
 
     public static final int DOT_3_RD_BYTE_MASK = (byte) '.' << 16;
     private static final String FILE = "./measurements.txt";
+    private static MemorySegment ms;
 
     // based on http://0x80.pl/notesen/2023-03-06-swar-find-any.html
     static long hasZeroByte(long l) {
@@ -46,108 +48,132 @@ public class CalculateAverage_roman_r_m {
     }
 
     static long SEMICOLON_MASK = broadcast((byte) ';');
+    static long LINE_END_MASK = broadcast((byte) '\n');
 
-    static long findSemicolon(long l) {
-        long xor = l ^ SEMICOLON_MASK;
+    static long find(long l, long mask) {
+        long xor = l ^ mask;
         long match = hasZeroByte(xor);
         return match != 0 ? firstSetByteIndex(match) : -1;
+    }
+
+    static long nextNewline(long from) {
+        long start = from;
+        long i;
+        long next = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, start);
+        while ((i = find(next, LINE_END_MASK)) < 0) {
+            start += 8;
+            next = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, start);
+        }
+        return start + i;
     }
 
     public static void main(String[] args) throws IOException {
         long fileSize = new File(FILE).length();
 
-        var station = new ByteString();
-
-        long offset = 0;
         var channel = FileChannel.open(Paths.get(FILE));
-        var resultStore = new ResultStore();
-        MemorySegment ms = channel.map(FileChannel.MapMode.READ_ONLY, offset, fileSize, Arena.ofAuto());
-        while (offset < fileSize) {
-            long start = offset;
-            long pos;
-            if (fileSize - offset >= 8) {
-                long next = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
-                while ((pos = findSemicolon(next)) < 0) {
-                    offset += 8;
-                    if (fileSize - offset >= 8) {
-                        next = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
-                    }
-                    else {
-                        while (ms.get(ValueLayout.JAVA_BYTE, offset + pos) != ';') {
-                            pos++;
+        ms = channel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, Arena.ofAuto());
+
+        int numThreads = fileSize > Integer.MAX_VALUE ? Runtime.getRuntime().availableProcessors() : 1;
+        long chunk = fileSize / numThreads;
+        var result = IntStream.range(0, numThreads)
+                .parallel()
+                .mapToObj(i -> {
+                    boolean lastChunk = i == numThreads - 1;
+                    long chunkStart = i == 0 ? 0 : nextNewline(i * chunk) + 1;
+                    long chunkEnd = lastChunk ? fileSize : nextNewline((i + 1) * chunk);
+
+                    var resultStore = new ResultStore();
+                    var station = new ByteString();
+
+                    long offset = chunkStart;
+                    while (offset < chunkEnd) {
+                        long start = offset;
+                        long pos;
+
+                        if (!lastChunk || chunkEnd - offset >= 8) {
+                            long next = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+
+                            while ((pos = find(next, SEMICOLON_MASK)) < 0) {
+                                offset += 8;
+                                if (!lastChunk || fileSize - offset >= 8) {
+                                    next = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+                                }
+                                else {
+                                    while (ms.get(ValueLayout.JAVA_BYTE, offset + pos) != ';') {
+                                        pos++;
+                                    }
+                                    break;
+                                }
+                            }
                         }
-                        break;
+                        else {
+                            pos = 0;
+                            while (ms.get(ValueLayout.JAVA_BYTE, offset + pos) != ';') {
+                                pos++;
+                            }
+                        }
+                        offset += pos;
+                        int len = (int) (offset - start);
+                        // TODO can we not copy and use a reference into the memory segment to perform table lookup?
+                        MemorySegment.copy(ms, ValueLayout.JAVA_BYTE, start, station.buf, 0, len);
+                        station.len = len;
+                        station.hash = 0;
+
+                        offset++;
+
+                        long val;
+                        boolean neg;
+                        if (!lastChunk || fileSize - offset >= 8) {
+                            long encodedVal = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+                            neg = (encodedVal & (byte) '-') == (byte) '-';
+                            if (neg) {
+                                encodedVal >>= 8;
+                                offset++;
+                            }
+
+                            if ((encodedVal & DOT_3_RD_BYTE_MASK) == DOT_3_RD_BYTE_MASK) {
+                                val = (encodedVal & 0xFF - 0x30) * 100 + (encodedVal >> 8 & 0xFF - 0x30) * 10 + (encodedVal >> 24 & 0xFF - 0x30);
+                                offset += 5;
+                            }
+                            else {
+                                // based on http://0x80.pl/articles/simd-parsing-int-sequences.html#parsing-and-conversion-of-signed-numbers
+                                val = Long.compress(encodedVal, 0xFF00FFL) - 0x303030;
+                                val = ((val * 2561) >> 8) & 0xff;
+                                offset += 4;
+                            }
+                        }
+                        else {
+                            neg = ms.get(ValueLayout.JAVA_BYTE, offset) == '-';
+                            if (neg) {
+                                offset++;
+                            }
+                            val = ms.get(ValueLayout.JAVA_BYTE, offset++) - '0';
+                            byte b;
+                            while ((b = ms.get(ValueLayout.JAVA_BYTE, offset++)) != '.') {
+                                val = val * 10 + (b - '0');
+                            }
+                            b = ms.get(ValueLayout.JAVA_BYTE, offset);
+                            val = val * 10 + (b - '0');
+                            offset += 2;
+                        }
+
+                        if (neg) {
+                            val = -val;
+                        }
+
+                        var a = resultStore.get(station);
+                        a.min = Math.min(a.min, val);
+                        a.max = Math.max(a.max, val);
+                        a.sum += val;
+                        a.count++;
                     }
-                }
-            }
-            else {
-                pos = 0;
-                while (ms.get(ValueLayout.JAVA_BYTE, offset + pos) != ';') {
-                    pos++;
-                }
-            }
-            offset += pos;
+                    return resultStore.toMap();
+                }).reduce((m1, m2) -> {
+                    m2.forEach((k, v) -> m1.merge(k, v, ResultRow::merge));
+                    return m1;
+                });
 
-            int len = (int) (offset - start);
-            // TODO can we not copy and use a reference into the memory segment to perform table lookup?
-            MemorySegment.copy(ms, ValueLayout.JAVA_BYTE, start, station.buf, 0, len);
-            station.len = len;
-            station.hash = 0;
-
-            offset++;
-            long val;
-            if (fileSize - offset >= 8) {
-                long encodedVal = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
-
-                boolean neg = (encodedVal & (byte) '-') == (byte) '-';
-                if (neg) {
-                    encodedVal >>= 8;
-                    offset++;
-                }
-
-                if ((encodedVal & DOT_3_RD_BYTE_MASK) == DOT_3_RD_BYTE_MASK) {
-                    val = (encodedVal & 0xFF - 0x30) * 100 + (encodedVal >> 8 & 0xFF - 0x30) * 10 + (encodedVal >> 24 & 0xFF - 0x30);
-                    offset += 5;
-                }
-                else {
-                    // based on http://0x80.pl/articles/simd-parsing-int-sequences.html#parsing-and-conversion-of-signed-numbers
-                    val = Long.compress(encodedVal, 0xFF00FFL) - 0x303030;
-                    val = ((val * 2561) >> 8) & 0xff;
-                    offset += 4;
-                }
-
-                if (neg) {
-                    val = -val;
-                }
-            }
-            else {
-                boolean neg = ms.get(ValueLayout.JAVA_BYTE, offset) == '-';
-                if (neg) {
-                    offset++;
-                }
-                val = ms.get(ValueLayout.JAVA_BYTE, offset++) - '0';
-                byte b;
-                while ((b = ms.get(ValueLayout.JAVA_BYTE, offset++)) != '.') {
-                    val = val * 10 + (b - '0');
-                }
-                b = ms.get(ValueLayout.JAVA_BYTE, offset);
-                val = val * 10 + (b - '0');
-
-                offset += 2;
-
-                if (neg) {
-                    val = -val;
-                }
-            }
-
-            var a = resultStore.get(station);
-            a.min = Math.min(a.min, val);
-            a.max = Math.max(a.max, val);
-            a.sum += val;
-            a.count++;
-        }
-
-        System.out.println(resultStore.toMap());
+        System.out.println(result.get());
     }
 
     static final class ByteString {
@@ -217,6 +243,14 @@ public class CalculateAverage_roman_r_m {
 
         private double round(double value) {
             return Math.round(value * 10.0) / 10.0;
+        }
+
+        public ResultRow merge(ResultRow other) {
+            this.min = Math.min(this.min, other.min);
+            this.max = Math.max(this.max, other.max);
+            this.sum += other.sum;
+            this.count += other.count;
+            return this;
         }
     }
 
