@@ -16,10 +16,10 @@
 package dev.morling.onebrc;
 
 import java.io.IOException;
-import java.io.RandomAccessFile;
-import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
@@ -28,8 +28,6 @@ import java.util.stream.Collectors;
 
 public class CalculateAverage_zerninv {
     private static final String FILE = "./measurements.txt";
-    private static final int MAX_MMAP_SIZE = Integer.MAX_VALUE;
-
     private static final char DELIMITER = ';';
     private static final char LINE_SEPARATOR = '\n';
     private static final char ZERO = '0';
@@ -37,11 +35,13 @@ public class CalculateAverage_zerninv {
     private static final char MINUS = '-';
 
     public static void main(String[] args) throws IOException {
-        var results = new HashMap<String, Result>();
-        try (var raf = new RandomAccessFile(FILE, "r"); var channel = raf.getChannel()) {
-            var executor = Executors.newFixedThreadPool(8);
-            List<Future<Map<String, Result>>> fResults = new ArrayList<>();
-            var chunks = splitByChunks(channel);
+        var results = new HashMap<String, MeasurmentAggregation>();
+        try (var channel = FileChannel.open(Path.of(FILE), StandardOpenOption.READ)) {
+            var cores = Runtime.getRuntime().availableProcessors() - 1;
+            var maxChunkSize = Math.max(Math.min(channel.size() / cores, Integer.MAX_VALUE), channel.size());
+            var executor = Executors.newFixedThreadPool(cores);
+            List<Future<Map<String, MeasurmentAggregation>>> fResults = new ArrayList<>();
+            var chunks = splitByChunks(channel, maxChunkSize);
             for (int i = 1; i < chunks.size(); i++) {
                 final long prev = chunks.get(i - 1);
                 final long curr = chunks.get(i);
@@ -67,13 +67,13 @@ public class CalculateAverage_zerninv {
         System.out.println(new TreeMap<>(results));
     }
 
-    private static List<Long> splitByChunks(FileChannel channel) throws IOException {
+    private static List<Long> splitByChunks(FileChannel channel, long maxChunkSize) throws IOException {
         long size = channel.size();
         List<Long> result = new ArrayList<>();
         long current = 0;
         result.add(current);
         while (current < size) {
-            var mbb = channel.map(FileChannel.MapMode.READ_ONLY, current, Math.min(size - current, MAX_MMAP_SIZE));
+            var mbb = channel.map(FileChannel.MapMode.READ_ONLY, current, Math.min(size - current, maxChunkSize));
             int position = mbb.limit() - 1;
             while (mbb.get(position) != LINE_SEPARATOR) {
                 position--;
@@ -84,64 +84,60 @@ public class CalculateAverage_zerninv {
         return result;
     }
 
-    private static Map<String, Result> calcForChunk(FileChannel channel, long begin, long end) throws IOException {
-        var results = new HashMap<CityWrapper, Result>();
+    private static Map<String, MeasurmentAggregation> calcForChunk(FileChannel channel, long begin, long end) throws IOException {
+        var results = new HashMap<CityWrapper, MeasurmentAggregation>(10_000);
         var mbb = channel.map(FileChannel.MapMode.READ_ONLY, begin, end - begin);
-        var byteBuf = ByteBuffer.allocate(5);
-        int hashCode;
+        int cityOffset, hashCode, temperatureOffset, temperature;
         byte b;
 
-        while (mbb.position() < mbb.limit()) {
-            int cityBegin = mbb.position();
-            int size = 0;
+        while (mbb.hasRemaining()) {
+            cityOffset = mbb.position();
             hashCode = 0;
             while ((b = mbb.get()) != DELIMITER) {
                 hashCode = 31 * hashCode + b;
-                size++;
             }
 
+            temperatureOffset = mbb.position();
+            CityWrapper city = new CityWrapper(mbb, cityOffset, temperatureOffset - cityOffset - 1, hashCode);
+
+            temperature = 0;
             while ((b = mbb.get()) != LINE_SEPARATOR) {
-                byteBuf.put(b);
-            }
-
-            int value = 0;
-            for (int j = 0; j < byteBuf.position(); j++) {
-                byte c = byteBuf.get(j);
-                if (c >= ZERO && c <= NINE) {
-                    value *= 10;
-                    value += (c - ZERO);
+                if (b >= ZERO && b <= NINE) {
+                    temperature = temperature * 10 + (b - ZERO);
                 }
             }
-            if (byteBuf.get(0) == MINUS) {
-                value *= -1;
+            if (mbb.get(temperatureOffset) == MINUS) {
+                temperature *= -1;
             }
-            byteBuf.clear();
 
-            CityWrapper key = new CityWrapper(mbb, cityBegin, size, hashCode);
-            if (!results.containsKey(key)) {
-                results.put(key, new Result());
+            var result = results.get(city);
+            if (result != null) {
+                result.addTemperature(temperature);
             }
-            results.get(key).addPoint(value);
+            else {
+                results.put(city, new MeasurmentAggregation().addTemperature(temperature));
+            }
         }
         return results.entrySet()
                 .stream()
                 .collect(Collectors.toMap(entry -> entry.getKey().toString(), Map.Entry::getValue));
     }
 
-    private static final class Result {
+    private static final class MeasurmentAggregation {
         private long sum;
         private int count;
         private int min = Integer.MAX_VALUE;
         private int max = Integer.MIN_VALUE;
 
-        public void addPoint(int temp) {
-            sum += temp;
+        public MeasurmentAggregation addTemperature(int temperature) {
+            sum += temperature;
             count++;
-            min = Math.min(temp, min);
-            max = Math.max(temp, max);
+            min = Math.min(temperature, min);
+            max = Math.max(temperature, max);
+            return this;
         }
 
-        public void merge(Result o) {
+        public void merge(MeasurmentAggregation o) {
             if (o == null) {
                 return;
             }
@@ -157,18 +153,7 @@ public class CalculateAverage_zerninv {
         }
     }
 
-    public static final class CityWrapper {
-        private final MappedByteBuffer mbb;
-        private final int begin;
-        private final int size;
-        private final int hashCode;
-
-        public CityWrapper(MappedByteBuffer mbb, int begin, int size, int hashCode) {
-            this.mbb = mbb;
-            this.begin = begin;
-            this.size = size;
-            this.hashCode = hashCode;
-        }
+    private record CityWrapper(MappedByteBuffer mbb, int begin, int size, int hash) {
 
         @Override
         public boolean equals(Object o) {
@@ -180,7 +165,7 @@ public class CalculateAverage_zerninv {
             }
 
             CityWrapper that = (CityWrapper) o;
-            if (hashCode != that.hashCode || size != that.size) {
+            if (hash != that.hash || size != that.size) {
                 return false;
             }
             for (int i = 0; i < size; i++) {
@@ -193,7 +178,7 @@ public class CalculateAverage_zerninv {
 
         @Override
         public int hashCode() {
-            return hashCode;
+            return hash;
         }
 
         @Override
