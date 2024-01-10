@@ -32,10 +32,10 @@ import java.util.stream.IntStream;
  * Simple solution that memory maps the input file, then splits it into one segment per available core and uses
  * sun.misc.Unsafe to directly access the mapped memory. Uses a long at a time when checking for collision.
  * <p>
- * Runs in 0.76s on my Intel i9-13900K
+ * Runs in 0.74s on my Intel i9-13900K
  * Perf stats:
- *    48,926,118,339      cpu_core/cycles/
- *    53,434,680,455      cpu_atom/cycles/
+ *    46,672,260,532      cpu_core/cycles/
+ *    55,933,117,345      cpu_atom/cycles/
  */
 public class CalculateAverage_thomaswue {
     private static final String FILE = "./measurements.txt";
@@ -223,8 +223,7 @@ public class CalculateAverage_thomaswue {
 
     private static int findDelimiter(long word) {
         long input = word ^ 0x3B3B3B3B3B3B3B3BL;
-        long tmp = (input & 0x7F7F7F7F7F7F7F7FL) + 0x7F7F7F7F7F7F7F7FL;
-        tmp = ~(tmp | input | 0x7F7F7F7F7F7F7F7FL);
+        long tmp = (input - 0x0101010101010101L) & ~input & 0x8080808080808080L;
         return Long.numberOfTrailingZeros(tmp) >>> 3;
     }
 
