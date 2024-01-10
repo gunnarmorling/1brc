@@ -28,7 +28,7 @@ import java.util.stream.Collectors;
 
 public class CalculateAverage_zerninv {
     private static final String FILE = "./measurements.txt";
-    private static final int MIN_CHUNK_SIZE = 1024 * 1024;
+    private static final int MIN_FILE_SIZE = 1024 * 1024;
     private static final char DELIMITER = ';';
     private static final char LINE_SEPARATOR = '\n';
     private static final char ZERO = '0';
@@ -36,13 +36,13 @@ public class CalculateAverage_zerninv {
     private static final char MINUS = '-';
 
     public static void main(String[] args) throws IOException {
-        var results = new HashMap<String, MeasurmentAggregation>();
+        var results = new HashMap<String, MeasurementAggregation>();
         try (var channel = FileChannel.open(Path.of(FILE), StandardOpenOption.READ)) {
             var fileSize = channel.size();
             var cores = Runtime.getRuntime().availableProcessors() - 1;
-            var maxChunkSize = fileSize < MIN_CHUNK_SIZE ? fileSize : Math.min(fileSize / cores, Integer.MAX_VALUE);
+            var maxChunkSize = fileSize < MIN_FILE_SIZE ? fileSize : Math.min(fileSize / cores, Integer.MAX_VALUE);
             var executor = Executors.newFixedThreadPool(cores);
-            List<Future<Map<String, MeasurmentAggregation>>> fResults = new ArrayList<>();
+            List<Future<Map<String, MeasurementAggregation>>> fResults = new ArrayList<>();
             var chunks = splitByChunks(channel, maxChunkSize);
             for (int i = 1; i < chunks.size(); i++) {
                 final long prev = chunks.get(i - 1);
@@ -86,8 +86,8 @@ public class CalculateAverage_zerninv {
         return result;
     }
 
-    private static Map<String, MeasurmentAggregation> calcForChunk(FileChannel channel, long begin, long end) throws IOException {
-        var results = new HashMap<CityWrapper, MeasurmentAggregation>(10_000);
+    private static Map<String, MeasurementAggregation> calcForChunk(FileChannel channel, long begin, long end) throws IOException {
+        var results = new HashMap<CityWrapper, MeasurementAggregation>(10_000);
         var mbb = channel.map(FileChannel.MapMode.READ_ONLY, begin, end - begin);
         int cityOffset, hashCode, temperatureOffset, temperature;
         byte b;
@@ -117,7 +117,7 @@ public class CalculateAverage_zerninv {
                 result.addTemperature(temperature);
             }
             else {
-                results.put(city, new MeasurmentAggregation().addTemperature(temperature));
+                results.put(city, new MeasurementAggregation().addTemperature(temperature));
             }
         }
         return results.entrySet()
@@ -125,13 +125,13 @@ public class CalculateAverage_zerninv {
                 .collect(Collectors.toMap(entry -> entry.getKey().toString(), Map.Entry::getValue));
     }
 
-    private static final class MeasurmentAggregation {
+    private static final class MeasurementAggregation {
         private long sum;
         private int count;
         private int min = Integer.MAX_VALUE;
         private int max = Integer.MIN_VALUE;
 
-        public MeasurmentAggregation addTemperature(int temperature) {
+        public MeasurementAggregation addTemperature(int temperature) {
             sum += temperature;
             count++;
             min = Math.min(temperature, min);
@@ -139,7 +139,7 @@ public class CalculateAverage_zerninv {
             return this;
         }
 
-        public void merge(MeasurmentAggregation o) {
+        public void merge(MeasurementAggregation o) {
             if (o == null) {
                 return;
             }
