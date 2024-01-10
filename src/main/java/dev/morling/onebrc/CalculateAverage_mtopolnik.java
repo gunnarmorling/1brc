@@ -185,8 +185,7 @@ public class CalculateAverage_mtopolnik {
             int tableIndex = (int) (hash & TABLE_INDEX_MASK);
             while (true) {
                 stats.gotoIndex(tableIndex);
-                long foundHash = stats.hash();
-                if (foundHash == hash && stats.nameLen() == nameLen
+                if (stats.hash() == hash && stats.nameLen() == nameLen
                         && nameEquals(stats.nameAddress(), inputBase + namePos, nameLen, nameWord1, nameWord2)) {
                     stats.setSum(stats.sum() + temperature);
                     stats.setCount(stats.count() + 1);
@@ -194,7 +193,7 @@ public class CalculateAverage_mtopolnik {
                     stats.setMax((short) Integer.max(stats.max(), temperature));
                     return;
                 }
-                if (foundHash != 0) {
+                if (stats.nameLen() != 0) {
                     tableIndex = (tableIndex + 1) & TABLE_INDEX_MASK;
                     continue;
                 }
@@ -283,8 +282,7 @@ public class CalculateAverage_mtopolnik {
             // hash ^= word2;
             // hash *= seed;
             // hash = Long.rotateLeft(hash, rotDist);
-            hash &= (~Long.MIN_VALUE); // make hash positive
-            return hash != 0 ? hash : 1;
+            return hash;
         }
 
         private static boolean nameEquals(long statsAddr, long inputAddr, long len, long inputWord1, long inputWord2) {
