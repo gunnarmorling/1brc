@@ -39,21 +39,25 @@ public class CalculateAverage_zerninv {
         var results = new HashMap<String, MeasurementAggregation>();
         try (var channel = FileChannel.open(Path.of(FILE), StandardOpenOption.READ)) {
             var fileSize = channel.size();
-            var cores = Runtime.getRuntime().availableProcessors() - 1;
-            var maxChunkSize = fileSize < MIN_FILE_SIZE ? fileSize : Math.min(fileSize / cores, Integer.MAX_VALUE);
+            var cores = Runtime.getRuntime().availableProcessors();
+            var chunks = cores - 1;
+            var maxChunkSize = fileSize < MIN_FILE_SIZE ? fileSize : Math.min(fileSize / chunks, Integer.MAX_VALUE);
+            var chunkOffsets = splitByChunks(channel, maxChunkSize);
+
             var executor = Executors.newFixedThreadPool(cores);
             List<Future<Map<String, MeasurementAggregation>>> fResults = new ArrayList<>();
-            var chunks = splitByChunks(channel, maxChunkSize);
-            for (int i = 1; i < chunks.size(); i++) {
-                final long prev = chunks.get(i - 1);
-                final long curr = chunks.get(i);
+            for (int i = 1; i < chunkOffsets.size(); i++) {
+                final long prev = chunkOffsets.get(i - 1);
+                final long curr = chunkOffsets.get(i);
                 fResults.add(executor.submit(() -> calcForChunk(channel, prev, curr)));
             }
+
             fResults.forEach(f -> {
                 try {
                     f.get().forEach((key, value) -> {
-                        if (results.containsKey(key)) {
-                            results.get(key).merge(value);
+                        var result = results.get(key);
+                        if (result != null) {
+                            result.merge(value);
                         }
                         else {
                             results.put(key, value);
