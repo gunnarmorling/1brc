@@ -47,6 +47,14 @@ check_command_installed java
 check_command_installed hyperfine
 check_command_installed jq
 
+# Validate that ./calculate_average_<fork>.sh exists for each fork
+for fork in "$@"; do
+  if [ ! -f "./calculate_average_$fork.sh" ]; then
+    echo "Error: ./calculate_average_$fork.sh does not exist." >&2
+    exit 1
+  fi
+done
+
 ## SDKMAN Setup
 # 1. Custom check for sdkman installed; not sure why check_command_installed doesn't detect it properly
 if [ ! -f "$HOME/.sdkman/bin/sdkman-init.sh" ]; then
@@ -71,7 +79,7 @@ for fork in "$@"; do
         echo "+ sdk install java $version"
         sdk install java $version
       fi
-    done
+    done || true # grep returns exit code 1 when no match, `|| true` prevents the script from exiting early
   fi
 done
 ## END - SDKMAN Setup
@@ -145,6 +153,11 @@ for fork in "$@"; do
   else
     hyperfine $HYPERFINE_OPTS "./calculate_average_$fork.sh 2>&1"
   fi
+  # Catch hyperfine command failed
+  if [ $? -ne 0 ]; then
+    failed+=("$fork")
+    echo ""
+  fi
 
   # Verify output
   diff <(grep Hamburg $fork-$filetimestamp.out) <(grep Hamburg out_expected.txt) > /dev/null
@@ -164,7 +177,7 @@ echo -e "${BOLD_WHITE}Summary${RESET}"
 for fork in "$@"; do
   # skip reporting results for failed forks
   if [[ " ${failed[@]} " =~ " ${fork} " ]]; then
-    echo -e "  ${RED}$fork${RESET}: output did not match"
+    echo -e "  ${RED}$fork${RESET}: command failed or output did not match"
     continue
   fi
 
