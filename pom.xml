@@ -206,6 +206,7 @@
                 <exclude>**/measurements*.txt</exclude>
                 <exclude>**/measurements*.out</exclude>
                 <exclude>out_expected.txt</exclude>
+                <exclude>github_users.txt</exclude>
               </excludes>
             </configuration>
             <executions>
