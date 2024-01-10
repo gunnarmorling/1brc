@@ -47,6 +47,14 @@ check_command_installed java
 check_command_installed hyperfine
 check_command_installed jq
 
+# Validate that ./calculate_average_<fork>.sh exists for each fork
+for fork in "$@"; do
+  if [ ! -f "./calculate_average_$fork.sh" ]; then
+    echo "Error: ./calculate_average_$fork.sh does not exist." >&2
+    exit 1
+  fi
+done
+
 ## SDKMAN Setup
 # 1. Custom check for sdkman installed; not sure why check_command_installed doesn't detect it properly
 if [ ! -f "$HOME/.sdkman/bin/sdkman-init.sh" ]; then
@@ -71,7 +79,7 @@ for fork in "$@"; do
         echo "+ sdk install java $version"
         sdk install java $version
       fi
-    done
+    done || true # grep returns exit code 1 when no match, `|| true` prevents the script from exiting early
   fi
 done
 ## END - SDKMAN Setup
