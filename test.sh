@@ -22,7 +22,7 @@ if [ -z "$1" ]; then
   exit 1
 fi
 
-for sample in $(ls src/test/resources/samples/*.txt); do
+for sample in $(ls "$2"); do
   echo "Validating calculate_average_$1.sh -- $sample"
 
   rm -f measurements.txt
