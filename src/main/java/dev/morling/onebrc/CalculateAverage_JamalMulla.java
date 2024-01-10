@@ -30,7 +30,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class CalculateAverage_JamalMulla {
 
-    static Map<String, ResultRow> global = new HashMap<>();
+    private static final Map<String, ResultRow> global = new HashMap<>();
     private static final String FILE = "./measurements.txt";
     private static final Unsafe UNSAFE = initUnsafe();
     private static final Lock lock = new ReentrantLock();
@@ -111,7 +111,7 @@ public class CalculateAverage_JamalMulla {
         @Override
         public void run() {
             // no names bigger than this
-            byte[] nameBytes = new byte[100];
+            final byte[] nameBytes = new byte[100];
             short nameIndex = 0;
             int ot;
             // fnv hash
@@ -256,17 +256,26 @@ public class CalculateAverage_JamalMulla {
                     return false;
                 }
             }
+            if (i == length) {
+                return true;
+            }
             // leftover ints
             for (; i < (length - i & -4); i += 4) {
                 if (UNSAFE.getInt(a, i + baseOffset) != UNSAFE.getInt(b, i + baseOffset)) {
                     return false;
                 }
             }
+            if (i == length) {
+                return true;
+            }
             // leftover shorts
             for (; i < (length - i & -2); i += 2) {
                 if (UNSAFE.getShort(a, i + baseOffset) != UNSAFE.getShort(b, i + baseOffset)) {
                     return false;
                 }
+            }
+            if (i == length) {
+                return true;
             }
             // leftover bytes
             for (; i < (length - i); i++) {
