@@ -28,6 +28,7 @@ import java.util.stream.Collectors;
 
 public class CalculateAverage_zerninv {
     private static final String FILE = "./measurements.txt";
+    private static final int MIN_CHUNK_SIZE = 1024 * 1024;
     private static final char DELIMITER = ';';
     private static final char LINE_SEPARATOR = '\n';
     private static final char ZERO = '0';
@@ -37,8 +38,9 @@ public class CalculateAverage_zerninv {
     public static void main(String[] args) throws IOException {
         var results = new HashMap<String, MeasurmentAggregation>();
         try (var channel = FileChannel.open(Path.of(FILE), StandardOpenOption.READ)) {
+            var fileSize = channel.size();
             var cores = Runtime.getRuntime().availableProcessors() - 1;
-            var maxChunkSize = Math.max(Math.min(channel.size() / cores, Integer.MAX_VALUE), channel.size());
+            var maxChunkSize = fileSize < MIN_CHUNK_SIZE ? fileSize : Math.min(fileSize / cores, Integer.MAX_VALUE);
             var executor = Executors.newFixedThreadPool(cores);
             List<Future<Map<String, MeasurmentAggregation>>> fResults = new ArrayList<>();
             var chunks = splitByChunks(channel, maxChunkSize);
