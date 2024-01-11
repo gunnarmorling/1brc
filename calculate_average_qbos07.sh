@@ -15,4 +15,13 @@
 #  limitations under the License.
 #
 
-time target/average_qbos07
+if [ -f target/average_qbos07 ]; then
+    echo "Picking up existing native image, delete the file to select JVM mode." 1>&2
+    time target/average_qbos07
+else
+    source "$HOME/.sdkman/bin/sdkman-init.sh"
+    sdk use java 21.0.1-graal 1>&2
+    JAVA_OPTS="-XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -Xms100G -Xmx100G"
+    echo "Chosing to run the app in JVM mode as no native image was found, use prepare_qbos07.sh to generate." 1>&2
+    time java $JAVA_OPTS -cp target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_royvanrijn
+fi
