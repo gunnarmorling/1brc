@@ -1,5 +1,7 @@
 # 1️⃣🐝🏎️ The One Billion Row Challenge
 
+_Status Jan 11: The migration has been completed and the new leaderboard has been created by evaluating all entries on the new machine._
+
 _Status Jan 10: I am in the process of moving to another execution environment for this challenge. Once that is done, the leaderboard will be refreshed with the results from that new environment, and I'll continue to evaluate pending submissions._
 
 _Status Jan 1: This challenge is [open for submissions](https://www.morling.dev/blog/one-billion-row-challenge/)!_
@@ -262,6 +264,7 @@ If you want to use a build not available via these channels, reach out to discus
     * Station name: non null UTF-8 string of min length 1 character and max length 100 bytes, containing neither `;` nor `\n` characters. (i.e. this could be 100 one-byte characters, or 50 two-byte characters, etc.)
     * Temperature value: non null double between -99.9 (inclusive) and 99.9 (inclusive), always with one fractional digit
 * There is a maximum of 10,000 unique station names
+* Line endings in the file are `\n` characters on all platforms
 * Implementations must not rely on specifics of a given data set, e.g. any valid station name as per the constraints above and any data distribution (number of measurements per station) must be supported
 
 ## Entering the Challenge
