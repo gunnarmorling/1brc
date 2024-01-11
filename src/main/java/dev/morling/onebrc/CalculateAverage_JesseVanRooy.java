@@ -29,7 +29,7 @@ import java.util.*;
 import java.util.stream.IntStream;
 
 //Disclaimer: The idea from the segmentation into #core amount of chunks came from previously submitted solutions.
-public class CalculateAverage_jessevanrooy {
+public class CalculateAverage_JesseVanRooy {
 
     private static final String FILE = "./measurements.txt";
 
@@ -42,7 +42,8 @@ public class CalculateAverage_jessevanrooy {
             Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
             theUnsafe.setAccessible(true);
             return (Unsafe) theUnsafe.get(Unsafe.class);
-        } catch (NoSuchFieldException | IllegalAccessException e) {
+        }
+        catch (NoSuchFieldException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }
     }
@@ -94,7 +95,7 @@ public class CalculateAverage_jessevanrooy {
         final long address = memorySegment.address();
         final long end = address + size;
 
-        for (long index = address; index < end; ) {
+        for (long index = address; index < end;) {
             final long nameStart = index;
 
             byte next = UNSAFE.getByte(index);
@@ -225,7 +226,8 @@ public class CalculateAverage_jessevanrooy {
                         newResult.sum = result.sum;
                         newResult.count = result.count;
                         combinedResults.put(result.name, newResult);
-                    } else {
+                    }
+                    else {
                         Result existingResult = combinedResults.get(result.name);
                         existingResult.min = Math.min(existingResult.min, result.min);
                         existingResult.max = Math.max(existingResult.max, result.max);
