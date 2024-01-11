@@ -346,7 +346,7 @@ public class CalculateAverage_mtopolnik {
         }
 
         private static long maskWord(long word, long len) {
-            long halfShiftDistance = 4 * Long.max(0, Long.BYTES - len);
+            long halfShiftDistance = Long.max(0, Long.BYTES - len) << 2;
             long mask = (~0L >>> halfShiftDistance) >>> halfShiftDistance; // avoid Java trap of shiftDist % 64
             return word & mask;
         }
