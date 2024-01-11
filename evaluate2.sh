@@ -126,6 +126,8 @@ fi
 filetimestamp=$(date  +"%Y%m%d%H%M%S") # same for all fork.out files from this run
 failed=()
 for fork in "$@"; do
+  set -e
+  
   # Use prepare script to invoke SDKMAN
   if [ -f "./prepare_$fork.sh" ]; then
     print_and_execute source "./prepare_$fork.sh"
@@ -133,7 +135,7 @@ for fork in "$@"; do
     print_and_execute sdk use java $DEFAULT_JAVA_VERSION
   fi
 
-  set +e # we don't want hyperfine or diff failing on 1 fork to exit the script early
+  set +e # we don't want test.sh or hyperfine failing on 1 fork to exit the script early
 
   # Save output of test.sh to a temporary pipe
   # This is needed because test.sh deletes measurements.txt
@@ -186,10 +188,8 @@ for fork in "$@"; do
     failed+=("$fork")
     # Hyperfine already prints the error message
     echo ""
-    continue;
+    continue
   fi
-
-  set -e
 done
 
 # Summary
