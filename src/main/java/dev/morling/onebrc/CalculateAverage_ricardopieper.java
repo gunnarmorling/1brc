@@ -86,7 +86,7 @@ public class CalculateAverage_ricardopieper {
     public static record FileChunk(Path path, long start, int size) {
     }
 
-       public static List<FileChunk> splitFile(Path path, int numChunks) throws IOException {
+    public static List<FileChunk> splitFile(Path path, int numChunks) throws IOException {
         try (var fileChannel = FileChannel.open(path, StandardOpenOption.READ)) {
             var chunks = new ArrayList<FileChunk>();
             long size = fileChannel.size();
@@ -134,8 +134,8 @@ public class CalculateAverage_ricardopieper {
                 b3 = (byte) (vector >> 64 - 32),
                 b4 = (byte) (vector >> 64 - 40);
 
-        //check for windows newline
-        byte newlineByte = (byte)(vector >> (64 - (len * 8)));
+        // check for windows newline
+        byte newlineByte = (byte) (vector >> (64 - (len * 8)));
         if (newlineByte == '\r') {
             len--;
         }
