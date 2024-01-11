@@ -259,7 +259,7 @@ If you want to use a build not available via these channels, reach out to discus
 * The computation must happen at application _runtime_, i.e. you cannot process the measurements file at _build time_
 (for instance, when using GraalVM) and just bake the result into the binary
 * Input value ranges are as follows:
-    * Station name: non null UTF-8 string of min length 1 character and max length 100 bytes (i.e. this could be 100 one-byte characters, or 50 two-byte characters, etc.)
+    * Station name: non null UTF-8 string of min length 1 character and max length 100 bytes, containing neither `;` nor `\n` characters. (i.e. this could be 100 one-byte characters, or 50 two-byte characters, etc.)
     * Temperature value: non null double between -99.9 (inclusive) and 99.9 (inclusive), always with one fractional digit
 * There is a maximum of 10,000 unique station names
 * Implementations must not rely on specifics of a given data set, e.g. any valid station name as per the constraints above and any data distribution (number of measurements per station) must be supported
@@ -327,7 +327,7 @@ A: The file is encoded with UTF-8.
 
 _Q: Can I make assumptions on the names of the weather stations showing up in the data set?_\
 A: No, while only a fixed set of station names is used by the data set generator, any solution should work with arbitrary UTF-8 station names
-(for the sake of simplicity, names are guaranteed to contain no `;` character).
+(for the sake of simplicity, names are guaranteed to contain no `;` or `\n` characters).
 
 _Q: Can I copy code from other submissions?_\
 A: Yes, you can. The primary focus of the challenge is about learning something new, rather than "winning". When you do so, please give credit to the relevant source submissions. Please don't re-submit other entries with no or only trivial improvements.
