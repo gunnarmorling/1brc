@@ -45,7 +45,7 @@ public class CalculateAverage_vemana {
     public static void main(String[] args) throws Exception {
         // First process in large chunks without coordination among threads
         // Use chunkSizeBits for the large-chunk size
-        int chunkSizeBits = 16;
+        int chunkSizeBits = 20;
 
         // For the last commonChunkFraction fraction of total work, use smaller chunk sizes
         double commonChunkFraction = 0;
@@ -72,6 +72,7 @@ public class CalculateAverage_vemana {
             hashtableSizeBits = Integer.parseInt(args[3]);
         }
 
+        System.err.println("Num processors = " + Runtime.getRuntime().availableProcessors());
         // System.err.println(STR."""
         // Using the following parameters:
         // - chunkSizeBits = \{chunkSizeBits}
@@ -352,12 +353,6 @@ public class CalculateAverage_vemana {
                 int pos = (int) i << 4;
                 nextStarts[pos] = currentStart;
                 nextStarts[pos + 1] = currentStart + currentChunks * chunkSize;
-                // System.err.println(STR."""
-                // Allocated to shard \{i}: \{nextStarts[pos]} -- \{nextStarts[pos + 1]}
-                // Num chunks: \{currentChunks}
-                // Shard Size: \{currentChunks * chunkSize}
-                // Common pool start: \{commonPoolStart}
-                // """);
                 currentStart += currentChunks * chunkSize;
                 remainingChunks -= currentChunks;
             }
@@ -396,12 +391,6 @@ public class CalculateAverage_vemana {
 
             ByteRange chunk = byteRanges[pos];
             chunk.setRange(rangeStart, rangeEnd, sizeExactly);
-            // System.err.println(STR."""
-            // Shard: \{idx}
-            // rangeStart: \{rangeStart}
-            // rangeEnd: \{rangeEnd}
-            // Chunk: \{chunk}
-            // """);
             return chunk;
         }
     }
