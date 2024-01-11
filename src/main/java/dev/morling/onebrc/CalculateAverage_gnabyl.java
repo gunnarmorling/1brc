@@ -109,22 +109,138 @@ public class CalculateAverage_gnabyl {
 		return List.of();
 	}
 
-	private static void processChunk(Chunk chunk) {
-		System.out.println("Processing Chunk " + chunk.index() + " in Thread " + Thread.currentThread().getName());
+	private static class ChunkResult {
+		private Map<String, Long> count;
+		private Map<String, Double> sum, min, max;
+
+		public ChunkResult() {
+			sum = new HashMap<>();
+			min = new HashMap<>();
+			max = new HashMap<>();
+			count = new HashMap<>();
+		}
+
+		public Map<String, Double> getSum() {
+			return sum;
+		}
+
+		public Map<String, Double> getMin() {
+			return min;
+		}
+
+		public Map<String, Double> getMax() {
+			return max;
+		}
+
+		public Map<String, Long> getCount() {
+			return this.count;
+		}
+
+		private double round(double value) {
+			return Math.round(value * 10.0) / 10.0;
+		}
+
+		public void print() {
+			var stationNames = new ArrayList<String>(this.getSum().keySet());
+			Collections.sort(stationNames);
+			System.out.print("{");
+			for (int i = 0; i < stationNames.size() - 1; i++) {
+				var name = stationNames.get(i);
+				System.out.printf("%s=%.1f/%.1f/%.1f, ", name, round(this.getMin().get(name)),
+						round(this.getSum().get(name) / this.getCount().get(name)),
+						round(this.getMax().get(name)));
+			}
+			var name = stationNames.get(stationNames.size() - 1);
+			System.out.printf("%s=%.1f/%.1f/%.1f", name, round(this.getMin().get(name)),
+					round(this.getSum().get(name) / this.getCount().get(name)),
+					round(this.getMax().get(name)));
+			System.out.print("}");
+		}
+
+		public void mergeWith(ChunkResult other) {
+			// Increment the count
+			mergeMap(this.count, other.count, Long::sum);
+
+			// Merge sum values
+			mergeMap(this.sum, other.sum, Double::sum);
+
+			// Merge min values
+			mergeMap(this.min, other.min, Double::min);
+
+			// Merge max values
+			mergeMap(this.max, other.max, Double::max);
+		}
+
+		private <T> void mergeMap(Map<String, T> target, Map<String, T> source,
+				BinaryOperator<T> mergeFunction) {
+			for (Map.Entry<String, T> entry : source.entrySet()) {
+				String key = entry.getKey();
+				T sourceValue = entry.getValue();
+				target.merge(key, sourceValue, mergeFunction);
+			}
+		}
+	}
+
+	private static ChunkResult processChunk(Chunk chunk) {
+		ChunkResult result = new ChunkResult();
 
 		// Perform processing on the chunk data
 		byte[] data = new byte[chunk.bytesCount()];
 		chunk.mappedByteBuffer().get(data);
+
+		// Process each line
+		for (int offset = 0; offset < chunk.bytesCount(); offset++) {
+			int eol;
+			for (eol = offset; eol < chunk.bytesCount() && data[eol] != '\n'; eol++) {
+			}
+			byte[] lineBytes = new byte[eol - offset];
+			for (int i = offset; i < eol; i++) {
+				lineBytes[i - offset] = data[i];
+			}
+			String line = new String(lineBytes, StandardCharsets.UTF_8);
+
+			Measurement measurement = new Measurement(line.split(";"));
+
+			// Init & count
+			if (!result.getSum().containsKey(measurement.station())) {
+				result.getCount().put(measurement.station(), 0L);
+				result.getSum().put(measurement.station(), 0.0);
+				result.getMin().put(measurement.station(), Double.MAX_VALUE);
+				result.getMax().put(measurement.station(), -Double.MAX_VALUE);
+			}
+			// Sum
+			var currentSum = result.getSum().get(measurement.station());
+			result.getSum().put(measurement.station(), currentSum + measurement.value());
+			// Count
+			var currentCount = result.getCount().get(measurement.station());
+			result.getCount().put(measurement.station(), currentCount + 1);
+			// Min
+			var currentMin = result.getMin().get(measurement.station());
+			result.getMin().put(measurement.station(),
+					currentMin > measurement.value() ? measurement.value() : currentMin);
+			// Max
+			var currentMax = result.getMax().get(measurement.station());
+			result.getMax().put(measurement.station(),
+					currentMax < measurement.value() ? measurement.value() : currentMax);
+
+			offset = eol;
+		}
+
+		return result;
 	}
 
-	private static void processAllChunks(List<Chunk> chunks) {
+	private static ChunkResult processAllChunks(List<Chunk> chunks) {
+		var globalRes = new ChunkResult();
 		for (var chunk : chunks) {
-			processChunk(chunk);
+			var chunkRes = processChunk(chunk);
+			globalRes.mergeWith(chunkRes);
 		}
+		return globalRes;
 	}
 
 	public static void main(String[] args) throws IOException {
 		var chunks = readChunks(NB_CHUNKS);
-		processAllChunks(chunks);
+		var result = processAllChunks(chunks);
+		result.print();
 	}
 }
