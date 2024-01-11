@@ -169,7 +169,8 @@ public class CalculateAverage_samuelyvon {
                 byte c = chunk.get(j);
                 if (c != '.') {
                     temp += (char) (c - ZERO);
-                } else {
+                }
+                else {
                     j++;
                     break;
                 }
