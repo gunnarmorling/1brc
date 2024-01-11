@@ -169,11 +169,9 @@ public class CalculateAverage_vaidhy<T> {
 
         public ByteSlice until(byte ch, boolean computeHash) {
             int h = 0;
+            byte inCh;
             for (long i = position; i < fileEnd; i++) {
-                if (computeHash) {
-                    h = (h * 31) ^ UNSAFE.getByte(i);
-                }
-                if (UNSAFE.getByte(i) == ch) {
+                if ((inCh = UNSAFE.getByte(i)) == ch) {
                     try {
                         return new ByteSlice(position, i, h);
                     }
@@ -181,7 +179,11 @@ public class CalculateAverage_vaidhy<T> {
                         position = i + 1;
                     }
                 }
+                if (computeHash) {
+                    h = (h * 31) ^ inCh;
+                }
             }
+
             try {
                 return new ByteSlice(position, fileEnd, h);
             }
