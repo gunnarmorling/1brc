@@ -52,7 +52,7 @@ import java.util.stream.Collectors;
  * 2024-01-09: Naive multi-threaded, no floats, manual line parsing
  * </p>
  */
-public class CalculateAverage_samuelyvon {
+public class CalculateAverage_SamuelYvon {
 
     private static final String FILE = "./measurements.txt";
 
@@ -169,8 +169,7 @@ public class CalculateAverage_samuelyvon {
                 byte c = chunk.get(j);
                 if (c != '.') {
                     temp += (char) (c - ZERO);
-                }
-                else {
+                } else {
                     j++;
                     break;
                 }
@@ -241,7 +240,7 @@ public class CalculateAverage_samuelyvon {
         var fileChunks = getFileChunks();
 
         // Map per core, giving the non-overlapping memory slices
-        final Map<String, StationMeasureAgg> sortedMeasures = fileChunks.parallelStream().map(CalculateAverage_samuelyvon::parseChunk)
+        final Map<String, StationMeasureAgg> sortedMeasures = fileChunks.parallelStream().map(CalculateAverage_SamuelYvon::parseChunk)
                 .flatMap(x -> x.values().stream()).collect(Collectors.toMap(StationMeasureAgg::city, x -> x, StationMeasureAgg::mergeWith, TreeMap::new));
 
         System.out.println(sortedMeasures);
