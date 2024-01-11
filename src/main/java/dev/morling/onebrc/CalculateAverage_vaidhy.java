@@ -49,10 +49,11 @@ public class CalculateAverage_vaidhy<T> {
 
     private static final Unsafe UNSAFE = initUnsafe();
 
-    record ByteSlice(long from, long to) {
+    record ByteSlice(long from, long to, int hCode) {
 
         @Override
         public int hashCode() {
+            if (hCode != 0) { return hCode; }
             int h = 0;
             for (long i = from; i < to; i++) {
                 h = (h * 31) ^ UNSAFE.getByte(i);
@@ -166,11 +167,15 @@ public class CalculateAverage_vaidhy<T> {
             return position <= chunkEnd && position < fileEnd;
         }
 
-        public ByteSlice until(byte ch) {
+        public ByteSlice until(byte ch, boolean computeHash) {
+            int h = 0;
             for (long i = position; i < fileEnd; i++) {
+                if (computeHash) {
+                    h = (h * 31) ^ UNSAFE.getByte(i);
+                }
                 if (UNSAFE.getByte(i) == ch) {
                     try {
-                        return new ByteSlice(position, i);
+                        return new ByteSlice(position, i, h);
                     }
                     finally {
                         position = i + 1;
@@ -178,7 +183,7 @@ public class CalculateAverage_vaidhy<T> {
                 }
             }
             try {
-                return new ByteSlice(position, fileEnd);
+                return new ByteSlice(position, fileEnd, h);
             }
             finally {
                 position = fileEnd;
@@ -193,7 +198,7 @@ public class CalculateAverage_vaidhy<T> {
         if (offset != 0) {
             if (lineStream.hasNext()) {
                 // Skip the first line.
-                lineStream.until((byte) '\n');
+                lineStream.until((byte) '\n', false);
             }
             else {
                 // No lines then do nothing.
@@ -201,8 +206,8 @@ public class CalculateAverage_vaidhy<T> {
             }
         }
         while (lineStream.hasNext()) {
-            ByteSlice key = lineStream.until((byte) ';');
-            ByteSlice value = lineStream.until((byte) '\n');
+            ByteSlice key = lineStream.until((byte) ';', true);
+            ByteSlice value = lineStream.until((byte) '\n', false);
             lineConsumer.process(key, value);
         }
     }
