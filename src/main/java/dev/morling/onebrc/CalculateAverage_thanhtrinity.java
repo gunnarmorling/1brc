@@ -100,11 +100,11 @@ public class CalculateAverage_thanhtrinity {
 
     private static ChunkData processBufferData(MappedByteBuffer buffer, long taskIdx) {
 
-        final int citySize = 100000;
-        var breakLineIndex = 0;
+        int currentIdx = 0;
+        int breakLineIndex = 0;
 
-        var cities = new City[citySize];
-        City city = null;
+        final int capacity = 100000;
+        var cities = new City[capacity];
         var isProcessKey = true;
         var hashKey = 0;
         double result = 0;
@@ -113,23 +113,24 @@ public class CalculateAverage_thanhtrinity {
         boolean isFractional = false;
         double divisorForFraction = 1;
         boolean isNegative = false;
+
         for (int i = 0; i < buffer.limit(); i++) {
             var b = buffer.get();
             var position = i + 1;
             if (isProcessKey) {
                 if (b == ';') {
-                    int cIdx = abs(hashKey % citySize);
-                    city = cities[cIdx];
-                    if (city == null) {
+                    hashKey = hashKey % capacity;
+                    currentIdx = hashKey;
+                    if (cities[currentIdx] == null) {
                         var name = new byte[position - breakLineIndex];
                         buffer.get(breakLineIndex, name, 0, position - breakLineIndex - 1);
-                        cities[cIdx] = city = new City(name);
+                        cities[currentIdx] = new City(name);
                     }
                     hashKey = 0;
                     isProcessKey = false;
                 }
                 else {
-                    hashKey = 31 * hashKey + b;
+                    hashKey = (31 * hashKey + b) & 0x7FFFFFFF;
                 }
             }
             else {
@@ -139,7 +140,7 @@ public class CalculateAverage_thanhtrinity {
                     if (isNegative) {
                         result *= -1;
                     }
-                    city.updateTemp(result);
+                    cities[currentIdx].updateTemp(result);
 
                     breakLineIndex = position;
                     // reset parameter
@@ -151,7 +152,6 @@ public class CalculateAverage_thanhtrinity {
                     divisorForFraction = 1;
                     isNegative = false;
                     isProcessKey = true;
-
                 }
                 else {
                     switch (b) {
