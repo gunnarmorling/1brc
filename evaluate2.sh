@@ -159,6 +159,8 @@ for fork in "$@"; do
     echo -e "${BOLD_RED}FAILURE${RESET}: output of ${BOLD_WHITE}$fork-$filetimestamp.out${RESET} does not match ${BOLD_WHITE}out_expected.txt${RESET}"
     echo ""
 
+    git diff --no-index --word-diff out_expected.txt $fork-$filetimestamp.out
+
     # add $fork to $failed array
     failed+=("$fork")
   fi
