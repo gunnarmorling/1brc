@@ -34,6 +34,32 @@ import java.util.function.Supplier;
 
 public class CalculateAverage_vaidhy<T> {
 
+    private record Entry(long startAddress, long endAddress, IntSummaryStatistics value) {
+    }
+
+    private static class PrimitiveHash {
+        Entry [] entries;
+
+        PrimitiveHash(int capacity) {
+            this.entries = new Entry[capacity];
+        }
+
+        public IntSummaryStatistics get(long startAddress, long endAddress, int hash) {
+            int i = hash, len = entries.length;
+            do {
+                Entry entry = entries[i];
+                if (entry.startAddress == 0) {
+                    return null;
+                }
+                i++;
+                if (i == len) {
+                    i = 0;
+                }
+            } while (i != hash);
+            return null;
+        }
+    }
+
     private static final String FILE = "./measurements.txt";
 
     private static Unsafe initUnsafe() {
