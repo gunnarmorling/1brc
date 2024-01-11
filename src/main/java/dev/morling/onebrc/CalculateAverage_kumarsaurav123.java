@@ -118,7 +118,8 @@ public class CalculateAverage_kumarsaurav123 {
         long start = System.currentTimeMillis();
         long len = Paths.get(FILE).toFile().length();
         Map<Integer, List<byte[]>> leftOutsMap = new ConcurrentSkipListMap<>();
-        int chunkSize = 1_0000_00;
+        int memory= (int)(Runtime.getRuntime().maxMemory()/(1024*1024*1024.0*8));
+        int chunkSize= 1_0000_00*memory;
         long proc = Math.max(1, (len / chunkSize));
         ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2 * 2 * 2);
         List<ResultRow> measurements = Collections.synchronizedList(new ArrayList<ResultRow>());
