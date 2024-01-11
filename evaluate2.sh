@@ -44,7 +44,7 @@ function check_command_installed {
 }
 
 function print_and_execute() {
-  echo "+ $@"
+  echo "+ $@" >&2
   "$@"
 }
 
@@ -104,6 +104,9 @@ fi
 
 print_and_execute java --version
 print_and_execute ./mvnw --quiet clean verify
+
+print_and_execute rm -f measurements.txt
+print_and_execute ln -s $MEASUREMENTS_FILE measurements.txt
 
 echo ""
 
