@@ -61,48 +61,43 @@ public class CalculateAverage_gnabyl {
         return realSize;
     }
 
-    private static List<Chunk> readChunks(long nbChunks) {
-        try (RandomAccessFile file = new RandomAccessFile(FILE, "rw")) {
-            List<Chunk> res = new ArrayList<>();
-            FileChannel channel = file.getChannel();
-            long bytesCount = channel.size();
-            long bytesPerChunk = bytesCount / nbChunks;
+    private static List<Chunk> readChunks(long nbChunks) throws IOException {
+        RandomAccessFile file = new RandomAccessFile(FILE, "rw");
+        List<Chunk> res = new ArrayList<>();
+        FileChannel channel = file.getChannel();
+        long bytesCount = channel.size();
+        long bytesPerChunk = bytesCount / nbChunks;
 
-            // Memory map the file in read-only mode
-            // TODO: Optimize using threads
-            long currentPosition = 0;
-            for (int i = 0; i < nbChunks; i++) {
-                int startSize = (int) bytesPerChunk;
-                int realSize = startSize;
+        // Memory map the file in read-only mode
+        // TODO: Optimize using threads
+        long currentPosition = 0;
+        for (int i = 0; i < nbChunks; i++) {
+            int startSize = (int) bytesPerChunk;
+            int realSize = startSize;
 
-                if (i == nbChunks - 1) {
-                    realSize = (int) (bytesCount - currentPosition);
-                    MappedByteBuffer mappedByteBuffer = channel.map(FileChannel.MapMode.READ_ONLY, currentPosition,
-                            realSize);
-
-                    res.add(new Chunk(currentPosition, realSize, mappedByteBuffer));
-                    break;
-                }
-
-                // Adjust size so that it ends on a newline
-                realSize = reduceSizeToFitLineBreak(channel, currentPosition, startSize);
-
+            if (i == nbChunks - 1) {
+                realSize = (int) (bytesCount - currentPosition);
                 MappedByteBuffer mappedByteBuffer = channel.map(FileChannel.MapMode.READ_ONLY, currentPosition,
                         realSize);
 
                 res.add(new Chunk(currentPosition, realSize, mappedByteBuffer));
-                currentPosition += realSize;
+                break;
             }
 
-            channel.close();
-            file.close();
+            // Adjust size so that it ends on a newline
+            realSize = reduceSizeToFitLineBreak(channel, currentPosition, startSize);
 
-            return res;
+            MappedByteBuffer mappedByteBuffer = channel.map(FileChannel.MapMode.READ_ONLY, currentPosition,
+                    realSize);
+
+            res.add(new Chunk(currentPosition, realSize, mappedByteBuffer));
+            currentPosition += realSize;
         }
-        catch (IOException e) {
-            e.printStackTrace();
-        }
-        return List.of();
+
+        channel.close();
+        file.close();
+
+        return res;
     }
 
     private static class StationData {
@@ -207,7 +202,7 @@ public class CalculateAverage_gnabyl {
 
         // Process each line
         String stationName;
-        Double value;
+        double value;
         int iSplit, iEol;
         StationData stationData;
         for (int offset = 0; offset < data.length; offset++) {
@@ -220,7 +215,7 @@ public class CalculateAverage_gnabyl {
             iSplit++;
             for (iEol = iSplit; data[iEol] != '\n'; iEol++) {
             }
-            value = Double.parseDouble(new String(data, iSplit, iEol - iSplit, StandardCharsets.UTF_8));
+            value = Double.valueOf(new String(data, iSplit, iEol - iSplit, StandardCharsets.UTF_8));
 
             // Init & count
             stationData = result.getData(stationName);
@@ -238,7 +233,7 @@ public class CalculateAverage_gnabyl {
         return result;
     }
 
-    private static ChunkResult processAllChunks(List<Chunk> chunks) {
+    private static ChunkResult processAllChunks(List<Chunk> chunks) throws InterruptedException, ExecutionException {
         // var globalRes = new ChunkResult();
         // for (var chunk : chunks) {
         // var chunkRes = processChunk(chunk);
@@ -252,22 +247,22 @@ public class CalculateAverage_gnabyl {
             computeTasks.add(CompletableFuture.supplyAsync(() -> processChunk(chunk)));
         }
 
-        ChunkResult globalRes = new ChunkResult();
+        ChunkResult globalRes = null;
 
         for (CompletableFuture<ChunkResult> completedTask : computeTasks) {
-            try {
-                ChunkResult chunkRes = completedTask.get();
-                globalRes.mergeWith(chunkRes);
+            ChunkResult chunkRes = completedTask.get();
+            if (globalRes == null) {
+                globalRes = completedTask.get();
             }
-            catch (InterruptedException | ExecutionException e) {
-                e.printStackTrace(); // Handle exceptions if needed
+            else {
+                globalRes.mergeWith(chunkRes);
             }
         }
 
         return globalRes;
     }
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
         var chunks = readChunks(NB_CHUNKS);
         var result = processAllChunks(chunks);
         result.print();
