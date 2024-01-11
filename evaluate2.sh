@@ -283,9 +283,12 @@ rm $leaderboard_temp_file
 # Finalize .out files
 echo "Raw results saved to file(s):"
 for fork in "$@"; do
-  # Append $fork-$filetimestamp-timing.json to $fork-$filetimestamp.out and rm $fork-$filetimestamp-timing.json
-  cat $fork-$filetimestamp-timing.json >> $fork-$filetimestamp.out
-  rm $fork-$filetimestamp-timing.json
+  if [ -f "$fork-$filetimestamp-timing.json" ]; then
+      cat $fork-$filetimestamp-timing.json >> $fork-$filetimestamp.out
+      rm $fork-$filetimestamp-timing.json
+  fi
 
-  echo "  $fork-$filetimestamp.out"
+  if [ -f "$fork-$filetimestamp.out" ]; then
+    echo "  $fork-$filetimestamp.out"
+  fi
 done
