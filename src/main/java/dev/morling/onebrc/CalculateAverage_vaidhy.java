@@ -19,7 +19,6 @@ import sun.misc.Unsafe;
 
 import java.io.IOException;
 import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
 import java.lang.reflect.Field;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
@@ -27,17 +26,15 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.ForkJoinTask;
-import java.util.function.Consumer;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
 public class CalculateAverage_vaidhy<T> {
 
     private static final String FILE = "./measurements.txt";
-
-    private static final Unsafe UNSAFE = initUnsafe();
 
     private static Unsafe initUnsafe() {
         try {
@@ -50,18 +47,91 @@ public class CalculateAverage_vaidhy<T> {
         }
     }
 
+    private static final Unsafe UNSAFE = initUnsafe();
+
+    record ByteSlice(long from, long to) {
+
+        @Override
+        public int hashCode() {
+            int h = 0;
+            for (long i = from; i < to; i++) {
+                h = (h * 31) ^ UNSAFE.getByte(i);
+            }
+            return h;
+        }
+
+        public int length() {
+            return (int) (to - from);
+        }
+
+        public byte get(int i) {
+            return UNSAFE.getByte(from + i);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (o instanceof ByteSlice bs) {
+                int len = this.length();
+                if (bs.length() != len) {
+                    return false;
+                }
+                for (int i = 0; i < len; i++) {
+                    if (this.get(i) != bs.get(i)) {
+                        return false;
+                    }
+                }
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        @Override
+        public String toString() {
+            byte[] copy = new byte[this.length()];
+            for (int i = 0; i < copy.length; i++) {
+                copy[i] = get(i);
+            }
+            return new String(copy, StandardCharsets.UTF_8);
+        }
+    }
+
+    private static int parseDouble(ByteSlice slice) {
+        int normalized = 0;
+        boolean sign = true;
+        int index = 0;
+        if (slice.get(index) == '-') {
+            index++;
+            sign = false;
+        }
+        int length = slice.length();
+        for (; index < length; index++) {
+            byte ch = slice.get(index);
+            if (ch != '.') {
+                normalized = normalized * 10 + (ch - '0');
+            }
+        }
+        if (!sign) {
+            normalized = -normalized;
+        }
+        return normalized;
+    }
+
+    interface MapReduce<T> {
+
+        void process(ByteSlice key, ByteSlice value);
+
+        T result();
+    }
+
     private final FileService fileService;
     private final Supplier<MapReduce<T>> chunkProcessCreator;
     private final Function<List<T>, T> reducer;
 
-    interface MapReduce<T> extends Consumer<EfficientString> {
-        T result();
-    }
-
     interface FileService {
         long length();
 
-        byte getByte(long position);
+        long address();
     }
 
     public CalculateAverage_vaidhy(FileService fileService,
@@ -72,41 +142,6 @@ public class CalculateAverage_vaidhy<T> {
         this.reducer = reducer;
     }
 
-    /// SAMPLE CANDIDATE CODE STARTS
-
-    /**
-     * Reads from a given offset till the end, it calls server in
-     * blocks of scanSize whenever cursor passes the current block.
-     * Typically when hasNext() is called. hasNext() is efficient
-     * in the sense calling second time is cheap if next() is not
-     * called in between. Cheap in the sense no call to server is
-     * made.
-     */
-    // Space complexity = O(scanSize)
-    static class ByteStream {
-
-        private final FileService fileService;
-        private long position;
-        private long fileLength;
-
-        public ByteStream(FileService fileService, long offset) {
-            this.fileService = fileService;
-            this.fileLength = fileService.length();
-            this.position = offset;
-            if (offset < 0) {
-                throw new IllegalArgumentException("offset must be >= 0");
-            }
-        }
-
-        public boolean hasNext() {
-            return position < fileLength;
-        }
-
-        public byte next() {
-            return fileService.getByte(position++);
-        }
-    }
-
     /**
      * Reads lines from a given character stream, hasNext() is always
      * efficient, all work is done only in next().
@@ -114,47 +149,51 @@ public class CalculateAverage_vaidhy<T> {
     // Space complexity: O(max line length) in next() call, structure is O(1)
     // not counting charStream as it is only a reference, we will count that
     // in worker space.
-    static class LineStream implements Iterator<EfficientString> {
-        private final ByteStream byteStream;
-        private int readIndex;
-        private final long length;
+    static class LineStream {
+        private final long fileEnd;
+        private final long chunkEnd;
 
-        public LineStream(ByteStream byteStream, long length) {
-            this.byteStream = byteStream;
-            this.readIndex = 0;
-            this.length = length;
+        private long position;
+
+        public LineStream(FileService fileService, long offset, long chunkSize) {
+            long fileStart = fileService.address();
+            this.fileEnd = fileStart + fileService.length();
+            this.chunkEnd = fileStart + offset + chunkSize;
+            this.position = fileStart + offset;
         }
 
-        @Override
         public boolean hasNext() {
-            return readIndex <= length && byteStream.hasNext();
+            return position <= chunkEnd && position < fileEnd;
         }
 
-        @Override
-        public EfficientString next() {
-            byte[] line = new byte[128];
-            int i = 0;
-            while (byteStream.hasNext()) {
-                byte ch = byteStream.next();
-                readIndex++;
-                if (ch == 0x0a) {
-                    break;
+        public ByteSlice until(byte ch) {
+            for (long i = position; i < fileEnd; i++) {
+                if (UNSAFE.getByte(i) == ch) {
+                    try {
+                        return new ByteSlice(position, i);
+                    }
+                    finally {
+                        position = i + 1;
+                    }
                 }
-                line[i++] = ch;
             }
-            return new EfficientString(line, i);
+            try {
+                return new ByteSlice(position, fileEnd);
+            }
+            finally {
+                position = fileEnd;
+            }
         }
     }
 
     // Space complexity: O(scanSize) + O(max line length)
-    public void worker(long offset, long chunkSize, Consumer<EfficientString> lineConsumer) {
-        ByteStream byteStream = new ByteStream(fileService, offset);
-        Iterator<EfficientString> lineStream = new LineStream(byteStream, chunkSize);
+    private void worker(long offset, long chunkSize, MapReduce<T> lineConsumer) {
+        LineStream lineStream = new LineStream(fileService, offset, chunkSize);
 
         if (offset != 0) {
             if (lineStream.hasNext()) {
                 // Skip the first line.
-                lineStream.next();
+                lineStream.until((byte) '\n');
             }
             else {
                 // No lines then do nothing.
@@ -162,22 +201,23 @@ public class CalculateAverage_vaidhy<T> {
             }
         }
         while (lineStream.hasNext()) {
-            lineConsumer.accept(lineStream.next());
+            ByteSlice key = lineStream.until((byte) ';');
+            ByteSlice value = lineStream.until((byte) '\n');
+            lineConsumer.process(key, value);
         }
     }
 
     // Space complexity: O(number of workers), not counting
     // workers space assuming they are running in different hosts.
-    public T master(long chunkSize) {
+    public T master(long chunkSize, ExecutorService executor) {
         long len = fileService.length();
-        List<ForkJoinTask<T>> summaries = new ArrayList<>();
-        ForkJoinPool commonPool = ForkJoinPool.commonPool();
+        List<Future<T>> summaries = new ArrayList<>();
 
         for (long offset = 0; offset < len; offset += chunkSize) {
             long workerLength = Math.min(len, offset + chunkSize) - offset;
             MapReduce<T> mr = chunkProcessCreator.get();
             final long transferOffset = offset;
-            ForkJoinTask<T> task = commonPool.submit(() -> {
+            Future<T> task = executor.submit(() -> {
                 worker(transferOffset, workerLength, mr);
                 return mr.result();
             });
@@ -200,124 +240,45 @@ public class CalculateAverage_vaidhy<T> {
 
     static class DiskFileService implements FileService {
 
-        private final FileChannel fileChannel;
+        private final long fileSize;
         private final long mappedAddress;
 
         DiskFileService(String fileName) throws IOException {
-            this.fileChannel = FileChannel.open(Path.of(fileName),
+            FileChannel fileChannel = FileChannel.open(Path.of(fileName),
                     StandardOpenOption.READ);
+            this.fileSize = fileChannel.size();
             this.mappedAddress = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0,
-                    fileChannel.size(), Arena.global()).address();
+                    fileSize, Arena.global()).address();
         }
 
         @Override
         public long length() {
-            try {
-                return this.fileChannel.size();
-            }
-            catch (IOException e) {
-                throw new RuntimeException(e);
-            }
+            return fileSize;
         }
 
         @Override
-        public byte getByte(long position) {
-            return UNSAFE.getByte(mappedAddress + position);
+        public long address() {
+            return mappedAddress;
         }
     }
 
-    record EfficientString(byte[] arr, int length) {
+    public static class ChunkProcessorImpl implements MapReduce<Map<ByteSlice, IntSummaryStatistics>> {
+
+        private final Map<ByteSlice, IntSummaryStatistics> statistics = new HashMap<>(10000);
 
         @Override
-        public int hashCode() {
-            int h = 0;
-            for (int i = 0; i < length; i++) {
-                h = (h * 32) + arr[i];
-            }
-            return h;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (o == this) {
-                return true;
-            }
-            EfficientString eso = (EfficientString) o;
-            if (eso.length != this.length) {
-                return false;
-            }
-            for (int i = 0; i < length; i++) {
-                if (arr[i] != eso.arr[i]) {
-                    return false;
-                }
-            }
-            return true;
-        }
-    }
-
-    private static final EfficientString EMPTY = new EfficientString(new byte[0], 0);
-
-    public static class ChunkProcessorImpl implements MapReduce<Map<EfficientString, IntSummaryStatistics>> {
-
-        private final Map<EfficientString, IntSummaryStatistics> statistics = new HashMap<>(10000);
-
-        @Override
-        public void accept(EfficientString line) {
-            EfficientString station = getStation(line);
-
-            int normalized = parseDouble(line.arr,
-                    station.length + 1, line.length);
-
-            updateStats(station, normalized);
-        }
-
-        private void updateStats(EfficientString station, int normalized) {
+        public void process(ByteSlice station, ByteSlice value) {
+            int temperature = parseDouble(value);
             IntSummaryStatistics stats = statistics.get(station);
             if (stats == null) {
                 stats = new IntSummaryStatistics();
                 statistics.put(station, stats);
             }
-            stats.accept(normalized);
-        }
-
-        private static EfficientString getStation(EfficientString line) {
-            for (int i = 0; i < line.length; i++) {
-                if (line.arr[i] == ';') {
-                    return new EfficientString(line.arr, i);
-                }
-            }
-            return EMPTY;
-        }
-
-        private static int parseDouble(byte[] value, int offset, int length) {
-            int normalized = 0;
-            int index = offset;
-            boolean sign = true;
-            if (value[index] == '-') {
-                index++;
-                sign = false;
-            }
-            // boolean hasDot = false;
-            for (; index < length; index++) {
-                byte ch = value[index];
-                if (ch != '.') {
-                    normalized = normalized * 10 + (ch - '0');
-                }
-                // else {
-                // hasDot = true;
-                // }
-            }
-            // if (!hasDot) {
-            // normalized *= 10;
-            // }
-            if (!sign) {
-                normalized = -normalized;
-            }
-            return normalized;
+            stats.accept(temperature);
         }
 
         @Override
-        public Map<EfficientString, IntSummaryStatistics> result() {
+        public Map<ByteSlice, IntSummaryStatistics> result() {
             return statistics;
         }
     }
@@ -325,26 +286,31 @@ public class CalculateAverage_vaidhy<T> {
     public static void main(String[] args) throws IOException {
         DiskFileService diskFileService = new DiskFileService(FILE);
 
-        CalculateAverage_vaidhy<Map<EfficientString, IntSummaryStatistics>> calculateAverageVaidhy = new CalculateAverage_vaidhy<>(
+        CalculateAverage_vaidhy<Map<ByteSlice, IntSummaryStatistics>> calculateAverageVaidhy = new CalculateAverage_vaidhy<>(
                 diskFileService,
                 ChunkProcessorImpl::new,
                 CalculateAverage_vaidhy::combineOutputs);
 
-        int proc = ForkJoinPool.commonPool().getParallelism();
+        int proc = 4 * Runtime.getRuntime().availableProcessors();
+
+        int shards = 4 * proc;
         long fileSize = diskFileService.length();
-        long chunkSize = Math.ceilDiv(fileSize, proc);
-        Map<EfficientString, IntSummaryStatistics> output = calculateAverageVaidhy.master(chunkSize);
+        long chunkSize = Math.ceilDiv(fileSize, shards);
+
+        ExecutorService executor = Executors.newFixedThreadPool(proc);
+        Map<ByteSlice, IntSummaryStatistics> output = calculateAverageVaidhy.master(chunkSize, executor);
+        executor.shutdown();
+
         Map<String, String> outputStr = toPrintMap(output);
         System.out.println(outputStr);
     }
 
-    private static Map<String, String> toPrintMap(Map<EfficientString, IntSummaryStatistics> output) {
+    private static Map<String, String> toPrintMap(Map<ByteSlice, IntSummaryStatistics> output) {
 
         Map<String, String> outputStr = new TreeMap<>();
-        for (Map.Entry<EfficientString, IntSummaryStatistics> entry : output.entrySet()) {
+        for (Map.Entry<ByteSlice, IntSummaryStatistics> entry : output.entrySet()) {
             IntSummaryStatistics stat = entry.getValue();
-            outputStr.put(new String(
-                    Arrays.copyOf(entry.getKey().arr, entry.getKey().length), StandardCharsets.UTF_8),
+            outputStr.put(entry.getKey().toString(),
                     (stat.getMin() / 10.0) + "/" +
                             (Math.round(stat.getAverage()) / 10.0) + "/" +
                             (stat.getMax() / 10.0));
@@ -352,10 +318,10 @@ public class CalculateAverage_vaidhy<T> {
         return outputStr;
     }
 
-    private static Map<EfficientString, IntSummaryStatistics> combineOutputs(List<Map<EfficientString, IntSummaryStatistics>> list) {
-        Map<EfficientString, IntSummaryStatistics> output = new HashMap<>(10000);
-        for (Map<EfficientString, IntSummaryStatistics> map : list) {
-            for (Map.Entry<EfficientString, IntSummaryStatistics> entry : map.entrySet()) {
+    private static Map<ByteSlice, IntSummaryStatistics> combineOutputs(List<Map<ByteSlice, IntSummaryStatistics>> list) {
+        Map<ByteSlice, IntSummaryStatistics> output = new HashMap<>(10000);
+        for (Map<ByteSlice, IntSummaryStatistics> map : list) {
+            for (Map.Entry<ByteSlice, IntSummaryStatistics> entry : map.entrySet()) {
                 output.compute(entry.getKey(), (ignore, val) -> {
                     if (val == null) {
                         return entry.getValue();
