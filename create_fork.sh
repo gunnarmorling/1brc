@@ -50,6 +50,13 @@ if [ -z "$FORK" ]
     exit 1
 fi
 
+# validate the fork name has only [a-zA-Z0-9_] and then error otherwise to let the user fix
+if [[ ! "$FORK" =~ ^[a-zA-Z0-9_]+$ ]]; then
+  echo "Fork name must only contain characters result in a valid Java class name  [a-zA-Z0-9_]"
+  exit 1
+fi
+
+
 # helper function
 function substitute_in_file {
   if [[ "$OSTYPE" == "darwin"* ]]; then
