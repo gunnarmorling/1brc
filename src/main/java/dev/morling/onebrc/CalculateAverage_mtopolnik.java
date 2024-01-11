@@ -87,7 +87,7 @@ public class CalculateAverage_mtopolnik {
         final var results = new StationStats[chunkCount][];
         final var chunkStartOffsets = new long[chunkCount];
         try (var raf = new RandomAccessFile(file, "r")) {
-            final var inputBase = raf.getChannel().map(MapMode.READ_ONLY, 0, length, Arena.ofShared()).address();
+            final var inputBase = raf.getChannel().map(MapMode.READ_ONLY, 0, length, Arena.global()).address();
             for (int i = 1; i < chunkStartOffsets.length; i++) {
                 var start = length * i / chunkStartOffsets.length;
                 raf.seek(start);
