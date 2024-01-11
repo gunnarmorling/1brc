@@ -56,7 +56,7 @@ check_command_installed bc
 # Validate that ./calculate_average_<fork>.sh exists for each fork
 for fork in "$@"; do
   if [ ! -f "./calculate_average_$fork.sh" ]; then
-    echo "Error: ./calculate_average_$fork.sh does not exist." >&2
+    echo -e "${BOLD_RED}ERROR${RESET}: ./calculate_average_$fork.sh does not exist." >&2
     exit 1
   fi
 done
@@ -64,7 +64,7 @@ done
 ## SDKMAN Setup
 # 1. Custom check for sdkman installed; not sure why check_command_installed doesn't detect it properly
 if [ ! -f "$HOME/.sdkman/bin/sdkman-init.sh" ]; then
-    echo "Error: sdkman is not installed." >&2
+     echo -e "${BOLD_RED}ERROR${RESET}: sdkman is not installed." >&2
     exit 1
 fi
 
@@ -111,7 +111,9 @@ echo ""
 if [ ! -f "out_expected.txt" ]; then
   echo "Error: out_expected.txt does not exist." >&2
   echo "Please create it with:"
-  echo "  ./calculate_average_baseline.sh > out_expected.txt"
+  echo ""
+  echo "  ./calculate_average_baseline.sh > measurements_1B.out"
+  echo ""
   exit 1
 fi
 
