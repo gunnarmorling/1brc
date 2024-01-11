@@ -158,7 +158,7 @@ public class CalculateAverage_gnabyl {
 			System.out.printf("%s=%.1f/%.1f/%.1f", name, round(this.getMin().get(name)),
 					round(this.getSum().get(name) / this.getCount().get(name)),
 					round(this.getMax().get(name)));
-			System.out.print("}");
+			System.out.println("}");
 		}
 
 		public void mergeWith(ChunkResult other) {
