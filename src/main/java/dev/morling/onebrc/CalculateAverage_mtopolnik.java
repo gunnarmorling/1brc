@@ -139,11 +139,24 @@ public class CalculateAverage_mtopolnik {
         @Override
         public void run() {
             try (Arena confinedArena = Arena.ofConfined()) {
-                final var inputMem = raf.getChannel().map(MapMode.READ_ONLY, chunkStart, chunkLimit - chunkStart, confinedArena);
-                inputBase = inputMem.address();
-                inputSize = inputMem.byteSize();
-                stats = new StatsAccessor(confinedArena.allocate(STATS_TABLE_SIZE * StatsAccessor.SIZEOF, CACHELINE_SIZE));
-                nameBufBase = confinedArena.allocate(NAMEBUF_SIZE).address();
+                long totalAllocated = 0;
+                String threadName = Thread.currentThread().getName();
+                long statsByteSize = STATS_TABLE_SIZE * StatsAccessor.SIZEOF;
+                var diagnosticString = String.format("Thread %s needs %,d bytes, managed to allocate before OOM: ",
+                        threadName, statsByteSize + NAMEBUF_SIZE);
+                try {
+                    final var inputMem = raf.getChannel().map(MapMode.READ_ONLY, chunkStart, chunkLimit - chunkStart, confinedArena);
+                    inputBase = inputMem.address();
+                    inputSize = inputMem.byteSize();
+                    stats = new StatsAccessor(confinedArena.allocate(statsByteSize, CACHELINE_SIZE));
+                    totalAllocated = statsByteSize;
+                    nameBufBase = confinedArena.allocate(NAMEBUF_SIZE).address();
+                }
+                catch (OutOfMemoryError e) {
+                    System.err.print(diagnosticString);
+                    System.err.println(totalAllocated);
+                    throw e;
+                }
                 processChunk();
                 exportResults();
             }
