@@ -82,9 +82,13 @@ public class CalculateAverage {
                     return new ResultRow(agg.min, agg.sum / agg.count, agg.max);
                 });
 
-        Map<String, ResultRow> measurements = new TreeMap<>(Files.lines(Paths.get(FILE))
-                .map(l -> new Measurement(l.split(";")))
-                .collect(groupingBy(m -> m.station(), collector)));
+        //System.out.println(Files.lines(Paths.get(FILE)).isParallel());
+
+        Map<String, ResultRow> measurements = new TreeMap<>(
+            Files.lines(Paths.get(FILE))
+            .map(l -> new Measurement(l.split(";")))
+            .collect(groupingBy(m -> m.station(), collector))
+        );
 
         System.out.println(measurements);
     }
