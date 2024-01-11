@@ -205,6 +205,7 @@ public class CalculateAverage_gnabyl {
         double value;
         int iSplit, iEol;
         StationData stationData;
+        long negative;
         for (int offset = 0; offset < data.length; offset++) {
             // Find station name
             for (iSplit = offset; data[iSplit] != ';'; iSplit++) {
@@ -213,9 +214,21 @@ public class CalculateAverage_gnabyl {
 
             // Find value
             iSplit++;
+            negative = 1;
+            value = 0;
             for (iEol = iSplit; data[iEol] != '\n'; iEol++) {
+                if (data[iEol] == '-') {
+                    negative = -1;
+                    continue;
+                }
+                if (data[iEol] == '.') {
+                    value = value + (data[iEol + 1] - 48) / 10.0;
+                    iEol += 2;
+                    break;
+                }
+                value = value * 10 + data[iEol] - 48;
             }
-            value = Double.valueOf(new String(data, iSplit, iEol - iSplit, StandardCharsets.UTF_8));
+            value *= negative;
 
             // Init & count
             stationData = result.getData(stationName);
