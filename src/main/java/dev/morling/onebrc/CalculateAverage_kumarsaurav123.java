@@ -62,17 +62,17 @@ public class CalculateAverage_kumarsaurav123 {
     }
 
     public static void main(String[] args) {
-        HashMap<Byte,Integer> map=new HashMap<>();
-        map.put((byte) 48,0);
-        map.put((byte) 49,1);
-        map.put((byte) 50,2);
-        map.put((byte) 51,3);
-        map.put((byte) 52,4);
-        map.put((byte) 53,5);
-        map.put((byte) 54,6);
-        map.put((byte) 55,7);
-        map.put((byte) 56,8);
-        map.put((byte) 57,9);
+        HashMap<Byte, Integer> map = new HashMap<>();
+        map.put((byte) 48, 0);
+        map.put((byte) 49, 1);
+        map.put((byte) 50, 2);
+        map.put((byte) 51, 3);
+        map.put((byte) 52, 4);
+        map.put((byte) 53, 5);
+        map.put((byte) 54, 6);
+        map.put((byte) 55, 7);
+        map.put((byte) 56, 8);
+        map.put((byte) 57, 9);
         Collector<ResultRow, MeasurementAggregator, ResultRow> collector2 = Collector.of(
                 MeasurementAggregator::new,
                 (a, m) -> {
@@ -146,26 +146,26 @@ public class CalculateAverage_kumarsaurav123 {
                                             byte[] s2 = new byte[i - st];
                                             System.arraycopy(allBytes2, st, s2, 0, s2.length);
                                             if (cnt != 0) {
-                                                for(int j=0;j<s2.length;j++)
-                                                {
+                                                for (int j = 0; j < s2.length; j++) {
                                                     if (s2[j] == sep[0]) {
                                                         byte[] city = new byte[j];
-                                                        byte[] value = new byte[s2.length-j-1];
+                                                        byte[] value = new byte[s2.length - j - 1];
                                                         System.arraycopy(s2, 0, city, 0, city.length);
-                                                        System.arraycopy(s2, city.length+1, value,0, value.length);
-                                                        double d=0.0;
-                                                        int s=-1;
-                                                        for(int k=value.length-1;k>=0;k--) {
+                                                        System.arraycopy(s2, city.length + 1, value, 0, value.length);
+                                                        double d = 0.0;
+                                                        int s = -1;
+                                                        for (int k = value.length - 1; k >= 0; k--) {
                                                             if (value[k] == 45) {
-                                                                d=d*-1;
+                                                                d = d * -1;
                                                             }
                                                             else if (value[k] == 46) {
-                                                            } else {
+                                                            }
+                                                            else {
                                                                 d = d + map.get(value[k]).intValue() * Math.pow(10, s);
                                                                 s++;
                                                             }
                                                         }
-                                                        mst.add(new Measurement(new String(city),d));
+                                                        mst.add(new Measurement(new String(city), d));
 
                                                     }
                                                 }
@@ -190,7 +190,7 @@ public class CalculateAverage_kumarsaurav123 {
                                 measurements.addAll(mst.stream()
                                         .collect(groupingBy(Measurement::station, collector))
                                         .values());
-//                                System.out.println(measurements.size());
+                                // System.out.println(measurements.size());
                             }
                             catch (Exception e) {
                                 // throw new RuntimeException(e);
@@ -251,6 +251,6 @@ public class CalculateAverage_kumarsaurav123 {
         // .collect(groupingBy(m -> m.station(), collector)));
 
         System.out.println(measurements2);
-//        System.out.println(System.currentTimeMillis() - start);
+        // System.out.println(System.currentTimeMillis() - start);
     }
 }
