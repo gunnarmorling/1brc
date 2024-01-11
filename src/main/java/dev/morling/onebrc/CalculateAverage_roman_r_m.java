@@ -15,11 +15,13 @@
  */
 package dev.morling.onebrc;
 
+import sun.misc.Unsafe;
+
 import java.io.File;
-import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.lang.reflect.Field;
 import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -33,6 +35,8 @@ public class CalculateAverage_roman_r_m {
     public static final int DOT_3_RD_BYTE_MASK = (byte) '.' << 16;
     private static final String FILE = "./measurements.txt";
     private static MemorySegment ms;
+
+    private static Unsafe UNSAFE;
 
     // based on http://0x80.pl/notesen/2023-03-06-swar-find-any.html
     static long hasZeroByte(long l) {
@@ -67,7 +71,11 @@ public class CalculateAverage_roman_r_m {
         return start + i;
     }
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws Exception {
+        Field f = Unsafe.class.getDeclaredField("theUnsafe");
+        f.setAccessible(true);
+        UNSAFE = (Unsafe) f.get(null);
+
         long fileSize = new File(FILE).length();
 
         var channel = FileChannel.open(Paths.get(FILE));
@@ -88,34 +96,29 @@ public class CalculateAverage_roman_r_m {
                     long offset = chunkStart;
                     while (offset < chunkEnd) {
                         long start = offset;
-                        long pos;
+                        long pos = -1;
 
-                        if (!lastChunk || chunkEnd - offset >= 8) {
-                            long next = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
-
-                            while ((pos = find(next, SEMICOLON_MASK)) < 0) {
+                        while (chunkEnd - offset >= 8) {
+                            long next = UNSAFE.getLong(ms.address() + offset);
+                            pos = find(next, SEMICOLON_MASK);
+                            if (pos >= 0) {
+                                offset += pos;
+                                break;
+                            }
+                            else {
                                 offset += 8;
-                                if (!lastChunk || fileSize - offset >= 8) {
-                                    next = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
-                                }
-                                else {
-                                    while (ms.get(ValueLayout.JAVA_BYTE, offset + pos) != ';') {
-                                        pos++;
-                                    }
-                                    break;
-                                }
                             }
                         }
-                        else {
-                            pos = 0;
-                            while (ms.get(ValueLayout.JAVA_BYTE, offset + pos) != ';') {
-                                pos++;
+                        if (pos < 0) {
+                            while (UNSAFE.getByte(ms.address() + offset++) != ';') {
                             }
+                            offset--;
                         }
-                        offset += pos;
+
                         int len = (int) (offset - start);
                         // TODO can we not copy and use a reference into the memory segment to perform table lookup?
-                        MemorySegment.copy(ms, ValueLayout.JAVA_BYTE, start, station.buf, 0, len);
+
+                        UNSAFE.copyMemory(null, ms.address() + start, station.buf, Unsafe.ARRAY_BYTE_BASE_OFFSET, len);
                         station.len = len;
                         station.hash = 0;
 
@@ -124,7 +127,7 @@ public class CalculateAverage_roman_r_m {
                         long val;
                         boolean neg;
                         if (!lastChunk || fileSize - offset >= 8) {
-                            long encodedVal = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+                            long encodedVal = UNSAFE.getLong(ms.address() + offset);
                             neg = (encodedVal & (byte) '-') == (byte) '-';
                             if (neg) {
                                 encodedVal >>= 8;
@@ -143,16 +146,16 @@ public class CalculateAverage_roman_r_m {
                             }
                         }
                         else {
-                            neg = ms.get(ValueLayout.JAVA_BYTE, offset) == '-';
+                            neg = UNSAFE.getByte(ms.address() + offset) == '-';
                             if (neg) {
                                 offset++;
                             }
-                            val = ms.get(ValueLayout.JAVA_BYTE, offset++) - '0';
+                            val = UNSAFE.getByte(ms.address() + offset++) - '0';
                             byte b;
-                            while ((b = ms.get(ValueLayout.JAVA_BYTE, offset++)) != '.') {
+                            while ((b = UNSAFE.getByte(ms.address() + offset++)) != '.') {
                                 val = val * 10 + (b - '0');
                             }
-                            b = ms.get(ValueLayout.JAVA_BYTE, offset);
+                            b = UNSAFE.getByte(ms.address() + offset);
                             val = val * 10 + (b - '0');
                             offset += 2;
                         }
