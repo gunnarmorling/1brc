@@ -51,7 +51,8 @@ import sun.misc.Unsafe;
  * Fixed bug, UNSAFE bytes String:   1850 ms
  * Separate hash from entries:       1550 ms
  * Various tweaks for Linux/cache    1550 ms (should/could make a difference on target machine)
- * Improved layout/predictability    1450 ms (on par with Thomas Wuerthinger)
+ * Improved layout/predictability:   1400 ms
+ * Delayed String creation again:    1350 ms
  *
  * Big thanks to Francesco Nigro, Thomas Wuerthinger, Quan Anh Mai for ideas.
  */
@@ -88,7 +89,7 @@ public class CalculateAverage_royvanrijn {
         for (Entry[] entries : repositories) {
             for (Entry entry : entries) {
                 if (entry != null)
-                    measurements.merge(entry.city, entry, Entry::mergeWith);
+                    measurements.merge(extractedCityFromLongArray(entry.data, entry.length), entry, Entry::mergeWith);
             }
         }
 
@@ -122,18 +123,17 @@ public class CalculateAverage_royvanrijn {
         }
     }
 
-    private static final int TABLE_SIZE = 1 << 18; // large enough for the contest.
+    private static final int TABLE_SIZE = 1 << 19; // large enough for the contest.
     private static final int TABLE_MASK = (TABLE_SIZE - 1);
 
     static final class Entry {
         private final long[] data;
-        private final String city;
-        private int min, max, count;
+        private int min, max, count, length;
         private long sum;
 
-        Entry(final long[] data, String city, int temp) {
+        Entry(final long[] data, int length, int temp) {
             this.data = data;
-            this.city = city;
+            this.length = length;
             this.min = temp;
             this.max = temp;
             this.sum = temp;
@@ -164,35 +164,47 @@ public class CalculateAverage_royvanrijn {
         }
     }
 
-    private static Entry createNewEntry(final long[] buffer, final long startAddress, final int lengthLongs, final int lengthBytes, final int temp) {
+    /**
+     * Delay String creation until the end:
+     * @param data
+     * @param length
+     * @return
+     */
+    private static String extractedCityFromLongArray(final long[] data, final int length) {
+        // Initiate as late as possible:
+        final byte[] bytes = new byte[length];
+        UNSAFE.copyMemory(data, Unsafe.ARRAY_LONG_BASE_OFFSET, bytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, length);
+        return new String(bytes, StandardCharsets.UTF_8);
+    }
 
-        // --- This is a brand new entry, insert into the hashtable and do the extra calculations (once!) do slower calculations here.
-        final byte[] bytes = new byte[lengthBytes];
-        UNSAFE.copyMemory(null, startAddress, bytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, lengthBytes);
-        final String city = new String(bytes, StandardCharsets.UTF_8);
+    private static Entry createNewEntry(final long[] buffer, final int lengthLongs, final int lengthBytes, final int temp) {
 
         final long[] bufferCopy = new long[lengthLongs];
         System.arraycopy(buffer, 0, bufferCopy, 0, lengthLongs);
 
         // Add the entry:
-        return new Entry(bufferCopy, city, temp);
+        return new Entry(bufferCopy, lengthBytes, temp);
     }
 
     private static Entry[] processMemoryArea(final long fromAddress, final long toAddress) {
 
-        Entry[] table = new Entry[TABLE_SIZE];
+        final Entry[] table = new Entry[TABLE_SIZE];
+        final long[] buffer = new long[16];
 
         long ptr = fromAddress;
-        long[] buffer = new long[14];
+        int bufferPtr;
+        long hash;
+        long word;
+        long mask;
 
         while (ptr < toAddress) {
 
-            int bufferPtr = 0;
-            long startAddress = ptr;
-            long hash = 1;
+            final long startAddress = ptr;
 
-            long word = UNSAFE.getLong(ptr);
-            long mask = getDelimiterMask(word);
+            bufferPtr = 0;
+            hash = 1;
+            word = UNSAFE.getLong(ptr);
+            mask = getDelimiterMask(word);
 
             while (mask == 0) {
                 buffer[bufferPtr++] = word;
@@ -202,15 +214,14 @@ public class CalculateAverage_royvanrijn {
                 word = UNSAFE.getLong(ptr);
                 mask = getDelimiterMask(word);
             }
-
             // Found delimiter:
             final long delimiterAddress = ptr + (Long.numberOfTrailingZeros(mask) >> 3);
             final long numberBits = UNSAFE.getLong(delimiterAddress + 1);
 
             // Finish the masks and hash:
-            final long partialWord = word & ((mask >> 7) - 1);
-            buffer[bufferPtr++] = partialWord;
-            hash ^= partialWord;
+            word = word & ((mask >> 7) - 1);
+            buffer[bufferPtr++] = word;
+            hash ^= word;
 
             final long invNumberBits = ~numberBits;
             final int decimalSepPos = Long.numberOfTrailingZeros(invNumberBits & DOT_BITS);
@@ -218,11 +229,10 @@ public class CalculateAverage_royvanrijn {
             // Update counter asap, lets CPU predict.
             ptr = delimiterAddress + (decimalSepPos >> 3) + 4;
 
-            int intHash = (int) (hash ^ (hash >>> 31)); // offset for extra entropy
-
             // Awesome idea of merykitty:
             final int temp = extractTemp(numberBits, invNumberBits, decimalSepPos);
 
+            int intHash = (int) (hash ^ (hash >>> 33)); // offset for extra entropy
             int index = intHash & TABLE_MASK;
 
             // Find or insert the entry:
@@ -230,7 +240,7 @@ public class CalculateAverage_royvanrijn {
                 Entry tableEntry = table[index];
                 if (tableEntry == null) {
                     final int length = (int) (delimiterAddress - startAddress);
-                    table[index] = createNewEntry(buffer, startAddress, bufferPtr, length, temp);
+                    table[index] = createNewEntry(buffer, bufferPtr, length, temp);
                     break;
                 }
                 else if (bufferPtr == tableEntry.data.length) {
@@ -263,14 +273,9 @@ public class CalculateAverage_royvanrijn {
         return (match - 0x0101010101010101L) & ~match & 0x8080808080808080L;
     }
 
-    private static final long SEPARATOR_PATTERN = compilePattern((byte) ';');
+    private static final long SEPARATOR_PATTERN = 0x3B3B3B3B3B3B3B3BL;
     private static final long DOT_BITS = 0x10101000;
     private static final long MAGIC_MULTIPLIER = (100 * 0x1000000 + 10 * 0x10000 + 1);
-
-    private static long compilePattern(final byte value) {
-        return ((long) value << 56) | ((long) value << 48) | ((long) value << 40) | ((long) value << 32) |
-                ((long) value << 24) | ((long) value << 16) | ((long) value << 8) | (long) value;
-    }
 
     /**
      * For case multiple hashes are equal (however unlikely) check the actual key (using longs)
