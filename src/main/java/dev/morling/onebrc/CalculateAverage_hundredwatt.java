@@ -148,6 +148,8 @@ public class CalculateAverage_hundredwatt {
         private static final float LOAD_FACTOR = 0.75f;
         private static final int GROW_FACTOR = 4;
         private final long[][] KEYS = new long[INITIAL_SIZE][];
+        private final long[] HASHES = new long[INITIAL_SIZE];
+
         private final Record[] VALUES = new Record[INITIAL_SIZE];
         private int size = INITIAL_SIZE;
 
@@ -162,13 +164,14 @@ public class CalculateAverage_hundredwatt {
 
             // linear probing
             int i = 0;
-            while (KEYS[idx] != null && (0 != Arrays.compareUnsigned(KEYS[idx], 0, KEYS[idx].length, key, 0, length))) {
+            while (KEYS[idx] != null && (HASHES[idx] != hash) && (0 != Arrays.compareUnsigned(KEYS[idx], 0, KEYS[idx].length, key, 0, length))) {
                 i++;
                 idx = (idx + 1) & (size - 1);
             }
 
             if (KEYS[idx] == null) {
                 KEYS[idx] = Arrays.copyOf(key, length);
+                HASHES[idx] = hash;
             }
 
             VALUES[idx].updateWith(value);
