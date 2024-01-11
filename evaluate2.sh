@@ -149,6 +149,8 @@ for fork in "$@"; do
     timeout=""
     if [ -x "$(command -v gtimeout)" ]; then
       timeout="gtimeout -v $RUN_TIME_LIMIT" # from `brew install coreutils`
+    else
+      echo -e "${BOLD_YELLOW}WARNING${RESET} gtimeout not available, benchmark runs may take indefinitely long."
     fi
     hyperfine $HYPERFINE_OPTS "$timeout ./calculate_average_$fork.sh 2>&1"
   fi
