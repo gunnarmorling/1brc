@@ -25,10 +25,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.function.BinaryOperator;
 
 public class CalculateAverage_gnabyl {
@@ -37,13 +35,7 @@ public class CalculateAverage_gnabyl {
 
 	private static final int NB_CHUNKS = 8;
 
-	private static record Chunk(int index, long start, int bytesCount, MappedByteBuffer mappedByteBuffer) {
-	}
-
-	private static record Measurement(String station, double value) {
-		private Measurement(String[] parts) {
-			this(parts[0], Double.parseDouble(parts[1]));
-		}
+	private static record Chunk(long start, int bytesCount, MappedByteBuffer mappedByteBuffer) {
 	}
 
 	private static int reduceSizeToFitLineBreak(FileChannel channel, long startPosition, int startSize)
@@ -89,7 +81,7 @@ public class CalculateAverage_gnabyl {
 					MappedByteBuffer mappedByteBuffer = channel.map(FileChannel.MapMode.READ_ONLY, currentPosition,
 							realSize);
 
-					res.add(new Chunk(i, currentPosition, realSize, mappedByteBuffer));
+					res.add(new Chunk(currentPosition, realSize, mappedByteBuffer));
 					break;
 				}
 
@@ -99,7 +91,7 @@ public class CalculateAverage_gnabyl {
 				MappedByteBuffer mappedByteBuffer = channel.map(FileChannel.MapMode.READ_ONLY, currentPosition,
 						realSize);
 
-				res.add(new Chunk(i, currentPosition, realSize, mappedByteBuffer));
+				res.add(new Chunk(currentPosition, realSize, mappedByteBuffer));
 				currentPosition += realSize;
 			}
 
@@ -193,41 +185,54 @@ public class CalculateAverage_gnabyl {
 		chunk.mappedByteBuffer().get(data);
 
 		// Process each line
+		byte[] lineBytes;
+		String stationName;
+		Double value;
+		int iSplit, iEol;
 		for (int offset = 0; offset < chunk.bytesCount(); offset++) {
-			int eol;
-			for (eol = offset; eol < chunk.bytesCount() && data[eol] != '\n'; eol++) {
+			// Find station name
+			for (iSplit = offset; iSplit < chunk.bytesCount() && data[iSplit] != ';'; iSplit++) {
 			}
-			byte[] lineBytes = new byte[eol - offset];
-			for (int i = offset; i < eol; i++) {
+			lineBytes = new byte[iSplit - offset];
+			for (int i = offset; i < iSplit; i++) {
 				lineBytes[i - offset] = data[i];
 			}
-			String line = new String(lineBytes, StandardCharsets.UTF_8);
+			stationName = new String(lineBytes, StandardCharsets.UTF_8);
 
-			Measurement measurement = new Measurement(line.split(";"));
+			// Find value
+			iSplit++;
+			for (iEol = iSplit; iEol < chunk.bytesCount() && data[iEol] != '\n'; iEol++) {
+			}
+			lineBytes = new byte[iEol - iSplit];
+			for (int i = iSplit; i < iEol; i++) {
+				lineBytes[i - iSplit] = data[i];
+			}
+			value = Double.parseDouble(new String(lineBytes, StandardCharsets.UTF_8));
 
 			// Init & count
-			if (!result.getSum().containsKey(measurement.station())) {
-				result.getCount().put(measurement.station(), 0L);
-				result.getSum().put(measurement.station(), 0.0);
-				result.getMin().put(measurement.station(), Double.MAX_VALUE);
-				result.getMax().put(measurement.station(), -Double.MAX_VALUE);
+			if (!result.getSum().containsKey(stationName)) {
+				result.getCount().put(stationName, 1L);
+				result.getSum().put(stationName, value);
+				result.getMin().put(stationName, value);
+				result.getMax().put(stationName, value);
+			} else {
+				// Sum
+				var currentSum = result.getSum().get(stationName);
+				result.getSum().put(stationName, currentSum + value);
+				// Count
+				var currentCount = result.getCount().get(stationName);
+				result.getCount().put(stationName, currentCount + 1);
+				// Min
+				var currentMin = result.getMin().get(stationName);
+				result.getMin().put(stationName,
+						currentMin > value ? value : currentMin);
+				// Max
+				var currentMax = result.getMax().get(stationName);
+				result.getMax().put(stationName,
+						currentMax < value ? value : currentMax);
 			}
-			// Sum
-			var currentSum = result.getSum().get(measurement.station());
-			result.getSum().put(measurement.station(), currentSum + measurement.value());
-			// Count
-			var currentCount = result.getCount().get(measurement.station());
-			result.getCount().put(measurement.station(), currentCount + 1);
-			// Min
-			var currentMin = result.getMin().get(measurement.station());
-			result.getMin().put(measurement.station(),
-					currentMin > measurement.value() ? measurement.value() : currentMin);
-			// Max
-			var currentMax = result.getMax().get(measurement.station());
-			result.getMax().put(measurement.station(),
-					currentMax < measurement.value() ? measurement.value() : currentMax);
 
-			offset = eol;
+			offset = iEol;
 		}
 
 		return result;
@@ -241,18 +246,15 @@ public class CalculateAverage_gnabyl {
 		// }
 		// return globalRes;
 
-		int numThreads = chunks.size();
-		ExecutorService executorService = Executors.newFixedThreadPool(numThreads);
-
-		List<Future<ChunkResult>> computeTasks = new ArrayList<>();
+		List<CompletableFuture<ChunkResult>> computeTasks = new ArrayList<>();
 
 		for (Chunk chunk : chunks) {
-			computeTasks.add(executorService.submit(() -> processChunk(chunk)));
+			computeTasks.add(CompletableFuture.supplyAsync(() -> processChunk(chunk)));
 		}
 
 		ChunkResult globalRes = new ChunkResult();
 
-		for (Future<ChunkResult> completedTask : computeTasks) {
+		for (CompletableFuture<ChunkResult> completedTask : computeTasks) {
 			try {
 				ChunkResult chunkRes = completedTask.get();
 				globalRes.mergeWith(chunkRes);
@@ -261,7 +263,6 @@ public class CalculateAverage_gnabyl {
 			}
 		}
 
-		executorService.shutdown();
 		return globalRes;
 	}
 
