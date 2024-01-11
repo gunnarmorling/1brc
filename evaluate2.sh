@@ -43,6 +43,11 @@ function check_command_installed {
   fi
 }
 
+function print_and_execute() {
+  echo "+ $@"
+  "$@"
+}
+
 check_command_installed java
 check_command_installed hyperfine
 check_command_installed jq
@@ -68,8 +73,7 @@ source "$HOME/.sdkman/bin/sdkman-init.sh"
 
 # 3. make sure the default java version is installed
 if [ ! -d "$HOME/.sdkman/candidates/java/$DEFAULT_JAVA_VERSION" ]; then
-  echo "+ sdk install java $DEFAULT_JAVA_VERSION"
-  sdk install java $DEFAULT_JAVA_VERSION
+  print_and_execute sdk install java $DEFAULT_JAVA_VERSION
 fi
 
 # 4. Install missing SDK java versions in any of the prepare_*.sh scripts for the provided forks
@@ -77,8 +81,7 @@ for fork in "$@"; do
   if [ -f "./prepare_$fork.sh" ]; then
     grep -h "^sdk use" "./prepare_$fork.sh" | cut -d' ' -f4 | while read -r version; do
       if [ ! -d "$HOME/.sdkman/candidates/java/$version" ]; then
-        echo "+ sdk install java $version"
-        sdk install java $version
+        print_and_execute sdk install java $version
       fi
     done || true # grep returns exit code 1 when no match, `|| true` prevents the script from exiting early
   fi
@@ -99,16 +102,8 @@ if [ -f "/sys/devices/system/cpu/cpufreq/boost" ]; then
   fi
 fi
 
-set -o xtrace
-
-java --version
-
-./mvnw --quiet clean verify
-
-rm -f measurements.txt
-ln -s measurements_1B.txt measurements.txt
-
-set +o xtrace
+print_and_execute java --version
+print_and_execute ./mvnw --quiet clean verify
 
 echo ""
 
@@ -126,11 +121,9 @@ failed=()
 for fork in "$@"; do
   # Use prepare script to invoke SDKMAN
   if [ -f "./prepare_$fork.sh" ]; then
-    echo "+ source ./prepare_$fork.sh"
-    source "./prepare_$fork.sh"
+    print_and_execute source "./prepare_$fork.sh"
   else
-    echo "+ sdk use java $DEFAULT_JAVA_VERSION"
-    sdk use java $DEFAULT_JAVA_VERSION
+    print_and_execute sdk use java $DEFAULT_JAVA_VERSION
   fi
 
   # Use hyperfine to run the benchmarks for each fork
