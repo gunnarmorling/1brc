@@ -29,13 +29,13 @@ import java.util.*;
  If I had to submit something without looking what others did, I am fairly certain I would
  be under 500MB/s on my machine on the dataset created by ./create_measurement.sh.
 
- Maybe it's cheating? But I learned stuff
-
+ Maybe it's cheating? But I learned stuff.
 
  Credits:
   - @royvanrijn for the idea of using bit twiddling without java.incubator.vector
   - @royvanrijn again for the parse int only and /10 in the very end
   - @flippingbits for the idea of not calling getLong on mmaped file directly, get a big chunk into memory instead
+        - Maybe on linux it's actually faster?
   - OpenAI / ChatGPT for the actual bit twiddling idea for finding a character, it couldn't explain it so I did my best
     (Turns out @royvanrijn had the same idea)
 
@@ -86,9 +86,7 @@ public class CalculateAverage_ricardopieper {
     public static record FileChunk(Path path, long start, int size) {
     }
 
-    // This function only works for big files and numChunks > 1, otherwise some stuff
-    // will break lol
-    public static List<FileChunk> splitFile(Path path, int numChunks) throws IOException {
+       public static List<FileChunk> splitFile(Path path, int numChunks) throws IOException {
         try (var fileChannel = FileChannel.open(path, StandardOpenOption.READ)) {
             var chunks = new ArrayList<FileChunk>();
             long size = fileChannel.size();
@@ -128,20 +126,19 @@ public class CalculateAverage_ricardopieper {
         }
     }
 
-    public enum State {
-        LookingForName,
-        LookingForTemp,
-        Measuring
-    }
-
-    // ignores the dots because we do a division in the end
-    // and this avoids a MappedByteBuffer.get(byte[]) call.
+    // Ignores the dots because we do a division in the end
     public static int longBytesToInt(long vector, int len) {
         byte b0 = (byte) (vector >> 64 - 8),
                 b1 = (byte) (vector >> 64 - 16),
                 b2 = (byte) (vector >> 64 - 24),
                 b3 = (byte) (vector >> 64 - 32),
                 b4 = (byte) (vector >> 64 - 40);
+
+        //check for windows newline
+        byte newlineByte = (byte)(vector >> (64 - (len * 8)));
+        if (newlineByte == '\r') {
+            len--;
+        }
 
         // len can be 3 4 or 5
         // in this case we get bytes 0 and 2
@@ -285,7 +282,6 @@ public class CalculateAverage_ricardopieper {
             channel.read(byteBuffer.array(), 0, chunk.size);
         }
         byteBuffer.position(0);
-        long lastNameVector = 0;
         while (byteBuffer.hasRemaining()) {
 
             long nameVector = byteBuffer.getLong();
@@ -299,7 +295,6 @@ public class CalculateAverage_ricardopieper {
                 tempStart = nameEnd + 1;
             }
             else {
-
                 continue;
             }
 
@@ -343,7 +338,8 @@ public class CalculateAverage_ricardopieper {
         public record Entry(byte[] bytes, long nameVector, StationMeasurements measurements) {
         }
 
-        public static byte[] loongToBytes(long vector) {
+        // Useful for debugging
+        public static byte[] longToBytes(long vector) {
             byte b0 = (byte) (vector >> 64 - 8),
                     b1 = (byte) (vector >> 64 - 16),
                     b2 = (byte) (vector >> 64 - 24),
@@ -396,15 +392,13 @@ public class CalculateAverage_ricardopieper {
         }
 
         public StationMeasurements getOrAdd(byte[] bytes, long nameVector, int offset, int length) {
-            // System.out.println(new String(loongToBytes(nameVector)));
             long shift = (64 - (length * 8L));
             long actualNameVector = nameVector >> shift << shift;
-            // System.out.println(new String(loongToBytes(actualNameVector)));
 
             var hash = hashCode(bytes, offset, length);
 
-            // this is a modulo operation because:
-            // buckets.lenght is a power of 2 (like 01000000, only 1 bit is set)
+            // This is a modulo operation because:
+            // buckets.length is a power of 2 (like 01000000, only 1 bit is set)
             // -1 makes all the bits right to that 1 become 1 (like 00111111)
             // the & will select only those 1s, and due to math, it is the remainder
             // this has also the benefit of not needing a positive hash
@@ -414,7 +408,8 @@ public class CalculateAverage_ricardopieper {
             for (int i = 0; i < bucket.size(); i++) {
 
                 var item = bucket.get(i);
-
+                // <= 7 means we found the name and separator in one read so it's
+                // guaranteed the actualNameVector holds all the data
                 boolean found = length <= 7 ? (actualNameVector == item.nameVector) : equals(bytes, offset, length, item.bytes);
 
                 if (found) {
