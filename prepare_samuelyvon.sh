@@ -14,5 +14,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-JAVA_OPTS="--enable-preview"
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_samuelyvon
+
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+sdk use java 21.0.1-graal 1>&2
