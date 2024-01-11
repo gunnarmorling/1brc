@@ -28,7 +28,7 @@ import java.nio.ByteOrder;
 import java.nio.channels.FileChannel.MapMode;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.TreeMap;
+import java.util.Arrays;
 
 public class CalculateAverage_mtopolnik {
     private static final Unsafe UNSAFE = unsafe();
@@ -54,7 +54,7 @@ public class CalculateAverage_mtopolnik {
         }
     }
 
-    static class StationStats {
+    static class StationStats implements Comparable<StationStats> {
         String name;
         long sum;
         int count;
@@ -63,7 +63,17 @@ public class CalculateAverage_mtopolnik {
 
         @Override
         public String toString() {
-            return String.format("%.1f/%.1f/%.1f", min / 10.0, Math.round((double) sum / count) / 10.0, max / 10.0);
+            return String.format("%s=%.1f/%.1f/%.1f", name, min / 10.0, Math.round((double) sum / count) / 10.0, max / 10.0);
+        }
+
+        @Override
+        public boolean equals(Object that) {
+            return that.getClass() == StationStats.class && ((StationStats) that).name.equals(this.name);
+        }
+
+        @Override
+        public int compareTo(StationStats that) {
+            return name.compareTo(that.name);
         }
     }
 
@@ -75,7 +85,7 @@ public class CalculateAverage_mtopolnik {
         final File file = new File(MEASUREMENTS_TXT);
         final long length = file.length();
         final int chunkCount = Runtime.getRuntime().availableProcessors();
-        final var results = new StationStats[(int) chunkCount][];
+        final var results = new StationStats[chunkCount][];
         final var chunkStartOffsets = new long[chunkCount];
         try (var raf = new RandomAccessFile(file, "r")) {
             for (int i = 1; i < chunkStartOffsets.length; i++) {
@@ -86,7 +96,7 @@ public class CalculateAverage_mtopolnik {
                 start = raf.getFilePointer();
                 chunkStartOffsets[i] = start;
             }
-            var threads = new Thread[(int) chunkCount];
+            var threads = new Thread[chunkCount];
             for (int i = 0; i < chunkCount; i++) {
                 final long chunkStart = chunkStartOffsets[i];
                 final long chunkLimit = (i + 1 < chunkCount) ? chunkStartOffsets[i + 1] : length;
@@ -99,19 +109,55 @@ public class CalculateAverage_mtopolnik {
                 thread.join();
             }
         }
-        var totals = new TreeMap<String, StationStats>();
-        for (var chunkResults : results) {
-            for (var stats : chunkResults) {
-                var prev = totals.putIfAbsent(stats.name, stats);
-                if (prev != null) {
-                    prev.sum += stats.sum;
-                    prev.count += stats.count;
-                    prev.min = Integer.min(prev.min, stats.min);
-                    prev.max = Integer.max(prev.max, stats.max);
+        var onFirst = true;
+        System.out.print('{');
+        var cursors = new int[chunkCount];
+        var indexOfMin = 0;
+        StationStats curr = null;
+        int exhaustedCount;
+        while (true) {
+            exhaustedCount = 0;
+            StationStats min = null;
+            for (int i = 0; i < cursors.length; i++) {
+                if (cursors[i] == results[i].length) {
+                    exhaustedCount++;
+                    continue;
+                }
+                StationStats candidate = results[i][cursors[i]];
+                if (min == null || min.compareTo(candidate) > 0) {
+                    indexOfMin = i;
+                    min = candidate;
                 }
             }
+            if (exhaustedCount == cursors.length) {
+                if (!onFirst) {
+                    System.out.print(", ");
+                }
+                System.out.print(curr);
+                break;
+            }
+            cursors[indexOfMin]++;
+            if (curr == null) {
+                curr = min;
+            }
+            else if (min.equals(curr)) {
+                curr.sum += min.sum;
+                curr.count += min.count;
+                curr.min = Integer.min(curr.min, min.min);
+                curr.max = Integer.max(curr.max, min.max);
+            }
+            else {
+                if (onFirst) {
+                    onFirst = false;
+                }
+                else {
+                    System.out.print(", ");
+                }
+                System.out.print(curr);
+                curr = min;
+            }
         }
-        System.out.println(totals);
+        System.out.println('}');
     }
 
     private static class ChunkProcessor implements Runnable {
@@ -366,7 +412,9 @@ public class CalculateAverage_mtopolnik {
                 stationStats.max = max;
                 exportedStats.add(stationStats);
             }
-            results[myIndex] = exportedStats.toArray(new StationStats[0]);
+            StationStats[] exported = exportedStats.toArray(new StationStats[0]);
+            Arrays.sort(exported);
+            results[myIndex] = exported;
         }
 
         private final ByteBuffer buf = ByteBuffer.allocate(8).order(ByteOrder.nativeOrder());
