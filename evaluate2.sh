@@ -20,8 +20,7 @@ set -eo pipefail
 if [ -z "$1" ]
   then
     echo "Usage: evaluate2.sh <fork name> (<fork name 2> ...)"
-    echo " for each fork, there must be a 'prepare_<fork name>.sh' script and a 'calculate_average_<fork name>.sh' script"
-    echo " there may be an 'additional_build_steps_<fork name>.sh' script too"
+    echo " for each fork, there must be a 'calculate_average_<fork name>.sh' script and an optional 'prepare_<fork name>.sh'."
     exit 1
 fi
 
@@ -132,12 +131,6 @@ for fork in "$@"; do
     sdk use java $DEFAULT_JAVA_VERSION
   fi
 
-  # Optional additional build steps
-  if [ -f "./additional_build_steps_$fork.sh" ]; then
-    echo "+ ./additional_build_steps_$fork.sh"
-    ./additional_build_steps_$fork.sh
-  fi
-
   # Use hyperfine to run the benchmarks for each fork
   HYPERFINE_OPTS="--warmup 1 --runs 5 --export-json $fork-$filetimestamp-timing.json --output ./$fork-$filetimestamp.out"
 
@@ -236,14 +229,14 @@ for fork in "$@"; do
 
   # Read java version from prepare_$fork.sh if it exists, otherwise assume 21.0.1-open
   java_version="21.0.1-open"
-  if [ -f "./prepare_$fork.sh" ]; then
-    java_version=$(grep "sdk use java" ./prepare_$fork.sh | cut -d' ' -f4)
-  fi
-
   # Hard-coding the note message for now
   notes=""
-  if [ -f "./additional_build_steps_$fork.sh" ]; then
-    notes="GraalVM native binary"
+  if [ -f "./prepare_$fork.sh" ]; then
+    java_version=$(grep -F "sdk use java" ./prepare_$fork.sh | cut -d' ' -f4)
+
+    if grep -F "native-image" -q ./prepare_$fork.sh ; then
+      notes="GraalVM native binary"
+    fi
   fi
 
   echo -n "$trimmed_mean;" >> $leaderboard_temp_file # for sorting
