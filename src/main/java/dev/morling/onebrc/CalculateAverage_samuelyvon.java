@@ -132,9 +132,9 @@ public class CalculateAverage_samuelyvon {
 
         @Override
         public String toString() {
-            double min = ((double) this.min) / 10;
-            double max = ((double) this.max) / 10;
-            double mean = ((double) (this.sum / this.count)) / 10;
+            double min = Math.round((double) this.min) / 10.0;
+            double max = Math.round((double) this.max) / 10.0;
+            double mean = Math.round((((double) this.sum / this.count))) / 10.0;
             return min + "/" + mean + "/" + max;
         }
     }
@@ -169,8 +169,7 @@ public class CalculateAverage_samuelyvon {
                 byte c = chunk.get(j);
                 if (c != '.') {
                     temp += (char) (c - ZERO);
-                }
-                else {
+                } else {
                     j++;
                     break;
                 }
