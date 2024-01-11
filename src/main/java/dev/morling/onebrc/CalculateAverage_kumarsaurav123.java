@@ -40,7 +40,7 @@ public class CalculateAverage_kumarsaurav123 {
         }
     }
 
-    private static record ResultRow(String station,double min, double mean, double max,double sum,double count) {
+    private static record ResultRow(String station, double min, double mean, double max, double sum, double count) {
         public String toString() {
             return round(min) + "/" + round(mean) + "/" + round(max);
         }
@@ -118,8 +118,8 @@ public class CalculateAverage_kumarsaurav123 {
         long start = System.currentTimeMillis();
         long len = Paths.get(FILE).toFile().length();
         Map<Integer, List<byte[]>> leftOutsMap = new ConcurrentSkipListMap<>();
-        int memory= (int)(Runtime.getRuntime().maxMemory()/(1024*1024*1024.0*8));
-        int chunkSize= 1_0000_00*memory;
+        int memory = (int) (Runtime.getRuntime().maxMemory() / (1024 * 1024 * 1024.0 * 8));
+        int chunkSize = 1_0000_00 * memory;
         long proc = Math.max(1, (len / chunkSize));
         ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2 * 2 * 2);
         List<ResultRow> measurements = Collections.synchronizedList(new ArrayList<ResultRow>());
@@ -158,10 +158,8 @@ public class CalculateAverage_kumarsaurav123 {
                                                         for (int k = value.length - 1; k >= 0; k--) {
                                                             if (value[k] == 45) {
                                                                 d = d * -1;
-                                                            }
-                                                            else if (value[k] == 46) {
-                                                            }
-                                                            else {
+                                                            } else if (value[k] == 46) {
+                                                            } else {
                                                                 d = d + map.get(value[k]).intValue() * Math.pow(10, s);
                                                                 s++;
                                                             }
@@ -171,8 +169,7 @@ public class CalculateAverage_kumarsaurav123 {
                                                     }
                                                 }
 
-                                            }
-                                            else {
+                                            } else {
                                                 local.add(s2);
                                             }
 
@@ -192,8 +189,7 @@ public class CalculateAverage_kumarsaurav123 {
                                         .collect(groupingBy(Measurement::station, collector))
                                         .values());
                                 // System.out.println(measurements.size());
-                            }
-                            catch (Exception e) {
+                            } catch (Exception e) {
                                 // throw new RuntimeException(e);
                                 System.out.println("");
                             }
@@ -205,8 +201,7 @@ public class CalculateAverage_kumarsaurav123 {
 
         try {
             executor.awaitTermination(10, TimeUnit.MINUTES);
-        }
-        catch (InterruptedException e) {
+        } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
         Collection<Measurement> lMeasure = new ArrayList<>();
