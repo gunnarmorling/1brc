@@ -25,6 +25,10 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.function.BinaryOperator;
 
 public class CalculateAverage_gnabyl {
@@ -230,11 +234,34 @@ public class CalculateAverage_gnabyl {
 	}
 
 	private static ChunkResult processAllChunks(List<Chunk> chunks) {
-		var globalRes = new ChunkResult();
-		for (var chunk : chunks) {
-			var chunkRes = processChunk(chunk);
-			globalRes.mergeWith(chunkRes);
+		// var globalRes = new ChunkResult();
+		// for (var chunk : chunks) {
+		// var chunkRes = processChunk(chunk);
+		// globalRes.mergeWith(chunkRes);
+		// }
+		// return globalRes;
+
+		int numThreads = chunks.size();
+		ExecutorService executorService = Executors.newFixedThreadPool(numThreads);
+
+		List<Future<ChunkResult>> computeTasks = new ArrayList<>();
+
+		for (Chunk chunk : chunks) {
+			computeTasks.add(executorService.submit(() -> processChunk(chunk)));
 		}
+
+		ChunkResult globalRes = new ChunkResult();
+
+		for (Future<ChunkResult> completedTask : computeTasks) {
+			try {
+				ChunkResult chunkRes = completedTask.get();
+				globalRes.mergeWith(chunkRes);
+			} catch (InterruptedException | ExecutionException e) {
+				e.printStackTrace(); // Handle exceptions if needed
+			}
+		}
+
+		executorService.shutdown();
 		return globalRes;
 	}
 
