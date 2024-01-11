@@ -220,8 +220,18 @@ public class CalculateAverage_roman_r_m {
         @Override
         public int hashCode() {
             if (hash == 0) {
-                for (int i = 0; i < len; i++) {
-                    hash = 31 * hash + (buf[i] & 255);
+                // same as before only manually unrolled
+                // credit: https://lemire.me/blog/2015/10/22/faster-hashing-without-effort/
+                int i = 0;
+                for (; i + 3 < len; i += 4) {
+                    hash = 31 * 31 * 31 * 31 * hash
+                            + 31 * 31 * 31 * buf[i]
+                            + 31 * 31 * buf[i + 1]
+                            + 31 * buf[i + 2]
+                            + buf[i + 3];
+                }
+                for (; i < len; i++) {
+                    hash = 31 * hash + buf[i];
                 }
             }
             return hash;
