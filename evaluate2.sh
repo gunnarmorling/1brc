@@ -34,6 +34,7 @@ BOLD_YELLOW='\033[1;33m'
 RESET='\033[0m' # No Color
 
 DEFAULT_JAVA_VERSION="21.0.1-open"
+RUN_TIME_LIMIT=300 # seconds
 
 function check_command_installed {
   if ! [ -x "$(command -v $1)" ]; then
@@ -45,6 +46,7 @@ function check_command_installed {
 check_command_installed java
 check_command_installed hyperfine
 check_command_installed jq
+check_command_installed bc
 
 # Validate that ./calculate_average_<fork>.sh exists for each fork
 for fork in "$@"; do
@@ -142,9 +144,13 @@ for fork in "$@"; do
 
     # Linux platform
     # prepend this with numactl --physcpubind=0-7 for running it only with 8 cores
-    numactl --physcpubind=0-7 hyperfine $HYPERFINE_OPTS "./calculate_average_$fork.sh 2>&1"
-  else
-    hyperfine $HYPERFINE_OPTS "./calculate_average_$fork.sh 2>&1"
+    numactl --physcpubind=0-7 hyperfine $HYPERFINE_OPTS "timeout -v $RUN_TIME_LIMIT ./calculate_average_$fork.sh 2>&1"
+  else # MacOS
+    timeout=""
+    if [ -x "$(command -v gtimeout)" ]; then
+      timeout="gtimeout -v $RUN_TIME_LIMIT" # from `brew install coreutils`
+    fi
+    hyperfine $HYPERFINE_OPTS "$timeout ./calculate_average_$fork.sh 2>&1"
   fi
   # Catch hyperfine command failed
   if [ $? -ne 0 ]; then
