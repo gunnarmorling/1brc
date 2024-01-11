@@ -16,6 +16,5 @@
 #
 
 
-JAVA_OPTS="-Xnoclassgc -Xms16G -Xmx16G"
-
-time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_fatroom
+JAVA_OPTS="-server -Xnoclassgc -Xms16G -Xmx16G"
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_fatroom
