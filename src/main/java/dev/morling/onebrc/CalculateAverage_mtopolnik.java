@@ -18,7 +18,6 @@ package dev.morling.onebrc;
 import sun.misc.Unsafe;
 
 import java.io.File;
-import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -88,6 +87,7 @@ public class CalculateAverage_mtopolnik {
         final var results = new StationStats[chunkCount][];
         final var chunkStartOffsets = new long[chunkCount];
         try (var raf = new RandomAccessFile(file, "r")) {
+            final var inputBase = raf.getChannel().map(MapMode.READ_ONLY, 0, length, Arena.ofShared()).address();
             for (int i = 1; i < chunkStartOffsets.length; i++) {
                 var start = length * i / chunkStartOffsets.length;
                 raf.seek(start);
@@ -100,7 +100,7 @@ public class CalculateAverage_mtopolnik {
             for (int i = 0; i < chunkCount; i++) {
                 final long chunkStart = chunkStartOffsets[i];
                 final long chunkLimit = (i + 1 < chunkCount) ? chunkStartOffsets[i + 1] : length;
-                threads[i] = new Thread(new ChunkProcessor(raf, chunkStart, chunkLimit, results, i));
+                threads[i] = new Thread(new ChunkProcessor(inputBase + chunkStart, inputBase + chunkLimit, results, i));
             }
             for (var thread : threads) {
                 thread.start();
@@ -116,22 +116,18 @@ public class CalculateAverage_mtopolnik {
         private static final long NAMEBUF_SIZE = 2 * Long.BYTES;
         private static final int CACHELINE_SIZE = 64;
 
-        private final long chunkStart;
-        private final long chunkLimit;
-        private final RandomAccessFile raf;
+        private final long inputBase;
+        private final long inputSize;
         private final StationStats[][] results;
         private final int myIndex;
 
         private StatsAccessor stats;
-        private long inputBase;
-        private long inputSize;
         private long nameBufBase;
         private long cursor;
 
-        ChunkProcessor(RandomAccessFile raf, long chunkStart, long chunkLimit, StationStats[][] results, int myIndex) {
-            this.raf = raf;
-            this.chunkStart = chunkStart;
-            this.chunkLimit = chunkLimit;
+        ChunkProcessor(long chunkStart, long chunkLimit, StationStats[][] results, int myIndex) {
+            this.inputBase = chunkStart;
+            this.inputSize = chunkLimit - chunkStart;
             this.results = results;
             this.myIndex = myIndex;
         }
@@ -145,9 +141,6 @@ public class CalculateAverage_mtopolnik {
                 var diagnosticString = String.format("Thread %s needs %,d bytes, managed to allocate before OOM: ",
                         threadName, statsByteSize + NAMEBUF_SIZE);
                 try {
-                    final var inputMem = raf.getChannel().map(MapMode.READ_ONLY, chunkStart, chunkLimit - chunkStart, confinedArena);
-                    inputBase = inputMem.address();
-                    inputSize = inputMem.byteSize();
                     stats = new StatsAccessor(confinedArena.allocate(statsByteSize, CACHELINE_SIZE));
                     totalAllocated = statsByteSize;
                     nameBufBase = confinedArena.allocate(NAMEBUF_SIZE).address();
@@ -159,9 +152,6 @@ public class CalculateAverage_mtopolnik {
                 }
                 processChunk();
                 exportResults();
-            }
-            catch (IOException e) {
-                throw new RuntimeException(e);
             }
         }
 
