@@ -109,55 +109,7 @@ public class CalculateAverage_mtopolnik {
                 thread.join();
             }
         }
-        var onFirst = true;
-        System.out.print('{');
-        var cursors = new int[chunkCount];
-        var indexOfMin = 0;
-        StationStats curr = null;
-        int exhaustedCount;
-        while (true) {
-            exhaustedCount = 0;
-            StationStats min = null;
-            for (int i = 0; i < cursors.length; i++) {
-                if (cursors[i] == results[i].length) {
-                    exhaustedCount++;
-                    continue;
-                }
-                StationStats candidate = results[i][cursors[i]];
-                if (min == null || min.compareTo(candidate) > 0) {
-                    indexOfMin = i;
-                    min = candidate;
-                }
-            }
-            if (exhaustedCount == cursors.length) {
-                if (!onFirst) {
-                    System.out.print(", ");
-                }
-                System.out.print(curr);
-                break;
-            }
-            cursors[indexOfMin]++;
-            if (curr == null) {
-                curr = min;
-            }
-            else if (min.equals(curr)) {
-                curr.sum += min.sum;
-                curr.count += min.count;
-                curr.min = Integer.min(curr.min, min.min);
-                curr.max = Integer.max(curr.max, min.max);
-            }
-            else {
-                if (onFirst) {
-                    onFirst = false;
-                }
-                else {
-                    System.out.print(", ");
-                }
-                System.out.print(curr);
-                curr = min;
-            }
-        }
-        System.out.println('}');
+        mergeSortAndPrint(results);
     }
 
     private static class ChunkProcessor implements Runnable {
@@ -519,5 +471,57 @@ public class CalculateAverage_mtopolnik {
         void setMax(short max) {
             UNSAFE.putShort(slotBase + MAX_OFFSET, max);
         }
+    }
+
+    private static void mergeSortAndPrint(StationStats[][] results) {
+        var onFirst = true;
+        System.out.print('{');
+        var cursors = new int[results.length];
+        var indexOfMin = 0;
+        StationStats curr = null;
+        int exhaustedCount;
+        while (true) {
+            exhaustedCount = 0;
+            StationStats min = null;
+            for (int i = 0; i < cursors.length; i++) {
+                if (cursors[i] == results[i].length) {
+                    exhaustedCount++;
+                    continue;
+                }
+                StationStats candidate = results[i][cursors[i]];
+                if (min == null || min.compareTo(candidate) > 0) {
+                    indexOfMin = i;
+                    min = candidate;
+                }
+            }
+            if (exhaustedCount == cursors.length) {
+                if (!onFirst) {
+                    System.out.print(", ");
+                }
+                System.out.print(curr);
+                break;
+            }
+            cursors[indexOfMin]++;
+            if (curr == null) {
+                curr = min;
+            }
+            else if (min.equals(curr)) {
+                curr.sum += min.sum;
+                curr.count += min.count;
+                curr.min = Integer.min(curr.min, min.min);
+                curr.max = Integer.max(curr.max, min.max);
+            }
+            else {
+                if (onFirst) {
+                    onFirst = false;
+                }
+                else {
+                    System.out.print(", ");
+                }
+                System.out.print(curr);
+                curr = min;
+            }
+        }
+        System.out.println('}');
     }
 }
