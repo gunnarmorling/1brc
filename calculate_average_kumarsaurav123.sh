@@ -16,6 +16,7 @@
 #
 
 
-JAVA_OPTS="-Xms6G -Xmx16G"
+<<<<<<< HEAD
+JAVA_OPTS="-Xms16G -Xmx64G"
 
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_kumarsaurav123
+time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_kumarsaurav123
