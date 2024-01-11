@@ -69,16 +69,17 @@ function substitute_in_file {
 set -x
 
 # create new fork
-cp prepare_$SOURCE_FORK.sh prepare_$FORK.sh
 
-cp calculate_average_$SOURCE_FORK.sh calculate_average_$FORK.sh
+cp -i prepare_$SOURCE_FORK.sh prepare_$FORK.sh
+
+cp -i calculate_average_$SOURCE_FORK.sh calculate_average_$FORK.sh
 substitute_in_file $SOURCE_FORK $FORK calculate_average_$FORK.sh
 
 if [ $SOURCE_FORK == "baseline" ]; then
-  cp src/main/java/dev/morling/onebrc/CalculateAverage.java src/main/java/dev/morling/onebrc/CalculateAverage_$FORK.java
+  cp -i src/main/java/dev/morling/onebrc/CalculateAverage.java src/main/java/dev/morling/onebrc/CalculateAverage_$FORK.java
   substitute_in_file CalculateAverage CalculateAverage_$FORK src/main/java/dev/morling/onebrc/CalculateAverage_$FORK.java
 else
-  cp src/main/java/dev/morling/onebrc/CalculateAverage_$SOURCE_FORK.java src/main/java/dev/morling/onebrc/CalculateAverage_$FORK.java
+  cp -i src/main/java/dev/morling/onebrc/CalculateAverage_$SOURCE_FORK.java src/main/java/dev/morling/onebrc/CalculateAverage_$FORK.java
   substitute_in_file $SOURCE_FORK $FORK src/main/java/dev/morling/onebrc/CalculateAverage_$FORK.java
 fi
 
