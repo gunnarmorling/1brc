@@ -19,8 +19,13 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.function.BinaryOperator;
 
 public class CalculateAverage_gnabyl {
 
@@ -36,16 +41,6 @@ public class CalculateAverage_gnabyl {
 			this(parts[0], Double.parseDouble(parts[1]));
 		}
 	}
-
-	private static record ResultRow(double min, double mean, double max) {
-		public String toString() {
-			return round(min) + "/" + round(mean) + "/" + round(max);
-		}
-
-		private double round(double value) {
-			return Math.round(value * 10.0) / 10.0;
-		}
-	};
 
 	private static int reduceSizeToFitLineBreak(FileChannel channel, long startPosition, int startSize)
 			throws IOException {
