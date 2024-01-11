@@ -350,7 +350,7 @@ public class CalculateAverage_mtopolnik {
             var exportedStats = new ArrayList<StationStats>(10_000);
             for (int i = 0; i < STATS_TABLE_SIZE; i++) {
                 stats.gotoIndex(i);
-                if (stats.hash() == 0) {
+                if (stats.nameLen() == 0) {
                     continue;
                 }
                 var sum = stats.sum();
