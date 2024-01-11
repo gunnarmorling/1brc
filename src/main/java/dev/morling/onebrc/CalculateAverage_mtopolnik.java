@@ -218,7 +218,7 @@ public class CalculateAverage_mtopolnik {
                 long posOfSemicolon = posOfSemicolon(word1, word2);
                 word1 = maskWord(word1, posOfSemicolon - cursor);
                 word2 = maskWord(word2, posOfSemicolon - cursor - Long.BYTES);
-                long hash = hash(word1, word2);
+                long hash = hash(word1);
                 long namePos = cursor;
                 long nameLen = posOfSemicolon - cursor;
                 assert nameLen <= 100 : "nameLen > 100";
@@ -318,7 +318,7 @@ public class CalculateAverage_mtopolnik {
             return sign * temperature;
         }
 
-        private static long hash(long word1, long word2) {
+        private static long hash(long word1) {
             long seed = 0x51_7c_c1_b7_27_22_0a_95L;
             int rotDist = 17;
 
@@ -367,8 +367,11 @@ public class CalculateAverage_mtopolnik {
                 match1IsNonZero |= match1IsNonZero >>> 3;
                 match1IsNonZero |= match1IsNonZero >>> 1;
                 match1IsNonZero |= match1IsNonZero >>> 1;
+                // Now match1IsNonZero is 1 if it's non-zero, else 0. Use it to
+                // raise the lowest bit in traling2 if trailing1 is nonzero. This forces
+                // trailing2 to be zero if trailing1 is non-zero.
                 int trailing2 = Long.numberOfTrailingZeros(matchBits2 | match1IsNonZero) & 63;
-                return cursor + trailing1 / 8 + trailing2 / 8;
+                return cursor + ((trailing1 | trailing2) >> 3);
             }
             long offset = cursor + 2 * Long.BYTES;
             for (; offset <= inputSize - Long.BYTES; offset += Long.BYTES) {
