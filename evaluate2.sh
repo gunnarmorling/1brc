@@ -20,8 +20,7 @@ set -eo pipefail
 if [ -z "$1" ]
   then
     echo "Usage: evaluate2.sh <fork name> (<fork name 2> ...)"
-    echo " for each fork, there must be a 'prepare_<fork name>.sh' script and a 'calculate_average_<fork name>.sh' script"
-    echo " there may be an 'additional_build_steps_<fork name>.sh' script too"
+    echo " for each fork, there must be a 'calculate_average_<fork name>.sh' script and an optional 'prepare_<fork name>.sh'."
     exit 1
 fi
 
@@ -34,6 +33,9 @@ RED='\033[0;31m'
 BOLD_YELLOW='\033[1;33m'
 RESET='\033[0m' # No Color
 
+DEFAULT_JAVA_VERSION="21.0.1-open"
+RUN_TIME_LIMIT=300 # seconds
+
 function check_command_installed {
   if ! [ -x "$(command -v $1)" ]; then
     echo "Error: $1 is not installed." >&2
@@ -44,6 +46,44 @@ function check_command_installed {
 check_command_installed java
 check_command_installed hyperfine
 check_command_installed jq
+check_command_installed bc
+
+# Validate that ./calculate_average_<fork>.sh exists for each fork
+for fork in "$@"; do
+  if [ ! -f "./calculate_average_$fork.sh" ]; then
+    echo "Error: ./calculate_average_$fork.sh does not exist." >&2
+    exit 1
+  fi
+done
+
+## SDKMAN Setup
+# 1. Custom check for sdkman installed; not sure why check_command_installed doesn't detect it properly
+if [ ! -f "$HOME/.sdkman/bin/sdkman-init.sh" ]; then
+    echo "Error: sdkman is not installed." >&2
+    exit 1
+fi
+
+# 2. Init sdkman in this script
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+
+# 3. make sure the default java version is installed
+if [ ! -d "$HOME/.sdkman/candidates/java/$DEFAULT_JAVA_VERSION" ]; then
+  echo "+ sdk install java $DEFAULT_JAVA_VERSION"
+  sdk install java $DEFAULT_JAVA_VERSION
+fi
+
+# 4. Install missing SDK java versions in any of the prepare_*.sh scripts for the provided forks
+for fork in "$@"; do
+  if [ -f "./prepare_$fork.sh" ]; then
+    grep -h "^sdk use" "./prepare_$fork.sh" | cut -d' ' -f4 | while read -r version; do
+      if [ ! -d "$HOME/.sdkman/candidates/java/$version" ]; then
+        echo "+ sdk install java $version"
+        sdk install java $version
+      fi
+    done || true # grep returns exit code 1 when no match, `|| true` prevents the script from exiting early
+  fi
+done
+## END - SDKMAN Setup
 
 # Check if SMT is enabled (we want it disabled)
 if [ -f "/sys/devices/system/cpu/smt/active" ]; then
@@ -88,12 +128,9 @@ for fork in "$@"; do
   if [ -f "./prepare_$fork.sh" ]; then
     echo "+ source ./prepare_$fork.sh"
     source "./prepare_$fork.sh"
-  fi
-
-  # Optional additional build steps
-  if [ -f "./additional_build_steps_$fork.sh" ]; then
-    echo "+ ./additional_build_steps_$fork.sh"
-    ./additional_build_steps_$fork.sh
+  else
+    echo "+ sdk use java $DEFAULT_JAVA_VERSION"
+    sdk use java $DEFAULT_JAVA_VERSION
   fi
 
   # Use hyperfine to run the benchmarks for each fork
@@ -107,9 +144,20 @@ for fork in "$@"; do
 
     # Linux platform
     # prepend this with numactl --physcpubind=0-7 for running it only with 8 cores
-    numactl --physcpubind=0-7 hyperfine $HYPERFINE_OPTS "./calculate_average_$fork.sh 2>&1"
-  else
-    hyperfine $HYPERFINE_OPTS "./calculate_average_$fork.sh 2>&1"
+    numactl --physcpubind=0-7 hyperfine $HYPERFINE_OPTS "timeout -v $RUN_TIME_LIMIT ./calculate_average_$fork.sh 2>&1"
+  else # MacOS
+    timeout=""
+    if [ -x "$(command -v gtimeout)" ]; then
+      timeout="gtimeout -v $RUN_TIME_LIMIT" # from `brew install coreutils`
+    else
+      echo -e "${BOLD_YELLOW}WARNING${RESET} gtimeout not available, benchmark runs may take indefinitely long."
+    fi
+    hyperfine $HYPERFINE_OPTS "$timeout ./calculate_average_$fork.sh 2>&1"
+  fi
+  # Catch hyperfine command failed
+  if [ $? -ne 0 ]; then
+    failed+=("$fork")
+    echo ""
   fi
 
   # Verify output
@@ -118,6 +166,8 @@ for fork in "$@"; do
     echo ""
     echo -e "${BOLD_RED}FAILURE${RESET}: output of ${BOLD_WHITE}$fork-$filetimestamp.out${RESET} does not match ${BOLD_WHITE}out_expected.txt${RESET}"
     echo ""
+
+    git diff --no-index --word-diff out_expected.txt $fork-$filetimestamp.out
 
     # add $fork to $failed array
     failed+=("$fork")
@@ -130,13 +180,13 @@ echo -e "${BOLD_WHITE}Summary${RESET}"
 for fork in "$@"; do
   # skip reporting results for failed forks
   if [[ " ${failed[@]} " =~ " ${fork} " ]]; then
-    echo -e "  ${RED}$fork${RESET}: output did not match"
+    echo -e "  ${RED}$fork${RESET}: command failed or output did not match"
     continue
   fi
 
   # Trimmed mean = The slowest and the fastest runs are discarded, the
   # mean value of the remaining three runs is the result for that contender
-  trimmed_mean=$(jq -r '.results[0].times | .[1:-1] | add / length' $fork-$filetimestamp-timing.json)
+  trimmed_mean=$(jq -r '.results[0].times | sort_by(.|tonumber) | .[1:-1] | add / length' $fork-$filetimestamp-timing.json)
   raw_times=$(jq -r '.results[0].times | join(",")' $fork-$filetimestamp-timing.json)
 
   if [ "$fork" == "$1" ]; then
@@ -151,21 +201,20 @@ for fork in "$@"; do
 done
 echo ""
 
-# Leaderboard
+## Leaderboard - prints the leaderboard in Markdown table format
 echo -e "${BOLD_WHITE}Leaderboard${RESET}"
+
+# 1. Create a temp file to store the leaderboard entries
+leaderboard_temp_file=$(mktemp)
+
+# 2. Process each fork and append the 1-line entry to the temp file
 for fork in "$@"; do
   # skip reporting results for failed forks
   if [[ " ${failed[@]} " =~ " ${fork} " ]]; then
     continue
   fi
 
-  trimmed_mean=$(jq -r '.results[0].times | .[1:-1] | add / length' $fork-$filetimestamp-timing.json)
-
-  # Read java version from prepare_$fork.sh if it exists
-  java_version="unknown"
-  if [ -f "./prepare_$fork.sh" ]; then
-    java_version=$(grep "sdk use java" ./prepare_$fork.sh | cut -d' ' -f4)
-  fi
+  trimmed_mean=$(jq -r '.results[0].times | sort_by(.|tonumber) | .[1:-1] | add / length' $fork-$filetimestamp-timing.json)
 
   # trimmed_mean is in seconds
   # Format trimmed_mean as MM::SS.mmm
@@ -175,13 +224,63 @@ for fork in "$@"; do
   trimmed_mean_ms=$(echo "($trimmed_mean - $trimmed_mean_minutes * 60 - $trimmed_mean_seconds) * 1000 / 1" | bc)
   trimmed_mean_formatted=$(printf "%02d:%02d.%03d" $trimmed_mean_minutes $trimmed_mean_seconds $trimmed_mean_ms)
 
-  # var result = String.format("%02d:%02d.%.0f", mean.toMinutesPart(), mean.toSecondsPart(), (double) mean.toNanosPart() / 1_000_000);
-  # var author = actualFile.replace(".out", "")
-  # System.out.println(String.format("\n|   |        %s| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_%s.java)| 21.0.1-open | [%s](https://github.com/%s)|", result, author, author, author));
+  # Get Github user's name from public Github API (rate limited after ~50 calls, so results are cached in github_users.txt)
+  set +e
+  github_user__name=$(grep "^$fork;" github_users.txt | cut -d ';' -f2)
+  if [ -z "$github_user__name" ]; then
+    github_user__name=$(curl -s https://api.github.com/users/$fork | jq -r '.name' | tr -d '"')
+    if [ "$github_user__name" != "null" ]; then
+      echo "$fork;$github_user__name" >> github_users.txt
+    else
+      github_user__name=$fork
+    fi
+  fi
+  set -e
 
-  echo "|   |        $trimmed_mean_formatted| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_$fork.java)| $java_version | [$fork](https://github.com/$fork)|"
+  # Read java version from prepare_$fork.sh if it exists, otherwise assume 21.0.1-open
+  java_version="21.0.1-open"
+  # Hard-coding the note message for now
+  notes=""
+  if [ -f "./prepare_$fork.sh" ]; then
+    java_version=$(grep -F "sdk use java" ./prepare_$fork.sh | cut -d' ' -f4)
+
+    if grep -F "native-image" -q ./prepare_$fork.sh ; then
+      notes="GraalVM native binary"
+    fi
+  fi
+
+  echo -n "$trimmed_mean;" >> $leaderboard_temp_file # for sorting
+  echo -n "| # " >> $leaderboard_temp_file
+  echo -n "| $trimmed_mean_formatted " >> $leaderboard_temp_file
+  echo -n "| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_$fork.java)" >> $leaderboard_temp_file
+  echo -n "| $java_version " >> $leaderboard_temp_file
+  echo -n "| [$github_user__name](https://github.com/$fork) " >> $leaderboard_temp_file
+  echo -n "| $notes " >> $leaderboard_temp_file
+  echo "|" >> $leaderboard_temp_file
 done
+
+# 3. Sort leaderboard_temp_file by trimmed_mean and remove the sorting column
+sort -n $leaderboard_temp_file | cut -d ';' -f 2 > $leaderboard_temp_file.sorted
+
+# 4. Print the leaderboard
 echo ""
+echo "| # | Result (m:s.ms) | Implementation     | JDK | Submitter     | Notes     |"
+echo "|---|-----------------|--------------------|-----|---------------|-----------|"
+# If $leaderboard_temp_file.sorted has more than 3 entires, include rankings
+if [ $(wc -l < $leaderboard_temp_file.sorted) -gt 3 ]; then
+  head -n 1 $leaderboard_temp_file.sorted | tr '#' 1
+  head -n 2 $leaderboard_temp_file.sorted | tail -n 1 | tr '#' 2
+  head -n 3 $leaderboard_temp_file.sorted | tail -n 1 | tr '#' 3
+  tail -n+4 $leaderboard_temp_file.sorted | tr '#' ' '
+else
+  # Don't show rankings
+  cat $leaderboard_temp_file.sorted | tr '#' ' '
+fi
+echo ""
+
+# 5. Cleanup
+rm $leaderboard_temp_file
+## END - Leaderboard
 
 # Finalize .out files
 echo "Raw results saved to file(s):"
