@@ -1,22 +1,31 @@
 package dev.morling.onebrc;
 
-import java.io.*;
+import java.io.BufferedOutputStream;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.RandomAccessFile;
+import java.io.UncheckedIOException;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 public class CalculateAverage_plbpietrz {
 
     private static final String FILE = "./measurements.txt";
+    private static final int READ_SIZE = 1024;
     private static final int CPU_COUNT = Runtime.getRuntime().availableProcessors();
     private static final Map<Integer, String> STATION_NAMES = new ConcurrentHashMap<>(512);
 
     private static class TemperatureStats {
-        double min = Double.MAX_VALUE, max = 0;
+        double min = 999, max = -999d;
         double accumulated;
         int count;
     }
@@ -50,7 +59,9 @@ public class CalculateAverage_plbpietrz {
     private static List<FilePart> partitionInput(RandomAccessFile inputFile) throws IOException {
         List<FilePart> fileParts = new ArrayList<>();
         long fileLength = inputFile.length();
-        long blockSize = fileLength / CPU_COUNT;
+
+        long blockSize = Math.min(fileLength, Math.max(1024, fileLength / CPU_COUNT));
+
         for (long start = 0, end; start < fileLength; start = end) {
             end = findMinBlockOffset(inputFile, start, blockSize);
             fileParts.add(new FilePart(start, end - start));
@@ -64,7 +75,7 @@ public class CalculateAverage_plbpietrz {
             file.seek(startPosition + minBlockSize);
             while (file.readByte() != '\n') {
             }
-            return file.getFilePointer() - 1;
+            return file.getFilePointer();
         }
         else {
             return length;
@@ -81,8 +92,8 @@ public class CalculateAverage_plbpietrz {
     }
 
     private static Map<Integer, TemperatureStats> parseBuffer(MappedByteBuffer buffer) {
-        byte[] readLong = new byte[Long.BYTES];
-        byte[] stationName = new byte[64];
+        byte[] readLong = new byte[READ_SIZE];
+        byte[] stationName = new byte[512];
         byte[] temperature = new byte[32];
         int stationLineNameLenght = 0;
         int temperatureLineLenght = 0;
@@ -93,19 +104,12 @@ public class CalculateAverage_plbpietrz {
         Map<Integer, TemperatureStats> temperatures = new HashMap<>();
         Map<Integer, String> stationNames = new HashMap<>();
 
-        int bytesToRead = Math.min(8, limit - buffer.position());
+        int bytesToRead = Math.min(READ_SIZE, limit - buffer.position());
         while (bytesToRead > 0) {
-            if (bytesToRead == 8) {
-                long aLong = buffer.getLong();
-                readLong[7] = (byte) (aLong >> 0);
-                readLong[6] = (byte) (aLong >> 8);
-                readLong[5] = (byte) (aLong >> 16);
-                readLong[4] = (byte) (aLong >> 24);
-                readLong[3] = (byte) (aLong >> 32);
-                readLong[2] = (byte) (aLong >> 40);
-                readLong[1] = (byte) (aLong >> 48);
-                readLong[0] = (byte) (aLong >> 56);
-            } else {
+            if (bytesToRead == READ_SIZE) {
+                buffer.get(readLong);
+            }
+            else {
                 for (int j = 0; j < bytesToRead; ++j)
                     readLong[j] = buffer.get();
             }
@@ -131,9 +135,8 @@ public class CalculateAverage_plbpietrz {
                         int len = stationLineNameLenght;
                         Integer pos = stationNameHash;
 
-                        TemperatureStats weatherStats = temperatures.computeIfAbsent(pos, _ignored_ -> new TemperatureStats());
-
                         double temp = parseTemperature(temperature, temperatureLineLenght);
+                        TemperatureStats weatherStats = temperatures.computeIfAbsent(pos, _ignored_ -> new TemperatureStats());
 
                         weatherStats.min = Math.min(weatherStats.min, temp);
                         weatherStats.max = Math.max(weatherStats.max, temp);
@@ -150,7 +153,7 @@ public class CalculateAverage_plbpietrz {
                 }
             }
 
-            bytesToRead = Math.min(8, limit - buffer.position());
+            bytesToRead = Math.min(READ_SIZE, limit - buffer.position());
         }
         STATION_NAMES.putAll(stationNames);
         return temperatures;
