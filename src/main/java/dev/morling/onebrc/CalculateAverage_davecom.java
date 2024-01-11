@@ -25,9 +25,11 @@ import java.text.DecimalFormat;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.HashMap;
 import java.util.IntSummaryStatistics;
+import java.util.List;
 import java.util.ArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 public class CalculateAverage_davecom {
 
@@ -41,19 +43,19 @@ public class CalculateAverage_davecom {
 
     private static final String FILE = "./measurements.txt";
 
-    private static final ConcurrentHashMap<String, Integer> mins = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<String, Integer> maxs = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<String, Integer> sums = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<String, Integer> counts = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<ByteBuffer, Integer> mins = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<ByteBuffer, Integer> maxs = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<ByteBuffer, Integer> sums = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<ByteBuffer, Integer> counts = new ConcurrentHashMap<>();
 
     public static void processChunk(MappedByteBuffer chunk, long chunkSize) {
         // setup
         chunk.load();
-        HashMap<String, IntSummaryStatistics> values = new HashMap<>();
+        HashMap<ByteBuffer, IntSummaryStatistics> values = new HashMap<>();
 
         // do the actual processing
         long end = chunk.position() + chunkSize;
-        byte[] name = new byte[128];
+        // byte[] name = new byte[128];
         int value = 0;
         byte b = 0;
         boolean negate = false;
@@ -70,9 +72,9 @@ public class CalculateAverage_davecom {
             nameEnd = chunk.position() - 1;
             nameLength = (int) (nameEnd - nameStart);
             // generate byte array for name
-            chunk.get(chunk.position() - nameLength - 1, name, 0, nameLength);
+            ByteBuffer nameBuffer = ByteBuffer.allocate(nameLength);
+            chunk.get(chunk.position() - nameLength - 1, nameBuffer.array(), 0, nameLength);
             // convert name to string
-            String nameString = new String(name, 0, nameLength);
             // read value
             value = 0;
             b = chunk.get();
@@ -94,22 +96,22 @@ public class CalculateAverage_davecom {
                 value = -value;
             }
 
-            if (values.containsKey(nameString)) {
-                values.get(nameString).accept(value);
+            if (values.containsKey(nameBuffer)) {
+                values.get(nameBuffer).accept(value);
             }
             else {
                 IntSummaryStatistics stats = new IntSummaryStatistics();
                 stats.accept(value);
-                values.put(nameString, stats);
+                values.put(nameBuffer, stats);
             }
         }
 
-        for (String nameStr : values.keySet()) {
-            IntSummaryStatistics stats = values.get(nameStr);
-            mins.compute(nameStr, (k, v) -> v == null ? stats.getMin() : Math.min(v, stats.getMin()));
-            maxs.compute(nameStr, (k, v) -> v == null ? stats.getMax() : Math.max(v, stats.getMax()));
-            sums.compute(nameStr, (k, v) -> v == null ? (int) stats.getSum() : (v + (int) stats.getSum()));
-            counts.compute(nameStr, (k, v) -> v == null ? (int) stats.getCount() : (v + (int) stats.getCount()));
+        for (ByteBuffer nameBfr : values.keySet()) {
+            IntSummaryStatistics stats = values.get(nameBfr);
+            mins.compute(nameBfr, (k, v) -> v == null ? stats.getMin() : Math.min(v, stats.getMin()));
+            maxs.compute(nameBfr, (k, v) -> v == null ? stats.getMax() : Math.max(v, stats.getMax()));
+            sums.compute(nameBfr, (k, v) -> v == null ? (int) stats.getSum() : (v + (int) stats.getSum()));
+            counts.compute(nameBfr, (k, v) -> v == null ? (int) stats.getCount() : (v + (int) stats.getCount()));
         }
     }
 
@@ -118,14 +120,20 @@ public class CalculateAverage_davecom {
         // fast string concatenation starting with { and ending with } with a comma between each (no newlines)
         StringBuilder sb = new StringBuilder();
         sb.append('{');
-        var sortedNames = mins.keySet().stream().sorted().toArray(String[]::new);
+        // var sortedNames = mins.keySet().stream().sorted().toArray(String[]::new);
+
         DecimalFormat df = new DecimalFormat("0.0");
         df.setRoundingMode(RoundingMode.HALF_UP);
-        for (String name : sortedNames) {
+        List<String> sortedNames = mins.keySet().stream()
+                .map(b -> new String(b.array(), 0, b.limit()))
+                .sorted()
+                .collect(Collectors.toList());
+        for (String nameStr : sortedNames) {
+            ByteBuffer name = ByteBuffer.wrap(nameStr.getBytes());
             double min = ((double) mins.get(name)) / 10;
             double max = ((double) maxs.get(name)) / 10;
             double average = ((double) sums.get(name)) / ((double) counts.get(name)) / 10;
-            sb.append(name);
+            sb.append(nameStr);
             sb.append('=');
             sb.append(df.format(min));
             sb.append('/');
