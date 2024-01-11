@@ -121,7 +121,6 @@ public class CalculateAverage_jgrateron {
                                 medicion.update(1, temp, temp, temp);
                             }
                         }
-                        miArchivo.clearTuples();
                     }
                 }
                 catch (IOException e) {
@@ -219,10 +218,6 @@ public class CalculateAverage_jgrateron {
         @Override
         public void close() throws IOException {
             rFile.close();
-        }
-
-        public void clearTuples() {
-            tuples.clear();
         }
 
         public Queue<Tupla> readTuples() throws IOException {
