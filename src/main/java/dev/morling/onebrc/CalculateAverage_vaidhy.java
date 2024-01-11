@@ -291,9 +291,9 @@ public class CalculateAverage_vaidhy<T> {
                 ChunkProcessorImpl::new,
                 CalculateAverage_vaidhy::combineOutputs);
 
-        int proc = 4 * Runtime.getRuntime().availableProcessors();
+        int proc = 2 * Runtime.getRuntime().availableProcessors();
 
-        int shards = 4 * proc;
+        int shards = proc;
         long fileSize = diskFileService.length();
         long chunkSize = Math.ceilDiv(fileSize, shards);
 
@@ -311,9 +311,7 @@ public class CalculateAverage_vaidhy<T> {
         for (Map.Entry<ByteSlice, IntSummaryStatistics> entry : output.entrySet()) {
             IntSummaryStatistics stat = entry.getValue();
             outputStr.put(entry.getKey().toString(),
-                    (stat.getMin() / 10.0) + "/" +
-                            (Math.round(stat.getAverage()) / 10.0) + "/" +
-                            (stat.getMax() / 10.0));
+                    STR."\{stat.getMin() / 10.0}/\{Math.round(stat.getAverage()) / 10.0}/\{stat.getMax() / 10.0}");
         }
         return outputStr;
     }
