@@ -107,9 +107,9 @@ print_and_execute ./mvnw --quiet clean verify
 
 echo ""
 
-# check if out_expected.txt exists
-if [ ! -f "out_expected.txt" ]; then
-  echo "Error: out_expected.txt does not exist." >&2
+# check if measurements_1B.out exists
+if [ ! -f "measurements_1B.out" ]; then
+  echo -e "${BOLD_RED}ERROR${RESET}: measurements_1B.out does not exist." >&2
   echo "Please create it with:"
   echo ""
   echo "  ./calculate_average_baseline.sh > measurements_1B.out"
