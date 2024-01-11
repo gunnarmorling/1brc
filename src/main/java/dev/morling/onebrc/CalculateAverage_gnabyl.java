@@ -27,7 +27,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.function.BinaryOperator;
 
 public class CalculateAverage_gnabyl {
 
@@ -105,31 +104,58 @@ public class CalculateAverage_gnabyl {
 		return List.of();
 	}
 
-	private static class ChunkResult {
-		private Map<String, Long> count;
-		private Map<String, Double> sum, min, max;
+	private static class StationData {
+		private double sum, min, max;
+		private long count;
 
-		public ChunkResult() {
-			sum = new HashMap<>();
-			min = new HashMap<>();
-			max = new HashMap<>();
-			count = new HashMap<>();
+		public StationData(double value) {
+			this.count = 1;
+			this.sum = value;
+			this.min = value;
+			this.max = value;
 		}
 
-		public Map<String, Double> getSum() {
-			return sum;
+		public void update(double value) {
+			this.count++;
+			this.sum += value;
+			this.min = Math.min(this.min, value);
+			this.max = Math.max(this.max, value);
 		}
 
-		public Map<String, Double> getMin() {
+		public double getMean() {
+			return sum / count;
+		}
+
+		public double getMin() {
 			return min;
 		}
 
-		public Map<String, Double> getMax() {
+		public double getMax() {
 			return max;
 		}
 
-		public Map<String, Long> getCount() {
-			return this.count;
+		public void mergeWith(StationData other) {
+			this.sum += other.sum;
+			this.count += other.count;
+			this.min = Math.min(this.min, other.min);
+			this.max = Math.max(this.max, other.max);
+		}
+
+	}
+
+	private static class ChunkResult {
+		private Map<String, StationData> data;
+
+		public ChunkResult() {
+			data = new HashMap<>();
+		}
+
+		public StationData getData(String name) {
+			return data.get(name);
+		}
+
+		public void addStation(String name, double value) {
+			this.data.put(name, new StationData(value));
 		}
 
 		private double round(double value) {
@@ -137,42 +163,35 @@ public class CalculateAverage_gnabyl {
 		}
 
 		public void print() {
-			var stationNames = new ArrayList<String>(this.getSum().keySet());
+			var stationNames = new ArrayList<String>(this.data.keySet());
 			Collections.sort(stationNames);
 			System.out.print("{");
 			for (int i = 0; i < stationNames.size() - 1; i++) {
 				var name = stationNames.get(i);
-				System.out.printf("%s=%.1f/%.1f/%.1f, ", name, round(this.getMin().get(name)),
-						round(this.getSum().get(name) / this.getCount().get(name)),
-						round(this.getMax().get(name)));
+				var stationData = data.get(name);
+				System.out.printf("%s=%.1f/%.1f/%.1f, ", name, round(stationData.getMin()),
+						round(stationData.getMean()),
+						round(stationData.getMax()));
 			}
 			var name = stationNames.get(stationNames.size() - 1);
-			System.out.printf("%s=%.1f/%.1f/%.1f", name, round(this.getMin().get(name)),
-					round(this.getSum().get(name) / this.getCount().get(name)),
-					round(this.getMax().get(name)));
+			var stationData = data.get(name);
+			System.out.printf("%s=%.1f/%.1f/%.1f", name, round(stationData.getMin()),
+					round(stationData.getMean()),
+					round(stationData.getMax()));
 			System.out.println("}");
 		}
 
 		public void mergeWith(ChunkResult other) {
-			// Increment the count
-			mergeMap(this.count, other.count, Long::sum);
+			for (Map.Entry<String, StationData> entry : other.data.entrySet()) {
+				String stationName = entry.getKey();
+				StationData otherStationData = entry.getValue();
+				StationData thisStationData = this.data.get(stationName);
 
-			// Merge sum values
-			mergeMap(this.sum, other.sum, Double::sum);
-
-			// Merge min values
-			mergeMap(this.min, other.min, Double::min);
-
-			// Merge max values
-			mergeMap(this.max, other.max, Double::max);
-		}
-
-		private <T> void mergeMap(Map<String, T> target, Map<String, T> source,
-				BinaryOperator<T> mergeFunction) {
-			for (Map.Entry<String, T> entry : source.entrySet()) {
-				String key = entry.getKey();
-				T sourceValue = entry.getValue();
-				target.merge(key, sourceValue, mergeFunction);
+				if (thisStationData == null) {
+					this.data.put(stationName, otherStationData);
+				} else {
+					thisStationData.mergeWith(otherStationData);
+				}
 			}
 		}
 	}
@@ -185,51 +204,29 @@ public class CalculateAverage_gnabyl {
 		chunk.mappedByteBuffer().get(data);
 
 		// Process each line
-		byte[] lineBytes;
 		String stationName;
 		Double value;
 		int iSplit, iEol;
-		for (int offset = 0; offset < chunk.bytesCount(); offset++) {
+		StationData stationData;
+		for (int offset = 0; offset < data.length; offset++) {
 			// Find station name
-			for (iSplit = offset; iSplit < chunk.bytesCount() && data[iSplit] != ';'; iSplit++) {
+			for (iSplit = offset; iSplit < data.length && data[iSplit] != ';'; iSplit++) {
 			}
-			lineBytes = new byte[iSplit - offset];
-			for (int i = offset; i < iSplit; i++) {
-				lineBytes[i - offset] = data[i];
-			}
-			stationName = new String(lineBytes, StandardCharsets.UTF_8);
+			stationName = new String(data, offset, iSplit - offset, StandardCharsets.UTF_8);
 
 			// Find value
 			iSplit++;
-			for (iEol = iSplit; iEol < chunk.bytesCount() && data[iEol] != '\n'; iEol++) {
+			for (iEol = iSplit; iEol < data.length && data[iEol] != '\n'; iEol++) {
 			}
-			lineBytes = new byte[iEol - iSplit];
-			for (int i = iSplit; i < iEol; i++) {
-				lineBytes[i - iSplit] = data[i];
-			}
-			value = Double.parseDouble(new String(lineBytes, StandardCharsets.UTF_8));
+			value = Double.parseDouble(new String(data, iSplit, iEol - iSplit, StandardCharsets.UTF_8));
 
 			// Init & count
-			if (!result.getSum().containsKey(stationName)) {
-				result.getCount().put(stationName, 1L);
-				result.getSum().put(stationName, value);
-				result.getMin().put(stationName, value);
-				result.getMax().put(stationName, value);
+			stationData = result.getData(stationName);
+
+			if (stationData == null) {
+				result.addStation(stationName, value);
 			} else {
-				// Sum
-				var currentSum = result.getSum().get(stationName);
-				result.getSum().put(stationName, currentSum + value);
-				// Count
-				var currentCount = result.getCount().get(stationName);
-				result.getCount().put(stationName, currentCount + 1);
-				// Min
-				var currentMin = result.getMin().get(stationName);
-				result.getMin().put(stationName,
-						currentMin > value ? value : currentMin);
-				// Max
-				var currentMax = result.getMax().get(stationName);
-				result.getMax().put(stationName,
-						currentMax < value ? value : currentMax);
+				stationData.update(value);
 			}
 
 			offset = iEol;
