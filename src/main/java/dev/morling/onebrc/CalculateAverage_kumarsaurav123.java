@@ -158,8 +158,10 @@ public class CalculateAverage_kumarsaurav123 {
                                                         for (int k = value.length - 1; k >= 0; k--) {
                                                             if (value[k] == 45) {
                                                                 d = d * -1;
-                                                            } else if (value[k] == 46) {
-                                                            } else {
+                                                            }
+                                                            else if (value[k] == 46) {
+                                                            }
+                                                            else {
                                                                 d = d + map.get(value[k]).intValue() * Math.pow(10, s);
                                                                 s++;
                                                             }
@@ -169,7 +171,8 @@ public class CalculateAverage_kumarsaurav123 {
                                                     }
                                                 }
 
-                                            } else {
+                                            }
+                                            else {
                                                 local.add(s2);
                                             }
 
@@ -189,7 +192,8 @@ public class CalculateAverage_kumarsaurav123 {
                                         .collect(groupingBy(Measurement::station, collector))
                                         .values());
                                 // System.out.println(measurements.size());
-                            } catch (Exception e) {
+                            }
+                            catch (Exception e) {
                                 // throw new RuntimeException(e);
                                 System.out.println("");
                             }
@@ -201,7 +205,8 @@ public class CalculateAverage_kumarsaurav123 {
 
         try {
             executor.awaitTermination(10, TimeUnit.MINUTES);
-        } catch (InterruptedException e) {
+        }
+        catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
         Collection<Measurement> lMeasure = new ArrayList<>();
