@@ -24,6 +24,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Queue;
 import java.util.Map.Entry;
 import java.util.stream.Collectors;
@@ -31,6 +32,7 @@ import java.util.stream.Collectors;
 public class CalculateAverage_jgrateron {
     private static final String FILE = "./measurements.txt";
     private static final int MAX_LENGTH_LINE = 115;
+    private static final int MAX_BUFFER = 1024 * 8;
     private static boolean DEBUG = false;
 
     public record Particion(long offset, long size) {
@@ -48,38 +50,44 @@ public class CalculateAverage_jgrateron {
         var length = archivo.length();
         int cores = Runtime.getRuntime().availableProcessors();
         var sizeParticion = length / cores;
-        var ini = 0l;
-        try (var rfile = new RandomAccessFile(archivo, "r")) {
-            for (;;) {
-                var size = sizeParticion;
-                var pos = ini + size;
-                if (pos > length) {
-                    pos = length - 1;
-                    size = length - ini;
-                }
-                rfile.seek(pos);
-                int count = rfile.read(buffer);
-                if (count == -1) {
-                    break;
-                }
-                for (int i = 0; i < count; i++) {
-                    size++;
-                    if (buffer[i] == '\n' || buffer[i] == '\r') {
+        if (sizeParticion > MAX_BUFFER) {
+            var ini = 0l;
+            try (var rfile = new RandomAccessFile(archivo, "r")) {
+                for (;;) {
+                    var size = sizeParticion;
+                    var pos = ini + size;
+                    if (pos > length) {
+                        pos = length - 1;
+                        size = length - ini;
+                    }
+                    rfile.seek(pos);
+                    int count = rfile.read(buffer);
+                    if (count == -1) {
                         break;
                     }
+                    for (int i = 0; i < count; i++) {
+                        size++;
+                        if (buffer[i] == '\n' || buffer[i] == '\r') {
+                            break;
+                        }
+                    }
+                    var particion = new Particion(ini, size);
+                    particiones.add(particion);
+                    if (count != buffer.length) {
+                        break;
+                    }
+                    ini += size;
                 }
-                var particion = new Particion(ini, size);
-                particiones.add(particion);
-                if (count != buffer.length) {
-                    break;
-                }
-                ini += size;
             }
+        }
+        else {
+            particiones.add(new Particion(0, length));
         }
         return particiones;
     }
 
     public static void main(String[] args) throws InterruptedException, IOException {
+        Locale.setDefault(Locale.US);
         var startTime = System.nanoTime();
         var archivo = new File(FILE);
         var totalMediciones = new HashMap<Integer, Medicion>();
@@ -113,6 +121,7 @@ public class CalculateAverage_jgrateron {
                                 medicion.update(1, temp, temp, temp);
                             }
                         }
+                        miArchivo.clearTuples();
                     }
                 }
                 catch (IOException e) {
@@ -190,13 +199,13 @@ public class CalculateAverage_jgrateron {
      */
     static class MiArchivo implements AutoCloseable {
         private final RandomAccessFile rFile;
-        private final byte buffer[] = new byte[1024 * 8];
+        private final byte buffer[] = new byte[MAX_BUFFER];
         private final byte line[] = new byte[MAX_LENGTH_LINE];
         private final byte rest[] = new byte[MAX_LENGTH_LINE];
         private int lenRest = 0;
         private long maxRead = 0;
         private long totalRead = 0;
-        private Queue<Tupla> lineas = new LinkedList<Tupla>();
+        private Queue<Tupla> tuples = new LinkedList<Tupla>();
 
         public MiArchivo(File file) throws IOException {
             rFile = new RandomAccessFile(file, "r");
@@ -212,15 +221,21 @@ public class CalculateAverage_jgrateron {
             rFile.close();
         }
 
+        public void clearTuples() {
+            tuples.clear();
+        }
+
         public Queue<Tupla> readTuples() throws IOException {
-            lineas.clear();
+            if (totalRead == maxRead) {
+                return tuples;
+            }
             long numBytes = rFile.read(buffer);
             if (numBytes == -1) {
-                return lineas;
+                return tuples;
             }
             var totalLeidos = totalRead + numBytes;
             if (totalLeidos > maxRead) {
-                numBytes = (totalLeidos - maxRead) - numBytes;
+                numBytes = maxRead - totalRead;
             }
             totalRead += numBytes;
             int pos = 0;
@@ -246,7 +261,7 @@ public class CalculateAverage_jgrateron {
                     }
                     var temperatura = strToDouble(line, semicolon, len);
                     var tupla = new Tupla(new String(line, 0, semicolon), temperatura);
-                    lineas.add(tupla);
+                    tuples.add(tupla);
                     idx = pos + 1;
                     len = 0;
                 }
@@ -259,7 +274,7 @@ public class CalculateAverage_jgrateron {
                 System.arraycopy(buffer, idx, rest, 0, len);
                 lenRest = len;
             }
-            return lineas;
+            return tuples;
         }
     }
 
