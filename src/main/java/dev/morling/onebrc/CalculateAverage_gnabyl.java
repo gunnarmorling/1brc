@@ -144,6 +144,10 @@ public class CalculateAverage_gnabyl {
 
     }
 
+    static double round(double value) {
+        return Math.round(value * 10.0) / 10.0;
+    }
+
     private static class ChunkResult {
         private Map<String, StationData> data;
 
@@ -157,10 +161,6 @@ public class CalculateAverage_gnabyl {
 
         public void addStation(String name, double value) {
             this.data.put(name, new StationData(value));
-        }
-
-        private double round(double value) {
-            return Math.round(value * 10.0) / 10.0;
         }
 
         public void print() {
@@ -212,13 +212,13 @@ public class CalculateAverage_gnabyl {
         StationData stationData;
         for (int offset = 0; offset < data.length; offset++) {
             // Find station name
-            for (iSplit = offset; iSplit < data.length && data[iSplit] != ';'; iSplit++) {
+            for (iSplit = offset; data[iSplit] != ';'; iSplit++) {
             }
             stationName = new String(data, offset, iSplit - offset, StandardCharsets.UTF_8);
 
             // Find value
             iSplit++;
-            for (iEol = iSplit; iEol < data.length && data[iEol] != '\n'; iEol++) {
+            for (iEol = iSplit; data[iEol] != '\n'; iEol++) {
             }
             value = Double.parseDouble(new String(data, iSplit, iEol - iSplit, StandardCharsets.UTF_8));
 
