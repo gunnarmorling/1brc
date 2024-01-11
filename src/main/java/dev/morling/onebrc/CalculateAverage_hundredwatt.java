@@ -75,31 +75,6 @@ public class CalculateAverage_hundredwatt {
             decodeTemperatureMap.put(word, i);
         }
 
-        // Brute force to find seed:
-        // Random rand = new Random(System.nanoTime());
-        // int max = 0;
-        // int attempts = 0;
-        // while (true) {
-        // BitSet bs = new BitSet(5003);
-        // var seed = rand.nextLong();
-        // seed |= 0b1; // make sure it's odd
-        // for (var word : decodeTemperatureMap.keySet()) {
-        // var h = (word * seed) & ~(1L << 63);
-        // var pos = (int) (h % 5003);
-        // bs.set(pos);
-        // }
-        // ;
-        // var c = bs.cardinality();
-        // if (c == decodeTemperatureMap.size()) {
-        // System.out.println("seed: " + seed + " cardinality: " + c + " max cardinality: " + max);
-        // break;
-        // }
-        // max = Math.max(max, c);
-        // if (attempts % 100_000 == 0)
-        // System.out.println("seed: " + seed + " cardinality: " + c + " max cardinality: " + max);
-        // attempts++;
-        // }
-
         decodeTemperatureMap.entrySet().stream().forEach(e -> {
             var word = e.getKey();
             var h = (word * PERFECT_HASH_SEED) & ~(1L << 63);
