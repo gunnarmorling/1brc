@@ -21,6 +21,7 @@ import java.io.RandomAccessFile;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
@@ -92,8 +93,7 @@ public class CalculateAverage_maximz101 {
         try (FileChannel channel = FileChannel.open(Paths.get(FILE), StandardOpenOption.READ)) {
             MappedByteBuffer buffer = channel.map(MapMode.READ_ONLY, chunk.start(), chunk.end() - chunk.start());
             return process(buffer);
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
@@ -123,8 +123,7 @@ public class CalculateAverage_maximz101 {
                 }
                 currentChunk++;
             }
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             throw new RuntimeException(e);
         }
         return list;
@@ -167,17 +166,18 @@ public class CalculateAverage_maximz101 {
 
     private static Measurement parseLine(byte[] lineBytes, int separatorIdx, int eolIdx) {
         return new Measurement(
-                new String(lineBytes, 0, separatorIdx),
-                bytesToDouble(lineBytes, separatorIdx + 1, eolIdx));
+                new String(lineBytes, 0, separatorIdx, StandardCharsets.UTF_8),
+                bytesToDouble(lineBytes, separatorIdx + 1, eolIdx)
+        );
     }
 
     private static double bytesToDouble(byte[] bytes, int startIdx, int endIdx) {
         double d = 0d;
         boolean negative = bytes[startIdx] == '-';
-        int realStartIdx = negative ? 1 + startIdx : startIdx;
+        int numberStartIdx = negative ? 1 + startIdx : startIdx;
         boolean afterDot = false;
         int dots = 1;
-        for (int i = realStartIdx; i < endIdx; i++) {
+        for (int i = numberStartIdx; i < endIdx; i++) {
             if (bytes[i] == '.') {
                 afterDot = true;
                 continue;
@@ -185,9 +185,8 @@ public class CalculateAverage_maximz101 {
             double n = bytes[i] - '0';
             if (afterDot) {
                 d = d + n / Math.pow(10, dots++);
-            }
-            else {
-                d = d * Math.pow(10, i - realStartIdx) + n;
+            } else {
+                d = d * Math.pow(10, i - numberStartIdx) + n;
             }
         }
         return negative ? -d : d;
