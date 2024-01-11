@@ -352,6 +352,13 @@ public class CalculateAverage_jbachorik {
             }
             else {
                 count = j + 1;
+                if (fc.size() < 8) {
+                    // slow-path
+                    ByteBuffer bb = ByteBuffer.allocate(8);
+                    fc.read(bb, 0);
+                    buffers[j] = bb;
+                    break;
+                }
                 buffers[j] = fc.map(FileChannel.MapMode.READ_ONLY, fc.size() - remaining, remaining);
                 break;
             }

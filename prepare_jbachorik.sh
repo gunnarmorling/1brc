@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 #  Copyright 2023 The original authors
 #
@@ -15,5 +15,5 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="-XX:+UseInlineCaches -XX:CICompilerCount=4 -Xmx512m -XX:+UseInlineCaches -XX:MaxInlineSize=512 -XX:FreqInlineSize=800 -XX:InlineSmallCode=190 -XX:CompileThreshold=2"
-time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_jbachorik $@
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+sdk use java 21.0.1-tem 1>&2
