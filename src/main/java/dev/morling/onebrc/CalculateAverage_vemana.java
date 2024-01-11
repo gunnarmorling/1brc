@@ -17,6 +17,7 @@ package dev.morling.onebrc;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel.MapMode;
 import java.nio.file.Path;
@@ -72,7 +73,6 @@ public class CalculateAverage_vemana {
             hashtableSizeBits = Integer.parseInt(args[3]);
         }
 
-        System.err.println("Num processors = " + Runtime.getRuntime().availableProcessors());
         // System.err.println(STR."""
         // Using the following parameters:
         // - chunkSizeBits = \{chunkSizeBits}
@@ -432,6 +432,8 @@ public class CalculateAverage_vemana {
 
     public static class ShardProcessorState {
 
+        private static final ByteOrder NATIVE_BYTE_ORDER = ByteOrder.nativeOrder();
+
         private final byte[][] cityNames;
         private final int slotsMask;
         private final Stat[] stats;
@@ -448,8 +450,45 @@ public class CalculateAverage_vemana {
             int hash = 0;
 
             // Read City and Hash
-            while ((nextByte = mmb.get(nextPos++)) != ';') {
-                hash = (hash << 5) - hash + nextByte;
+            // while ((nextByte = mmb.get(nextPos++)) != ';') {
+            // hash = (hash << 5) - hash + nextByte;
+            // }
+
+            while (true) {
+                int x = mmb.getInt(nextPos);
+                if (NATIVE_BYTE_ORDER == ByteOrder.BIG_ENDIAN) {
+                    x = Integer.reverseBytes(x);
+                }
+
+                byte a = (byte) (x >>> 24);
+                if (a == ';') {
+                    nextPos += 1;
+                    break;
+                }
+
+                byte b = (byte) (x >>> 16);
+                if (b == ';') {
+                    nextPos += 2;
+                    hash = hash * 31 + ((0xFF000000 & x));
+                    break;
+                }
+
+                byte c = (byte) (x >>> 8);
+                if (c == ';') {
+                    nextPos += 3;
+                    hash = hash * 31 + ((0xFFFF0000 & x));
+                    break;
+                }
+
+                byte d = (byte) (x >>> 0);
+                if (d == ';') {
+                    nextPos += 4;
+                    hash = hash * 31 + ((0xFFFFFF00 & x));
+                    break;
+                }
+
+                hash = hash * 31 + x;
+                nextPos += 4;
             }
             int cityLen = nextPos - 1 - originalPos;
 
