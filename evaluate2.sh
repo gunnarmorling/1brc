@@ -33,6 +33,8 @@ RED='\033[0;31m'
 BOLD_YELLOW='\033[1;33m'
 RESET='\033[0m' # No Color
 
+MEASUREMENTS_FILE="measurements_1B.txt"
+RUNS=5
 DEFAULT_JAVA_VERSION="21.0.1-open"
 RUN_TIME_LIMIT=300 # seconds
 
@@ -110,17 +112,17 @@ print_and_execute ln -s $MEASUREMENTS_FILE measurements.txt
 
 echo ""
 
-# check if measurements_1B.out exists
-if [ ! -f "measurements_1B.out" ]; then
-  echo -e "${BOLD_RED}ERROR${RESET}: measurements_1B.out does not exist." >&2
+# check if measurements_xxx.out exists
+if [ ! -f "${MEASUREMENTS_FILE%.txt}.out" ]; then
+  echo -e "${BOLD_RED}ERROR${RESET}: ${MEASUREMENTS_FILE%.txt}.out does not exist." >&2
   echo "Please create it with:"
   echo ""
-  echo "  ./calculate_average_baseline.sh > measurements_1B.out"
+  echo "  ./calculate_average_baseline.sh > ${MEASUREMENTS_FILE%.txt}.out"
   echo ""
   exit 1
 fi
 
-# Prepare commands for running benchmarks for each of the forks
+# Run tests and benchmark for each fork
 filetimestamp=$(date  +"%Y%m%d%H%M%S") # same for all fork.out files from this run
 failed=()
 for fork in "$@"; do
@@ -131,10 +133,37 @@ for fork in "$@"; do
     print_and_execute sdk use java $DEFAULT_JAVA_VERSION
   fi
 
-  # Use hyperfine to run the benchmarks for each fork
-  HYPERFINE_OPTS="--warmup 1 --runs 5 --export-json $fork-$filetimestamp-timing.json --output ./$fork-$filetimestamp.out"
-
   set +e # we don't want hyperfine or diff failing on 1 fork to exit the script early
+
+  # Save output of test.sh to a temporary pipe
+  # This is needed because test.sh deletes measurements.txt
+  print_and_execute ./test.sh $fork > /dev/null
+  if [ $? -ne 0 ]; then
+    failed+=("$fork")
+    echo ""
+    echo -e "${BOLD_RED}FAILURE${RESET}: ./test.sh $fork failed"
+    echo ""
+
+    continue
+  fi
+
+  # Run the test on $MEASUREMENTS_FILE; this serves as the warmup
+  print_and_execute ./test.sh $fork $MEASUREMENTS_FILE > /dev/null
+  if [ $? -ne 0 ]; then
+    failed+=("$fork")
+    echo ""
+    echo -e "${BOLD_RED}FAILURE${RESET}: ./test.sh $fork $MEASUREMENTS_FILE failed"
+    echo ""
+
+    continue
+  fi
+
+  # re-link measurements.txt since test.sh deleted it
+  print_and_execute rm -f measurements.txt
+  print_and_execute ln -s $MEASUREMENTS_FILE measurements.txt
+
+  # Use hyperfine to run the benchmark for each fork
+  HYPERFINE_OPTS="--warmup 0 --runs $RUNS --export-json $fork-$filetimestamp-timing.json --output ./$fork-$filetimestamp.out"
 
   # check if this script is running on a Linux box
   if [ "$(uname -s)" == "Linux" ]; then
@@ -155,21 +184,11 @@ for fork in "$@"; do
   # Catch hyperfine command failed
   if [ $? -ne 0 ]; then
     failed+=("$fork")
+    # Hyperfine already prints the error message
     echo ""
+    continue;
   fi
 
-  # Verify output
-  diff <(grep Hamburg $fork-$filetimestamp.out) <(grep Hamburg out_expected.txt) > /dev/null
-  if [ $? -ne 0 ]; then
-    echo ""
-    echo -e "${BOLD_RED}FAILURE${RESET}: output of ${BOLD_WHITE}$fork-$filetimestamp.out${RESET} does not match ${BOLD_WHITE}out_expected.txt${RESET}"
-    echo ""
-
-    git diff --no-index --word-diff out_expected.txt $fork-$filetimestamp.out
-
-    # add $fork to $failed array
-    failed+=("$fork")
-  fi
   set -e
 done
 
