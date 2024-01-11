@@ -52,7 +52,7 @@ import java.util.stream.Collectors;
  * 2024-01-09: Naive multi-threaded, no floats, manual line parsing
  * </p>
  */
-public class CalculateAverage_samuelyvon {
+public class CalculateAverage_SamuelYvon {
 
     private static final String FILE = "./measurements.txt";
 
@@ -60,9 +60,13 @@ public class CalculateAverage_samuelyvon {
 
     private static final byte SEMICOL = 0x3B;
 
+    private static final byte DOT = '.';
+
     private static final byte MINUS = '-';
 
     private static final byte ZERO = '0';
+
+    private static final byte SLASH = '\\';
 
     private static final byte NEWLINE = '\n';
 
@@ -135,7 +139,7 @@ public class CalculateAverage_samuelyvon {
             double min = Math.round((double) this.min) / 10.0;
             double max = Math.round((double) this.max) / 10.0;
             double mean = Math.round((((double) this.sum / this.count))) / 10.0;
-            return min + "/" + mean + "/" + max;
+            return String.valueOf(min) + SLASH + mean + SLASH + max;
         }
     }
 
@@ -167,7 +171,7 @@ public class CalculateAverage_samuelyvon {
             for (j = j + (neg ? 1 : 0); j < chunk.limit(); ++j) {
                 temp *= 10;
                 byte c = chunk.get(j);
-                if (c != '.') {
+                if (c != DOT) {
                     temp += (char) (c - ZERO);
                 }
                 else {
@@ -181,7 +185,7 @@ public class CalculateAverage_samuelyvon {
 
             i = j + 1;
 
-            while (chunk.get(i++) != '\n')
+            while (chunk.get(i++) != NEWLINE)
                 ;
 
             if (neg)
@@ -241,7 +245,7 @@ public class CalculateAverage_samuelyvon {
         var fileChunks = getFileChunks();
 
         // Map per core, giving the non-overlapping memory slices
-        final Map<String, StationMeasureAgg> sortedMeasures = fileChunks.parallelStream().map(CalculateAverage_samuelyvon::parseChunk)
+        final Map<String, StationMeasureAgg> sortedMeasures = fileChunks.parallelStream().map(CalculateAverage_SamuelYvon::parseChunk)
                 .flatMap(x -> x.values().stream()).collect(Collectors.toMap(StationMeasureAgg::city, x -> x, StationMeasureAgg::mergeWith, TreeMap::new));
 
         System.out.println(sortedMeasures);
