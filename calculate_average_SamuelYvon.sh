@@ -15,5 +15,19 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="--enable-preview"
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_samuelyvon
+# THIS IS A DIRECT COPY OF royvanrijn's CALCULATE SCRIPT; I AM NOT FAMILIAR WITH AOT STUFF ON JAVA.
+# THANKS royvanrijn!!
+
+if [ -f target/CalculateAverage_SamuelYvon_image ]; then
+    echo "Picking up existing native image 'target/CalculateAverage_SamuelYvon_image', delete the file to select JVM mode." 1>&2
+    target/CalculateAverage_SamuelYvon_image
+else
+    JAVA_OPTS="--enable-preview -XX:+UnlockExperimentalVMOptions -XX:+TrustFinalNonStaticFields -dsa -XX:+UseNUMA"
+    if [[ ! "$(uname -s)" = "Darwin" ]]; then
+        # On OS/X, my machine, this errors:
+        JAVA_OPTS="$JAVA_OPTS -XX:+UseTransparentHugePages"
+    fi
+    echo "Choosing to run the app in JVM mode as no native image was found, use additional_build_step_SamuelYvon.sh to generate." 1>&2
+    java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_SamuelYvon
+fi
+
