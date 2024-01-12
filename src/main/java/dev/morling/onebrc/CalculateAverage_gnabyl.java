@@ -21,10 +21,10 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
@@ -33,6 +33,8 @@ public class CalculateAverage_gnabyl {
     private static final String FILE = "./measurements.txt";
 
     private static final int NB_CHUNKS = Runtime.getRuntime().availableProcessors();
+
+    private static Map<Long, String> stationNameMap = new ConcurrentHashMap<>();
 
     private static record Chunk(long start, int bytesCount, MappedByteBuffer mappedByteBuffer) {
     }
@@ -144,38 +146,37 @@ public class CalculateAverage_gnabyl {
     }
 
     private static class ChunkResult {
-        private Map<String, StationData> data;
+        private Map<Long, StationData> data;
 
         public ChunkResult() {
             data = new HashMap<>();
         }
 
-        public StationData getData(String name) {
-            return data.get(name);
+        public StationData getData(long hash) {
+            return data.get(hash);
         }
 
-        public void addStation(String name, double value) {
-            this.data.put(name, new StationData(value));
+        public void addStation(long hash, double value) {
+            this.data.put(hash, new StationData(value));
         }
 
         public void print() {
-            var stationNames = new ArrayList<String>(this.data.keySet());
-            Collections.sort(stationNames);
-
             System.out.println(
-                    stationNames.stream()
-                            .map(name -> {
-                                var stationData = data.get(name);
+                    this.data.keySet().stream()
+                            .map(hash -> {
+                                var stationData = data.get(hash);
+                                var name = stationNameMap.get(hash);
                                 return String.format("%s=%.1f/%.1f/%.1f", name, round(stationData.getMin()),
                                         round(stationData.getMean()),
                                         round(stationData.getMax()));
                             })
+                            .sorted((a, b) -> a.split("=")[0].compareTo(b.split("=")[0]))
                             .collect(Collectors.joining(", ", "{", "}")));
         }
 
         public void mergeWith(ChunkResult other) {
-            for (Map.Entry<String, StationData> entry : other.data.entrySet()) {
-                String stationName = entry.getKey();
+            for (Map.Entry<Long, StationData> entry : other.data.entrySet()) {
+                long stationName = entry.getKey();
                 StationData otherStationData = entry.getValue();
                 StationData thisStationData = this.data.get(stationName);
 
@@ -202,11 +203,17 @@ public class CalculateAverage_gnabyl {
         int iSplit, iEol;
         StationData stationData;
         long negative;
+        long hash, prime = 131;
         for (int offset = 0; offset < data.length; offset++) {
             // Find station name
+            hash = 0;
             for (iSplit = offset; data[iSplit] != ';'; iSplit++) {
+                hash = hash * prime + (data[iSplit] & 0xFF);
             }
-            stationName = new String(data, offset, iSplit - offset, StandardCharsets.UTF_8);
+            if (!stationNameMap.containsKey(hash)) {
+                stationName = new String(data, offset, iSplit - offset, StandardCharsets.UTF_8);
+                stationNameMap.put(hash, stationName);
+            }
 
             // Find value
             iSplit++;
@@ -227,10 +234,10 @@ public class CalculateAverage_gnabyl {
             value *= negative;
 
             // Init & count
-            stationData = result.getData(stationName);
+            stationData = result.getData(hash);
 
             if (stationData == null) {
-                result.addStation(stationName, value);
+                result.addStation(hash, value);
             }
             else {
                 stationData.update(value);
