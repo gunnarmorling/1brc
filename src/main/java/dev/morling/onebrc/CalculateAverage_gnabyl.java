@@ -16,6 +16,7 @@
 package dev.morling.onebrc;
 
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.io.RandomAccessFile;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -165,8 +166,9 @@ public class CalculateAverage_gnabyl {
         }
 
         public void print() {
-            System.out.println(
-                    this.data.keySet().stream()
+            PrintWriter out = new PrintWriter(System.out);
+            out.println(
+                    this.data.keySet().parallelStream()
                             .map(hash -> {
                                 var stationData = data.get(hash);
                                 var name = stationNameMap.get(hash);
@@ -176,6 +178,7 @@ public class CalculateAverage_gnabyl {
                             })
                             .sorted((a, b) -> a.split("=")[0].compareTo(b.split("=")[0]))
                             .collect(Collectors.joining(", ", "{", "}")));
+            out.flush();
         }
 
         public void mergeWith(ChunkResult other) {
