@@ -34,7 +34,7 @@ public class CalculateAverage_gnabyl {
 
     private static final int NB_CHUNKS = Runtime.getRuntime().availableProcessors();
 
-    private static Map<Long, String> stationNameMap = new ConcurrentHashMap<>(10000, 0.75f, NB_CHUNKS);
+    private static Map<Integer, String> stationNameMap = new ConcurrentHashMap<>(10000, 0.9f, NB_CHUNKS);
 
     private static record Chunk(long start, int bytesCount, MappedByteBuffer mappedByteBuffer) {
     }
@@ -146,17 +146,17 @@ public class CalculateAverage_gnabyl {
     }
 
     private static class ChunkResult {
-        private Map<Long, StationData> data;
+        private Map<Integer, StationData> data;
 
         public ChunkResult() {
             data = new HashMap<>();
         }
 
-        public StationData getData(long hash) {
+        public StationData getData(int hash) {
             return data.get(hash);
         }
 
-        public void addStation(long hash, double value) {
+        public void addStation(int hash, double value) {
             this.data.put(hash, new StationData(value));
         }
 
@@ -175,8 +175,8 @@ public class CalculateAverage_gnabyl {
         }
 
         public void mergeWith(ChunkResult other) {
-            for (Map.Entry<Long, StationData> entry : other.data.entrySet()) {
-                long stationName = entry.getKey();
+            for (Map.Entry<Integer, StationData> entry : other.data.entrySet()) {
+                int stationName = entry.getKey();
                 StationData otherStationData = entry.getValue();
                 StationData thisStationData = this.data.get(stationName);
 
@@ -203,7 +203,7 @@ public class CalculateAverage_gnabyl {
         int iSplit, iEol;
         StationData stationData;
         long negative;
-        long hash, prime = 131;
+        int hash, prime = 131;
         for (int offset = 0; offset < data.length; offset++) {
             // Find station name
             hash = 0;
