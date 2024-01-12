@@ -113,7 +113,7 @@ public class CalculateAverage_thanhtrinity {
         boolean isFractional = false;
         double divisorForFraction = 1;
         boolean isNegative = false;
-
+        City city = null;
         for (int i = 0; i < buffer.limit(); i++) {
             var b = buffer.get();
             var position = i + 1;
@@ -121,9 +121,16 @@ public class CalculateAverage_thanhtrinity {
                 if (b == ';') {
                     hashKey = hashKey % capacity;
                     currentIdx = hashKey;
-                    if (cities[currentIdx] == null) {
-                        var name = new byte[position - breakLineIndex];
-                        buffer.get(breakLineIndex, name, 0, position - breakLineIndex - 1);
+                    var name = new byte[position - breakLineIndex];
+                    buffer.get(breakLineIndex, name, 0, position - breakLineIndex - 1);
+                    city = cities[currentIdx];
+                    if (city == null) {
+                        cities[currentIdx] = new City(name);
+                    }
+                    else if (!Arrays.equals(city.getName(), name)) {
+                        while (cities[currentIdx] != null) { // Continue probing until empty slot
+                            currentIdx = (currentIdx + 1) % capacity;
+                        }
                         cities[currentIdx] = new City(name);
                     }
                     hashKey = 0;
