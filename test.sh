@@ -45,18 +45,7 @@ for sample in $(ls $INPUT); do
   rm -f measurements.txt
   ln -s $sample measurements.txt
 
-  if command -v git; then
-    # git version must be 2.43 or newer to use \`git diff\` with process substitution
-    # Source: https://stackoverflow.com/questions/22706714/why-does-git-diff-not-work-with-process-substitution
-    # In the future, we can do this instead of a temp file:
-    #   git diff --no-index --word-diff <("./calculate_average_$FORK.sh") ${sample%.txt}
-    temp_file=$(mktemp)
-    "./calculate_average_$FORK.sh" > $temp_file
-    git diff --no-index --word-diff $temp_file ${sample%.txt}.out
-    rm $temp_file
-  else
-    diff <("./calculate_average_$FORK.sh") ${sample%.txt}.out
-  fi
+  diff <("./calculate_average_$FORK.sh" | ./tocsv.sh) <(./tocsv.sh < ${sample%.txt}.out)
 done
 
 rm measurements.txt
