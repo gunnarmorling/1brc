@@ -155,6 +155,8 @@ public class CalculateAverage_mtopolnik {
             }
         }
 
+        private static final long DANGER_ZONE_LENGTH = (MAX_NAME_LEN - 1) / 8 * 8 + 8;
+
         private void processChunk() {
             while (cursor < inputSize) {
                 boolean withinSafeZone;
@@ -162,7 +164,7 @@ public class CalculateAverage_mtopolnik {
                 long word2;
                 long nameLen;
                 long nameStartAddress = inputBase + cursor;
-                if (cursor + 2 * Long.BYTES <= inputSize) {
+                if (cursor + DANGER_ZONE_LENGTH <= inputSize) {
                     withinSafeZone = true;
                     word1 = UNSAFE.getLong(nameStartAddress);
                     word2 = UNSAFE.getLong(nameStartAddress + Long.BYTES);
@@ -326,10 +328,8 @@ public class CalculateAverage_mtopolnik {
         // and https://github.com/ashvardanian/StringZilla/blob/14e7a78edcc16b031c06b375aac1f66d8f19d45a/stringzilla/stringzilla.h#L139-L169
         long nameLen(long word1, long word2, boolean withinSafeZone) {
             {
-                long diff = word1 ^ BROADCAST_SEMICOLON;
-                long matchBits1 = (diff - BROADCAST_0x01) & ~diff & BROADCAST_0x80;
-                diff = word2 ^ BROADCAST_SEMICOLON;
-                long matchBits2 = (diff - BROADCAST_0x01) & ~diff & BROADCAST_0x80;
+                long matchBits1 = matchBits(word1);
+                long matchBits2 = matchBits(word2);
                 if ((matchBits1 | matchBits2) != 0) {
                     int trailing1 = Long.numberOfTrailingZeros(matchBits1);
                     int match1IsNonZero = trailing1 & 63;
@@ -351,8 +351,7 @@ public class CalculateAverage_mtopolnik {
             if (withinSafeZone) {
                 for (; address < limit; address += Long.BYTES) {
                     var block = maskWord(UNSAFE.getLong(address), limit - address);
-                    long diff = block ^ BROADCAST_SEMICOLON;
-                    long matchBits = (diff - BROADCAST_0x01) & ~diff & BROADCAST_0x80;
+                    long matchBits = matchBits(block);
                     if (matchBits != 0) {
                         return address + (Long.numberOfTrailingZeros(matchBits) >> 3) - nameStartAddress;
                     }
@@ -365,8 +364,7 @@ public class CalculateAverage_mtopolnik {
         private static long addrOfSemicolonSafe(long address, long limit) {
             for (; address < limit - Long.BYTES + 1; address += Long.BYTES) {
                 var block = UNSAFE.getLong(address);
-                long diff = block ^ BROADCAST_SEMICOLON;
-                long matchBits = (diff - BROADCAST_0x01) & ~diff & BROADCAST_0x80;
+                long matchBits = matchBits(block);
                 if (matchBits != 0) {
                     return address + (Long.numberOfTrailingZeros(matchBits) >> 3);
                 }
@@ -377,6 +375,11 @@ public class CalculateAverage_mtopolnik {
                 }
             }
             throw new RuntimeException("Semicolon not found");
+        }
+
+        private static long matchBits(long word) {
+            long diff = word ^ BROADCAST_SEMICOLON;
+            return (diff - BROADCAST_0x01) & ~diff & BROADCAST_0x80;
         }
 
         // Copies the results from native memory to Java heap and puts them into the results array.
