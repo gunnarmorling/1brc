@@ -147,7 +147,7 @@ public class CalculateAverage_gnabyl {
     }
 
     static float round(float value) {
-        return Math.round(value * 10.0f) / 10.0f;
+        return Math.round(value * 10.0f) * 0.1f;
     }
 
     private static class ChunkResult {
@@ -215,7 +215,7 @@ public class CalculateAverage_gnabyl {
             // Find station name
             hash = 0;
             for (iSplit = offset; data[iSplit] != ';'; iSplit++) {
-                hash = hash * prime + (data[iSplit] & 0xFF);
+                hash = (hash << 5) - hash + (data[iSplit] & 0xFF);
             }
             if (!seenHashes.contains(hash)) {
                 seenHashes.add(hash);
@@ -232,7 +232,7 @@ public class CalculateAverage_gnabyl {
                     continue;
                 }
                 if (data[iEol] == '.') {
-                    value = value + (data[iEol + 1] - 48) / 10.0f;
+                    value = value + (data[iEol + 1] - 48) * 0.1f;
                     iEol += 2;
                     break;
                 }
