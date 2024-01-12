@@ -103,22 +103,32 @@ public class CalculateAverage_vaidhy<I, T> {
 
     private static int parseDouble(long startAddress, long endAddress) {
         int normalized = 0;
-        boolean sign = true;
-        long index = startAddress;
-        if (UNSAFE.getByte(index) == '-') {
-            index++;
-            sign = false;
-        }
-        for (; index < endAddress; index++) {
-            byte ch = UNSAFE.getByte(index);
-            if (ch != '.') {
-                normalized = (normalized << 3) + (normalized << 1) + (ch - '0');
-            }
-        }
-        if (!sign) {
+        int length = (int) (endAddress - startAddress);
+        if (length == 5) {
+            normalized = (UNSAFE.getByte(startAddress + 1) ^ 0x30);
+            normalized = (normalized << 3) + (normalized << 1) + (UNSAFE.getByte(startAddress + 2) ^ 0x30);
+            normalized = (normalized << 3) + (normalized << 1) + (UNSAFE.getByte(startAddress + 4) ^ 0x30);
             normalized = -normalized;
+            return normalized;
         }
-        return normalized;
+        if (length == 3) {
+            normalized = (UNSAFE.getByte(startAddress) ^ 0x30);
+            normalized = (normalized << 3) + (normalized << 1) + (UNSAFE.getByte(startAddress + 2) ^ 0x30);
+            return normalized;
+        }
+
+        if (UNSAFE.getByte(startAddress) == '-') {
+            normalized = (UNSAFE.getByte(startAddress + 1) ^ 0x30);
+            normalized = (normalized << 3) + (normalized << 1) + (UNSAFE.getByte(startAddress + 3) ^ 0x30);
+            normalized = -normalized;
+            return normalized;
+        }
+        else {
+            normalized = (UNSAFE.getByte(startAddress) ^ 0x30);
+            normalized = (normalized << 3) + (normalized << 1) + (UNSAFE.getByte(startAddress + 1) ^ 0x30);
+            normalized = (normalized << 3) + (normalized << 1) + (UNSAFE.getByte(startAddress + 3) ^ 0x30);
+            return normalized;
+        }
     }
 
     interface MapReduce<I> {
