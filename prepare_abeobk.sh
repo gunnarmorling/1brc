@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 #  Copyright 2023 The original authors
 #
@@ -15,7 +15,6 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="-Xms1024m -Xms1024m -XX:+UseParallelGC -XX:MaxHeapFreeRatio=10 -XX:ParallelGCThreads=2"
-CHUNK_SIZE=$((50 * 1024 * 1024))
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar \
-dev.morling.onebrc.CalculateAverage_imrafaelmerino $CHUNK_SIZE
+# Uncomment below to use sdk
+# source "$HOME/.sdkman/bin/sdkman-init.sh"
+# sdk use java 21.0.1-graal 1>&2
