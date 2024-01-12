@@ -28,7 +28,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
@@ -40,6 +39,7 @@ import java.util.stream.Collectors;
  *     <li>0m46s: smaller numeric types for MeasurementAggregator</li>
  *     <li>0m39s: implement custom byte[] to int parsing, instead of Double.parseDouble(new String(bytes))</li>
  *     <li>0m18s: run with GraalVM native-image</li>
+ *     <li>0m14s: remove ConcurrentHashMap</li>
  * </ol>
  *
  * <p>
@@ -58,12 +58,13 @@ public class CalculateAverage_Kidlike {
         int processors = Runtime.getRuntime().availableProcessors();
         long chunkSize = fileSize / processors;
 
-        var byteBuffers = new ConcurrentHashMap<Long, MappedByteBuffer>();
+        MappedByteBuffer[] byteBuffers = new MappedByteBuffer[processors];
 
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             for (int i = 0; i < processors; i++) {
                 long start = i * chunkSize;
                 long length = (i == processors - 1) ? fileSize - chunkSize * (processors - 1) : chunkSize;
+                int processor = i;
                 executor.execute(() -> {
                     long realStart = start;
                     try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
@@ -85,7 +86,7 @@ public class CalculateAverage_Kidlike {
 
                         MappedByteBuffer byteBuffer = raf.getChannel().map(MapMode.READ_ONLY, realStart, realLength);
                         byteBuffer.load();
-                        byteBuffers.put(realStart, byteBuffer);
+                        byteBuffers[processor] = byteBuffer;
                     }
                     catch (IOException e) {
                         throw new RuntimeException(e);
@@ -97,8 +98,8 @@ public class CalculateAverage_Kidlike {
         System.out.println(new TreeMap(calculateMeasurements(byteBuffers)));
     }
 
-    private static Map<String, MeasurementAggregator> calculateMeasurements(Map<Long, MappedByteBuffer> buffers) {
-        return buffers.values().parallelStream()
+    private static Map<String, MeasurementAggregator> calculateMeasurements(MappedByteBuffer[] buffers) {
+        return Arrays.stream(buffers).parallel()
                 .map(buffer -> {
                     var results = new HashMap<String, MeasurementAggregator>();
 
