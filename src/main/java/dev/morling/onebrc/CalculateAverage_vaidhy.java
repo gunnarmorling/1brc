@@ -172,11 +172,11 @@ public class CalculateAverage_vaidhy<I, T> {
             return position <= chunkEnd && position < fileEnd;
         }
 
-        public long find(byte ch, boolean computeHash) {
+        public long findSemi() {
             int h = 0;
             byte inCh;
             for (long i = position; i < fileEnd; i++) {
-                if ((inCh = UNSAFE.getByte(i)) == ch) {
+                if ((inCh = UNSAFE.getByte(i)) == 0x3B) {
                     try {
                         return i;
                     }
@@ -184,9 +184,28 @@ public class CalculateAverage_vaidhy<I, T> {
                         position = i + 1;
                     }
                 }
-                if (computeHash) {
-                    h = ((h << 5) - h) ^ inCh;
-                    this.hash = h;
+                h = ((h << 5) - h) ^ inCh;
+                this.hash = h;
+            }
+
+            try {
+                return fileEnd;
+            }
+            finally {
+                position = fileEnd;
+            }
+        }
+
+        public long findNewLine() {
+            this.hash = 0;
+            for (long i = position; i < fileEnd; i++) {
+                if ((UNSAFE.getByte(i)) == 0x0a) {
+                    try {
+                        return i;
+                    }
+                    finally {
+                        position = i + 1;
+                    }
                 }
             }
 
@@ -206,7 +225,7 @@ public class CalculateAverage_vaidhy<I, T> {
         if (offset != 0) {
             if (lineStream.hasNext()) {
                 // Skip the first line.
-                lineStream.find((byte) '\n', false);
+                lineStream.findNewLine();
             }
             else {
                 // No lines then do nothing.
@@ -215,10 +234,10 @@ public class CalculateAverage_vaidhy<I, T> {
         }
         while (lineStream.hasNext()) {
             long keyStartAddress = lineStream.position;
-            long keyEndAddress = lineStream.find((byte) ';', true);
+            long keyEndAddress = lineStream.findSemi();
             int keyHash = lineStream.hash;
             long valueStartAddress = lineStream.position;
-            long valueEndAddress = lineStream.find((byte) '\n', false);
+            long valueEndAddress = lineStream.findNewLine();
             int temperature = parseDouble(valueStartAddress, valueEndAddress);
             lineConsumer.process(keyStartAddress, keyEndAddress, keyHash, temperature);
         }
