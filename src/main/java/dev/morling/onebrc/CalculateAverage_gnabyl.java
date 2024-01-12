@@ -34,7 +34,7 @@ public class CalculateAverage_gnabyl {
 
     private static final int NB_CHUNKS = Runtime.getRuntime().availableProcessors();
 
-    private static Map<Long, String> stationNameMap = new ConcurrentHashMap<>();
+    private static Map<Long, String> stationNameMap = new ConcurrentHashMap<>(10000, 0.75f, NB_CHUNKS);
 
     private static record Chunk(long start, int bytesCount, MappedByteBuffer mappedByteBuffer) {
     }
