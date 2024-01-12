@@ -30,15 +30,16 @@ public class CalculateAverage_agoncal {
 
     private static final String FILE = "./measurements.txt";
 
-    record Measurement(String station, double temperature) {}
+    record Measurement(String station, float temperature) {
+    }
 
     static class StationStats {
-        double min = Double.MAX_VALUE;
-        double max = Double.MIN_VALUE;
-        double sum = 0;
+        float min = Float.MAX_VALUE;
+        float max = Float.MIN_VALUE;
+        float sum = 0;
         int count = 0;
 
-        synchronized void update(double temperature) {
+        synchronized void update(float temperature) {
             min = Math.min(min, temperature);
             max = Math.max(max, temperature);
             sum += temperature;
@@ -52,11 +53,13 @@ public class CalculateAverage_agoncal {
 
     public static void main(String[] args) throws IOException {
         long start = System.currentTimeMillis();
-        Map<String, StationStats> stats = new ConcurrentHashMap<>();
+        Map<String, StationStats> stats = new ConcurrentHashMap<>(10_000);
         try (BufferedReader reader = Files.newBufferedReader(Paths.get(FILE))) {
             reader.lines().parallel().forEach(line -> {
-                String[] parts = line.split(";");
-                Measurement m = new Measurement(parts[0], Double.parseDouble(parts[1]));
+                int separatorIndex = line.indexOf(';');
+                String station = line.substring(0, separatorIndex);
+                String temperature = line.substring(separatorIndex + 1);
+                Measurement m = new Measurement(station, Float.parseFloat(temperature));
                 stats.computeIfAbsent(m.station, k -> new StationStats()).update(m.temperature);
             });
         }
@@ -67,6 +70,5 @@ public class CalculateAverage_agoncal {
             System.out.printf("%s=%.1f/%.1f/%.1f\n", entry.getKey(), s.min, s.getAverage(), s.max);
         }
         System.out.printf("Measure made in %s ms%n", System.currentTimeMillis() - start);
-
     }
 }

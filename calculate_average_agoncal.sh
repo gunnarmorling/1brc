@@ -42,3 +42,13 @@ java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebr
 
 # v2 - 71831 ms
 # Being written in Java 21, please use records instead of classes for Measurement.
+
+# v3 - 69333 ms
+# If the temperatures are small numbers, why use double? Can't you use another datatype ?
+#
+# The profiler mentions that this line of code has very bad performance. Can you refactor it so it has better performance:
+# ---
+# String[] parts = line.split(";")
+# ---
+#
+# There is a maximum of 10000 unique station names. Can you optimize the code taking this into account?
