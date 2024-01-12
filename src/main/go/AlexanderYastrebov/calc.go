@@ -130,40 +130,42 @@ func process(data []byte) map[string]*measurement {
 }
 
 func processChunk(data []byte) map[string]*measurement {
-	// use uint64 FNV-1a hash of id value as buckets key and keep mapping to the id value.
-	// This assumes no collisions of id hashes.
+	// Use fixed size linear probe lookup table
 	const (
 		// use power of 2 for fast modulo calculation
-		nBuckets = 1 << 12
-		maxIds   = 10_000
+		entriesSize = 1 << 12
 
+		// use FNV-1a hash
 		fnv1aOffset64 = 14695981039346656037
 		fnv1aPrime64  = 1099511628211
 	)
 
 	type entry struct {
-		key uint64
-		mid int
+		m     measurement
+		hash  uint64
+		vlen  int
+		value [128]byte // use power of 2 > 100 for alignment
 	}
-	buckets := make([][]entry, nBuckets)
-	measurements := make([]measurement, 0, maxIds)
-	ids := make(map[uint64][]byte)
+	entries := make([]entry, entriesSize)
+	entriesCount := 0
 
-	getMeasurement := func(key uint64) *measurement {
-		i := key & uint64(nBuckets-1)
-		for j := 0; j < len(buckets[i]); j++ {
-			e := &buckets[i][j]
-			if e.key == key {
-				return &measurements[e.mid]
-			}
+	// keep short and inlinable
+	getMeasurement := func(hash uint64, value []byte) *measurement {
+		i := hash & uint64(entriesSize-1)
+		entry := &entries[i]
+
+		// bytes.Equal could be commented to speedup assuming no hash collisions
+		for entry.vlen > 0 && !(entry.hash == hash && bytes.Equal(entry.value[:entry.vlen], value)) {
+			i = (i + 1) & uint64(entriesSize-1)
+			entry = &entries[i]
 		}
-		return nil
-	}
 
-	putMeasurement := func(key uint64, m measurement) {
-		i := key & uint64(nBuckets-1)
-		buckets[i] = append(buckets[i], entry{key: key, mid: len(measurements)})
-		measurements = append(measurements, m)
+		if entry.vlen == 0 {
+			entry.hash = hash
+			entry.vlen = copy(entry.value[:], value)
+			entriesCount++
+		}
+		return &entry.m
 	}
 
 	// assume valid input
@@ -211,15 +213,12 @@ func processChunk(data []byte) map[string]*measurement {
 			}
 		}
 
-		m := getMeasurement(idHash)
-		if m == nil {
-			putMeasurement(idHash, measurement{
-				min:   temp,
-				max:   temp,
-				sum:   temp,
-				count: 1,
-			})
-			ids[idHash] = idData
+		m := getMeasurement(idHash, idData)
+		if m.count == 0 {
+			m.min = temp
+			m.max = temp
+			m.sum = temp
+			m.count = 1
 		} else {
 			m.min = min(m.min, temp)
 			m.max = max(m.max, temp)
@@ -228,10 +227,11 @@ func processChunk(data []byte) map[string]*measurement {
 		}
 	}
 
-	result := make(map[string]*measurement, len(measurements))
-	for _, bucket := range buckets {
-		for _, entry := range bucket {
-			result[string(ids[entry.key])] = &measurements[entry.mid]
+	result := make(map[string]*measurement, entriesCount)
+	for i := range entries {
+		entry := &entries[i]
+		if entry.m.count > 0 {
+			result[string(entry.value[:entry.vlen])] = &entry.m
 		}
 	}
 	return result
