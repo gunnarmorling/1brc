@@ -24,7 +24,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collector;
 
-public class CalculateAverage {
+public class CalculateAverage_baseline {
 
     private static final String FILE = "./measurements.txt";
 
