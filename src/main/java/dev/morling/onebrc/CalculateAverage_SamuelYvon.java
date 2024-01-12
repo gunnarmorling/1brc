@@ -66,7 +66,7 @@ public class CalculateAverage_SamuelYvon {
 
     private static final byte ZERO = '0';
 
-    private static final byte SLASH = '/';
+    private static final String SLASH_S = "/";
 
     private static final byte NEWLINE = '\n';
 
@@ -139,7 +139,7 @@ public class CalculateAverage_SamuelYvon {
             double min = Math.round((double) this.min) / 10.0;
             double max = Math.round((double) this.max) / 10.0;
             double mean = Math.round((((double) this.sum / this.count))) / 10.0;
-            return String.valueOf(min) + SLASH + mean + SLASH + max;
+            return min + SLASH_S + mean + SLASH_S + max;
         }
     }
 
