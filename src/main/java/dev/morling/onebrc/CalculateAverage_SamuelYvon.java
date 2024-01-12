@@ -15,6 +15,8 @@
  */
 package dev.morling.onebrc;
 
+//import jdk.incubator.vector.ByteVector;
+
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.MappedByteBuffer;
@@ -52,7 +54,7 @@ import java.util.stream.Collectors;
  * 2024-01-09: Naive multi-threaded, no floats, manual line parsing
  * </p>
  */
-public class CalculateAverage_samuelyvon {
+public class CalculateAverage_SamuelYvon {
 
     private static final String FILE = "./measurements.txt";
 
@@ -60,14 +62,20 @@ public class CalculateAverage_samuelyvon {
 
     private static final byte SEMICOL = 0x3B;
 
+    private static final byte DOT = '.';
+
     private static final byte MINUS = '-';
 
     private static final byte ZERO = '0';
+
+    private static final String SLASH_S = "/";
 
     private static final byte NEWLINE = '\n';
 
     // The minimum line length in bytes (over-egg.)
     private static final int MIN_LINE_LENGTH_BYTES = 200;
+
+    private static final int DJB2_INIT = 5381;
 
     /**
      * Branchless min (unprecise for large numbers, but good enough)
@@ -91,25 +99,84 @@ public class CalculateAverage_samuelyvon {
         return b + (diff & dsgn);
     }
 
+    /**
+     * A magic key that contains references to the String and where it's located in memory
+     */
+    private static final class StationName {
+        private final int hash;
+
+        private final byte[] value;
+
+        private StationName(int hash, MappedByteBuffer backing, int pos, int len) {
+            this.hash = hash;
+            this.value = new byte[len];
+            backing.get(pos, this.value);
+        }
+
+        @Override
+        public int hashCode() {
+            return hash;
+        }
+
+        @SuppressWarnings("EqualsWhichDoesntCheckParameterClass")
+        @Override
+        public boolean equals(Object obj) {
+            // Should NEVER be true
+            // if (!(obj instanceof StationName)) {
+            // return false;
+            // }
+            StationName other = (StationName) obj;
+
+            if (this.value.length != other.value.length) {
+                return false;
+            }
+
+            // Byte for byte compare. This actually is a bug! I'm assuming the input
+            // is UTF-8 normalized, which in real life would probably not be the case.
+            // TODO: SIMD?
+            return Arrays.equals(this.value, other.value);
+        }
+
+        @Override
+        public String toString() {
+            return new String(this.value, StandardCharsets.UTF_8);
+        }
+    }
+
     private static class StationMeasureAgg {
         private int min;
         private int max;
         private long sum;
         private long count;
 
-        private final String city;
+        private final StationName station;
 
-        public StationMeasureAgg(String city) {
+        private String memoizedName;
+
+        public StationMeasureAgg(StationName name) {
             // Actual numbers are between -99.9 and 99.9, but we *10 to avoid float
-            this.city = city;
+            this.station = name;
             min = 1000;
             max = -1000;
             sum = 0;
             count = 0;
         }
 
+        @Override
+        public int hashCode() {
+            return this.station.hash;
+        }
+
+        /**
+         * Get the city name, but also memoized it to avoid building it multiple times
+         *
+         * @return the city name
+         */
         public String city() {
-            return this.city;
+            if (null == this.memoizedName) {
+                this.memoizedName = station.toString();
+            }
+            return this.memoizedName;
         }
 
         public StationMeasureAgg mergeWith(StationMeasureAgg other) {
@@ -135,27 +202,38 @@ public class CalculateAverage_samuelyvon {
             double min = Math.round((double) this.min) / 10.0;
             double max = Math.round((double) this.max) / 10.0;
             double mean = Math.round((((double) this.sum / this.count))) / 10.0;
-            return min + "/" + mean + "/" + max;
+            return min + SLASH_S + mean + SLASH_S + max;
+        }
+
+        public StationName station() {
+            return this.station;
         }
     }
 
-    private static HashMap<String, StationMeasureAgg> parseChunk(MappedByteBuffer chunk) {
-        HashMap<String, StationMeasureAgg> m = HashMap.newHashMap(MAX_STATIONS);
+    private static HashMap<StationName, StationMeasureAgg> parseChunk(MappedByteBuffer chunk) {
+        HashMap<StationName, StationMeasureAgg> m = HashMap.newHashMap(MAX_STATIONS);
 
         int i = 0;
         while (i < chunk.limit()) {
             int j = i;
+
+            int hash = DJB2_INIT;
+
+            // Implement a version of djb2 while we read until the semi, we read anyways
             for (; j < chunk.limit(); ++j) {
-                // TODO: Could compute a hash here, store a byte array, and decode UTF-8 at the
-                // latest moment.
-                if (chunk.get(j) == SEMICOL) {
+                byte b = chunk.get(j);
+
+                if (b == SEMICOL) {
                     break;
                 }
+
+                // How will this behave in java? Why do I get no control OF SIGNEDNESS FFS
+                // Can I assume int is 32 bits? What is this language! In Java 1.7 it could be 16 bits?
+                // Apparently not anymore??
+                hash = (((hash << 5) + hash) + b);
             }
 
-            byte[] backingNameArray = new byte[j - i];
-            chunk.get(i, backingNameArray);
-            String name = new String(backingNameArray, StandardCharsets.UTF_8);
+            StationName name = new StationName(hash, chunk, i, j - i);
 
             // Skip the `;`
             j++;
@@ -167,7 +245,7 @@ public class CalculateAverage_samuelyvon {
             for (j = j + (neg ? 1 : 0); j < chunk.limit(); ++j) {
                 temp *= 10;
                 byte c = chunk.get(j);
-                if (c != '.') {
+                if (c != DOT) {
                     temp += (char) (c - ZERO);
                 }
                 else {
@@ -181,7 +259,7 @@ public class CalculateAverage_samuelyvon {
 
             i = j + 1;
 
-            while (chunk.get(i++) != '\n')
+            while (chunk.get(i++) != NEWLINE)
                 ;
 
             if (neg)
@@ -241,9 +319,24 @@ public class CalculateAverage_samuelyvon {
         var fileChunks = getFileChunks();
 
         // Map per core, giving the non-overlapping memory slices
-        final Map<String, StationMeasureAgg> sortedMeasures = fileChunks.parallelStream().map(CalculateAverage_samuelyvon::parseChunk)
-                .flatMap(x -> x.values().stream()).collect(Collectors.toMap(StationMeasureAgg::city, x -> x, StationMeasureAgg::mergeWith, TreeMap::new));
+        final Map<StationName, StationMeasureAgg> allMeasures = fileChunks.parallelStream().map(CalculateAverage_SamuelYvon::parseChunk).flatMap(x -> x.values().stream())
+                .collect(Collectors.toMap(StationMeasureAgg::station, x -> x, StationMeasureAgg::mergeWith, HashMap::new));
 
-        System.out.println(sortedMeasures);
+        // Give a capacity that should never be gone past
+        StringBuilder sb = new StringBuilder(allMeasures.size() * (100 + 4 + 20));
+        sb.append('{');
+
+        allMeasures.values().stream().sorted(Comparator.comparing(StationMeasureAgg::city)).forEach(x -> {
+            sb.append(x.city());
+            sb.append('=');
+            sb.append(x);
+            sb.append(", ");
+        });
+
+        sb.delete(sb.length() - 2, sb.length()); // delete trailing comma and space
+
+        sb.append('}');
+
+        System.out.println(sb);
     }
 }
