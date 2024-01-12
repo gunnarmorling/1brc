@@ -216,8 +216,20 @@ public class CalculateAverage_vaidhy<I, T> {
             return i;
         }
 
-        public long findNewLine() {
-            this.hash = 0;
+        public long skipLine() {
+            for (long i = position; i < fileEnd; i++) {
+                byte ch = UNSAFE.getByte(i);
+                if (ch == 0x0a) {
+                    position = i + 1;
+                    return i;
+                }
+            }
+            position = fileEnd;
+            return fileEnd;
+        }
+
+        public long findTemperature() {
+            position += 3;
             for (long i = position; i < fileEnd; i++) {
                 byte ch = UNSAFE.getByte(i);
                 if (ch == 0x0a) {
@@ -237,7 +249,7 @@ public class CalculateAverage_vaidhy<I, T> {
         if (offset != 0) {
             if (lineStream.hasNext()) {
                 // Skip the first line.
-                lineStream.findNewLine();
+                lineStream.skipLine();
             }
             else {
                 // No lines then do nothing.
@@ -250,7 +262,7 @@ public class CalculateAverage_vaidhy<I, T> {
             long keySuffix = lineStream.suffix;
             int keyHash = lineStream.hash;
             long valueStartAddress = lineStream.position;
-            long valueEndAddress = lineStream.findNewLine();
+            long valueEndAddress = lineStream.findTemperature();
             int temperature = parseDouble(valueStartAddress, valueEndAddress);
             lineConsumer.process(keyStartAddress, keyEndAddress, keyHash, temperature, keySuffix);
         }
