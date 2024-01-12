@@ -25,113 +25,141 @@ import java.nio.channels.FileChannel.MapMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.DoubleSummaryStatistics;
-import java.util.Iterator;
+import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
-import java.util.Spliterator;
-import java.util.Spliterators;
+import java.util.Objects;
+import java.util.TreeMap;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import java.util.stream.StreamSupport;
 
 public class CalculateAverage_kuduwa_keshavram {
 
     private static final String FILE = "./measurements.txt";
-    private static final long LEFT_SHIFT_EIGHT = Long.MAX_VALUE / (1L << 8);
-    private static final long LEFT_SHIFT_FOUR = Long.MAX_VALUE / (1L << 4);
-    private static final long LEFT_SHIFT_TWO = Long.MAX_VALUE / (1L << 2);
-    private static final long LEFT_SHIFT_ONE = Long.MAX_VALUE / (1L << 1);
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        Map<String, DoubleSummaryStatistics> resultMap = getFileSegments(new File(FILE)).stream()
+        TreeMap<String, Measurement> resultMap = getFileSegments(new File(FILE)).stream()
                 .parallel()
-                .flatMap(
+                .map(
                         segment -> {
+                            final Measurement[][] measurements = new Measurement[1024 * 128][3];
                             try (FileChannel fileChannel = (FileChannel) Files.newByteChannel(Path.of(FILE), StandardOpenOption.READ)) {
                                 MappedByteBuffer byteBuffer = fileChannel.map(
                                         MapMode.READ_ONLY, segment.start, segment.end - segment.start);
                                 byteBuffer.order(ByteOrder.nativeOrder());
-                                Iterator<Measurement> iterator = getMeasurementIterator(byteBuffer);
-                                return StreamSupport.stream(
-                                        Spliterators.spliteratorUnknownSize(iterator, Spliterator.NONNULL), true);
+                                while (byteBuffer.hasRemaining()) {
+                                    byte[] city = new byte[100];
+                                    byte b;
+                                    int hash = 0;
+                                    int i = 0;
+                                    while ((b = byteBuffer.get()) != 59) {
+                                        hash = 31 * hash + b;
+                                        city[i++] = b;
+                                    }
+
+                                    byte[] newCity = new byte[i];
+                                    System.arraycopy(city, 0, newCity, 0, i);
+                                    int measurement = 0;
+                                    boolean negative = false;
+                                    while ((b = byteBuffer.get()) != 10) {
+                                        if (b == 45) {
+                                            negative = true;
+                                        }
+                                        else if (b == 46) {
+                                            // skip
+                                        }
+                                        else {
+                                            final int n = b - '0';
+                                            measurement = measurement * 10 + n;
+                                        }
+                                    }
+                                    putOrMerge(
+                                            measurements,
+                                            new Measurement(
+                                                    hash, newCity, negative ? measurement * -1 : measurement));
+                                }
                             }
                             catch (IOException e) {
                                 throw new RuntimeException(e);
                             }
+                            return measurements;
                         })
+                .flatMap(measurements -> Arrays.stream(measurements).flatMap(Arrays::stream))
+                .filter(Objects::nonNull)
                 .collect(
-                        Collectors.groupingBy(
-                                Measurement::city, Collectors.summarizingDouble(Measurement::temp)));
-        System.out.println(
-                resultMap.entrySet().stream()
-                        .sorted(Map.Entry.comparingByKey())
-                        .map(
-                                entry -> String.format(
-                                        "%s=%.1f/%.1f/%.1f",
-                                        entry.getKey(),
-                                        entry.getValue().getMin(),
-                                        entry.getValue().getAverage(),
-                                        entry.getValue().getMax()))
-                        .collect(Collectors.joining(", ", "{", "}")));
+                        Collectors.toMap(
+                                measurement -> new String(measurement.city),
+                                Function.identity(),
+                                (m1, m2) -> {
+                                    m1.merge(m2);
+                                    return m1;
+                                },
+                                TreeMap::new));
+
+        System.out.println(resultMap);
     }
 
-    private static Iterator<Measurement> getMeasurementIterator(MappedByteBuffer byteBuffer) {
-        return new Iterator<>() {
+    private static void putOrMerge(Measurement[][] measurements, Measurement measurement) {
+        int index = measurement.hash & (measurements.length - 1);
+        Measurement[] existing = measurements[index];
+        for (int i = 0; i < existing.length; i++) {
+            Measurement existingMeasurement = existing[i];
+            if (existingMeasurement == null) {
+                measurements[index][i] = measurement;
+                return;
+            }
+            if (equals(existingMeasurement.city, measurement.city)) {
+                existingMeasurement.merge(measurement);
+                return;
+            }
+        }
+    }
 
-            private int initialPosition;
-
-            private int delimiterIndex;
-
-            @Override
-            public boolean hasNext() {
-                boolean hasRemaining = byteBuffer.hasRemaining();
-                if (hasRemaining) {
-                    initialPosition = byteBuffer.position();
-                    delimiterIndex = 0;
-                    while (true) {
-                        byte b = byteBuffer.get();
-                        if (b == 59) {
-                            break;
-                        }
-                        delimiterIndex++;
-                    }
-                    return true;
-                }
+    private static boolean equals(byte[] city1, byte[] city2) {
+        for (int i = 0; i < city1.length; i++) {
+            if (city1[i] != city2[i]) {
                 return false;
             }
-
-            @Override
-            public Measurement next() {
-                byteBuffer.position(initialPosition);
-
-                byte[] city = new byte[delimiterIndex];
-                for (int j = 0; j < delimiterIndex; j++) {
-                    city[j] = byteBuffer.get();
-                }
-
-                byteBuffer.get();
-                String temp = "";
-                while (true) {
-                    char c = (char) byteBuffer.get();
-                    if (c == '\n') {
-                        break;
-                    }
-                    temp += c;
-                }
-                return new Measurement(new String(city), toDouble(temp));
-            }
-        };
+        }
+        return true;
     }
 
     private record FileSegment(long start, long end) {
     }
 
-    private record Measurement(String city, double temp) {
+    private static final class Measurement {
+
+        private int hash;
+        private byte[] city;
+
+        int min;
+        int max;
+        int sum;
+        int count;
+
+        private Measurement(int hash, byte[] city, int temp) {
+            this.hash = hash;
+            this.city = city;
+            this.min = this.max = this.sum = temp;
+            this.count = 1;
+        }
+
+        private void merge(Measurement m2) {
+            this.min = this.min < m2.min ? this.min : m2.min;
+            this.max = this.max > m2.max ? this.max : m2.max;
+            this.sum = this.sum + m2.sum;
+            this.count = this.count + m2.count;
+        }
+
+        @Override
+        public String toString() {
+            return String.format(
+                    "%.1f/%.1f/%.1f", this.min / 10f, (this.sum / 10f) / this.count, this.max / 10f);
+        }
     }
 
     private static List<FileSegment> getFileSegments(final File file) throws IOException {
-        final int numberOfSegments = Runtime.getRuntime().availableProcessors();
+        final int numberOfSegments = Runtime.getRuntime().availableProcessors() * 4;
         final long fileSize = file.length();
         final long segmentSize = fileSize / numberOfSegments;
         if (segmentSize < 1000) {
@@ -170,80 +198,5 @@ public class CalculateAverage_kuduwa_keshavram {
             }
         }
         return location;
-    }
-
-    private static double toDouble(String num) {
-        long value = 0;
-        boolean negative = false;
-        int decimalPlaces = Integer.MIN_VALUE;
-        for (byte ch : num.getBytes()) {
-            if (ch >= '0' && ch <= '9') {
-                value = value * 10 + (ch - '0');
-                decimalPlaces++;
-            }
-            else if (ch == '-') {
-                negative = true;
-            }
-            else if (ch == '.') {
-                decimalPlaces = 0;
-            }
-            else {
-                break;
-            }
-        }
-
-        return asDouble(value, negative, decimalPlaces);
-    }
-
-    private static double asDouble(long value, boolean negative, int decimalPlaces) {
-        int exp = -48;
-        value <<= 48;
-        if (decimalPlaces > 0 && value < Long.MAX_VALUE / 2) {
-            if (value < LEFT_SHIFT_EIGHT) {
-                exp -= 8;
-                value <<= 8;
-            }
-            if (value < LEFT_SHIFT_FOUR) {
-                exp -= 4;
-                value <<= 4;
-            }
-            if (value < LEFT_SHIFT_TWO) {
-                exp -= 2;
-                value <<= 2;
-            }
-            if (value < LEFT_SHIFT_ONE) {
-                exp -= 1;
-                value <<= 1;
-            }
-        }
-        for (; decimalPlaces > 0; decimalPlaces--) {
-            exp--;
-            long mod = value % 5;
-            value /= 5;
-            int modDiv = 1;
-            if (value < LEFT_SHIFT_FOUR) {
-                exp -= 4;
-                value <<= 4;
-                modDiv <<= 4;
-            }
-            if (value < LEFT_SHIFT_TWO) {
-                exp -= 2;
-                value <<= 2;
-                modDiv <<= 2;
-            }
-            if (value < LEFT_SHIFT_ONE) {
-                exp -= 1;
-                value <<= 1;
-                modDiv <<= 1;
-            }
-            if (decimalPlaces > 1) {
-                value += modDiv * mod / 5;
-            }
-            else {
-                value += (modDiv * mod + 4) / 5;
-            }
-        }
-        final double d = Math.scalb((double) value, exp);
-        return negative ? -d : d;
     }
 }
