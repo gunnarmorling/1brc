@@ -20,6 +20,7 @@ import sun.misc.Unsafe;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.reflect.Field;
+import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -73,10 +74,6 @@ public class CalculateAverage_vaidhy<I, T> {
                         if (found) {
                             return entry;
                         }
-                    }
-                    else {
-                        System.out.println("Broken - Entry : " + unsafeToString(entry.startAddress, entry.endAddress) +
-                                " Hash - " + unsafeToString(startAddress, endAddress));
                     }
                 }
                 i++;
@@ -185,6 +182,7 @@ public class CalculateAverage_vaidhy<I, T> {
         private long position;
         private int hash;
         private long suffix;
+        byte[] b = new byte[4];
 
         public LineStream(FileService fileService, long offset, long chunkSize) {
             long fileStart = fileService.address();
@@ -200,16 +198,41 @@ public class CalculateAverage_vaidhy<I, T> {
 
         public long findSemi() {
             int h = 0;
-            int s = 0;
+            long s = 0;
             long i = position;
-            for (; i < fileEnd; i++) {
-                byte myCh = UNSAFE.getByte(i);
-                if (myCh == 0x3B) {
+            while ((i + 3) < fileEnd) {
+                // Adding 16 as it is the offset for primitive arrays
+                ByteBuffer.wrap(b).putInt(UNSAFE.getInt(i));
+
+                if (b[3] == 0x3B) {
                     break;
                 }
-                h = ((h << 5) - h) ^ myCh;
-                s = (s << 8) ^ myCh;
+                i++;
+                h = ((h << 5) - h) ^ b[3];
+                s = (s << 8) ^ b[3];
+
+                if (b[2] == 0x3B) {
+                    break;
+                }
+                i++;
+                h = ((h << 5) - h) ^ b[2];
+                s = (s << 8) ^ b[2];
+
+                if (b[1] == 0x3B) {
+                    break;
+                }
+                i++;
+                h = ((h << 5) - h) ^ b[1];
+                s = (s << 8) ^ b[1];
+
+                if (b[0] == 0x3B) {
+                    break;
+                }
+                i++;
+                h = ((h << 5) - h) ^ b[0];
+                s = (s << 8) ^ b[0];
             }
+
             this.hash = h;
             this.suffix = s;
             position = i + 1;
