@@ -204,10 +204,12 @@ public class CalculateAverage_vaidhy<I, T> {
             long i = position;
             for (; i < fileEnd; i++) {
                 byte myCh = UNSAFE.getByte(i);
-                if (myCh != 0x3B) {
+                if ((myCh ^ 0x3B) == 0) {
                     h = ((h << 5) - h) ^ myCh;
                     s = (s << 8) ^ myCh;
-                } else break;
+                }
+                else
+                    break;
             }
             this.hash = h;
             this.suffix = s;
@@ -218,7 +220,8 @@ public class CalculateAverage_vaidhy<I, T> {
         public long findNewLine() {
             this.hash = 0;
             for (long i = position; i < fileEnd; i++) {
-                if ((UNSAFE.getByte(i)) == 0x0a) {
+                byte ch = UNSAFE.getByte(i);
+                if ((ch ^ 0x0a) == 0) {
                     position = i + 1;
                     return i;
                 }
