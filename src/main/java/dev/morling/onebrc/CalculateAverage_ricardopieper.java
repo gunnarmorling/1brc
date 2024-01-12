@@ -287,10 +287,10 @@ public class CalculateAverage_ricardopieper {
         public int count;
 
         public StationMeasurements(
-                long min,
-                long max,
-                long sum,
-                int count) {
+                                   long min,
+                                   long max,
+                                   long sum,
+                                   int count) {
             this.min = min;
             this.max = max;
             this.sum = sum;
