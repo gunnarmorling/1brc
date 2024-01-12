@@ -75,7 +75,8 @@ public class CalculateAverage_vaidhy<I, T> {
                         }
                     }
                     else {
-                        System.out.println("Broken");
+                        System.out.println("Broken - Entry : " + unsafeToString(entry.startAddress, entry.endAddress) +
+                                " Hash - " + unsafeToString(startAddress, endAddress));
                     }
                 }
                 i++;
@@ -116,7 +117,7 @@ public class CalculateAverage_vaidhy<I, T> {
     private static final Unsafe UNSAFE = initUnsafe();
 
     private static int parseDouble(long startAddress, long endAddress) {
-        int normalized = 0;
+        int normalized;
         int length = (int) (endAddress - startAddress);
         if (length == 5) {
             normalized = (UNSAFE.getByte(startAddress + 1) ^ 0x30);
@@ -147,7 +148,7 @@ public class CalculateAverage_vaidhy<I, T> {
 
     interface MapReduce<I> {
 
-        void process(long keyStartAddress, long keyEndAddress, int hash, int temperature);
+        void process(long keyStartAddress, long keyEndAddress, int hash, int temperature, long suffix);
 
         I result();
     }
@@ -183,6 +184,7 @@ public class CalculateAverage_vaidhy<I, T> {
 
         private long position;
         private int hash;
+        private long suffix;
 
         public LineStream(FileService fileService, long offset, long chunkSize) {
             long fileStart = fileService.address();
@@ -198,18 +200,19 @@ public class CalculateAverage_vaidhy<I, T> {
 
         public long findSemi() {
             int h = 0;
-            byte inCh;
-            for (long i = position; i < fileEnd; i++) {
-                if ((inCh = UNSAFE.getByte(i)) == 0x3B) {
-                    this.hash = h;
-                    position = i + 1;
-                    return i;
-                }
-                h = ((h << 5) - h) ^ inCh;
+            int s = 0;
+            long i = position;
+            for (; i < fileEnd; i++) {
+                byte myCh = UNSAFE.getByte(i);
+                if (myCh != 0x3B) {
+                    h = ((h << 5) - h) ^ myCh;
+                    s = (s << 8) ^ myCh;
+                } else break;
             }
             this.hash = h;
-            position = fileEnd;
-            return fileEnd;
+            this.suffix = s;
+            position = i + 1;
+            return i;
         }
 
         public long findNewLine() {
@@ -242,11 +245,12 @@ public class CalculateAverage_vaidhy<I, T> {
         while (lineStream.hasNext()) {
             long keyStartAddress = lineStream.position;
             long keyEndAddress = lineStream.findSemi();
+            long keySuffix = lineStream.suffix;
             int keyHash = lineStream.hash;
             long valueStartAddress = lineStream.position;
             long valueEndAddress = lineStream.findNewLine();
             int temperature = parseDouble(valueStartAddress, valueEndAddress);
-            lineConsumer.process(keyStartAddress, keyEndAddress, keyHash, temperature);
+            lineConsumer.process(keyStartAddress, keyEndAddress, keyHash, temperature, keySuffix);
         }
     }
 
@@ -304,21 +308,21 @@ public class CalculateAverage_vaidhy<I, T> {
         }
     }
 
-    public static class ChunkProcessorImpl implements MapReduce<PrimitiveHashMap> {
+    private static class ChunkProcessorImpl implements MapReduce<PrimitiveHashMap> {
 
         // 1 << 14 > 10,000 so it works
         private final PrimitiveHashMap statistics = new PrimitiveHashMap(14);
 
         @Override
-        public void process(long keyStartAddress, long keyEndAddress, int hash, int temperature) {
-            int length = (int) (keyEndAddress - keyStartAddress);
-            int alignedLength = (length >> 3) << 3;
-            long alignedAddress = keyStartAddress + alignedLength;
-            int tail = length & 7;
-            long suffix = 0;
-            if (tail != 0) {
-                suffix = UNSAFE.getLong(alignedAddress) << ((8 - tail) * 8);
-            }
+        public void process(long keyStartAddress, long keyEndAddress, int hash, int temperature, long suffix) {
+            // int length = (int) (keyEndAddress - keyStartAddress);
+            // int alignedLength = (length >> 3) << 3;
+            // long alignedAddress = keyStartAddress + alignedLength;
+            // int tail = length & 7;
+            // long suffix = 0;
+            // if (tail != 0) {
+            // suffix = UNSAFE.getLong(alignedAddress) << ((8 - tail) * 8);
+            // }
 
             HashEntry entry = statistics.find(keyStartAddress, keyEndAddress, suffix, hash);
             if (entry == null) {
@@ -350,9 +354,8 @@ public class CalculateAverage_vaidhy<I, T> {
 
         int proc = 2 * Runtime.getRuntime().availableProcessors();
 
-        int shards = proc;
         long fileSize = diskFileService.length();
-        long chunkSize = Math.ceilDiv(fileSize, shards);
+        long chunkSize = Math.ceilDiv(fileSize, proc);
 
         ExecutorService executor = Executors.newFixedThreadPool(proc);
         Map<String, IntSummaryStatistics> output = calculateAverageVaidhy.master(chunkSize, executor);
