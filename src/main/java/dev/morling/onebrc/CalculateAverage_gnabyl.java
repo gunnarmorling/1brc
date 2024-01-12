@@ -22,8 +22,10 @@ import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
@@ -198,21 +200,21 @@ public class CalculateAverage_gnabyl {
         chunk.mappedByteBuffer().get(data);
 
         // Process each line
-        String stationName;
         double value;
         int iSplit, iEol;
         StationData stationData;
         long negative;
         int hash, prime = 131;
+        Set<Integer> seenHashes = new HashSet<>(10000, 0.9f);
         for (int offset = 0; offset < data.length; offset++) {
             // Find station name
             hash = 0;
             for (iSplit = offset; data[iSplit] != ';'; iSplit++) {
                 hash = hash * prime + (data[iSplit] & 0xFF);
             }
-            if (!stationNameMap.containsKey(hash)) {
-                stationName = new String(data, offset, iSplit - offset, StandardCharsets.UTF_8);
-                stationNameMap.put(hash, stationName);
+            if (!seenHashes.contains(hash)) {
+                seenHashes.add(hash);
+                stationNameMap.put(hash, new String(data, offset, iSplit - offset, StandardCharsets.UTF_8));
             }
 
             // Find value
