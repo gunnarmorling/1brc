@@ -168,13 +168,6 @@ public class CalculateAverage_vaidhy<I, T> {
         this.reducer = reducer;
     }
 
-    /**
-     * Reads lines from a given character stream, hasNext() is always
-     * efficient, all work is done only in next().
-     */
-    // Space complexity: O(max line length) in next() call, structure is O(1)
-    // not counting charStream as it is only a reference, we will count that
-    // in worker space.
     static class LineStream {
         private final long fileEnd;
         private final long chunkEnd;
@@ -265,7 +258,6 @@ public class CalculateAverage_vaidhy<I, T> {
         }
     }
 
-    // Space complexity: O(scanSize) + O(max line length)
     private void worker(long offset, long chunkSize, MapReduce<I> lineConsumer) {
         LineStream lineStream = new LineStream(fileService, offset, chunkSize);
 
@@ -291,8 +283,6 @@ public class CalculateAverage_vaidhy<I, T> {
         }
     }
 
-    // Space complexity: O(number of workers), not counting
-    // workers space assuming they are running in different hosts.
     public T master(long chunkSize, ExecutorService executor) {
         long len = fileService.length();
         List<Future<I>> summaries = new ArrayList<>();
@@ -319,8 +309,6 @@ public class CalculateAverage_vaidhy<I, T> {
                 .toList();
         return reducer.apply(summariesDone);
     }
-
-    /// SAMPLE CANDIDATE CODE ENDS
 
     static class DiskFileService implements FileService {
         private final long fileSize;
@@ -352,15 +340,6 @@ public class CalculateAverage_vaidhy<I, T> {
 
         @Override
         public void process(long keyStartAddress, long keyEndAddress, int hash, int temperature, long suffix) {
-            // int length = (int) (keyEndAddress - keyStartAddress);
-            // int alignedLength = (length >> 3) << 3;
-            // long alignedAddress = keyStartAddress + alignedLength;
-            // int tail = length & 7;
-            // long suffix = 0;
-            // if (tail != 0) {
-            // suffix = UNSAFE.getLong(alignedAddress) << ((8 - tail) * 8);
-            // }
-
             HashEntry entry = statistics.find(keyStartAddress, keyEndAddress, suffix, hash);
             if (entry == null) {
                 throw new IllegalStateException("Hash table too small :(");
