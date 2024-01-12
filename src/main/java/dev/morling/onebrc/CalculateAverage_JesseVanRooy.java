@@ -250,7 +250,7 @@ public class CalculateAverage_JesseVanRooy {
                 System.out.printf(Locale.US, "%s=%.1f/%.1f/%.1f", sortedResult.name, sortedResult.min(), sortedResult.mean(), sortedResult.max());
             }
 
-            System.out.printf("}%n");
+            System.out.printf("}\n");
         }
     }
 }
