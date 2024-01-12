@@ -15,12 +15,14 @@
  */
 package dev.morling.onebrc;
 
+import static java.lang.foreign.ValueLayout.JAVA_BYTE;
+
 import java.io.RandomAccessFile;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.reflect.Field;
 import java.nio.channels.FileChannel;
-import java.util.HashMap;
+import java.nio.charset.Charset;
 import java.util.TreeMap;
 import java.util.concurrent.CountDownLatch;
 
@@ -28,14 +30,10 @@ import sun.misc.Unsafe;
 
 public final class CalculateAverage_fwbrasil {
 
+    static final Charset CHARSET = Charset.forName("UTF-8");
     static final Unsafe UNSAFE = initUnsafe();
 
-    static final long TABLE_BASE_OFFSET = UNSAFE.arrayBaseOffset(long[].class);
-    static final long TABLE_SCALE = UNSAFE.arrayIndexScale(long[].class);
-    static final int TABLE_SIZE = (int) Math.pow(2, 15);
-    static final int TABLE_MASK = TABLE_SIZE - 1;
-
-    static final int PARTITIONS = (int) (Runtime.getRuntime().availableProcessors());
+    static final int PARTITIONS = (int) (Runtime.getRuntime().availableProcessors() * 1.5);
     static final long PRIME = (long) (Math.pow(2, 31) - 1);
 
     public static void main(String[] args) throws Throwable {
@@ -55,6 +53,7 @@ public final class CalculateAverage_fwbrasil {
     final CountDownLatch cdl = new CountDownLatch(PARTITIONS);
 
     void run() throws Throwable {
+        (new Preload()).start();
         runPartitions();
         Results results = mergeResults();
         System.out.println(results);
@@ -145,16 +144,13 @@ public final class CalculateAverage_fwbrasil {
         long readKeyHash() {
             long hash = 0L;
             byte b = 0;
-            for (; (b = read(pos)) != ';'; pos++) {
-                hash += b;
-                hash += (hash << 10);
-                hash ^= (hash >> 6);
+            var i = 0;
+            var pos = this.pos;
+            for (; (b = read(pos + i)) != ';'; i++) {
+                hash = (b + hash + i) * 257;
             }
-            hash += (hash << 3);
-            hash ^= (hash >> 11);
-            hash += (hash << 15);
-            var r = Math.abs(hash * PRIME);
-            return r;
+            this.pos = pos + i;
+            return Math.abs(hash * PRIME);
         }
 
         int readValue() {
@@ -179,71 +175,128 @@ public final class CalculateAverage_fwbrasil {
 
     final class Results {
 
-        int idx = 0;
+        static final long TABLE_BASE_OFFSET = UNSAFE.arrayBaseOffset(long[].class);
+        static final long TABLE_SCALE = UNSAFE.arrayIndexScale(long[].class);
+        static final int KEYS_SIZE = (int) Math.pow(2, 15);
+        static final int KEYS_MASK = KEYS_SIZE * 2 - 1;
+        static final int ENTRIES_SIZE = 10_000;
 
-        // keyHash | keyStart | keyEnd | 0 | min | max | sum | count
-        final long[] table = new long[TABLE_SIZE * 8];
+        // keyHash | stateIdx
+        final long[] keys = new long[KEYS_SIZE * 2];
+
+        // keyStart | keyEnd
+        final long[] meta = new long[ENTRIES_SIZE * 2];
+
+        // sum | packed(min | max | count)
+        final long[] values = new long[ENTRIES_SIZE * 2];
+
+        final Packed packed = new Packed();
+
+        int nextEntry = 0;
 
         public void add(long keyStart, long keyEnd, long hash, int value) {
-            findKey(keyStart, keyEnd, hash);
-            var o = offset(4);
-            if (value < get(o)) {
-                put(o, value);
-            }
-            o = next(o);
-            if (value > get(o)) {
-                put(o, value);
-            }
-            o = next(o);
-            put(o, get(o) + value);
-            o = next(o);
-            put(o, get(o) + 1);
+            var idx = findKey(keyStart, keyEnd, hash);
+            update(value, idx);
+        }
+
+        private void update(int value, int idx) {
+            add(values, idx, value);
+            long packed2 = get(values, idx + 1);
+            packed.decode(packed2);
+            packed.update(value);
+            set(values, idx + 1, packed.encode());
         }
 
         public void merge(Results other) {
-            for (int i = 0; i < TABLE_SIZE * 8; i += 8) {
-                other.idx = i;
-                if (!other.empty()) {
-                    idx = i;
-                    while (keyHash() != other.keyHash() && !empty()) {
-                        next();
-                    }
-                    if (empty()) {
-                        UNSAFE.copyMemory(other.table, other.offset(), table, offset(), TABLE_SCALE * 8);
-                    }
-                    else {
-                        var o1 = offset(4);
-                        var o2 = other.offset(4);
-                        var v = 0L;
-                        if ((v = other.get(o2)) < get(o1)) {
-                            put(o1, v);
-                        }
-                        o1 = next(o1);
-                        o2 = next(o2);
-                        if ((v = other.get(o2)) > get(o1)) {
-                            put(o1, v);
-                        }
-                        o1 = next(o1);
-                        o2 = next(o2);
-                        put(o1, get(o1) + other.get(o2));
-                        o1 = next(o1);
-                        put(o1, get(o1) + 1);
+            for (int i = 0; i < keys.length; i += 2) {
+                var hash = 0L;
+                if ((hash = get(other.keys, i)) != 0) {
+                    var idx = (int) get(other.keys, i + 1);
+                    var keyStart = get(other.meta, idx);
+                    var keyEnd = get(other.meta, idx + 1);
+                    var sum = get(other.values, idx);
+                    other.packed.decode(get(other.values, idx + 1));
+
+                    idx = findKey(keyStart, keyEnd, hash);
+                    add(values, idx, sum);
+                    packed.decode(get(values, idx + 1));
+                    packed.merge(other.packed);
+                    set(values, idx + 1, packed.encode());
+                }
+            }
+        }
+
+        int findKey(long keyStart, long keyEnd, long hash) {
+            var h = 0L;
+            int idx = (int) ((hash * 2) & KEYS_MASK);
+            if ((h = get(keys, idx)) != hash && h != 0) {
+                idx = (idx + 2) & KEYS_MASK;
+                if ((h = get(keys, idx)) != hash && h != 0) {
+                    idx = (idx + 2) & KEYS_MASK;
+                    while ((h = get(keys, idx)) != hash && h != 0) {
+                        idx = (idx + 2) & KEYS_MASK;
                     }
                 }
             }
+            if (h != 0) {
+                return (int) get(keys, idx + 1);
+            }
+            else {
+                var entryIdx = nextEntry++ * 2;
+                set(keys, idx, hash);
+                set(keys, idx + 1, entryIdx);
+                set(meta, entryIdx, keyStart);
+                set(meta, entryIdx + 1, keyEnd);
+                set(values, entryIdx, 0L);
+                set(values, entryIdx + 1, packed.init);
+                return entryIdx;
+            }
+        }
+
+        String readKey(int idx) {
+            var start = get(meta, idx);
+            var end = get(meta, idx + 1);
+            var size = (int) (end - start);
+            var bytes = new byte[size];
+            UNSAFE.copyMemory(null, address + start, bytes,
+                    Unsafe.ARRAY_BYTE_BASE_OFFSET, size);
+            try {
+                return new String(bytes, CHARSET);
+            }
+            catch (Throwable ex) {
+                throw new RuntimeException(ex);
+            }
+        }
+
+        final static void set(long[] arr, int idx, long value) {
+            UNSAFE.putLong(arr, offset(idx), value);
+        }
+
+        final static long get(long[] arr, int idx) {
+            return UNSAFE.getLong(arr, offset(idx));
+        }
+
+        final static void add(long[] arr, int idx, long value) {
+            set(arr, idx, get(arr, idx) + value);
+        }
+
+        final static long offset(int idx) {
+            return TABLE_BASE_OFFSET + idx * TABLE_SCALE;
         }
 
         @Override
         public String toString() {
             var results = new TreeMap<String, String>();
             try {
-                for (int i = 0; i < TABLE_SIZE * 8; i += 8) {
-                    idx = i;
-                    if (!empty()) {
-                        var res = round(min() / 10.0) + "/" +
-                                round((sum() / 10.0) / count()) + "/"
-                                + round(max() / 10.0);
-                        results.put(readKey(), res);
+                for (int i = 0; i < keys.length; i += 2) {
+                    if (get(keys, i) != 0) {
+                        var idx = (int) get(keys, i + 1);
+                        var sum = get(values, idx);
+                        packed.decode(get(values, idx + 1));
+                        var res = round(packed.min / 10.0) + "/" +
+                                round((sum / 10.0) / packed.count) + "/"
+                                + round(packed.max / 10.0);
+                        results.put(readKey(idx), res);
                     }
                 }
             }
@@ -252,105 +305,63 @@ public final class CalculateAverage_fwbrasil {
             }
             return results.toString();
         }
+    }
 
-        double round(double value) {
-            return Math.round(value * 10.0) / 10.0;
+    static final class Packed {
+        int min = Short.MAX_VALUE;
+        int max = Short.MIN_VALUE;
+        int count = 0;
+
+        long init = encode();
+
+        public long encode() {
+            return (((long) min & 0xFFFF) << 48) | (((long) max & 0xFFFF) << 32) | (count & 0xFFFFFFFFL);
         }
 
-        String readKey() {
-            var start = keyStart();
-            var size = (int) (keyEnd() - start);
-            var bytes = new byte[size];
-            UNSAFE.copyMemory(null, address + start, bytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, size);
-            try {
-                return new String(bytes, "UTF-8");
+        public void decode(long packed) {
+            min = (short) ((packed >> 48) & 0xFFFF);
+            max = (short) ((packed >> 32) & 0xFFFF);
+            count = (int) packed;
+        }
+
+        public void init(int value) {
+            min = value;
+            max = value;
+            count = 0;
+        }
+
+        public void update(int value) {
+            if (value < min) {
+                min = value;
             }
-            catch (Throwable ex) {
-                throw new RuntimeException(ex);
+            if (value > max) {
+                max = value;
             }
+            count++;
         }
 
-        void findKey(long keyStart, long keyEnd, long hash) {
-            idx = (int) (hash & TABLE_MASK) * 8;
-            if (keyHash() != hash && !empty()) {
-                next();
-                while (keyHash() != hash && !empty()) {
-                    next();
-                }
+        public void merge(Packed other) {
+            if (other.min < min) {
+                min = other.min;
             }
-            if (empty()) {
-                var o = offset();
-                put(o, hash);
-                o = next(o);
-                put(o, keyStart);
-                o = next(o);
-                put(o, keyEnd);
-                o = next(o);
-                o = next(o);
-                put(o, Long.MAX_VALUE);
-                o = next(o);
-                put(o, Long.MIN_VALUE);
+            if (other.max > max) {
+                max = other.max;
             }
-        }
-
-        long get(long offset) {
-            return UNSAFE.getLong(table, offset);
-        }
-
-        void put(long offset, long v) {
-            UNSAFE.putLong(table, offset, v);
-        }
-
-        long next(long offset) {
-            return offset + TABLE_SCALE;
-        }
-
-        long offset() {
-            return offset(0);
-        }
-
-        long offset(long pos) {
-            return TABLE_BASE_OFFSET + ((idx + pos) * TABLE_SCALE);
-        }
-
-        void next() {
-            idx = (idx + 8) & TABLE_MASK;
-        }
-
-        boolean empty() {
-            return keyEnd() == 0;
-        }
-
-        long keyHash() {
-            return get(offset(0));
-        }
-
-        long keyStart() {
-            return get(offset(1));
-        }
-
-        long keyEnd() {
-            return get(offset(2));
-        }
-
-        long min() {
-            return get(offset(4));
-        }
-
-        long max() {
-            return get(offset(5));
-        }
-
-        long sum() {
-            return get(offset(6));
-        }
-
-        long count() {
-            return get(offset(7));
+            count += other.count;
         }
     }
 
-    static Unsafe initUnsafe() {
+    class Preload extends Thread {
+
+        @Override
+        public void run() {
+            for (long i = 0; i < length; i += 4096) {
+                segment.get(JAVA_BYTE, i);
+            }
+        }
+    }
+
+    static final Unsafe initUnsafe() {
         try {
             Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
             theUnsafe.setAccessible(true);
@@ -360,4 +371,9 @@ public final class CalculateAverage_fwbrasil {
             throw new RuntimeException(e);
         }
     }
+
+    static final double round(double value) {
+        return Math.round(value * 10.0) / 10.0;
+    }
+
 }
