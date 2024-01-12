@@ -15,6 +15,8 @@
  */
 package dev.morling.onebrc;
 
+//import jdk.incubator.vector.ByteVector;
+
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.MappedByteBuffer;
@@ -73,6 +75,8 @@ public class CalculateAverage_SamuelYvon {
     // The minimum line length in bytes (over-egg.)
     private static final int MIN_LINE_LENGTH_BYTES = 200;
 
+    private static final int DJB2_INIT = 5381;
+
     /**
      * Branchless min (unprecise for large numbers, but good enough)
      *
@@ -95,25 +99,94 @@ public class CalculateAverage_SamuelYvon {
         return b + (diff & dsgn);
     }
 
+    /**
+     * A magic key that contains references to the String and where it's located in memory
+     *
+     * @param hash
+     * @param backing
+     * @param pos
+     * @param len
+     */
+    private record StationName(int hash, MappedByteBuffer backing, int pos, int len) {
+
+        @Override
+        public int hashCode() {
+            return hash;
+        }
+
+        @SuppressWarnings("EqualsWhichDoesntCheckParameterClass")
+        @Override
+        public boolean equals(Object obj) {
+//            Should NEVER  be true
+//            if (!(obj instanceof StationName)) {
+//                return false;
+//            }
+            StationName other = (StationName) obj;
+
+            if (len != other.len()) {
+                return false;
+            }
+
+            // Byte for byte compare. This actually is a bug! I'm assuming the input
+            // is UTF-8 normalized, which in real life would probably not be the case.
+            // TODO: SIMD?
+
+            byte[] myBackingArr = new byte[len];
+            backing.get(pos, myBackingArr);
+//            var mine = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, myBackingArr, 0);
+
+            byte[] theirBackingArr = new byte[len];
+            other.backing.get(other.pos, theirBackingArr);
+//            var theirs = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, theirBackingArr, 0);
+
+//            return mine.eq(theirs).allTrue();
+
+
+            return Arrays.equals(myBackingArr, theirBackingArr);
+        }
+
+        @Override
+        public String toString() {
+            byte[] backingNameArray = new byte[len];
+            backing.get(pos, backingNameArray);
+            return new String(backingNameArray, StandardCharsets.UTF_8);
+        }
+    }
+
     private static class StationMeasureAgg {
         private int min;
         private int max;
         private long sum;
         private long count;
 
-        private final String city;
+        private final StationName station;
 
-        public StationMeasureAgg(String city) {
+        private String memoizedName;
+
+        public StationMeasureAgg(StationName name) {
             // Actual numbers are between -99.9 and 99.9, but we *10 to avoid float
-            this.city = city;
+            this.station = name;
             min = 1000;
             max = -1000;
             sum = 0;
             count = 0;
         }
 
+        @Override
+        public int hashCode() {
+            return this.station.hash;
+        }
+
+        /**
+         * Get the city name, but also memoized it to avoid building it multiple times
+         *
+         * @return the city name
+         */
         public String city() {
-            return this.city;
+            if (null == this.memoizedName) {
+                this.memoizedName = station.toString();
+            }
+            return this.memoizedName;
         }
 
         public StationMeasureAgg mergeWith(StationMeasureAgg other) {
@@ -141,25 +214,36 @@ public class CalculateAverage_SamuelYvon {
             double mean = Math.round((((double) this.sum / this.count))) / 10.0;
             return min + SLASH_S + mean + SLASH_S + max;
         }
+
+        public StationName station() {
+            return this.station;
+        }
     }
 
-    private static HashMap<String, StationMeasureAgg> parseChunk(MappedByteBuffer chunk) {
-        HashMap<String, StationMeasureAgg> m = HashMap.newHashMap(MAX_STATIONS);
+    private static HashMap<StationName, StationMeasureAgg> parseChunk(MappedByteBuffer chunk) {
+        HashMap<StationName, StationMeasureAgg> m = HashMap.newHashMap(MAX_STATIONS);
 
         int i = 0;
         while (i < chunk.limit()) {
             int j = i;
+
+            int hash = DJB2_INIT;
+
+            // Implement a version of djb2 while we read until the semi, we read anyways
             for (; j < chunk.limit(); ++j) {
-                // TODO: Could compute a hash here, store a byte array, and decode UTF-8 at the
-                // latest moment.
-                if (chunk.get(j) == SEMICOL) {
+                byte b = chunk.get(j);
+
+                if (b == SEMICOL) {
                     break;
                 }
+
+                // How will this behave in java? Why do I get no control OF SIGNEDNESS FFS
+                // Can I assume int is 32 bits? What is this language! In Java 1.7 it could be 16 bits?
+                // Apparently not anymore??
+                hash = (((hash << 5) + hash) + b);
             }
 
-            byte[] backingNameArray = new byte[j - i];
-            chunk.get(i, backingNameArray);
-            String name = new String(backingNameArray, StandardCharsets.UTF_8);
+            StationName name = new StationName(hash, chunk, i, j - i);
 
             // Skip the `;`
             j++;
@@ -245,9 +329,27 @@ public class CalculateAverage_SamuelYvon {
         var fileChunks = getFileChunks();
 
         // Map per core, giving the non-overlapping memory slices
-        final Map<String, StationMeasureAgg> sortedMeasures = fileChunks.parallelStream().map(CalculateAverage_SamuelYvon::parseChunk)
-                .flatMap(x -> x.values().stream()).collect(Collectors.toMap(StationMeasureAgg::city, x -> x, StationMeasureAgg::mergeWith, TreeMap::new));
+        final Map<StationName, StationMeasureAgg> allMeasures = fileChunks.parallelStream().map(CalculateAverage_SamuelYvon::parseChunk).flatMap(x -> x.values().stream())
+                .collect(Collectors.toMap(StationMeasureAgg::station, x -> x, StationMeasureAgg::mergeWith, HashMap::new));
 
-        System.out.println(sortedMeasures);
+        var l = allMeasures.values().stream().toList();
+        boolean eq = l.get(0).station.equals(l.get(1).station);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append('{');
+
+        allMeasures.values().stream().sorted(Comparator.comparing(StationMeasureAgg::city)).forEach(x -> {
+            sb.append(x.city());
+            sb.append('=');
+            sb.append(x);
+            sb.append(", ");
+        });
+
+        sb.deleteCharAt(sb.length() - 1); // remove trailing space
+        sb.deleteCharAt(sb.length() - 1); // remove trailing comma
+
+        sb.append('}');
+
+        System.out.println(sb);
     }
 }
