@@ -1,5 +1,7 @@
 # 1️⃣🐝🏎️ The One Billion Row Challenge
 
+_Status Jan 10: I am in the process of moving to another execution environment for this challenge. Once that is done, the leaderboard will be refreshed with the results from that new environment, and I'll continue to evaluate pending submissions._
+
 _Status Jan 1: This challenge is [open for submissions](https://www.morling.dev/blog/one-billion-row-challenge/)!_
 
 The One Billion Row Challenge (1BRC) is a fun exploration of how far modern Java can be pushed for aggregating one billion rows from a text file.
@@ -34,6 +36,58 @@ The task is to write a Java program which reads the file, calculates the min, me
 Submit your implementation by Jan 31 2024 and become part of the leaderboard!
 
 ## Results
+
+These are the results from running all entries into the challenge on eight cores of a [Hetzner AX161](https://www.hetzner.com/dedicated-rootserver/ax161) dedicated server (32 core AMD EPYC™ 7502P (Zen2), 128 GB RAM).
+As we had to migrate to another evaluation machine (see next section),
+I am in the process of re-running all existing entries on the new environment.
+Starting with the fastest entries, I am currently backfilling the new leaderboard step by step.
+
+| # | Result (m:s.ms) | Implementation     | JDK | Submitter     | Notes     |
+|---|-----------------|--------------------|-----|---------------|-----------|
+| 1 | 00:03.604 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_royvanrijn.java)| 21.0.1-graal | [Roy van Rijn](https://github.com/royvanrijn) |  |
+| 2 | 00:03.911 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_thomaswue.java)| 21.0.1-graal | [Thomas Wuerthinger](https://github.com/thomaswue) | GraalVM native binary |
+| 3 | 00:04.496 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_merykitty.java)| 21.0.1-open | [Quan Anh Mai](https://github.com/merykitty) |  |
+|   | 00:05.478 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_obourgain.java)| 21.0.1-open | [Olivier Bourgain](https://github.com/obourgain) |  |
+|   | 00:05.683 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_ebarlas.java)| 21.0.1-graal | [Elliot Barlas](https://github.com/ebarlas) |  |
+|   | 00:05.979 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_spullara.java)| 21.0.1-graal | [Sam Pullara](https://github.com/spullara) |  |
+|   | 00:06.166 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_isolgpus.java)| 21.0.1-open | [Jamie Stansfield](https://github.com/isolgpus) |  |
+|   | 00:06.338 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_artsiomkorzun.java)| 21.0.1-graal | [artsiomkorzun](https://github.com/artsiomkorzun) |  |
+|   | 00:07.730 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_jotschi.java)| 21.0.1-open | [Johannes Schüth](https://github.com/jotschi) |  |
+|   | 00:07.784 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_yavuztas.java)| 21.0.1-graal | [Yavuz Tas](https://github.com/yavuztas) |  |
+|   | 00:08.167 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_ddimtirov.java)| 21.0.1-tem | [Dimitar Dimitrov](https://github.com/ddimtirov) |  |
+|   | 00:08.214 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_deemkeen.java)| 21.0.1-open | [deemkeen](https://github.com/deemkeen) |  |
+|   | 00:08.517 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_ags313.java)| 21.0.1-graal | [ags](https://github.com/ags313) |  |
+|   | 00:09.020 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_yemreinci.java)| 21.0.1-open | [yemreinci](https://github.com/yemreinci) |  |
+|   | 00:09.046 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_iziamos.java)| 21.0.1-open | [John Ziamos](https://github.com/iziamos) |  |
+|   | 00:09.352 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_filiphr.java)| 21.0.1-graal | [Filip Hrisafov](https://github.com/filiphr) |  |
+|   | 00:10.127 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_artpar.java)| 21.0.1-open | [Parth Mudgal](https://github.com/artpar) |  |
+|   | 00:10.642 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_asun.java)| 21.0.1-open | [Alan Sun](https://github.com/asun) |  |
+|   | 00:11.119 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_lawrey.java)| 21.0.1-open | [lawrey](https://github.com/lawrey) |  |
+|   | 00:11.167 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_palmr.java)| 21.0.1-open | [Nick Palmer](https://github.com/palmr) |  |
+|   | 00:11.805 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_coolmineman.java)| 21.0.1-graal | [Cool_Mineman](https://github.com/coolmineman) |  |
+|   | 00:12.557 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_imrafaelmerino.java)| 21.0.1-graal | [Rafael Merino García](https://github.com/imrafaelmerino) |  |
+|   | 00:13.817 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_entangled90.java)| 21.0.1-open | [Carlo](https://github.com/entangled90) |  |
+|   | 00:13.833 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_gabrielreid.java)| 21.0.1-open | [Gabriel Reid](https://github.com/gabrielreid) |  |
+|   | ...       | | | | |
+|   | 04:49.679 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_baseline.java) (Baseline) | 21.0.1-open | [Gunnar Morling](https://github.com/gunnarmorling) |  |
+
+Note that I am not super-scientific in the way I'm running the contenders
+(see [Evaluating Results](#evaluating-results) for details).
+This is not a high-fidelity micro-benchmark and there can be variations of ~ +-5% between runs.
+So don't be too hung up on the exact ordering of your entry compared to others in close proximity.
+The primary purpose of this challenge is to learn something new, have fun along the way, and inspire others to do the same.
+The leaderboard is only means to an end for achieving this goal.
+If you observe drastically different results though, please open an issue.
+
+See [Entering the Challeng](#entering-the-challenge) for instructions how to enter the challenge with your own implementation.
+The [Show & Tell](https://github.com/gunnarmorling/1brc/discussions/categories/show-and-tell) features a wide range of 1BRC entries built using other languages, databases, and tools.
+
+### Results (Original Evaluation Environment)
+
+These are the results from the originally used evaluation environment, a dedicated virtual cloud environment (Hetzner CCX33).
+As it proved not to yield comparable results across runs due to being moved to another host,
+a dedicated host is used for evaluation now.
+The results are kept here for historical purposes, the numbers are not comparable to the ones on the new machine above.
 
 | # | Result (m:s.ms) | Implementation     | JDK | Submitter     | Notes     |
 |---|-----------------|--------------------|-----|---------------|-----------|
@@ -92,8 +146,6 @@ Submit your implementation by Jan 31 2024 and become part of the leaderboard!
 |   |        03:16.334| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_yehwankim23.java)| 21.0.1-open | [김예환 Ye-Hwan Kim (Sam)](https://github.com/yehwankim23)|
 |   |        03:42.297| [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_fragmede.java)| 21.0.1-open   | [Samson](https://github.com/fragmede)|
 |   |        04:13.449| [link](https://github.com/gunnarmorling/onebrc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage.java) (baseline)| 21.0.1-open   | [Gunnar Morling](https://github.com/gunnarmorling)|
-
-See [below](#entering-the-challenge) for instructions how to enter the challenge with your own implementation.
 
 ## Prerequisites
 
@@ -174,11 +226,11 @@ To submit your own implementation to 1BRC, follow these steps:
 * Create a fork of the [onebrc](https://github.com/gunnarmorling/onebrc/) GitHub repository.
 * Create a copy of _CalculateAverage.java_, named _CalculateAverage\_<your_GH_user>.java_, e.g. _CalculateAverage\_doloreswilson.java_.
 * Make that implementation fast. Really fast.
-* Create a copy of _calculate_average_baseline.sh_, named _calculate\_average\_<your_GH_user>.sh_, e.g. _calculate\_average\_doloreswilson.sh_.
+* Create a copy of _calculate\_average\_baseline.sh_, named _calculate\_average\_<your_GH_user>.sh_, e.g. _calculate\_average\_doloreswilson.sh_.
 * Adjust that script so that it references your implementation class name. If needed, provide any JVM arguments via the `JAVA_OPTS` variable in that script.
   Make sure that script does not write anything to standard output other than calculation results.
-* OpenJDK 21 is the default. If a custom JDK build is required, include the SDKMAN command `sdk use java [version]` in the launch shell script prior to application start.
-* (Optional) If you'd like to use native binaries (GraalVM), adjust the _pom.xml_ file so that it builds that binary.
+* (Optional) OpenJDK 21 is used by default. If a custom JDK build is required, create a copy of _prepare\_baseline.sh_, named _prepare\_<your_GH_user>.sh_, e.g. _prepare\_doloreswilson.sh_. Include the SDKMAN command `sdk use java [version]` in the your prepare script.
+* (Optional) If you'd like to use native binaries (GraalVM), create a script named _additional\_build\_step\_<your_GH_user>.sh_, e.g. _additional\_build\_step\_doloreswilson.sh_ and add all the required build logic there
 * Run the test suite by executing _/test.sh <your_GH_user>_; if any differences are reported, fix them before submitting your implementation.
 * Create a pull request against the upstream repository, clearly stating
   * The name of your implementation class.
@@ -196,17 +248,15 @@ Any submissions (i.e. pull requests) created after Jan 31 2024 23:59 UTC will no
 
 ## Evaluating Results
 
-Results are determined by running the program on a [Hetzner Cloud CCX33 instance](https://www.hetzner.com/cloud) (8 dedicated vCPU, 32 GB RAM).
-The `time` program is used for measuring execution times, i.e. end-to-end times are measured.
-Each contender will be run five times in a row.
+Results are determined by running the program on a [Hetzner AX161](https://www.hetzner.com/dedicated-rootserver/ax161) dedicated server (32 core AMD EPYC™ 7502P (Zen2), 128 GB RAM).
+
+Programs are run from  a RAM disk (i.o. the IO overhead for loading the file from disk is not relevant), using 8 cores of the machine.
+The `hyperfine` program is used for measuring execution times of the launch scripts of all entries, i.e. end-to-end times are measured.
+Each contender is run five times in a row.
 The slowest and the fastest runs are discarded.
 The mean value of the remaining three runs is the result for that contender and will be added to the results table above.
 The exact same _measurements.txt_ file is used for evaluating all contenders.
-
-If you'd like to spin up your own box for testing on Hetzner Cloud, you may find these [set-up scripts](https://github.com/gunnarmorling/cloud-boxes/) (based on Terraform and Ansible) useful.
-It has been reported that instances of the CCX33 machine class can significantly vary in terms of performance,
-so results are only comparable when obtained from one and the same instance.
-Note this will incur cost you are responsible for, I am not going to pay your cloud bill :)
+See the script _evaluate2.sh_ for the exact implementation of the evaluation steps.
 
 ## Prize
 
@@ -246,6 +296,10 @@ A: Probably not :) 1BRC results are reported in wallclock time, thus results of 
 _Q: Why_ 1️⃣🐝🏎️ _?_\
 A: It's the abbreviation of the project name: **One** **B**illion **R**ow **C**hallenge.
 
+## Sponsorship
+
+A big thank you to my employer [Decodable](https://www.decodable.co/) for funding the evaluation environment and supporting this challenge!
+ 
 ## License
 
 This code base is available under the Apache License, version 2.
