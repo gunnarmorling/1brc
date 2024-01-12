@@ -180,7 +180,7 @@ public class CalculateAverage_mtopolnik {
                     nameLen = nameLen(word1, word2, withinSafeZone);
                 }
                 long hash = hash(word1);
-                assert nameLen <= 100 : "nameLen > 100";
+                assert nameLen > 0 && nameLen <= 100 : nameLen;
                 int temperature = parseTemperatureAndAdvanceCursor(nameStartAddress + nameLen + 1, withinSafeZone);
                 updateStats(hash, nameStartAddress, nameLen, word1, word2, temperature, withinSafeZone);
             }
