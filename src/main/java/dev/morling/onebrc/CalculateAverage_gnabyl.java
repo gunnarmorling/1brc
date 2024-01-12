@@ -32,7 +32,7 @@ public class CalculateAverage_gnabyl {
 
     private static final String FILE = "./measurements.txt";
 
-    private static final int NB_CHUNKS = Runtime.getRuntime().availableProcessors() - 1;
+    private static final int NB_CHUNKS = Runtime.getRuntime().availableProcessors();
 
     private static record Chunk(long start, int bytesCount, MappedByteBuffer mappedByteBuffer) {
     }
