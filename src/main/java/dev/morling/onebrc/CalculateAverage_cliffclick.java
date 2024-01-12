@@ -123,13 +123,15 @@ abstract class CalculateAverage_cliffclick {
         assert mmap.isDirect();
         int idx = 0;
         int max = mmap.limit();
+
         // If start>0, skip until first newline
-        if (skip1) {
-            while (mmap.get(idx++) != '\n')
-                ;
-            // WINDOWS
-            // idx++;
-        }
+        if (skip1)
+            idx = skipFirst(idx, mmap);
+
+        // The very last entry will want to fetch 8 bytes, some of which may go
+        // past the mmap max - do this entry now, before looping.
+        if (limit == max)
+            limit = skipLast(limit, w, mmap);
 
         // For this chunk of file do...
         while (idx < limit) {
@@ -147,17 +149,8 @@ abstract class CalculateAverage_cliffclick {
                 // Read 2nd word of city
                 n8 ^= x;
                 idx += 8;
-                // Edge case for last few bytes in mmap
-                if (idx + 8 > max) {
-                    x = mmap.getLong(max - 8);
-                    int skip = (8 - (max - idx));
-                    idx -= skip; // Roll back skip amount
-                    x = x & (-1L >>> (skip << 3)); // Get just the last few bytes in mmap
-                }
-                else {
-                    // Read a misaligned long
-                    x = mmap.getLong(idx);
-                }
+                // Read a misaligned long
+                x = mmap.getLong(idx);
                 // Found semi ?
                 hasM = has0(x ^ HASSEMI);
             }
@@ -175,33 +168,68 @@ abstract class CalculateAverage_cliffclick {
             // Skip semicolon
             idx++;
 
-            // Reading tempature:
-            int temp = 0;
-            boolean neg = false;
-            byte b = mmap.get(idx++);
-            if (b == '-') {
-                neg = true;
-                b = mmap.get(idx++);
-            }
-            temp = b - '0';
-            b = mmap.get(idx++);
-            if (b != '.') {
-                temp = temp * 10 + b - '0';
-                idx++;
-            }
-            // Read fraction digit; scaled decimal temp
-            b = mmap.get(idx++);
-            temp = temp * 10 + b - '0';
-            if (neg)
-                temp = -temp;
-            // Skip newline
-            idx++;
-            // F*KING WINDOWS.
-            // Skip CR
-            // idx++;
-
-            w.insert(n8, temp, mmap, cityx);
+            // Reading tempature, and add
+            idx = parseData(idx, w, cityx, mmap, n8);
         }
+    }
+
+    // The very last entry will want to fetch 8 bytes, some of which may go
+    // past the mmap max - do this entry now, before looping.
+    private static int skipLast(int limit, Work w, MappedByteBuffer mmap) {
+        limit--;
+        while (limit > 0 && mmap.get(limit - 1) != '\n')
+            limit--;
+        long n8 = 0, mask = 0;
+        int i = limit, c;
+        while ((c = mmap.get(i)) != ';') {
+            mask = (mask << 8) | c;
+            i++;
+            if (((limit - i) & 7) == 0) {
+                n8 ^= mask;
+                mask = 0;
+            }
+        }
+        n8 ^= mask;
+        parseData(i + 1, w, limit, mmap, n8);
+        return limit;
+    }
+
+    // Parse temp data, and insert entry into hash table
+    private static int parseData(int idx, Work w, int cityx, MappedByteBuffer mmap, long n8) {
+        // Reading tempature:
+        int temp = 0;
+        boolean neg = false;
+        byte b = mmap.get(idx++);
+        if (b == '-') {
+            neg = true;
+            b = mmap.get(idx++);
+        }
+        temp = b - '0';
+        b = mmap.get(idx++);
+        if (b != '.') {
+            temp = temp * 10 + b - '0';
+            idx++;
+        }
+        // Read fraction digit; scaled decimal temp
+        b = mmap.get(idx++);
+        temp = temp * 10 + b - '0';
+        if (neg)
+            temp = -temp;
+        // Skip newline
+        idx++;
+        // F*KING WINDOWS.
+        // Skip CR
+        // idx++;
+        w.insert(n8, temp, mmap, cityx);
+        return idx;
+    }
+
+    private static int skipFirst(int idx, MappedByteBuffer mmap) {
+        while (mmap.get(idx++) != '\n')
+            ;
+        // WINDOWS
+        // idx++;
+        return idx;
     }
 
     private static class Work {
