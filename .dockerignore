@@ -1,0 +1,13 @@
+.github
+.git
+.idea
+*.log
+*.zip
+measurements.txt
+measurements_1B.txt
+out_expected.txt
+out_expected_1B.txt
+target/
+
+Dockerfile
+.env

@@ -266,6 +266,26 @@ or directly on the .java file:
 
 When you run this, it will generate a flamegraph in profile.html. You can then open this in a browser and see where your program is spending its time.
 
+## Building the Docker image
+
+Build the image by default it will install java 21.0.1-open.
+
+❗To keep the image size reasonable it will not generate the measurements_1B.txt and out_expected.txt files
+
+```shell
+    docker build . -t 1brc
+```
+To configure the build image you can pass the following build_arg
+* --build-arg JAVA_VERSION=\<additional java distribuitions to install>
+* --build-arg PACKAGES=\<additional packages to install with dnf> 
+```shell
+  docker build -build-arg JAVA_VERSIONS="21.0.1-graal 21.0.1-graalce" . -t 1brc  
+```
+When running the container you need to specify the measurements_1B.txt and out_expected.txt files.
+```shell
+  docker run -it -v ${pwd}/measurements_1B.txt:/1brc/measurements_1B.txt -v ${pwd}/out_expected_1B.txt:/1brc/out_expected.txt 1brc
+```
+
 ## Rules and limits
 
 * Any of these Java distributions may be used:
