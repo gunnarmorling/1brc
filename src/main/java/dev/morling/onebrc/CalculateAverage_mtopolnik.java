@@ -325,7 +325,6 @@ public class CalculateAverage_mtopolnik {
         // Adapted from https://jameshfisher.com/2017/01/24/bitwise-check-for-zero-byte/
         // and https://github.com/ashvardanian/StringZilla/blob/14e7a78edcc16b031c06b375aac1f66d8f19d45a/stringzilla/stringzilla.h#L139-L169
         long nameLen(long word1, long word2, boolean withinSafeZone) {
-            long nameStartAddress = inputBase + cursor;
             {
                 long diff = word1 ^ BROADCAST_SEMICOLON;
                 long matchBits1 = (diff - BROADCAST_0x01) & ~diff & BROADCAST_0x80;
@@ -346,6 +345,7 @@ public class CalculateAverage_mtopolnik {
                     return (trailing1 | trailing2) >> 3;
                 }
             }
+            long nameStartAddress = inputBase + cursor;
             long address = nameStartAddress + 2 * Long.BYTES;
             long limit = inputBase + inputSize;
             if (withinSafeZone) {
