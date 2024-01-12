@@ -15,10 +15,7 @@
 #  limitations under the License.
 #
 
-source "$HOME/.sdkman/bin/sdkman-init.sh"
-sdk use java 21.0.1-graal 1>&2
-java -version
-JAVA_OPTS=""
-CHUNK_SIZE=$((8 * 1024 * 1024))
-time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar \
+JAVA_OPTS="-Xms1024m -Xms1024m -XX:+UseParallelGC -XX:MaxHeapFreeRatio=10 -XX:ParallelGCThreads=2"
+CHUNK_SIZE=$((50 * 1024 * 1024))
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar \
 dev.morling.onebrc.CalculateAverage_imrafaelmerino $CHUNK_SIZE
