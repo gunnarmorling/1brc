@@ -120,7 +120,7 @@ public class CalculateAverage_hundredwatt {
     }
 
     static class HashTable {
-        private static final int INITIAL_SIZE = 128 * 1024;
+        private static final int INITIAL_SIZE = 16 * 1024;
         private static final float LOAD_FACTOR = 0.75f;
         private static final int GROW_FACTOR = 4;
         private final long[][] KEYS = new long[INITIAL_SIZE][];
