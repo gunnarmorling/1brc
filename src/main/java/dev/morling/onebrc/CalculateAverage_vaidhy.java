@@ -32,24 +32,52 @@ import java.util.concurrent.Future;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
-public class CalculateAverage_vaidhy<T> {
+public class CalculateAverage_vaidhy<I, T> {
 
-    private record Entry(long startAddress, long endAddress, IntSummaryStatistics value) {
+    private static final class HashEntry {
+        private long startAddress;
+        private long endAddress;
+        private long hash;
+        IntSummaryStatistics value;
     }
 
-    private static class PrimitiveHash {
-        Entry [] entries;
+    private static class PrimitiveHashMap {
+        HashEntry[] entries;
 
-        PrimitiveHash(int capacity) {
-            this.entries = new Entry[capacity];
+        PrimitiveHashMap(int capacity) {
+            this.entries = new HashEntry[capacity];
+            for (int i = 0; i < capacity; i++) {
+                this.entries[i] = new HashEntry();
+            }
         }
 
-        public IntSummaryStatistics get(long startAddress, long endAddress, int hash) {
-            int i = hash, len = entries.length;
+        public HashEntry find(long startAddress, long endAddress, long hash) {
+            int len = entries.length;
+            int i = Math.floorMod(hash, len);
+            long lookupLength = endAddress - startAddress;
+
             do {
-                Entry entry = entries[i];
-                if (entry.startAddress == 0) {
-                    return null;
+                HashEntry entry = entries[i];
+                if (entry.value == null) {
+                    return entry;
+                }
+                if (entry.hash == hash) {
+                    long entryLength = endAddress - startAddress;
+                    if (entryLength == lookupLength) {
+                        long entryIndex = entry.startAddress;
+                        long lookupIndex = startAddress;
+                        boolean found = true;
+                        for (; lookupIndex < endAddress; lookupIndex++) {
+                            if (UNSAFE.getByte(entryIndex) != UNSAFE.getByte(lookupIndex)) {
+                                found = false;
+                                break;
+                            }
+                            entryIndex++;
+                        }
+                        if (found) {
+                            return entry;
+                        }
+                    }
                 }
                 i++;
                 if (i == len) {
@@ -74,66 +102,65 @@ public class CalculateAverage_vaidhy<T> {
     }
 
     private static final Unsafe UNSAFE = initUnsafe();
+    //
+    // record ByteSlice(long from, long to, int hCode) {
+    //
+    // @Override
+    // public int hashCode() {
+    // if (hCode != 0) { return hCode; }
+    // int h = 0;
+    // for (long i = from; i < to; i++) {
+    // h = (h * 31) ^ UNSAFE.getByte(i);
+    // }
+    // return h;
+    // }
+    //
+    // public int length() {
+    // return (int) (to - from);
+    // }
+    //
+    // public byte get(int i) {
+    // return UNSAFE.getByte(from + i);
+    // }
+    //
+    // @Override
+    // public boolean equals(Object o) {
+    // if (o instanceof ByteSlice bs) {
+    // int len = this.length();
+    // if (bs.length() != len) {
+    // return false;
+    // }
+    // for (int i = 0; i < len; i++) {
+    // if (this.get(i) != bs.get(i)) {
+    // return false;
+    // }
+    // }
+    // return true;
+    // } else {
+    // return false;
+    // }
+    // }
+    //
+    // @Override
+    // public String toString() {
+    // byte[] copy = new byte[this.length()];
+    // for (int i = 0; i < copy.length; i++) {
+    // copy[i] = get(i);
+    // }
+    // return new String(copy, StandardCharsets.UTF_8);
+    // }
+    // }
 
-    record ByteSlice(long from, long to, int hCode) {
-
-        @Override
-        public int hashCode() {
-            if (hCode != 0) { return hCode; }
-            int h = 0;
-            for (long i = from; i < to; i++) {
-                h = (h * 31) ^ UNSAFE.getByte(i);
-            }
-            return h;
-        }
-
-        public int length() {
-            return (int) (to - from);
-        }
-
-        public byte get(int i) {
-            return UNSAFE.getByte(from + i);
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (o instanceof ByteSlice bs) {
-                int len = this.length();
-                if (bs.length() != len) {
-                    return false;
-                }
-                for (int i = 0; i < len; i++) {
-                    if (this.get(i) != bs.get(i)) {
-                        return false;
-                    }
-                }
-                return true;
-            } else {
-                return false;
-            }
-        }
-
-        @Override
-        public String toString() {
-            byte[] copy = new byte[this.length()];
-            for (int i = 0; i < copy.length; i++) {
-                copy[i] = get(i);
-            }
-            return new String(copy, StandardCharsets.UTF_8);
-        }
-    }
-
-    private static int parseDouble(ByteSlice slice) {
+    private static int parseDouble(long startAddress, long endAddress) {
         int normalized = 0;
         boolean sign = true;
-        int index = 0;
-        if (slice.get(index) == '-') {
+        long index = startAddress;
+        if (UNSAFE.getByte(index) == '-') {
             index++;
             sign = false;
         }
-        int length = slice.length();
-        for (; index < length; index++) {
-            byte ch = slice.get(index);
+        for (; index < endAddress; index++) {
+            byte ch = UNSAFE.getByte(index);
             if (ch != '.') {
                 normalized = normalized * 10 + (ch - '0');
             }
@@ -144,16 +171,16 @@ public class CalculateAverage_vaidhy<T> {
         return normalized;
     }
 
-    interface MapReduce<T> {
+    interface MapReduce<I> {
 
-        void process(ByteSlice key, ByteSlice value);
+        void process(long keyStartAddress, long keyEndAddress, int hash, int temperature);
 
-        T result();
+        I result();
     }
 
     private final FileService fileService;
-    private final Supplier<MapReduce<T>> chunkProcessCreator;
-    private final Function<List<T>, T> reducer;
+    private final Supplier<MapReduce<I>> chunkProcessCreator;
+    private final Function<List<I>, T> reducer;
 
     interface FileService {
         long length();
@@ -161,9 +188,9 @@ public class CalculateAverage_vaidhy<T> {
         long address();
     }
 
-    public CalculateAverage_vaidhy(FileService fileService,
-                                   Supplier<MapReduce<T>> mapReduce,
-                                   Function<List<T>, T> reducer) {
+    CalculateAverage_vaidhy(FileService fileService,
+                            Supplier<MapReduce<I>> mapReduce,
+                            Function<List<I>, T> reducer) {
         this.fileService = fileService;
         this.chunkProcessCreator = mapReduce;
         this.reducer = reducer;
@@ -181,25 +208,27 @@ public class CalculateAverage_vaidhy<T> {
         private final long chunkEnd;
 
         private long position;
+        private int hash;
 
         public LineStream(FileService fileService, long offset, long chunkSize) {
             long fileStart = fileService.address();
             this.fileEnd = fileStart + fileService.length();
             this.chunkEnd = fileStart + offset + chunkSize;
             this.position = fileStart + offset;
+            this.hash = 0;
         }
 
         public boolean hasNext() {
             return position <= chunkEnd && position < fileEnd;
         }
 
-        public ByteSlice until(byte ch, boolean computeHash) {
+        public long find(byte ch, boolean computeHash) {
             int h = 0;
             byte inCh;
             for (long i = position; i < fileEnd; i++) {
                 if ((inCh = UNSAFE.getByte(i)) == ch) {
                     try {
-                        return new ByteSlice(position, i, h);
+                        return i;
                     }
                     finally {
                         position = i + 1;
@@ -207,11 +236,12 @@ public class CalculateAverage_vaidhy<T> {
                 }
                 if (computeHash) {
                     h = (h * 31) ^ inCh;
+                    this.hash = h;
                 }
             }
 
             try {
-                return new ByteSlice(position, fileEnd, h);
+                return fileEnd;
             }
             finally {
                 position = fileEnd;
@@ -220,13 +250,13 @@ public class CalculateAverage_vaidhy<T> {
     }
 
     // Space complexity: O(scanSize) + O(max line length)
-    private void worker(long offset, long chunkSize, MapReduce<T> lineConsumer) {
+    private void worker(long offset, long chunkSize, MapReduce<I> lineConsumer) {
         LineStream lineStream = new LineStream(fileService, offset, chunkSize);
 
         if (offset != 0) {
             if (lineStream.hasNext()) {
                 // Skip the first line.
-                lineStream.until((byte) '\n', false);
+                lineStream.find((byte) '\n', false);
             }
             else {
                 // No lines then do nothing.
@@ -234,9 +264,13 @@ public class CalculateAverage_vaidhy<T> {
             }
         }
         while (lineStream.hasNext()) {
-            ByteSlice key = lineStream.until((byte) ';', true);
-            ByteSlice value = lineStream.until((byte) '\n', false);
-            lineConsumer.process(key, value);
+            long keyStartAddress = lineStream.position;
+            long keyEndAddress = lineStream.find((byte) ';', true);
+            int keyHash = lineStream.hash;
+            long valueStartAddress = lineStream.position;
+            long valueEndAddress = lineStream.find((byte) '\n', false);
+            int temperature = parseDouble(valueStartAddress, valueEndAddress);
+            lineConsumer.process(keyStartAddress, keyEndAddress, keyHash, temperature);
         }
     }
 
@@ -244,19 +278,19 @@ public class CalculateAverage_vaidhy<T> {
     // workers space assuming they are running in different hosts.
     public T master(long chunkSize, ExecutorService executor) {
         long len = fileService.length();
-        List<Future<T>> summaries = new ArrayList<>();
+        List<Future<I>> summaries = new ArrayList<>();
 
         for (long offset = 0; offset < len; offset += chunkSize) {
             long workerLength = Math.min(len, offset + chunkSize) - offset;
-            MapReduce<T> mr = chunkProcessCreator.get();
+            MapReduce<I> mr = chunkProcessCreator.get();
             final long transferOffset = offset;
-            Future<T> task = executor.submit(() -> {
+            Future<I> task = executor.submit(() -> {
                 worker(transferOffset, workerLength, mr);
                 return mr.result();
             });
             summaries.add(task);
         }
-        List<T> summariesDone = summaries.stream()
+        List<I> summariesDone = summaries.stream()
                 .map(task -> {
                     try {
                         return task.get();
@@ -295,23 +329,27 @@ public class CalculateAverage_vaidhy<T> {
         }
     }
 
-    public static class ChunkProcessorImpl implements MapReduce<Map<ByteSlice, IntSummaryStatistics>> {
+    public static class ChunkProcessorImpl implements MapReduce<PrimitiveHashMap> {
 
-        private final Map<ByteSlice, IntSummaryStatistics> statistics = new HashMap<>(10000);
+        private final PrimitiveHashMap statistics = new PrimitiveHashMap(1024);
 
         @Override
-        public void process(ByteSlice station, ByteSlice value) {
-            int temperature = parseDouble(value);
-            IntSummaryStatistics stats = statistics.get(station);
-            if (stats == null) {
-                stats = new IntSummaryStatistics();
-                statistics.put(station, stats);
+        public void process(long keyStartAddress, long keyEndAddress, int hash, int temperature) {
+            HashEntry entry = statistics.find(keyStartAddress, keyStartAddress, hash);
+            if (entry == null) {
+                throw new IllegalStateException("Hash table too small :(");
             }
-            stats.accept(temperature);
+            if (entry.value == null) {
+                entry.startAddress = keyStartAddress;
+                entry.endAddress = keyEndAddress;
+                entry.hash = hash;
+                entry.value = new IntSummaryStatistics();
+            }
+            entry.value.accept(temperature);
         }
 
         @Override
-        public Map<ByteSlice, IntSummaryStatistics> result() {
+        public PrimitiveHashMap result() {
             return statistics;
         }
     }
@@ -319,7 +357,7 @@ public class CalculateAverage_vaidhy<T> {
     public static void main(String[] args) throws IOException {
         DiskFileService diskFileService = new DiskFileService(FILE);
 
-        CalculateAverage_vaidhy<Map<ByteSlice, IntSummaryStatistics>> calculateAverageVaidhy = new CalculateAverage_vaidhy<>(
+        CalculateAverage_vaidhy<PrimitiveHashMap, Map<String, IntSummaryStatistics>> calculateAverageVaidhy = new CalculateAverage_vaidhy<>(
                 diskFileService,
                 ChunkProcessorImpl::new,
                 CalculateAverage_vaidhy::combineOutputs);
@@ -331,40 +369,54 @@ public class CalculateAverage_vaidhy<T> {
         long chunkSize = Math.ceilDiv(fileSize, shards);
 
         ExecutorService executor = Executors.newFixedThreadPool(proc);
-        Map<ByteSlice, IntSummaryStatistics> output = calculateAverageVaidhy.master(chunkSize, executor);
+        Map<String, IntSummaryStatistics> output = calculateAverageVaidhy.master(chunkSize, executor);
         executor.shutdown();
 
         Map<String, String> outputStr = toPrintMap(output);
         System.out.println(outputStr);
     }
 
-    private static Map<String, String> toPrintMap(Map<ByteSlice, IntSummaryStatistics> output) {
+    private static Map<String, String> toPrintMap(Map<String, IntSummaryStatistics> output) {
 
         Map<String, String> outputStr = new TreeMap<>();
-        for (Map.Entry<ByteSlice, IntSummaryStatistics> entry : output.entrySet()) {
+        for (Map.Entry<String, IntSummaryStatistics> entry : output.entrySet()) {
             IntSummaryStatistics stat = entry.getValue();
-            outputStr.put(entry.getKey().toString(),
+            outputStr.put(entry.getKey(),
                     STR."\{stat.getMin() / 10.0}/\{Math.round(stat.getAverage()) / 10.0}/\{stat.getMax() / 10.0}");
         }
         return outputStr;
     }
 
-    private static Map<ByteSlice, IntSummaryStatistics> combineOutputs(List<Map<ByteSlice, IntSummaryStatistics>> list) {
-        Map<ByteSlice, IntSummaryStatistics> output = new HashMap<>(10000);
-        for (Map<ByteSlice, IntSummaryStatistics> map : list) {
-            for (Map.Entry<ByteSlice, IntSummaryStatistics> entry : map.entrySet()) {
-                output.compute(entry.getKey(), (ignore, val) -> {
-                    if (val == null) {
-                        return entry.getValue();
-                    }
-                    else {
-                        val.combine(entry.getValue());
-                        return val;
-                    }
-                });
+    private static Map<String, IntSummaryStatistics> combineOutputs(
+                                                                    List<PrimitiveHashMap> list) {
+
+        Map<String, IntSummaryStatistics> output = new HashMap<>(10000);
+        for (PrimitiveHashMap map : list) {
+            for (HashEntry entry : map.entries) {
+                if (entry.value != null) {
+                    String keyStr = unsafeToString(entry.startAddress, entry.endAddress);
+
+                    output.compute(keyStr, (ignore, val) -> {
+                        if (val == null) {
+                            return entry.value;
+                        }
+                        else {
+                            val.combine(entry.value);
+                            return val;
+                        }
+                    });
+                }
             }
         }
 
         return output;
+    }
+
+    private static String unsafeToString(long startAddress, long endAddress) {
+        byte[] keyBytes = new byte[(int) (endAddress - startAddress)];
+        for (int i = 0; i < keyBytes.length; i++) {
+            keyBytes[i] = UNSAFE.getByte(startAddress + i);
+        }
+        return new String(keyBytes, StandardCharsets.UTF_8);
     }
 }
