@@ -135,7 +135,7 @@ The primary purpose of this challenge is to learn something new, have fun along 
 The leaderboard is only means to an end for achieving this goal.
 If you observe drastically different results though, please open an issue.
 
-See [Entering the Challeng](#entering-the-challenge) for instructions how to enter the challenge with your own implementation.
+See [Entering the Challenge](#entering-the-challenge) for instructions how to enter the challenge with your own implementation.
 The [Show & Tell](https://github.com/gunnarmorling/1brc/discussions/categories/show-and-tell) features a wide range of 1BRC entries built using other languages, databases, and tools.
 
 ### Results (Original Evaluation Environment)
