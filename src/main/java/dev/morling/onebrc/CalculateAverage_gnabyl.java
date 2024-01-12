@@ -209,7 +209,7 @@ public class CalculateAverage_gnabyl {
         int iSplit, iEol;
         StationData stationData;
         int negative;
-        int hash, prime = 131;
+        int hash, prime = 31;
         Set<Integer> seenHashes = new HashSet<>(10000, 0.9f);
         for (int offset = 0; offset < data.length; offset++) {
             // Find station name
