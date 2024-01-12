@@ -26,7 +26,6 @@ import java.text.DecimalFormat;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
@@ -40,6 +39,7 @@ import java.util.stream.Collectors;
  *     <li>0m39s: implement custom byte[] to int parsing, instead of Double.parseDouble(new String(bytes))</li>
  *     <li>0m18s: run with GraalVM native-image</li>
  *     <li>0m14s: remove ConcurrentHashMap</li>
+ *     <li>0m11s: remove Map#compute</li>
  * </ol>
  *
  * <p>
@@ -119,14 +119,16 @@ public class CalculateAverage_Kidlike {
                         if (c == '\n') {
                             String city = new String(citySink.getBytes(), UTF_8);
                             int measurement = bytesToInt(measurementSink.getBytes());
-                            results.compute(city, (k, v) -> {
-                                var entry = Optional.ofNullable(v).orElse(new MeasurementAggregator());
-                                entry.count++;
-                                entry.sum += measurement;
-                                entry.min = (short) Math.min(entry.min, measurement);
-                                entry.max = (short) Math.max(entry.max, measurement);
-                                return entry;
-                            });
+                            var entry = results.get(city);
+                            if (entry == null) {
+                                entry = new MeasurementAggregator();
+                                results.put(city, entry);
+                            }
+
+                            entry.count++;
+                            entry.sum += measurement;
+                            entry.min = (short) Math.min(entry.min, measurement);
+                            entry.max = (short) Math.max(entry.max, measurement);
 
                             citySink.clear();
                             measurementSink.clear();
