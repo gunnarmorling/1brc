@@ -187,35 +187,23 @@ public class CalculateAverage_vaidhy<I, T> {
             byte inCh;
             for (long i = position; i < fileEnd; i++) {
                 if ((inCh = UNSAFE.getByte(i)) == 0x3B) {
-                    try {
-                        return i;
-                    }
-                    finally {
-                        position = i + 1;
-                    }
+                    this.hash = h;
+                    position = i + 1;
+                    return i;
                 }
                 h = ((h << 5) - h) ^ inCh;
-                this.hash = h;
             }
-
-            try {
-                return fileEnd;
-            }
-            finally {
-                position = fileEnd;
-            }
+            this.hash = h;
+            position = fileEnd;
+            return fileEnd;
         }
 
         public long findNewLine() {
             this.hash = 0;
             for (long i = position; i < fileEnd; i++) {
                 if ((UNSAFE.getByte(i)) == 0x0a) {
-                    try {
-                        return i;
-                    }
-                    finally {
-                        position = i + 1;
-                    }
+                    position = i + 1;
+                    return i;
                 }
             }
 
@@ -285,7 +273,6 @@ public class CalculateAverage_vaidhy<I, T> {
     /// SAMPLE CANDIDATE CODE ENDS
 
     static class DiskFileService implements FileService {
-
         private final long fileSize;
         private final long mappedAddress;
 
