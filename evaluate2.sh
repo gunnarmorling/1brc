@@ -38,6 +38,17 @@ RUNS=5
 DEFAULT_JAVA_VERSION="21.0.1-open"
 RUN_TIME_LIMIT=300 # seconds
 
+TIMEOUT=""
+if [ "$(uname -s)" == "Linux" ]; then
+  TIMEOUT="timeout -v $RUN_TIME_LIMIT"
+else # MacOs
+  if [ -x "$(command -v gtimeout)" ]; then
+    TIMEOUT="gtimeout -v $RUN_TIME_LIMIT" # from `brew install coreutils`
+  else
+    echo -e "${BOLD_YELLOW}WARNING${RESET} gtimeout not available, benchmark runs may take indefinitely long."
+  fi
+fi
+
 function check_command_installed {
   if ! [ -x "$(command -v $1)" ]; then
     echo "Error: $1 is not installed." >&2
@@ -137,9 +148,8 @@ for fork in "$@"; do
 
   set +e # we don't want test.sh or hyperfine failing on 1 fork to exit the script early
 
-  # Save output of test.sh to a temporary pipe
-  # This is needed because test.sh deletes measurements.txt
-  print_and_execute ./test.sh $fork > /dev/null
+  # Run the test suite
+  print_and_execute $TIMEOUT ./test.sh $fork > /dev/null
   if [ $? -ne 0 ]; then
     failed+=("$fork")
     echo ""
@@ -150,7 +160,7 @@ for fork in "$@"; do
   fi
 
   # Run the test on $MEASUREMENTS_FILE; this serves as the warmup
-  print_and_execute ./test.sh $fork $MEASUREMENTS_FILE > /dev/null
+  print_and_execute $TIMEOUT ./test.sh $fork $MEASUREMENTS_FILE > /dev/null
   if [ $? -ne 0 ]; then
     failed+=("$fork")
     echo ""
@@ -173,15 +183,9 @@ for fork in "$@"; do
 
     # Linux platform
     # prepend this with numactl --physcpubind=0-7 for running it only with 8 cores
-    numactl --physcpubind=0-7 hyperfine $HYPERFINE_OPTS "timeout -v $RUN_TIME_LIMIT ./calculate_average_$fork.sh 2>&1"
+    numactl --physcpubind=0-7 hyperfine $HYPERFINE_OPTS "$TIMEOUT ./calculate_average_$fork.sh 2>&1"
   else # MacOS
-    timeout=""
-    if [ -x "$(command -v gtimeout)" ]; then
-      timeout="gtimeout -v $RUN_TIME_LIMIT" # from `brew install coreutils`
-    else
-      echo -e "${BOLD_YELLOW}WARNING${RESET} gtimeout not available, benchmark runs may take indefinitely long."
-    fi
-    hyperfine $HYPERFINE_OPTS "$timeout ./calculate_average_$fork.sh 2>&1"
+    hyperfine $HYPERFINE_OPTS "$TIMEOUT ./calculate_average_$fork.sh 2>&1"
   fi
   # Catch hyperfine command failed
   if [ $? -ne 0 ]; then
