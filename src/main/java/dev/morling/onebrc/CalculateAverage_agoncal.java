@@ -28,17 +28,9 @@ import static java.util.stream.Collectors.groupingBy;
 
 public class CalculateAverage_agoncal {
 
-    private static final String FILE = "./measurements.txt";
+    private static final String FILE = "./measurements-20.txt";
 
-    static class Measurement {
-        String station;
-        double temperature;
-
-        Measurement(String station, double temperature) {
-            this.station = station;
-            this.temperature = temperature;
-        }
-    }
+    record Measurement(String station, double temperature) {}
 
     static class StationStats {
         double min = Double.MAX_VALUE;

@@ -39,3 +39,6 @@ java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebr
 # You must use Java 21.
 # Create an algorithm in any way you see fit including parallelizing the computation, using the (incubating) Vector API, memory-mapping different sections of the file concurrently, using AppCDS, GraalVM, CRaC, etc. for speeding up the application start-up, choosing and tuning the garbage collector, and much more.
 # No external library dependencies may be used.
+
+# v2 - 66831 ms
+# Being written in Java 21, please use records instead of classes for Measurement.
