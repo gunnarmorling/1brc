@@ -37,7 +37,9 @@ public class CalculateAverage_vaidhy<I, T> {
     private static final class HashEntry {
         private long startAddress;
         private long endAddress;
+        private long suffix;
         private int hash;
+
         IntSummaryStatistics value;
     }
 
@@ -53,7 +55,7 @@ public class CalculateAverage_vaidhy<I, T> {
             }
         }
 
-        public HashEntry find(long startAddress, long endAddress, int hash) {
+        public HashEntry find(long startAddress, long endAddress, long suffix, int hash) {
             int len = entries.length;
             int i = (hash ^ (hash >> twoPow)) & (len - 1);
 
@@ -63,18 +65,17 @@ public class CalculateAverage_vaidhy<I, T> {
                     return entry;
                 }
                 if (entry.hash == hash) {
-                    long entryIndex = entry.startAddress;
-                    long lookupIndex = startAddress;
-                    boolean found = true;
-                    for (; lookupIndex < endAddress; lookupIndex++) {
-                        if (UNSAFE.getByte(entryIndex) != UNSAFE.getByte(lookupIndex)) {
-                            found = false;
-                            break;
+                    long entryLength = entry.endAddress - entry.startAddress;
+                    long lookupLength = endAddress - startAddress;
+                    if ((entryLength == lookupLength) && (entry.suffix == suffix)) {
+                        boolean found = compareEntryKeys(startAddress, endAddress, entry);
+
+                        if (found) {
+                            return entry;
                         }
-                        entryIndex++;
                     }
-                    if (found) {
-                        return entry;
+                    else {
+                        System.out.println("Broken");
                     }
                 }
                 i++;
@@ -83,6 +84,19 @@ public class CalculateAverage_vaidhy<I, T> {
                 }
             } while (i != hash);
             return null;
+        }
+
+        private static boolean compareEntryKeys(long startAddress, long endAddress, HashEntry entry) {
+            long entryIndex = entry.startAddress;
+            long lookupIndex = startAddress;
+
+            for (; (lookupIndex + 7) < endAddress; lookupIndex += 8) {
+                if (UNSAFE.getLong(entryIndex) != UNSAFE.getLong(lookupIndex)) {
+                    return false;
+                }
+                entryIndex += 8;
+            }
+            return true;
         }
     }
 
@@ -206,13 +220,8 @@ public class CalculateAverage_vaidhy<I, T> {
                     return i;
                 }
             }
-
-            try {
-                return fileEnd;
-            }
-            finally {
-                position = fileEnd;
-            }
+            position = fileEnd;
+            return fileEnd;
         }
     }
 
@@ -302,13 +311,23 @@ public class CalculateAverage_vaidhy<I, T> {
 
         @Override
         public void process(long keyStartAddress, long keyEndAddress, int hash, int temperature) {
-            HashEntry entry = statistics.find(keyStartAddress, keyStartAddress, hash);
+            int length = (int) (keyEndAddress - keyStartAddress);
+            int alignedLength = (length >> 3) << 3;
+            long alignedAddress = keyStartAddress + alignedLength;
+            int tail = length & 7;
+            long suffix = 0;
+            if (tail != 0) {
+                suffix = UNSAFE.getLong(alignedAddress) << ((8 - tail) * 8);
+            }
+
+            HashEntry entry = statistics.find(keyStartAddress, keyEndAddress, suffix, hash);
             if (entry == null) {
                 throw new IllegalStateException("Hash table too small :(");
             }
             if (entry.value == null) {
                 entry.startAddress = keyStartAddress;
                 entry.endAddress = keyEndAddress;
+                entry.suffix = suffix;
                 entry.hash = hash;
                 entry.value = new IntSummaryStatistics();
             }
