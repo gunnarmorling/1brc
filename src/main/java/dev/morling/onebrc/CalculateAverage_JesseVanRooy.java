@@ -74,9 +74,9 @@ public class CalculateAverage_JesseVanRooy {
         Result[] results;
     }
 
-    static final int MAP_SIZE = 4096;
+    static final int MAP_SIZE = 16384;
     static final int MAP_MASK = MAP_SIZE - 1;
-    static final int VALUE_CAPACITY = 512;
+    static final int VALUE_CAPACITY = 10000;
 
     static void process(MemorySegment memorySegment, ThreadResult threadResult) {
         // initialize hash table
