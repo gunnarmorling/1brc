@@ -37,24 +37,25 @@ public class CalculateAverage_vaidhy<I, T> {
     private static final class HashEntry {
         private long startAddress;
         private long endAddress;
-        private long hash;
+        private int hash;
         IntSummaryStatistics value;
     }
 
     private static class PrimitiveHashMap {
-        HashEntry[] entries;
+        private final HashEntry[] entries;
+        private final int twoPow;
 
-        PrimitiveHashMap(int capacity) {
-            this.entries = new HashEntry[capacity];
-            for (int i = 0; i < capacity; i++) {
+        PrimitiveHashMap(int twoPow) {
+            this.twoPow = twoPow;
+            this.entries = new HashEntry[1 << twoPow];
+            for (int i = 0; i < entries.length; i++) {
                 this.entries[i] = new HashEntry();
             }
         }
 
-        public HashEntry find(long startAddress, long endAddress, long hash) {
+        public HashEntry find(long startAddress, long endAddress, int hash) {
             int len = entries.length;
-            int i = Math.floorMod(hash, len);
-            long lookupLength = endAddress - startAddress;
+            int i = (hash ^ (hash >> twoPow)) & (len - 1);
 
             do {
                 HashEntry entry = entries[i];
@@ -62,21 +63,18 @@ public class CalculateAverage_vaidhy<I, T> {
                     return entry;
                 }
                 if (entry.hash == hash) {
-                    long entryLength = endAddress - startAddress;
-                    if (entryLength == lookupLength) {
-                        long entryIndex = entry.startAddress;
-                        long lookupIndex = startAddress;
-                        boolean found = true;
-                        for (; lookupIndex < endAddress; lookupIndex++) {
-                            if (UNSAFE.getByte(entryIndex) != UNSAFE.getByte(lookupIndex)) {
-                                found = false;
-                                break;
-                            }
-                            entryIndex++;
+                    long entryIndex = entry.startAddress;
+                    long lookupIndex = startAddress;
+                    boolean found = true;
+                    for (; lookupIndex < endAddress; lookupIndex++) {
+                        if (UNSAFE.getByte(entryIndex) != UNSAFE.getByte(lookupIndex)) {
+                            found = false;
+                            break;
                         }
-                        if (found) {
-                            return entry;
-                        }
+                        entryIndex++;
+                    }
+                    if (found) {
+                        return entry;
                     }
                 }
                 i++;
@@ -102,54 +100,6 @@ public class CalculateAverage_vaidhy<I, T> {
     }
 
     private static final Unsafe UNSAFE = initUnsafe();
-    //
-    // record ByteSlice(long from, long to, int hCode) {
-    //
-    // @Override
-    // public int hashCode() {
-    // if (hCode != 0) { return hCode; }
-    // int h = 0;
-    // for (long i = from; i < to; i++) {
-    // h = (h * 31) ^ UNSAFE.getByte(i);
-    // }
-    // return h;
-    // }
-    //
-    // public int length() {
-    // return (int) (to - from);
-    // }
-    //
-    // public byte get(int i) {
-    // return UNSAFE.getByte(from + i);
-    // }
-    //
-    // @Override
-    // public boolean equals(Object o) {
-    // if (o instanceof ByteSlice bs) {
-    // int len = this.length();
-    // if (bs.length() != len) {
-    // return false;
-    // }
-    // for (int i = 0; i < len; i++) {
-    // if (this.get(i) != bs.get(i)) {
-    // return false;
-    // }
-    // }
-    // return true;
-    // } else {
-    // return false;
-    // }
-    // }
-    //
-    // @Override
-    // public String toString() {
-    // byte[] copy = new byte[this.length()];
-    // for (int i = 0; i < copy.length; i++) {
-    // copy[i] = get(i);
-    // }
-    // return new String(copy, StandardCharsets.UTF_8);
-    // }
-    // }
 
     private static int parseDouble(long startAddress, long endAddress) {
         int normalized = 0;
@@ -331,7 +281,8 @@ public class CalculateAverage_vaidhy<I, T> {
 
     public static class ChunkProcessorImpl implements MapReduce<PrimitiveHashMap> {
 
-        private final PrimitiveHashMap statistics = new PrimitiveHashMap(1024);
+        // 1 << 14 > 10,000 so it works
+        private final PrimitiveHashMap statistics = new PrimitiveHashMap(14);
 
         @Override
         public void process(long keyStartAddress, long keyEndAddress, int hash, int temperature) {
