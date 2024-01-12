@@ -38,7 +38,7 @@ public class CalculateAverage_gnabyl {
 
     private static Map<Integer, String> stationNameMap = new ConcurrentHashMap<>(10000, 0.9f, NB_CHUNKS);
 
-    private static record Chunk(long start, int bytesCount, MappedByteBuffer mappedByteBuffer) {
+    private static record Chunk(int bytesCount, MappedByteBuffer mappedByteBuffer) {
     }
 
     private static int reduceSizeToFitLineBreak(FileChannel channel, long startPosition, int startSize)
@@ -65,9 +65,9 @@ public class CalculateAverage_gnabyl {
         return realSize;
     }
 
-    private static List<Chunk> readChunks(long nbChunks) throws IOException {
+    private static List<Chunk> readChunks(int nbChunks) throws IOException {
         RandomAccessFile file = new RandomAccessFile(FILE, "rw");
-        List<Chunk> res = new ArrayList<>();
+        List<Chunk> res = new ArrayList<>(nbChunks);
         FileChannel channel = file.getChannel();
         long bytesCount = channel.size();
         long bytesPerChunk = bytesCount / nbChunks;
@@ -75,16 +75,18 @@ public class CalculateAverage_gnabyl {
         // Memory map the file in read-only mode
         // TODO: Optimize using threads
         long currentPosition = 0;
+        int startSize;
+        int realSize;
         for (int i = 0; i < nbChunks; i++) {
-            int startSize = (int) bytesPerChunk;
-            int realSize = startSize;
+            startSize = (int) bytesPerChunk;
+            realSize = startSize;
 
             if (i == nbChunks - 1) {
                 realSize = (int) (bytesCount - currentPosition);
                 MappedByteBuffer mappedByteBuffer = channel.map(FileChannel.MapMode.READ_ONLY, currentPosition,
                         realSize);
 
-                res.add(new Chunk(currentPosition, realSize, mappedByteBuffer));
+                res.add(new Chunk(realSize, mappedByteBuffer));
                 break;
             }
 
@@ -94,7 +96,7 @@ public class CalculateAverage_gnabyl {
             MappedByteBuffer mappedByteBuffer = channel.map(FileChannel.MapMode.READ_ONLY, currentPosition,
                     realSize);
 
-            res.add(new Chunk(currentPosition, realSize, mappedByteBuffer));
+            res.add(new Chunk(realSize, mappedByteBuffer));
             currentPosition += realSize;
         }
 
@@ -105,32 +107,32 @@ public class CalculateAverage_gnabyl {
     }
 
     private static class StationData {
-        private double sum, min, max;
-        private long count;
+        private float sum, min, max;
+        private int count;
 
-        public StationData(double value) {
+        public StationData(float value) {
             this.count = 1;
             this.sum = value;
             this.min = value;
             this.max = value;
         }
 
-        public void update(double value) {
+        public void update(float value) {
             this.count++;
             this.sum += value;
             this.min = Math.min(this.min, value);
             this.max = Math.max(this.max, value);
         }
 
-        public double getMean() {
+        public float getMean() {
             return sum / count;
         }
 
-        public double getMin() {
+        public float getMin() {
             return min;
         }
 
-        public double getMax() {
+        public float getMax() {
             return max;
         }
 
@@ -143,8 +145,8 @@ public class CalculateAverage_gnabyl {
 
     }
 
-    static double round(double value) {
-        return Math.round(value * 10.0) / 10.0;
+    static float round(float value) {
+        return Math.round(value * 10.0f) / 10.0f;
     }
 
     private static class ChunkResult {
@@ -158,7 +160,7 @@ public class CalculateAverage_gnabyl {
             return data.get(hash);
         }
 
-        public void addStation(int hash, double value) {
+        public void addStation(int hash, float value) {
             this.data.put(hash, new StationData(value));
         }
 
@@ -200,10 +202,10 @@ public class CalculateAverage_gnabyl {
         chunk.mappedByteBuffer().get(data);
 
         // Process each line
-        double value;
+        float value;
         int iSplit, iEol;
         StationData stationData;
-        long negative;
+        int negative;
         int hash, prime = 131;
         Set<Integer> seenHashes = new HashSet<>(10000, 0.9f);
         for (int offset = 0; offset < data.length; offset++) {
@@ -227,7 +229,7 @@ public class CalculateAverage_gnabyl {
                     continue;
                 }
                 if (data[iEol] == '.') {
-                    value = value + (data[iEol + 1] - 48) / 10.0;
+                    value = value + (data[iEol + 1] - 48) / 10.0f;
                     iEol += 2;
                     break;
                 }
