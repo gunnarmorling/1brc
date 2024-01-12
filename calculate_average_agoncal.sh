@@ -17,7 +17,7 @@
 
 # sdk use java 21.0.1-tem
 
-JAVA_OPTS=""
+JAVA_OPTS="--enable-preview -XX:+UseShenandoahGC -XX:+UseStringDeduplication -da"
 java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_agoncal
 
 
@@ -52,3 +52,8 @@ java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebr
 # ---
 #
 # There is a maximum of 10000 unique station names. Can you optimize the code taking this into account?
+
+# v4 - 56417 ms
+# Which parameters can I pass to the JVM to make it run faster ?
+#
+# Which GC can I use and what is the most optimized to run CalculateAverage ?

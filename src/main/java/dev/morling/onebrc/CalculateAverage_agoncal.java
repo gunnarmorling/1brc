@@ -52,7 +52,6 @@ public class CalculateAverage_agoncal {
     }
 
     public static void main(String[] args) throws IOException {
-        long start = System.currentTimeMillis();
         Map<String, StationStats> stats = new ConcurrentHashMap<>(10_000);
         try (BufferedReader reader = Files.newBufferedReader(Paths.get(FILE))) {
             reader.lines().parallel().forEach(line -> {
@@ -69,6 +68,5 @@ public class CalculateAverage_agoncal {
             StationStats s = entry.getValue();
             System.out.printf("%s=%.1f/%.1f/%.1f\n", entry.getKey(), s.min, s.getAverage(), s.max);
         }
-        System.out.printf("Measure made in %s ms%n", System.currentTimeMillis() - start);
     }
 }
