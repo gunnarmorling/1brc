@@ -30,6 +30,7 @@ import java.util.*;
 public class CalculateAverage_ianopolous {
 
     public static final int MAX_LINE_LENGTH = 107;
+    public static final int MAX_STATIONS = 10000;
 
     public static void main(String[] args) {
         File input = new File("./measurements.txt");
@@ -54,41 +55,42 @@ public class CalculateAverage_ianopolous {
         System.out.println(new TreeMap<>(result));
     }
 
-    public record Station(String name, byte[] bytes) {
+    public record Station(String name, ByteBuffer buf) {
     }
 
-    public static boolean matchingStationBytes(int start, int end, MappedByteBuffer buffer, byte[] source) {
+    public static boolean matchingStationBytes(int start, int end, MappedByteBuffer buffer, Station existing) {
         buffer.position(start);
         for (int i = start; i < end; i++) {
-            if (source[i - start] != buffer.get(i))
+            if (existing.buf.get(i - start) != buffer.get(i))
                 return false;
         }
         return true;
     }
 
-    public static Station parseStation(int start, int end, int hash, MappedByteBuffer buffer, Map<Integer, List<Station>> stations) {
-        List<Station> matches = stations.get(hash);
+    public static Station parseStation(int start, int end, int hash, MappedByteBuffer buffer, List<List<Station>> stations) {
+        int index = Math.floorMod(hash, MAX_STATIONS);
+        List<Station> matches = stations.get(index);
         if (matches == null) {
             List<Station> value = new ArrayList<>();
             byte[] stationBuffer = new byte[end - start];
             buffer.position(start);
             buffer.get(stationBuffer);
             String name = new String(stationBuffer);
-            Station res = new Station(name, stationBuffer);
+            Station res = new Station(name, ByteBuffer.wrap(stationBuffer));
             value.add(res);
-            stations.put(hash, value);
+            stations.set(index, value);
             return res;
         }
         else {
             for (int i = 0; i < matches.size(); i++) {
                 Station s = matches.get(i);
-                if (matchingStationBytes(start, end, buffer, s.bytes))
+                if (matchingStationBytes(start, end, buffer, s))
                     return s;
             }
             byte[] stationBuffer = new byte[end - start];
             buffer.position(start);
             buffer.get(stationBuffer);
-            Station res = new Station(new String(stationBuffer), stationBuffer);
+            Station res = new Station(new String(stationBuffer), ByteBuffer.wrap(stationBuffer));
             matches.add(res);
             return res;
         }
@@ -115,7 +117,9 @@ public class CalculateAverage_ianopolous {
                 }
             }
 
-            Map<Integer, List<Station>> stations = new HashMap<>(1000);
+            List<List<Station>> stations = new ArrayList<>(MAX_STATIONS);
+            for (int i = 0; i < MAX_STATIONS; i++)
+                stations.add(null);
             int lineStart = done;
             int lineSplit = 0;
             long temperature = 0;
