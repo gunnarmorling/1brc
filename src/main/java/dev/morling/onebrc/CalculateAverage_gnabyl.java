@@ -25,8 +25,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 
 public class CalculateAverage_gnabyl {
 
@@ -161,20 +161,16 @@ public class CalculateAverage_gnabyl {
         public void print() {
             var stationNames = new ArrayList<String>(this.data.keySet());
             Collections.sort(stationNames);
-            System.out.print("{");
-            for (int i = 0; i < stationNames.size() - 1; i++) {
-                var name = stationNames.get(i);
-                var stationData = data.get(name);
-                System.out.printf("%s=%.1f/%.1f/%.1f, ", name, round(stationData.getMin()),
-                        round(stationData.getMean()),
-                        round(stationData.getMax()));
-            }
-            var name = stationNames.get(stationNames.size() - 1);
-            var stationData = data.get(name);
-            System.out.printf("%s=%.1f/%.1f/%.1f", name, round(stationData.getMin()),
-                    round(stationData.getMean()),
-                    round(stationData.getMax()));
-            System.out.println("}");
+
+            System.out.println(
+                    stationNames.stream()
+                            .map(name -> {
+                                var stationData = data.get(name);
+                                return String.format("%s=%.1f/%.1f/%.1f", name, round(stationData.getMin()),
+                                        round(stationData.getMean()),
+                                        round(stationData.getMax()));
+                            })
+                            .collect(Collectors.joining(", ", "{", "}")));
         }
 
         public void mergeWith(ChunkResult other) {
@@ -247,32 +243,8 @@ public class CalculateAverage_gnabyl {
     }
 
     private static ChunkResult processAllChunks(List<Chunk> chunks) throws InterruptedException, ExecutionException {
-        // var globalRes = new ChunkResult();
-        // for (var chunk : chunks) {
-        // var chunkRes = processChunk(chunk);
-        // globalRes.mergeWith(chunkRes);
-        // }
-        // return globalRes;
-
-        List<CompletableFuture<ChunkResult>> computeTasks = new ArrayList<>();
-
-        for (Chunk chunk : chunks) {
-            computeTasks.add(CompletableFuture.supplyAsync(() -> processChunk(chunk)));
-        }
-
-        ChunkResult globalRes = null;
-
-        for (CompletableFuture<ChunkResult> completedTask : computeTasks) {
-            ChunkResult chunkRes = completedTask.get();
-            if (globalRes == null) {
-                globalRes = completedTask.get();
-            }
-            else {
-                globalRes.mergeWith(chunkRes);
-            }
-        }
-
-        return globalRes;
+        return chunks.parallelStream().map(CalculateAverage_gnabyl::processChunk).collect(ChunkResult::new,
+                ChunkResult::mergeWith, ChunkResult::mergeWith);
     }
 
     public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
