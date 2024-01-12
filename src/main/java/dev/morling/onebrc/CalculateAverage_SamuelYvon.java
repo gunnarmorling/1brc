@@ -66,7 +66,7 @@ public class CalculateAverage_SamuelYvon {
 
     private static final byte ZERO = '0';
 
-    private static final byte SLASH = '\\';
+    private static final byte SLASH = '/';
 
     private static final byte NEWLINE = '\n';
 
