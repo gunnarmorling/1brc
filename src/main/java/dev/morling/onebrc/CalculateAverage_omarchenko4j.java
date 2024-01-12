@@ -25,6 +25,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.Callable;
@@ -34,33 +35,16 @@ import java.util.concurrent.Executors;
 public class CalculateAverage_omarchenko4j {
     private static final String FILE = "./measurements.txt";
     private static final int NUMBER_OF_CORES = Runtime.getRuntime().availableProcessors();
+    private static final int MAX_LINE_SIZE = 128;
 
     public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
         try (var file = FileChannel.open(Paths.get(FILE), StandardOpenOption.READ)) {
             var fileSize = file.size();
-            var chunkSize = fileSize / NUMBER_OF_CORES;
-
-            var tasks = new ArrayList<Task>(NUMBER_OF_CORES);
             try (var arena = Arena.ofShared()) {
                 var segment = file.map(MapMode.READ_ONLY, 0, fileSize, arena);
 
-                long chunkOffsetStart = 0;
-                for (int coreNumber = 1; coreNumber <= NUMBER_OF_CORES; coreNumber++) {
-                    long chunkOffsetEnd = chunkSize * coreNumber;
-                    while (chunkOffsetEnd < fileSize) {
-                        var b = segment.get(ValueLayout.JAVA_BYTE, chunkOffsetEnd);
-                        if (b == '\n') {
-                            break;
-                        }
-                        chunkOffsetEnd++;
-                    }
-
-                    tasks.add(new Task(segment, chunkOffsetStart, chunkOffsetEnd));
-
-                    chunkOffsetStart = chunkOffsetEnd + 1;
-                }
-
-                try (var executor = Executors.newFixedThreadPool(NUMBER_OF_CORES)) {
+                var tasks = sliceIntoTasks(segment);
+                try (var executor = Executors.newFixedThreadPool(Math.min(tasks.size(), NUMBER_OF_CORES))) {
                     var futures = executor.invokeAll(tasks);
 
                     var measurements = new TreeMap<String, Aggregator>(String::compareTo);
@@ -80,6 +64,34 @@ public class CalculateAverage_omarchenko4j {
                 }
             }
         }
+    }
+
+    private static List<Task> sliceIntoTasks(MemorySegment segment) {
+        var tasks = new ArrayList<Task>(NUMBER_OF_CORES);
+
+        var segmentSize = segment.byteSize();
+        var chunkSize = segmentSize / NUMBER_OF_CORES;
+        if (chunkSize < (long) NUMBER_OF_CORES * MAX_LINE_SIZE) {
+            return List.of(new Task(segment, 0, segmentSize));
+        }
+
+        long offsetStart = 0;
+        for (int coreNumber = 1; coreNumber <= NUMBER_OF_CORES; coreNumber++) {
+            long offsetEnd = chunkSize * coreNumber;
+            while (offsetEnd < segmentSize) {
+                var b = segment.get(ValueLayout.JAVA_BYTE, offsetEnd);
+                offsetEnd++;
+                if (b == '\n') {
+                    break;
+                }
+            }
+
+            tasks.add(new Task(segment, offsetStart, offsetEnd));
+
+            offsetStart = offsetEnd;
+        }
+
+        return tasks;
     }
 
     private static class Task implements Callable<Map<String, Aggregator>> {
@@ -104,7 +116,7 @@ public class CalculateAverage_omarchenko4j {
             int separatorIndex = 0;
             int endIndex = 0;
 
-            var buffer = new byte[128];
+            var buffer = new byte[MAX_LINE_SIZE];
             int bufferIndex = 0;
 
             for (long offset = startOffset; offset < endOffset; offset++) {
