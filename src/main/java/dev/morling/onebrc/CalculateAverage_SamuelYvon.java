@@ -101,13 +101,17 @@ public class CalculateAverage_SamuelYvon {
 
     /**
      * A magic key that contains references to the String and where it's located in memory
-     *
-     * @param hash
-     * @param backing
-     * @param pos
-     * @param len
      */
-    private record StationName(int hash, MappedByteBuffer backing, int pos, int len) {
+    private static final class StationName {
+        private final int hash;
+
+        private final byte[] value;
+
+        private StationName(int hash, MappedByteBuffer backing, int pos, int len) {
+            this.hash = hash;
+            this.value = new byte[len];
+            backing.get(pos, this.value);
+        }
 
         @Override
         public int hashCode() {
@@ -117,39 +121,25 @@ public class CalculateAverage_SamuelYvon {
         @SuppressWarnings("EqualsWhichDoesntCheckParameterClass")
         @Override
         public boolean equals(Object obj) {
-//            Should NEVER  be true
-//            if (!(obj instanceof StationName)) {
-//                return false;
-//            }
+            // Should NEVER be true
+            // if (!(obj instanceof StationName)) {
+            // return false;
+            // }
             StationName other = (StationName) obj;
 
-            if (len != other.len()) {
+            if (this.value.length != other.value.length) {
                 return false;
             }
 
             // Byte for byte compare. This actually is a bug! I'm assuming the input
             // is UTF-8 normalized, which in real life would probably not be the case.
             // TODO: SIMD?
-
-            byte[] myBackingArr = new byte[len];
-            backing.get(pos, myBackingArr);
-//            var mine = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, myBackingArr, 0);
-
-            byte[] theirBackingArr = new byte[len];
-            other.backing.get(other.pos, theirBackingArr);
-//            var theirs = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, theirBackingArr, 0);
-
-//            return mine.eq(theirs).allTrue();
-
-
-            return Arrays.equals(myBackingArr, theirBackingArr);
+            return Arrays.equals(this.value, other.value);
         }
 
         @Override
         public String toString() {
-            byte[] backingNameArray = new byte[len];
-            backing.get(pos, backingNameArray);
-            return new String(backingNameArray, StandardCharsets.UTF_8);
+            return new String(this.value, StandardCharsets.UTF_8);
         }
     }
 
@@ -332,10 +322,8 @@ public class CalculateAverage_SamuelYvon {
         final Map<StationName, StationMeasureAgg> allMeasures = fileChunks.parallelStream().map(CalculateAverage_SamuelYvon::parseChunk).flatMap(x -> x.values().stream())
                 .collect(Collectors.toMap(StationMeasureAgg::station, x -> x, StationMeasureAgg::mergeWith, HashMap::new));
 
-        var l = allMeasures.values().stream().toList();
-        boolean eq = l.get(0).station.equals(l.get(1).station);
-
-        StringBuilder sb = new StringBuilder();
+        // Give a capacity that should never be gone past
+        StringBuilder sb = new StringBuilder(allMeasures.size() * (100 + 4 + 20));
         sb.append('{');
 
         allMeasures.values().stream().sorted(Comparator.comparing(StationMeasureAgg::city)).forEach(x -> {
@@ -345,8 +333,7 @@ public class CalculateAverage_SamuelYvon {
             sb.append(", ");
         });
 
-        sb.deleteCharAt(sb.length() - 1); // remove trailing space
-        sb.deleteCharAt(sb.length() - 1); // remove trailing comma
+        sb.delete(sb.length() - 2, sb.length()); // delete trailing comma and space
 
         sb.append('}');
 
