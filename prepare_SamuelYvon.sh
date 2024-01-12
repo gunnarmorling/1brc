@@ -30,7 +30,7 @@ if [ ! -f target/CalculateAverage_SamuelYvon_image ]; then
 #    JAVA_OPTS="--enable-preview -dsa --add-modules jdk.incubator.vector"
 
 #     Enable the GC because I need memory :D
-    NATIVE_IMAGE_OPTS="--gc=G1 -Ob -O3 -march=native --strict-image-heap $JAVA_OPTS"
+    NATIVE_IMAGE_OPTS="--gc=G1 -O3 -march=native --strict-image-heap $JAVA_OPTS"
 
     native-image $NATIVE_IMAGE_OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o target/CalculateAverage_SamuelYvon_image dev.morling.onebrc.CalculateAverage_SamuelYvon
 fi
