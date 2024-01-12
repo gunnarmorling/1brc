@@ -149,7 +149,7 @@ for fork in "$@"; do
   set +e # we don't want test.sh or hyperfine failing on 1 fork to exit the script early
 
   # Run the test suite
-  print_and_execute $TIMEOUT ./test.sh $fork > /dev/null
+  print_and_execute $TIMEOUT ./test.sh --quiet $fork
   if [ $? -ne 0 ]; then
     failed+=("$fork")
     echo ""
@@ -160,7 +160,7 @@ for fork in "$@"; do
   fi
 
   # Run the test on $MEASUREMENTS_FILE; this serves as the warmup
-  print_and_execute $TIMEOUT ./test.sh $fork $MEASUREMENTS_FILE > /dev/null
+  print_and_execute $TIMEOUT ./test.sh --quiet $fork $MEASUREMENTS_FILE
   if [ $? -ne 0 ]; then
     failed+=("$fork")
     echo ""
