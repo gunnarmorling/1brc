@@ -359,16 +359,16 @@ public class CalculateAverage_mtopolnik {
                 }
                 throw new RuntimeException("Semicolon not found");
             }
-            return posOfSemicolonSafe(address, limit) - nameStartAddress;
+            return addrOfSemicolonSafe(address, limit) - nameStartAddress;
         }
 
-        private static long posOfSemicolonSafe(long address, long limit) {
+        private static long addrOfSemicolonSafe(long address, long limit) {
             for (; address < limit - Long.BYTES + 1; address += Long.BYTES) {
                 var block = UNSAFE.getLong(address);
                 long diff = block ^ BROADCAST_SEMICOLON;
                 long matchBits = (diff - BROADCAST_0x01) & ~diff & BROADCAST_0x80;
                 if (matchBits != 0) {
-                    return address + Long.numberOfTrailingZeros(matchBits) >> 3;
+                    return address + (Long.numberOfTrailingZeros(matchBits) >> 3);
                 }
             }
             for (; address < limit; address++) {
