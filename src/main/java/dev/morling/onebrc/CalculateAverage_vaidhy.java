@@ -67,7 +67,14 @@ public class CalculateAverage_vaidhy<I, T> {
                         long entryIndex = entry.startAddress;
                         long lookupIndex = startAddress;
                         boolean found = true;
-                        for (; lookupIndex < endAddress; lookupIndex++) {
+                        for (; lookupIndex < endAddress / 8; lookupIndex += 8) {
+                            if (UNSAFE.getLong(entryIndex) != UNSAFE.getLong(lookupIndex)) {
+                                found = false;
+                                break;
+                            }
+                            entryIndex += 8;
+                        }
+                        for (; lookupIndex < lookupLength; lookupIndex++) {
                             if (UNSAFE.getByte(entryIndex) != UNSAFE.getByte(lookupIndex)) {
                                 found = false;
                                 break;
@@ -102,67 +109,19 @@ public class CalculateAverage_vaidhy<I, T> {
     }
 
     private static final Unsafe UNSAFE = initUnsafe();
-    //
-    // record ByteSlice(long from, long to, int hCode) {
-    //
-    // @Override
-    // public int hashCode() {
-    // if (hCode != 0) { return hCode; }
-    // int h = 0;
-    // for (long i = from; i < to; i++) {
-    // h = (h * 31) ^ UNSAFE.getByte(i);
-    // }
-    // return h;
-    // }
-    //
-    // public int length() {
-    // return (int) (to - from);
-    // }
-    //
-    // public byte get(int i) {
-    // return UNSAFE.getByte(from + i);
-    // }
-    //
-    // @Override
-    // public boolean equals(Object o) {
-    // if (o instanceof ByteSlice bs) {
-    // int len = this.length();
-    // if (bs.length() != len) {
-    // return false;
-    // }
-    // for (int i = 0; i < len; i++) {
-    // if (this.get(i) != bs.get(i)) {
-    // return false;
-    // }
-    // }
-    // return true;
-    // } else {
-    // return false;
-    // }
-    // }
-    //
-    // @Override
-    // public String toString() {
-    // byte[] copy = new byte[this.length()];
-    // for (int i = 0; i < copy.length; i++) {
-    // copy[i] = get(i);
-    // }
-    // return new String(copy, StandardCharsets.UTF_8);
-    // }
-    // }
 
     private static int parseDouble(long startAddress, long endAddress) {
         int normalized = 0;
         boolean sign = true;
         long index = startAddress;
-        if (UNSAFE.getByte(index) == '-') {
+        if (UNSAFE.getByte(index) == 0x2D) {
             index++;
             sign = false;
         }
         for (; index < endAddress; index++) {
             byte ch = UNSAFE.getByte(index);
-            if (ch != '.') {
-                normalized = normalized * 10 + (ch - '0');
+            if (ch != 0x2E) {
+                normalized = (normalized << 3) + (normalized << 1) + (ch ^ 0x30);
             }
         }
         if (!sign) {
@@ -224,9 +183,8 @@ public class CalculateAverage_vaidhy<I, T> {
 
         public long find(byte ch, boolean computeHash) {
             int h = 0;
-            byte inCh;
             for (long i = position; i < fileEnd; i++) {
-                if ((inCh = UNSAFE.getByte(i)) == ch) {
+                if ((UNSAFE.getByte(i) ^ ch) == 0) {
                     try {
                         return i;
                     }
@@ -235,10 +193,10 @@ public class CalculateAverage_vaidhy<I, T> {
                     }
                 }
                 if (computeHash) {
-                    h = (h * 31) ^ inCh;
-                    this.hash = h;
+                    h = ((h << 5) - h) ^ UNSAFE.getByte(i);
                 }
             }
+            this.hash = h;
 
             try {
                 return fileEnd;
