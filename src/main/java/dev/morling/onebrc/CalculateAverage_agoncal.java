@@ -30,15 +30,7 @@ public class CalculateAverage_agoncal {
 
     private static final String FILE = "./measurements.txt";
 
-    static class Measurement {
-        String station;
-        double temperature;
-
-        Measurement(String station, double temperature) {
-            this.station = station;
-            this.temperature = temperature;
-        }
-    }
+    record Measurement(String station, double temperature) {}
 
     static class StationStats {
         double min = Double.MAX_VALUE;
