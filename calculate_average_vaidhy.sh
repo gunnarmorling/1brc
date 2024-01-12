@@ -15,13 +15,7 @@
 #  limitations under the License.
 #
 
-if [ -f ./image_calculateaverage_vaidhy ]; then
-    echo "Picking up existing native image, delete the file to select JVM mode." 1>&2
-    time ./image_calculateaverage_vaidhy
-else
-    source "$HOME/.sdkman/bin/sdkman-init.sh"
-    sdk use java 21.0.1-graal 1>&2
-    JAVA_OPTS="--enable-preview"
-    echo "Choosing to run the app in JVM mode as no native image was found, use additional_build_step_vaidhy.sh to generate." 1>&2
-    time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_vaidhy
-fi
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+sdk use java 21.0.1-graal 1>&2
+JAVA_OPTS="--enable-preview"
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_vaidhy
