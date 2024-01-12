@@ -93,7 +93,8 @@ public class CalculateAverage_maximz101 {
         try (FileChannel channel = FileChannel.open(Paths.get(FILE), StandardOpenOption.READ)) {
             MappedByteBuffer buffer = channel.map(MapMode.READ_ONLY, chunk.start(), chunk.end() - chunk.start());
             return process(buffer);
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
@@ -123,7 +124,8 @@ public class CalculateAverage_maximz101 {
                 }
                 currentChunk++;
             }
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             throw new RuntimeException(e);
         }
         return list;
@@ -167,8 +169,7 @@ public class CalculateAverage_maximz101 {
     private static Measurement parseLine(byte[] lineBytes, int separatorIdx, int eolIdx) {
         return new Measurement(
                 new String(lineBytes, 0, separatorIdx, StandardCharsets.UTF_8),
-                bytesToDouble(lineBytes, separatorIdx + 1, eolIdx)
-        );
+                bytesToDouble(lineBytes, separatorIdx + 1, eolIdx));
     }
 
     private static double bytesToDouble(byte[] bytes, int startIdx, int endIdx) {
@@ -185,7 +186,8 @@ public class CalculateAverage_maximz101 {
             double n = bytes[i] - '0';
             if (afterDot) {
                 d = d + n / Math.pow(10, dots++);
-            } else {
+            }
+            else {
                 d = d * Math.pow(10, i - numberStartIdx) + n;
             }
         }
