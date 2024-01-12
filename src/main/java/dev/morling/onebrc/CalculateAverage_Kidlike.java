@@ -55,7 +55,7 @@ public class CalculateAverage_Kidlike {
     public static void main(String[] args) {
         File file = new File("./measurements.txt");
         long fileSize = file.length();
-        int processors = Runtime.getRuntime().availableProcessors();
+        int processors = (fileSize < 1_000_000) ? 1 : Runtime.getRuntime().availableProcessors();
         long chunkSize = fileSize / processors;
 
         MappedByteBuffer[] byteBuffers = new MappedByteBuffer[processors];
