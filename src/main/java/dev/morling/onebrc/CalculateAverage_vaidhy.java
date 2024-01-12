@@ -162,7 +162,7 @@ public class CalculateAverage_vaidhy<I, T> {
         for (; index < endAddress; index++) {
             byte ch = UNSAFE.getByte(index);
             if (ch != '.') {
-                normalized = normalized * 10 + (ch - '0');
+                normalized = (normalized << 3) + (normalized << 1) + (ch - '0');
             }
         }
         if (!sign) {
@@ -235,7 +235,7 @@ public class CalculateAverage_vaidhy<I, T> {
                     }
                 }
                 if (computeHash) {
-                    h = (h * 31) ^ inCh;
+                    h = ((h << 5) - h) ^ inCh;
                     this.hash = h;
                 }
             }
