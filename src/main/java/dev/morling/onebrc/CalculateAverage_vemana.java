@@ -72,7 +72,7 @@ public class CalculateAverage_vemana {
         if (args.length > 3) {
             hashtableSizeBits = Integer.parseInt(args[3]);
         }
-        //
+
         // System.err.println(STR."""
         // Using the following parameters:
         // - chunkSizeBits = \{chunkSizeBits}
@@ -449,11 +449,6 @@ public class CalculateAverage_vemana {
             byte nextByte;
             int hash = 0;
 
-            // Read City and Hash
-            // while ((nextByte = mmb.get(nextPos++)) != ';') {
-            // hash = (hash << 5) - hash + nextByte;
-            // }
-
             while (true) {
                 int x = mmb.getInt(nextPos);
                 if (NATIVE_BYTE_ORDER == ByteOrder.BIG_ENDIAN) {
@@ -497,6 +492,9 @@ public class CalculateAverage_vemana {
             boolean negative = (nextByte = mmb.get(nextPos++)) == '-';
             if (!negative) {
                 temperature = nextByte - '0';
+            }
+            else {
+                temperature = mmb.get(nextPos++) - '0';
             }
 
             while (true) {
