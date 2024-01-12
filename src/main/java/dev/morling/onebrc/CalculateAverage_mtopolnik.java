@@ -226,13 +226,12 @@ public class CalculateAverage_mtopolnik {
             long word = UNSAFE.getLong(tempStartAddress);
             final long negated = ~word;
             final int dotPos = Long.numberOfTrailingZeros(negated & 0x10101000);
+            cursor = (tempStartAddress + (dotPos / 8) + 3) - inputBase;
             final long signed = (negated << 59) >> 63;
             final long removeSignMask = ~(signed & 0xFF);
             final long digits = ((word & removeSignMask) << (28 - dotPos)) & 0x0F000F0F00L;
             final long absValue = ((digits * 0x640a0001) >>> 32) & 0x3FF;
-            final int temperature = (int) ((absValue ^ signed) - signed);
-            cursor = (tempStartAddress + (dotPos / 8) + 3) - inputBase;
-            return temperature;
+            return (int) ((absValue ^ signed) - signed);
         }
 
         private int parseTemperatureSimpleAndAdvanceCursor(long tempStartAddress) {
