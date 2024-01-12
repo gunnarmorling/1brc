@@ -219,7 +219,7 @@ public class CalculateAverage_vaidhy<I, T> {
 
         public long findNewLine() {
             this.hash = 0;
-            for (long i = position; i < fileEnd; i++) {
+            for (long i = position; i < position + 7; i++) {
                 byte ch = UNSAFE.getByte(i);
                 if ((ch ^ 0x0a) == 0) {
                     position = i + 1;
