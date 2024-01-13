@@ -69,7 +69,7 @@ public class CalculateAverage_fatroom {
         long fileSize = file.length();
         long position = 0;
 
-        List<Callable<Map<Station, MeasurementAggregator>>> tasks = new LinkedList<>();
+        List<Callable<StationMap>> tasks = new LinkedList<>();
         while (position < fileSize) {
             long end = Math.min(position + SEGMENT_LENGTH, fileSize);
             int length = (int) (end - position);
@@ -88,7 +88,7 @@ public class CalculateAverage_fatroom {
         for (var future : executor.invokeAll(tasks)) {
             var segmentAggregates = future.get();
             for (var entry : segmentAggregates.entrySet()) {
-                aggregates.merge(entry.getKey().toString(), entry.getValue(), MeasurementAggregator::combineWith);
+                aggregates.merge(entry.getKey(), entry.value, MeasurementAggregator::combineWith);
             }
         }
         executor.shutdown();
@@ -99,10 +99,8 @@ public class CalculateAverage_fatroom {
         System.out.println(aggregates);
     }
 
-    private static Map<Station, MeasurementAggregator> processBuffer(MappedByteBuffer source, int length) {
-
-        Map<Station, MeasurementAggregator> aggregates = new HashMap<>(500);
-        Station station;
+    private static StationMap processBuffer(MappedByteBuffer source, int length) {
+        StationMap aggregates = new StationMap();
         byte[] buffer = new byte[200];
         byte[] measurement = new byte[5];
         int measurementLength;
@@ -113,7 +111,6 @@ public class CalculateAverage_fatroom {
             hash = 31 * hash + b;
             buffer[idx++] = b;
             if (b == ';') {
-                station = new Station(hash, buffer, idx - 1);
                 measurementLength = 3;
                 measurement[0] = source.get(++i);
                 measurement[1] = source.get(++i);
@@ -127,7 +124,7 @@ public class CalculateAverage_fatroom {
                         measurementLength++;
                     }
                 }
-                aggregates.computeIfAbsent(station, s -> new MeasurementAggregator()).consume(parseMeasurement(measurement, measurementLength));
+                aggregates.get(hash, buffer, idx - 1).consume(parseMeasurement(measurement, measurementLength));
                 idx = 0;
                 hash = 1;
             }
@@ -148,28 +145,47 @@ public class CalculateAverage_fatroom {
     static class Station {
         private byte[] bytes;
         private int hash;
+        private MeasurementAggregator value;
+        private Station next;
 
-        public Station(int hash, byte[] bytes, int length) {
+        public Station(int hash, byte[] bytes, int length, Station next) {
+            this.hash = hash;
             this.bytes = new byte[length];
             System.arraycopy(bytes, 0, this.bytes, 0, length);
-            this.hash = hash;
+            this.value = new MeasurementAggregator();
+            this.next = next;
         }
 
-        public String toString() {
+        public String getKey() {
             return new String(bytes, 0, bytes.length, StandardCharsets.UTF_8);
         }
+    }
 
-        @Override
-        public boolean equals(Object o) {
-            Station station = (Station) o;
-            if (hash != station.hash)
-                return false;
-            return Arrays.equals(bytes, station.bytes);
+    static class StationMap {
+        private Station[] stations = new Station[16384];
+
+        MeasurementAggregator get(int hash, byte[] buffer, int length) {
+            int bucketId = hash & 0x3fff;
+            Station entry = stations[bucketId];
+            while (entry != null) {
+                if (entry.hash == hash && Arrays.equals(entry.bytes, 0, entry.bytes.length, buffer, 0, length)) {
+                    return entry.value;
+                }
+                entry = entry.next;
+            }
+            stations[bucketId] = new Station(hash, buffer, length, stations[bucketId]);
+            return stations[bucketId].value;
         }
 
-        @Override
-        public int hashCode() {
-            return hash;
+        private List<Station> entrySet() {
+            List<Station> result = new LinkedList<>();
+            for (var station : stations) {
+                while (station != null) {
+                    result.add(station);
+                    station = station.next;
+                }
+            }
+            return result;
         }
     }
 }
