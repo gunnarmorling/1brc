@@ -18,7 +18,8 @@
 # Basics
 JAVA_OPTS=""
 JAVA_OPTS="$JAVA_OPTS --enable-preview"
-JAVA_OPTS="$JAVA_OPTS -XX:+UnlockDiagnosticVMOptions"
+#JAVA_OPTS="$JAVA_OPTS --add-modules jdk.incubator.vector"
+#JAVA_OPTS="$JAVA_OPTS -XX:+UnlockDiagnosticVMOptions"
 
 # JIT parameters
 #JAVA_OPTS="$JAVA_OPTS -Xlog:class+load=info"
