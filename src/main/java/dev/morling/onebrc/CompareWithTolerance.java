@@ -52,7 +52,7 @@ public class CompareWithTolerance {
     private static String[] entries(String fname) throws IOException {
         var content = new BufferedReader(new FileReader(fname)).readLine();
         if (!content.startsWith("{") || !content.endsWith("}")) {
-            System.out.printf("%s isn't in the format {entries}%n", fname);
+            System.out.printf("%s isn't in the format \"{entries}\"%n", fname);
             System.exit(1);
         }
         content = content.substring(1, content.length() - 1);
@@ -63,11 +63,11 @@ public class CompareWithTolerance {
         var nameAndStats = entry.split("=");
         var stats = nameAndStats[1].split("/");
         if (nameAndStats.length != 2 || stats.length != 3) {
-            System.out.printf("Parsing error in %s, entry #%,d: %s%n", fname, indexOfEntry, entry);
+            System.out.printf("Parsing error in %s, entry #%,d: \"%s\"%n", fname, indexOfEntry, entry);
             System.exit(1);
         }
         if (Arrays.stream(stats).anyMatch(val -> !numRegex.matcher(val).matches())) {
-            System.out.printf("Parsing error in %s, entry #%,d: %s%n", fname, indexOfEntry, entry);
+            System.out.printf("Parsing error in %s, entry #%,d: \"%s\"%n", fname, indexOfEntry, entry);
             System.exit(1);
         }
         var values = Arrays.stream(stats).mapToInt(i -> parseTemperature(i)).toArray();
