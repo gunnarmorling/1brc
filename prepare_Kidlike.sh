@@ -16,7 +16,6 @@
 #
 
 source "$HOME/.sdkman/bin/sdkman-init.sh"
-sdk install java 21.0.1-graal
 sdk use java 21.0.1-graal
 #NATIVE_IMAGE_OPTS="--gc=epsilon -O3 -march=native --enable-preview"
 NATIVE_IMAGE_OPTS="-O3 -march=native --enable-preview"
