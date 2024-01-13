@@ -15,10 +15,22 @@
 #  limitations under the License.
 #
 
+set -x
+
 if [ -z "$1" ]
   then
-    echo "Usage: eval.sh <fork name>"
+    echo "Usage: checkout.sh <fork name>:<branch name>"
     exit 1
 fi
 
-./evaluate.sh $1 2>&1 | tee $1.out
+parts=(${1//:/ })
+echo "  User: ${parts[0]}"
+echo "Branch: ${parts[1]}"
+
+git branch -D ${parts[0]} &>/dev/null
+
+git checkout -b ${parts[0]}
+git fetch https://github.com/${parts[0]}/1brc.git ${parts[1]}
+# git fetch git@github.com:${parts[0]}/1brc.git ${parts[1]}
+git reset --hard FETCH_HEAD
+git rebase main
