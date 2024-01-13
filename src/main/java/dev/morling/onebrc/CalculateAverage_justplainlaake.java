@@ -36,6 +36,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.IntFunction;
+import java.util.function.LongFunction;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
 
@@ -61,6 +63,28 @@ import sun.misc.Unsafe;
         -   real    1m19.508s
             user    0m42.588s
             sys     0m53.621s
+    ME - Attempt 3 [Added timers, added long hashing for keys and offset to get proper key and reset the address, After Restart]
+        Timer:
+        - main.create-executors (1.30/1.30/1.30)
+        - main.map-channel (2.11/2.11/2.11)
+        - main.open-channel (3.75/3.75/3.75)
+        - main.processors (2.61/2.61/2.61)
+            - main.processors.locate-end (0.00/0.01/0.02)
+            - main.processors.schedule-task (0.04/0.14/1.23)
+        - main.task-merger (4,942.01/4,942.01/4,942.01)
+    ME - Attempt 4 [With OpenMap]
+        Timer:
+        - main.create-executors (1.30/1.30/1.30)
+        - main.map-channel (2.11/2.11/2.11)
+        - main.open-channel (3.75/3.75/3.75)
+        - main.processors (2.61/2.61/2.61)
+            - main.processors.locate-end (0.00/0.01/0.02)
+            - main.processors.schedule-task (0.04/0.14/1.23)
+        - main.task-merger (4,942.01/4,942.01/4,942.01)
+    royvanrijn - Current #1 tested on windows 
+        Millis 1,814.9423
+    Me - Remove timer
+        Millis 3,876.1646
 
  */
 
@@ -68,7 +92,6 @@ public class CalculateAverage_justplainlaake {
 
     // Constants
     private static final String FILE = "./measurements.txt";
-    private static final boolean isBigEndian = ByteOrder.nativeOrder().equals(ByteOrder.BIG_ENDIAN);
     private static final byte SEPERATOR_BYTE = ';';
     private static final byte NEW_LINE_BYTE = '\n';
     private static final DecimalFormat STATION_FORMAT = new DecimalFormat("#,##0.0");
@@ -102,53 +125,70 @@ public class CalculateAverage_justplainlaake {
     }
 
     public static void main(String[] args) throws IOException {
-        /*
-         * Hash(3:fe;-45.1): 1829792843, -1099511627776, 3329624868385023593
-         * Hash(3:fe;-45.2): 1829792843, -1099511627776, 3329624868385023593
-         * Hash(3:fe;-54.9): 1829727563, -1099511627776, 3329344492919940713
-         * Hash(3:fe;-48.1): 1829989451, -1099511627776, 3330469293315155561
-         * Hash(3:fe;-48.4): 1829989451, -1099511627776, 3330469293315155561
+
+        /* Possible combinations (x = number)
+         *  x.x
+         *  xx.x
+         *  -x.x
+         *  -xx.x
          */
-        // int offseta = 3;
-        // long[] reads = {
-        // 3329624868385023593l,
-        // 3329624868385023593l,
-        // 3329344492919940713l,
-        // 3330469293315155561l,
-        // 3330469293315155561l,
+
+        // System.out.println();
+        // long[][] unsafes = {
+        //     {7020080520972088369l, 143, 1},
+        //     {7449318865373114929l, 125, 1},
+        //     {7521378658417522481l, 174, 1},
+        //     {7009582564255150381l, -134, -1},
+        //     {7953728620758709037l, -38, -1},
+        //     {8533869686817107512l, 85, 1},
+        //     {7306036007582708019l, 314, 1},
+        //     {8458430025076649529l, 91, 1},
+        //     {8028864847236970802l, 291, 1},
+        //     {7089020999645933617l, 109, 1},
+        //     {7600188353344844851l, 343, 1},
+        //     {7238764587710820404l, 407, 1},
+        //     {7166706993672894513l, 187, 1},
+        //     {7449334258569458482l, 237, 1},
+        //     {7018951322530361906l, 223, 1},
+        //     {7020922746912519730l, 265, 1},
+        //     {7810733834998002477l, -36, -1},
         // };
 
-        // for (int i = 0; i < reads.length; i++){
-        // long read = reads[i];
-        // if (isBigEndian){
-        // read = Long.reverseBytes(read);
-        // }
-        // System.out.println("Hash: " + (read & OFFSET_CLEARS[offseta]));
+
+        // for (int i = 0; i < unsafes.length; i++){
+        //     long unsafe = unsafes[i][0];
+        //     long num = unsafes[i][1];
+        //     long sign = unsafes[i][2];
+
+        //     int offset = 0;
+        //     byte attemptSign = (byte) ((unsafe >> offset) ^ 45);
+        //     long attemptedNum = attemptSign == 0 ? (((byte) (unsafe >> (offset+=8))) - 48) : (((byte) unsafe) - 48);
+        //     if ((byte) ((unsafe >> (offset+8)) ^ 46) != 0){//There can only be one more possible number
+        //         attemptedNum *= 10;
+        //         attemptedNum += ((byte) (unsafe >> (offset+=8))) - 48;
+        //     }
+        //     attemptedNum *= 10;
+        //     attemptedNum += ((byte) (unsafe >> (offset+16))) - 48;
+        //     System.out.println("Attempt " + num + ", " + (attemptSign == 0 ? -attemptedNum : attemptedNum));
         // }
 
         // if (true){
-        // return;
+        //     return;
         // }
 
-        Timer timer = new Timer(10);
+        long start = System.nanoTime();
 
-        timer.push("main");
-        timer.push("create-executors");
-        int processors = Runtime.getRuntime().availableProcessors();
+        int processors = Runtime.getRuntime().availableProcessors() + 1;
         ExecutorService e = Executors.newFixedThreadPool(processors);
-        List<Future<Map<Integer, Station>>> futures = new ArrayList<>();
-        timer.popPush("open-channel");
+        List<Future<OpenMap>> futures = new ArrayList<>();
         try (FileChannel channel = FileChannel.open(Path.of(FILE), StandardOpenOption.READ)) {
             long fileSize = channel.size();
             long chunkSize = fileSize / processors;
-            timer.popPush("map-channel");
             long startAddress = channel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, Arena.global()).address();
             long endAddress = startAddress + fileSize;
             long currentAddress = startAddress + chunkSize;
             long chunkStart = startAddress;
-            timer.popPush("processors");
             for (int i = 0; i < processors; i++) {
-                timer.push("locate-end");
                 while (currentAddress < endAddress) {
                     long match = UNSAFE.getLong(currentAddress);
                     short offset = getMaskOffset(match, NEW_LINE_BYTE);
@@ -158,20 +198,16 @@ public class CalculateAverage_justplainlaake {
                     }
                     currentAddress += 8;// forwardscan
                 }
-                timer.popPush("schedule-task");
                 long finalChunkStart = chunkStart, finalChunkEnd = Math.min(endAddress, currentAddress - 1);
                 futures.add(e.submit(() -> process(finalChunkStart, finalChunkEnd)));
                 chunkStart = currentAddress + 1;
                 currentAddress = Math.min(currentAddress + chunkSize, endAddress);
-                timer.pop();
             }
-            timer.pop();
         }
-        timer.push("task-merger");
-        Map<Integer, Station> merged = new HashMap<>();
-        for (Future<Map<Integer, Station>> f : futures) {
+        OpenMap merged = new OpenMap();
+        for (Future<OpenMap> f : futures) {
             try {
-                Map<Integer, Station> processed = f.get();
+                OpenMap processed = f.get();
                 processed.forEach((i, s) -> {
                     merged.compute(i, (key, s1) -> {
                         if (s1 == null) {
@@ -189,9 +225,8 @@ public class CalculateAverage_justplainlaake {
                 e1.printStackTrace();
             }
         }
-        Station[] nameOrdered = merged.values().toArray(Station[]::new);// TODO Convert to some other way to compare?
+        Station[] nameOrdered = merged.toArray();// TODO Convert to some other way to compare?
         Arrays.sort(nameOrdered, (n1, n2) -> n1.name.compareTo(n2.name));
-        timer.pop();
         System.out.print("{");
         for (int i = 0; i < nameOrdered.length; i++) {
             if (i != 0) {
@@ -200,121 +235,97 @@ public class CalculateAverage_justplainlaake {
             System.out.print(nameOrdered[i]);
         }
         System.out.print("}");
-        timer.print();
         e.shutdown();
+
+        System.out.println("\nMillis: " + ((System.nanoTime() - start) / 1_000_000.0));
     }
 
-    private static short getMaskOffset(long value, byte test) {
-        if (isBigEndian) {
-            value = Long.reverseBytes(value);
-        }
-        for (short i = 0; i < 8; i++) {
-            if (((byte) value & 0xFF) == test) {
-                return i;
-            }
-            value = value >> 8;
-        }
-        return -1;
-    }
-
-    private static Map<Integer, Station> process(long fromAddress, long toAddress) {
-        Map<Integer, Station> stationsLookup = new HashMap<>(2_000);
-        int hash = 1;
-        byte stage = 0;
+    private static OpenMap process(long fromAddress, long toAddress) {
+        OpenMap stationsLookup = new OpenMap();
+        long hash = 1;
+        int num = 0;
         byte sign = 1;
-        short num = 0;
         Station station = null;
         long blockStart = fromAddress;
         long currentAddress = fromAddress;
         while (currentAddress < toAddress) {
-            try {
-                switch (stage) {
-                    case 0:
-                        long read = 0l;
-                        short offset = -1;
-                        while ((offset = getMaskOffset(read = UNSAFE.getLong(currentAddress), SEPERATOR_BYTE)) == -1) {
-                            currentAddress += 8;// forwardscan
-                            hash = longHashStep(hash, read);
-                        }
-                        if (offset != -1) {
-                            if (isBigEndian) {
-                                read = Long.reverseBytes(read);
-                            }
-                            hash = longHashStep(hash, read & OFFSET_CLEARS[offset]);// make sure to hash again due to the while loop exiting before hashing
-                            currentAddress += offset + 1;
-                            stage++;
-                            station = stationsLookup.get(hash);// Bet on the likelyhood that there are no collisions in the hashed name (Extremely Rare, more likely to get eaten by a shark in Kansas)
-                            if (station == null) {
-                                byte[] nameBuffer = new byte[(int) (currentAddress - blockStart - 1)];
-                                for (int k = 0; k < nameBuffer.length; k++) {
-                                    nameBuffer[k] = UNSAFE.getByte(blockStart + k);
-                                }
-                                String name = new String(nameBuffer, StandardCharsets.UTF_8);
-                                // if (name.equals("Yellowknife")){
-                                // byte[] suffer = new byte[8];
-                                // for (int k = 0; k < 8; k++) {
-                                // suffer[k] = UNSAFE.getByte(currentAddress - offset + k);
-                                // }
-                                // System.out.println("Hash(" + offset + ":" + new String(suffer, StandardCharsets.UTF_8) + "): " + hash + ", " + OFFSET_CLEARS[offset] + ", " + read);
-                                // }
-                                stationsLookup.put(hash, station = new Station(name));
-                            }
-                        }
-                        break;
-                    case 1:
-                        switch (UNSAFE.getByte(currentAddress++)) {
-                            case NEW_LINE_BYTE:
-                                num *= sign;
-                                station.min = Math.min(station.min, num);
-                                station.max = Math.max(station.max, num);
-                                station.count++;
-                                station.sum += num;
-                                // Reset
-                                station = null;
-                                hash = 1;
-                                stage = 0;
-                                sign = 1;
-                                num = 0;
-                                blockStart = currentAddress;
-                                break;
-                            case 48:
-                            case 49:
-                            case 50:
-                            case 51:
-                            case 52:
-                            case 53:
-                            case 54:
-                            case 55:
-                            case 56:
-                            case 57:
-                                num *= 10;
-                                num += UNSAFE.getByte(currentAddress - 1) - 48;
-                                break;
-                            case 45:// negative sign
-                                sign = -1;
-                                break;
-                            case 46:// decimal
-                                break;
-                            default:
-                                System.err.println("Found non valid byte " + UNSAFE.getByte(currentAddress - 1) + " @ " + (currentAddress - 1));
-                                // System.err.println("Processing Line " + new String(threadBuffer));
-                                // System.err.println("\t - " + Arrays.toString(threadBuffer));
-                                System.exit(1);
-                                break;
-                        }
-                        break;
-                }
+            long read = 0l;
+            short offset = -1;
+            while ((offset = getMaskOffset(read = UNSAFE.getLong(currentAddress), SEPERATOR_BYTE)) == -1) {
+                currentAddress += 8;// forwardscan
+                hash = 997 * hash ^ 991 * getMurmurHash3(read);
             }
-            catch (Exception e) {
-                byte[] sbuffer = new byte[(int) (toAddress - fromAddress)];
-                for (int k = 0; k < sbuffer.length; k++) {
-                    sbuffer[k] = UNSAFE.getByte(fromAddress + k);
-                }
-                System.err.println("Processing (" + fromAddress + ", " + toAddress + ") " + new String(sbuffer));
-                System.err.println("\t - " + Arrays.toString(sbuffer));
-                e.printStackTrace();
-                System.exit(1);
+            if (offset != -1) {
+                hash = 997 * hash ^ 991 * getMurmurHash3(read & OFFSET_CLEARS[offset]);
+                currentAddress += offset + 1;
+                station = stationsLookup.getOrCreate(hash, currentAddress, blockStart);// Bet on the likelyhood that there are no collisions in the hashed name (Extremely Rare, more likely to get eaten by a shark in Kansas)
+                // Odds are over 1 in 100 Billion since there are a max of 10,000 unique names
             }
+            long unsafeNum = UNSAFE.getLong(currentAddress);
+            offset = 0;
+            sign = (byte) ((unsafeNum >> offset) ^ 45);
+            num = sign == 0 ? (((byte) (unsafeNum >> (offset+=8))) - 48) : (((byte) unsafeNum) - 48);
+            currentAddress += 4;//There will always be at least 3 digits to read and the newline digit (4 total)
+            if ((byte) ((unsafeNum >> (offset+8)) ^ 46) != 0){//There can only be one more possible number
+                num *= 10;
+                num += ((byte) (unsafeNum >> (offset+=8))) - 48;
+                currentAddress++;//Add one digit read if temp > 10
+            }
+            num *= 10;
+            num += ((byte) (unsafeNum >> (offset+16))) - 48;
+            if (sign == 0){
+                num *= -1;
+                currentAddress++;//Add another digit read for the negative sign
+            }
+            station.min = Math.min(station.min, num);
+            station.max = Math.max(station.max, num);
+            station.count++;
+            station.sum += num;
+            hash = 0;
+            station = null;
+            blockStart = currentAddress;
+            
+            // K: for (int i = 0; i < 6; i++){
+            //     switch (UNSAFE.getByte(currentAddress++)) {
+            //         case NEW_LINE_BYTE:
+            //             num *= sign;
+            //             station.min = Math.min(station.min, num);
+            //             station.max = Math.max(station.max, num);
+            //             station.count++;
+            //             station.sum += num;
+            //             // Reset
+            //             station = null;
+            //             hash = 1;
+            //             sign = 1;
+            //             num = 0;
+            //             blockStart = currentAddress;
+            //             break K;
+            //         case 48:
+            //         case 49:
+            //         case 50:
+            //         case 51:
+            //         case 52:
+            //         case 53:
+            //         case 54:
+            //         case 55:
+            //         case 56:
+            //         case 57:
+            //             num *= 10;
+            //             num += UNSAFE.getByte(currentAddress - 1) - 48;
+            //             break;
+            //         case 45:// negative sign
+            //             sign = -1;
+            //             break;
+            //         case 46:// decimal
+            //             break;
+            //         default:
+            //             System.err.println("Found non valid byte " + UNSAFE.getByte(currentAddress - 1) + " @ " + (currentAddress - 1));
+            //             // System.err.println("Processing Line " + new String(threadBuffer));
+            //             // System.err.println("\t - " + Arrays.toString(threadBuffer));
+            //             System.exit(1);
+            //             break;
+            //     }
+            // }
         }
         if (station != null && blockStart != currentAddress) {
             num *= sign;
@@ -328,17 +339,43 @@ public class CalculateAverage_justplainlaake {
         return stationsLookup;
     }
 
-    private static int longHashStep(final int hash, final long word) {
-        return 31 * hash + (int) (word ^ (word >>> 32));
+    //Avalanche hashing function for longs: https://github.com/aappleby/smhasher/blob/master/README.md
+    public final static long getMurmurHash3(long x) {
+        x ^= x >>> 33;
+        x *= 0xff51afd7ed558ccdL;
+        x ^= x >>> 33;
+        x *= 0xc4ceb9fe1a85ec53L;
+        x ^= x >>> 33;
+        return x;
+    }
+
+    private static short getMaskOffset(long value, byte test) {
+        for (short i = 0; i < 8; i++) {
+            if (((byte) value & 0xFF) == test) {
+                return i;
+            }
+            value = value >> 8;
+        }
+        return -1;
     }
 
     private static class Station {
-        private final String name;
-        protected volatile int min = Integer.MAX_VALUE, max = Integer.MIN_VALUE, count;
-        protected volatile long sum;
+        protected final long nameStart, nameEnd;
+        protected int min = Integer.MAX_VALUE, max = Integer.MIN_VALUE, count;
+        protected long sum;
+        protected String name;
 
-        Station(String name) {
-            this.name = name;
+        Station(long nameStart, long nameEnd) {
+            this.nameStart = nameStart;
+            this.nameEnd = nameEnd;
+        }
+
+        protected void fillName(){
+            byte[] nameBuffer = new byte[(int) (nameEnd - nameStart)];
+            for (int k = 0; k < nameBuffer.length; k++) {
+                nameBuffer[k] = UNSAFE.getByte(nameStart + k);
+            }
+            name = new String(nameBuffer, StandardCharsets.UTF_8);
         }
 
         @Override
@@ -348,271 +385,161 @@ public class CalculateAverage_justplainlaake {
 
     }
 
-    private static class TimerStatistics {
-        protected volatile double min = Double.MAX_VALUE, max = -Double.MAX_VALUE;
-        protected volatile int count;
-        protected volatile double sum;
-        private final int depth;
-
-        TimerStatistics(int depth) {
-            this.depth = depth;
-        }
-
-        @Override
-        public String toString() {
-            return TIMER_FORMAT.format(min) + '/' + TIMER_FORMAT.format(sum / count) + '/' + TIMER_FORMAT.format(max);
-        }
-    }
-
-    private static class Timer {
-        private final Map<String, TimerStatistics> timings;
-        private final String[] keyStates;
-        private final long[] startStates;
-        private int state = -1;
-
-        public Timer(int stackSize) {
-            keyStates = new String[stackSize];
-            startStates = new long[stackSize];
-            timings = new HashMap<>(stackSize * 3);//
-        }
-
-        public Timer push(String state) {
-            if (this.state++ >= keyStates.length) {
-                System.err.println("Timer stackSize is not big enough; Has=" + this.keyStates.length + " Requires=" + this.state);
-                return this;
-            }
-            keyStates[this.state] = this.state > 0 ? keyStates[this.state - 1] + "." + state : state;
-            startStates[this.state] = System.nanoTime();
-            return this;
-        }
-
-        public Timer pop() {
-            if (this.state-- < 0) {
-                System.err.println("Timer popped below 0??? Pop=" + this.state);
-                return this;
-            }
-            if (this.state < keyStates.length - 1) {
-                double duration = (System.nanoTime() - startStates[this.state + 1]) / 1_000_000.0;// MS conversion
-                timings.compute(keyStates[this.state + 1], (k, old) -> {
-                    if (old == null) {
-                        old = new TimerStatistics(this.state + 1);
-                    }
-                    old.count++;
-                    old.sum += duration;
-                    old.max = Math.max(old.max, duration);
-                    old.min = Math.min(old.min, duration);
-                    return old;
-                });
-            }
-            return this;
-        }
-
-        public Timer popPush(String state) {
-            return pop().push(state);
-        }
-
-        public void print() {
-            System.out.println("\nTimer:");
-            Entry<String, TimerStatistics>[] values = timings.entrySet().toArray(Entry[]::new);
-            Arrays.sort(values, (e1, e2) -> e1.getKey().compareTo(e2.getKey()));
-            for (int i = 0; i < values.length; i++) {
-                String name = values[i].getKey();
-                TimerStatistics stats = values[i].getValue();
-                System.out.println("  ".repeat(stats.depth) + " - " + name + " (" + stats + ")");
-            }
-        }
-
-    }
-
     @SuppressWarnings("unchecked")
-    private static class Long2ObjectHashMap<V> {
+    public static  class OpenMap {
+            public static final float LOAD_FACTOR = 0.75f;
+            public static final int EXPECTED_INITIAL_SIZE = 100_000;
 
-        private static final int DEFAULT_INITIAL_NODE_CAPACITY = 8;
-        private static final int DEFAULT_CAPACITY = 2048;
+            protected transient long[] keys;
+            protected transient Station[] values;
+            protected transient boolean[] marked;
+            protected transient int capacity;
+            protected transient int maxFill;
+            protected transient int mask;
+            protected int size;
 
-        private final Node<V>[] entries;
-        private final int initialNodeCapacity;
-        private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+            public OpenMap() {
+                capacity = (int) getNextPowerOfTwo((long) Math.ceil(EXPECTED_INITIAL_SIZE / LOAD_FACTOR));//need to base the capacity on the next power of two for the mask to work properly
+                mask = capacity - 1;
+                maxFill = (int) Math.ceil(capacity * 0.75f);
+                keys = new long[capacity];
+                values = new Station[capacity];
+                marked = new boolean[capacity];
+            }
 
-        Long2ObjectHashMap() {
-            this(DEFAULT_CAPACITY, DEFAULT_INITIAL_NODE_CAPACITY);
-        }
+            public Station put(final long k, final Station v) {
+                int pos = (int) getMurmurHash3(k) & mask;
+                while (marked[pos]) {
+                    if (((keys[pos]) == (k))) {
+                        final Station oldValue = values[pos];
+                        values[pos] = v;
+                        return oldValue;
+                    }
+                    pos = (pos + 1) & mask;
+                }
+                marked[pos] = true;
+                keys[pos] = k;
+                values[pos] = v;
+                if (++size >= maxFill)
+                    rehash((int) getNextPowerOfTwo((long) Math.ceil((size+1) / LOAD_FACTOR)));
+                return null;
+            }
 
-        Long2ObjectHashMap(int capacity) {
-            this(capacity, DEFAULT_INITIAL_NODE_CAPACITY);
-        }
+            public void compute(long key, OpenFunction compute) {
+                Station value = compute.action(key, get(key));
+                if (value != null) {
+                    put(key, value);
+                }
+            }
 
-        Long2ObjectHashMap(int capacity, int initialNodeCapacity) {
-            this.entries = new Node[capacity];
-            this.initialNodeCapacity = initialNodeCapacity;
-        }
+            public Station get(final long k) {
+                int pos = (int) getMurmurHash3(k) & mask;
+                while (marked[pos]) {
+                    if (((keys[pos]) == (k)))
+                        return values[pos];
+                    pos = (pos + 1) & mask;
+                }
+                return null;
+            }
 
-        public void forEach(BiLongConsumer<V> consumer) {
-            try {
-                lock.readLock().lock();
-                for (int i = 0; i < entries.length; i++) {
-                    Node<V> entry = entries[i];
-                    if (entry != null) {
-                        entry.forEach(consumer);
+            public Station getOrCreate(final long key, long currentAddress, long blockStart) {
+                int pos = (int) getMurmurHash3(key) & mask;
+                while (marked[pos]) {
+                    if (((keys[pos]) == (key)))
+                        return values[pos];
+                    pos = (pos + 1) & mask;
+                }
+                marked[pos] = true;
+                keys[pos] = key;
+                values[pos] = new Station(blockStart, currentAddress-1);
+                if (++size >= maxFill)
+                    rehash((int) getNextPowerOfTwo((long) Math.ceil((size+1) / LOAD_FACTOR)));
+                return values[pos];
+            }
+
+            public boolean containsKey(final long k) {
+                int pos = (int) getMurmurHash3(k) & mask;
+                while (marked[pos]) {
+                    if (((keys[pos]) == (k)))
+                        return true;
+                    pos = (pos + 1) & mask;
+                }
+                return false;
+            }
+
+            protected void rehash(final int newCapacity) {
+                int i = 0, pos;
+                long k;
+                final int newMask = newCapacity - 1;
+                final long[] keys = this.keys;
+                final Station[] values = this.values;
+                final boolean[] marked = this.marked;
+
+                final long[] newKeys = new long[newCapacity];
+                final Station[] newValues = new Station[newCapacity];
+                final boolean[] newMarked = new boolean[newCapacity];
+                for (int j = size; j-- != 0;) {
+                    while (!marked[i])
+                        i++;
+                    k = keys[i];
+                    pos = (int) getMurmurHash3(k) & newMask;
+                    while (newMarked[pos])
+                        pos = (pos + 1) & newMask;
+                    newMarked[pos] = true;
+                    newKeys[pos] = k;
+                    newValues[pos] = values[i];
+                    i++;
+                }
+                capacity = newCapacity;
+                mask = newMask;
+                maxFill = (int) Math.ceil(capacity * LOAD_FACTOR);
+                this.keys = newKeys;
+                this.values = newValues;
+                this.marked = newMarked;
+            }
+
+            public void forEach(OpenConsumer consumer) {
+                for (int i = 0; i < this.capacity; i++) {
+                    if (marked[i]) {
+                        consumer.accept(keys[i], values[i]);
                     }
                 }
             }
-            finally {
-                lock.readLock().unlock();
-            }
-        }
 
-        public IntStream getCounts() {
-            return Arrays.stream(entries).filter(Objects::nonNull).mapToInt(e -> e.count);
-        }
-
-        public V get(long key) {
-            try {
-                lock.readLock().lock();
-                int index = hash(key);
-                Node<V> entry = entries[index];
-                return entry != null ? entry.get(key) : null;
-            }
-            finally {
-                lock.readLock().unlock();
-            }
-        }
-
-        public V set(long key, V value) {
-            try {
-                lock.writeLock().lock();
-                int index = hash(key);
-                Node<V> entry = entries[index];
-                if (entry == null) {
-                    entries[index] = entry = new Node<V>(initialNodeCapacity);
+            public Station[] toArray() {
+                Station[] array = new Station[size];
+                int setter = 0;
+                for (int i = 0; i < capacity; i++) {
+                    if (marked[i]) {
+                        array[setter++] = values[i];
+                        values[i].fillName();
+                    }
                 }
-                return entry.set(key, value);
+                return array;
             }
-            finally {
-                lock.writeLock().unlock();
+
+            //Bit function
+            public long getNextPowerOfTwo(long length) {
+                if (length-- == 0)
+                    return 1;
+                length |= length >> 1;
+                length |= length >> 2;
+                length |= length >> 4;
+                length |= length >> 8;
+                length |= length >> 16;
+                return (length | length >> 32) + 1;
             }
+
+            @FunctionalInterface
+            public static interface OpenConsumer {
+                void accept(long key, Station value);
+            }
+
+            @FunctionalInterface
+            public static interface OpenFunction {
+                Station action(long key, Station value);
+            }
+
         }
-
-        public V getOrSet(long key, Supplier<V> supplier) {
-            try {
-                lock.writeLock().lock();
-                int index = hash(key);
-                Node<V> entry = entries[index];
-                if (entry == null) {
-                    entries[index] = entry = new Node<V>(initialNodeCapacity);
-                }
-                return entry.getOrSet(key, supplier);
-            }
-            finally {
-                lock.writeLock().unlock();
-            }
-        }
-
-        public V getOrSet(long key, V value) {
-            try {
-                lock.writeLock().lock();
-                int index = hash(key);
-                Node<V> entry = entries[index];
-                if (entry == null) {
-                    entries[index] = entry = new Node<V>(initialNodeCapacity);
-                }
-                return entry.getOrSet(key, value);
-            }
-            finally {
-                lock.writeLock().unlock();
-            }
-        }
-
-        private int hash(long key) {
-            return Math.abs((int) (key ^ (key >>> 32))) % entries.length;
-        }
-
-    }
-
-    @SuppressWarnings("unchecked")
-    private static class Node<V> {
-        private long[] keys;
-        private Object[] values;
-        private int count = 0;
-
-        Node(int initilaCapacity) {
-            this.keys = new long[initilaCapacity];
-            this.values = new Object[initilaCapacity];
-        }
-
-        V get(long key) {
-            int index = Arrays.binarySearch(keys, 0, count, key);
-            if (index >= 0) {
-                return (V) values[index];
-            }
-            return null;
-        }
-
-        V set(long key, V value) {
-            int index = Arrays.binarySearch(keys, 0, count, key);
-            if (index >= 0) {
-                V old = (V) values[index];
-                values[index] = value;
-                return old;
-            }
-            int insertIndex = -(index + 1);
-            if (count == keys.length - 1) {// current count is too small for an addition, expand
-                keys = Arrays.copyOf(keys, keys.length * 2);
-                values = Arrays.copyOf(values, values.length * 2);
-            }
-            System.arraycopy(keys, insertIndex, keys, insertIndex + 1, count - insertIndex);
-            System.arraycopy(values, insertIndex, values, insertIndex + 1, count - insertIndex);
-            count++;
-            keys[insertIndex] = key;
-            values[insertIndex] = value;
-            return null;
-        }
-
-        V getOrSet(long key, Supplier<V> supplier) {
-            int index = Arrays.binarySearch(keys, 0, count, key);
-            if (index >= 0) {
-                return (V) values[index];
-            }
-            int insertIndex = -(index + 1);
-            if (count == keys.length - 1) {// current count is too small, expand
-                keys = Arrays.copyOf(keys, keys.length * 2);
-                values = Arrays.copyOf(values, values.length * 2);
-            }
-            System.arraycopy(keys, insertIndex, keys, insertIndex, count - insertIndex);
-            System.arraycopy(values, insertIndex, values, insertIndex, count - insertIndex);
-            count++;
-            keys[insertIndex] = key;
-            return (V) (values[insertIndex] = supplier.get());
-        }
-
-        V getOrSet(long key, V value) {
-            int index = Arrays.binarySearch(keys, 0, count, key);
-            if (index >= 0) {
-                return (V) values[index];
-            }
-            int insertIndex = -(index + 1);
-            if (count == keys.length - 1) {// current count is too small, expand
-                keys = Arrays.copyOf(keys, keys.length * 2);
-                values = Arrays.copyOf(values, values.length * 2);
-            }
-            System.arraycopy(keys, insertIndex, keys, insertIndex, count - insertIndex);
-            System.arraycopy(values, insertIndex, values, insertIndex, count - insertIndex);
-            count++;
-            keys[insertIndex] = key;
-            return (V) (values[insertIndex] = value);
-        }
-
-        void forEach(BiLongConsumer<V> consumer) {
-            for (int i = 0; i < count; i++) {
-                consumer.accept(keys[i], (V) values[i]);
-            }
-        }
-
-    }
-
-    @FunctionalInterface
-    private static interface BiLongConsumer<V> {
-        void accept(long l, V value);
-    }
 
 }
