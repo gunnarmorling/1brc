@@ -136,7 +136,7 @@ public class CalculateAverage_abeobk {
     }
 
     public static void main(String[] args) throws InterruptedException, IOException {
-        int cpu_cnt = Runtime.getRuntime().availableProcessors() / 2;
+        int cpu_cnt = Runtime.getRuntime().availableProcessors();
         try (var file = FileChannel.open(Path.of(FILE), StandardOpenOption.READ)) {
             long start_addr = file.map(MapMode.READ_ONLY, 0, file.size(), Arena.global()).address();
             long file_size = file.size();
