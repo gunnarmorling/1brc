@@ -39,13 +39,13 @@ public class CalculateAverage_flippingbits {
 
     private static final String FILE = "./measurements.txt";
 
-    private static final long MIN_FILE_SIZE_PARTITIONING = 10 * 1024 * 1024; // 10 MB
+    private static final long MINIMUM_FILE_SIZE_PARTITIONING = 10 * 1024 * 1024; // 10 MB
 
     private static final int SIMD_LANE_LENGTH = ShortVector.SPECIES_MAX.length();
 
     private static final int NUM_STATIONS = 10_000;
 
-    private static final int FASTER_HASH_MAP_CAPACITY = 200_000;
+    private static final int HASH_MAP_OFFSET_CAPACITY = 200_000;
 
     private static final Unsafe UNSAFE = initUnsafe();
 
@@ -93,7 +93,7 @@ public class CalculateAverage_flippingbits {
                     .address();
 
             // Split file into segments, so we can work around the size limitation of channels
-            var numSegments = (fileSize > MIN_FILE_SIZE_PARTITIONING)
+            var numSegments = (fileSize > MINIMUM_FILE_SIZE_PARTITIONING)
                     ? Runtime.getRuntime().availableProcessors()
                     : 1;
             var segmentSize = fileSize / numSegments;
@@ -129,7 +129,6 @@ public class CalculateAverage_flippingbits {
             var nameHash = 0;
             // Station name consists of at least one byte
             final var nameStartAddress = i++;
-
             var character = UNSAFE.getByte(i);
             while (character != ';') {
                 nameHash = nameHash * HASH_PRIME_NUMBER + character;
@@ -268,7 +267,7 @@ public class CalculateAverage_flippingbits {
     private static class FasterHashMap {
         // Using 16-bit integers (shorts) for offsets supports up to 2^15 (=32,767) entries
         // If you need to store more entries, consider replacing short with int
-        short[] offsets = new short[FASTER_HASH_MAP_CAPACITY];
+        short[] offsets = new short[HASH_MAP_OFFSET_CAPACITY];
         Station[] entries = new Station[NUM_STATIONS + 1];
         int slotsInUse = 0;
 
