@@ -34,7 +34,7 @@ public class CompareWithTolerance {
         var entries1 = entries(fname1);
         var entries2 = entries(fname2);
         if (entries1.length != entries2.length) {
-            System.out.printf("Files mismatch in the number of entries: %,d vs. %,d%n", entries1.length, entries2.length);
+            System.out.printf("Files don't match in the number of entries: %,d vs. %,d%n", entries1.length, entries2.length);
             System.exit(1);
         }
         for (int i = 0; i < entries1.length; i++) {
