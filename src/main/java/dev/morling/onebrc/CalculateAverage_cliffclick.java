@@ -15,21 +15,40 @@
  */
 package dev.morling.onebrc;
 
-import java.nio.file.*;
+import java.io.*;
+import java.lang.reflect.Field;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.io.*;
-
-import java.util.List;
-import java.util.Comparator;
+import java.nio.file.*;
 import java.util.Arrays;
-import java.util.HashMap;
+import sun.misc.Unsafe;
 
 abstract class CalculateAverage_cliffclick {
     public static final int NCPUS = Runtime.getRuntime().availableProcessors();
     public static final long HASSEMI = 0x3B3B3B3B3B3B3B3BL;
 
-    public static int X0;
+    private static final Unsafe UNSAFE;
+    private static long MMAP_ADDRESS;
+    static {
+        try {
+            Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
+            theUnsafe.setAccessible(true);
+            UNSAFE = (Unsafe) theUnsafe.get(Unsafe.class);
+
+            Field f;
+            try {
+                f = java.nio.Buffer.class.getDeclaredField("address");
+            }
+            catch (java.lang.NoSuchFieldException e) {
+                throw new RuntimeException(e);
+            }
+            MMAP_ADDRESS = UNSAFE.objectFieldOffset(f);
+
+        }
+        catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     public static void main(String[] args) throws Exception {
         if (args.length < 1)
@@ -133,6 +152,8 @@ abstract class CalculateAverage_cliffclick {
         if (limit == max)
             limit = skipLast(limit, w, mmap);
 
+        long base = UNSAFE.getLong(mmap, MMAP_ADDRESS);
+
         // For this chunk of file do...
         while (idx < limit) {
             int cityx = idx; // Used if we find a new city name
@@ -142,7 +163,7 @@ abstract class CalculateAverage_cliffclick {
             // the n8->city_name map.
             long n8 = 0;
             // Read a misaligned long
-            long x = mmap.getLong(idx);
+            long x = UNSAFE.getLong(base + idx);
             // Found semi ?
             long hasM = has0(x ^ HASSEMI);
             while (hasM == 0) {
@@ -150,19 +171,17 @@ abstract class CalculateAverage_cliffclick {
                 n8 ^= x;
                 idx += 8;
                 // Read a misaligned long
-                x = mmap.getLong(idx);
+                x = UNSAFE.getLong(base + idx);
                 // Found semi ?
                 hasM = has0(x ^ HASSEMI);
             }
             // Found a semicolon this word.
             // The high bit of the byte in question is set.
             int shr = Long.numberOfTrailingZeros(hasM) + 1;
-            if (shr != 64) {
-                long hasM2 = hasM >>> shr;
-                if (hasM2 != 0) // Long word spans 2 cities (nasty test case)
-                    shr += Long.numberOfTrailingZeros(hasM2) + 1;
-                n8 ^= (x >> shr);
-                idx += 8 - (shr >> 3);
+            if (shr > 8) {
+                int shr2 = 72 - shr;
+                n8 ^= (x << shr2) >> shr2;
+                idx += (shr >> 3) - 1;
             }
 
             // Skip semicolon
@@ -179,17 +198,18 @@ abstract class CalculateAverage_cliffclick {
         limit--;
         while (limit > 0 && mmap.get(limit - 1) != '\n')
             limit--;
-        long n8 = 0, mask = 0;
-        int i = limit, c;
+        long n8 = 0, mask = 0, c;
+        int i = limit;
         while ((c = mmap.get(i)) != ';') {
-            mask = (mask << 8) | c;
+            mask = (mask >> 8) | (c << 56);
             i++;
             if (((limit - i) & 7) == 0) {
                 n8 ^= mask;
                 mask = 0;
             }
         }
-        n8 ^= mask;
+        int shr = (limit - i) & 7;
+        n8 ^= (mask >> (shr << 3));
         parseData(i + 1, w, limit, mmap, n8);
         return limit;
     }
@@ -284,7 +304,7 @@ abstract class CalculateAverage_cliffclick {
 
         // Hash the n8 value; the 3 bytes uniquely identify the city.
         static long uhash_final(long n8) {
-            return n8 ^ (n8 >>> 26);
+            return n8 ^ (n8 >> 29);
         }
 
         // New city
