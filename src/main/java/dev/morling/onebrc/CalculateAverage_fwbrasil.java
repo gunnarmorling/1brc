@@ -144,14 +144,18 @@ public final class CalculateAverage_fwbrasil {
         long readKeyHash() {
             long hash = 0L;
             byte b = 0;
-            var i = 0;
-            var pos = this.pos;
-            for (; (b = read(pos + i)) != ';'; i++) {
-                hash = (b + hash + i) * 257;
+            for (; (b = read(pos)) != ';'; pos++) {
+                hash += b;
+                hash += (hash << 10);
+                hash ^= (hash >> 6);
             }
-            this.pos = pos + i;
-            return Math.abs(hash * PRIME);
+            hash += (hash << 3);
+            hash ^= (hash >> 11);
+            hash += (hash << 15);
+            var r = Math.abs(hash * PRIME);
+            return r;
         }
+
 
         int readValue() {
             var value = Integer.MAX_VALUE;
