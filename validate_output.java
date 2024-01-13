@@ -13,37 +13,55 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-package dev.morling.onebrc;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Optional;
 import java.util.regex.Pattern;
 import java.util.stream.IntStream;
 
-public class CompareWithTolerance {
+public class validate_output {
     private static final Pattern numRegex = Pattern.compile("-?\\d\\d?\\.\\d");
 
     record NameAndStats(String name, int[] stats) {
     }
 
     public static void main(String[] args) throws IOException {
-        var fname1 = args[0];
-        var fname2 = args[1];
-        var entries1 = entries(fname1);
-        var entries2 = entries(fname2);
-        if (entries1.length != entries2.length) {
-            System.out.printf("Files don't match in the number of entries: %,d vs. %,d%n", entries1.length, entries2.length);
+        boolean lenient;
+        int argIndex;
+        if (args[0].equals("--lenient")) {
+            lenient = true;
+            argIndex = 1;
+        } else {
+            lenient = false;
+            argIndex = 0;
+        }
+        var fnameExpected = args[argIndex];
+        var fnameActual = args[argIndex + 1];
+        var entriesExpected = entries(fnameExpected);
+        var entriesActual = entries(fnameActual);
+        if (entriesExpected.length != entriesActual.length) {
+            System.out.printf("Files don't match in the number of entries: expected %,d, actual %,d%n", entriesExpected.length, entriesActual.length);
             System.exit(1);
         }
-        for (int i = 0; i < entries1.length; i++) {
-            var nameAndStats1 = parseEntry(entries1[i], i, fname1);
-            var nameAndStats2 = parseEntry(entries2[i], i, fname2);
-            if (IntStream.range(0, 3)
-                    .mapToObj(n -> new double[]{ nameAndStats1.stats[n], nameAndStats2.stats[n] })
-                    .anyMatch(pair -> Math.abs((pair[0] - pair[1])) > 1)) {
-                System.out.printf("Values don't match in entry #%,d: \"%s\" vs. \"%s\"%n", i, entries1[i], entries2[i]);
+        for (int i = 0; i < entriesExpected.length; i++) {
+            var nameAndStatsExpected = parseEntry(entriesExpected[i], i, fnameExpected);
+            var nameAndStatsActual = parseEntry(entriesActual[i], i, fnameActual);
+            int[] statsExpected = nameAndStatsExpected.stats;
+            int[] statsActual = nameAndStatsActual.stats;
+            var mismatch = statsExpected[0] != statsActual[0] || statsExpected[2] != statsActual[2];
+            if (!mismatch) {
+                var avgExpected = statsExpected[1];
+                var avgActual = statsActual[1];
+                mismatch = avgExpected != avgActual;
+                if (lenient) {
+                    mismatch &= avgExpected - avgActual != 1;
+                }
+            }
+            if (mismatch) {
+                System.out.printf("Values don't match in entry #%,d: expected \"%s\", actual \"%s\"%n", i, entriesExpected[i], entriesActual[i]);
                 System.exit(1);
             }
         }
