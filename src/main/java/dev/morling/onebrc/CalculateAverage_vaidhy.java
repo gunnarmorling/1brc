@@ -17,10 +17,14 @@ package dev.morling.onebrc;
 
 import sun.misc.Unsafe;
 
+import jdk.incubator.vector.ByteVector;
+import jdk.incubator.vector.VectorMask;
 import java.io.IOException;
 import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -158,6 +162,8 @@ public class CalculateAverage_vaidhy<I, T> {
         long length();
 
         long address();
+
+        MemorySegment getMemory();
     }
 
     CalculateAverage_vaidhy(FileService fileService,
@@ -172,13 +178,21 @@ public class CalculateAverage_vaidhy<I, T> {
         private final long fileEnd;
         private final long chunkEnd;
 
+        private final long fileSize;
+
         private long position;
         private int hash;
         private long suffix;
         byte[] b = new byte[4];
 
+        private final MemorySegment mmapMemory;
+
+        private static final int lookaheadSize = ByteVector.SPECIES_PREFERRED.length();
+
         public LineStream(FileService fileService, long offset, long chunkSize) {
+            this.fileSize = fileService.length();
             long fileStart = fileService.address();
+            this.mmapMemory = fileService.getMemory();
             this.fileEnd = fileStart + fileService.length();
             this.chunkEnd = fileStart + offset + chunkSize;
             this.position = fileStart + offset;
@@ -189,47 +203,50 @@ public class CalculateAverage_vaidhy<I, T> {
             return position <= chunkEnd && position < fileEnd;
         }
 
-        public long findSemi() {
+        public void computeHashAndSuffix(long newPosition) {
             int h = 0;
-            long s = 0;
-            long i = position;
-            while ((i + 3) < fileEnd) {
-                // Adding 16 as it is the offset for primitive arrays
-                ByteBuffer.wrap(b).putInt(UNSAFE.getInt(i));
-
-                if (b[3] == 0x3B) {
-                    break;
-                }
-                i++;
-                h = ((h << 5) - h) ^ b[3];
-                s = (s << 8) ^ b[3];
-
-                if (b[2] == 0x3B) {
-                    break;
-                }
-                i++;
-                h = ((h << 5) - h) ^ b[2];
-                s = (s << 8) ^ b[2];
-
-                if (b[1] == 0x3B) {
-                    break;
-                }
-                i++;
-                h = ((h << 5) - h) ^ b[1];
-                s = (s << 8) ^ b[1];
-
-                if (b[0] == 0x3B) {
-                    break;
-                }
-                i++;
-                h = ((h << 5) - h) ^ b[0];
-                s = (s << 8) ^ b[0];
+            int s = 0;
+            for (long p = position; position < newPosition; position++) {
+                byte ch = UNSAFE.getByte(p);
+                h = h * 31 + ch;
+                s = (s << 8) + ch;
             }
-
+            this.position = newPosition;
             this.hash = h;
             this.suffix = s;
-            position = i + 1;
-            return i;
+        }
+
+        public long findSemi() {
+            long startAddress = mmapMemory.address();
+            long i = position - startAddress;
+
+            while (i + lookaheadSize < fileSize) {
+                ByteVector lookAhead = ByteVector.fromMemorySegment(ByteVector.SPECIES_PREFERRED,
+                        mmapMemory,
+                        i,
+                        ByteOrder.LITTLE_ENDIAN);
+                VectorMask<Byte> res = lookAhead.eq((byte) ';');
+                int index = res.firstTrue();
+                if (index == res.length()) {
+                    i += lookaheadSize;
+                }
+                else {
+                    long location = startAddress + i + index;
+                    computeHashAndSuffix(location + 1);
+                    return location;
+                }
+            }
+
+            i += startAddress;
+            while (i < fileEnd) {
+                if (UNSAFE.getByte(i) == ';') {
+                    computeHashAndSuffix(i + 1);
+                    return i;
+                }
+                i++;
+            }
+            computeHashAndSuffix(fileEnd);
+            return fileEnd;
         }
 
         public long skipLine() {
@@ -311,25 +328,28 @@ public class CalculateAverage_vaidhy<I, T> {
     }
 
     static class DiskFileService implements FileService {
-        private final long fileSize;
-        private final long mappedAddress;
+        private final MemorySegment memorySegment;
 
         DiskFileService(String fileName) throws IOException {
             FileChannel fileChannel = FileChannel.open(Path.of(fileName),
                     StandardOpenOption.READ);
-            this.fileSize = fileChannel.size();
-            this.mappedAddress = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0,
-                    fileSize, Arena.global()).address();
+            this.memorySegment = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0,
+                    fileChannel.size(), Arena.global());
         }
 
         @Override
         public long length() {
-            return fileSize;
+            return memorySegment.byteSize();
         }
 
         @Override
         public long address() {
-            return mappedAddress;
+            return memorySegment.address();
+        }
+
+        @Override
+        public MemorySegment getMemory() {
+            return memorySegment;
         }
     }
 
