@@ -20,10 +20,10 @@ public class CalculateAverage_jatingala {
                     .parallel()
                     .map(chunk -> {
                         try {
-                            final MappedByteBuffer mappedByteBuffer =
-                                    randomAccessFile.getChannel().map(FileChannel.MapMode.READ_ONLY, chunk[0], chunk[1]);
+                            final MappedByteBuffer mappedByteBuffer = randomAccessFile.getChannel().map(FileChannel.MapMode.READ_ONLY, chunk[0], chunk[1]);
                             return consumeChunk(mappedByteBuffer);
-                        } catch (final Exception e) {
+                        }
+                        catch (final Exception e) {
                             System.out.println(e.getMessage());
                             return new HashMap<String, Statistics>();
                         }
@@ -57,7 +57,7 @@ public class CalculateAverage_jatingala {
             }
 
             // startPointer & length
-            result[i] = new long[]{chunkStartPosition, file.getFilePointer() - chunkStartPosition};
+            result[i] = new long[]{ chunkStartPosition, file.getFilePointer() - chunkStartPosition };
             chunkStartPosition = file.getFilePointer();
         }
 
