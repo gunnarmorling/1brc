@@ -15,8 +15,8 @@
 #  limitations under the License.
 #
 
-if [ -f ./image_calculateaverage_Kidlike ]; then
-    ./image_calculateaverage_Kidlike
+if [ -f ./target/image_calculateaverage_Kidlike ]; then
+    ./target/image_calculateaverage_Kidlike
 else
     # -XX:+UseEpsilonGC
     JAVA_OPTS="--enable-preview -Xms18g -Xmx18g -XX:+UnlockExperimentalVMOptions"
