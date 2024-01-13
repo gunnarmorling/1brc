@@ -100,6 +100,61 @@ public class CalculateAverage_vaidhy<I, T> {
 
     private static final String FILE = "./measurements.txt";
 
+    private static final long C1 = 0x87c37b91114253d5L;
+    private static final long C2 = 0x4cf5ad432745937fL;
+    private static final int R1 = 31;
+    private static final int R2 = 27;
+    private static final int R3 = 33;
+    private static final int M = 5;
+    private static final int N1 = 0x52dce729;
+
+    private static final long DEFAULT_SEED = 104729;
+
+    /*
+     * @vaidhy
+     *
+     * Powerful Murmur Hash:
+     *
+     * To use full MurMur strength:
+     *
+     * long hash = DEFAULT_SEED
+     * for (long value : list) {
+     * hash = murmurHash(hash, value);
+     * }
+     * hash = murmurHashFinalize(hash, list.size())
+     *
+     * To use a faster hash inspired by murmur:
+     *
+     * long hash = DEFAULT_SEED
+     * for (long value : list) {
+     * hash = simpleHash(hash, value);
+     * }
+     *
+     */
+    private static long murmurMix64(long hash) {
+        hash ^= (hash >>> 33);
+        hash *= 0xff51afd7ed558ccdL;
+        hash ^= (hash >>> 33);
+        hash *= 0xc4ceb9fe1a85ec53L;
+        hash ^= (hash >>> 33);
+        return hash;
+    }
+
+    private static long murmurHash(long hash, long nextData) {
+        hash = hash ^ Long.rotateLeft((nextData * C1), R1) * C2;
+        return Long.rotateLeft(hash, R2) * M + N1;
+    }
+
+    private static long murmurHashFinalize(long hash, int length) {
+        hash ^= length;
+        hash = murmurMix64(hash);
+        return hash;
+    }
+
+    private static long simpleHash(long hash, long nextData) {
+        return (hash ^ Long.rotateLeft((nextData * C1), R1)) * C2;
+    }
+
     private static Unsafe initUnsafe() {
         try {
             Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
