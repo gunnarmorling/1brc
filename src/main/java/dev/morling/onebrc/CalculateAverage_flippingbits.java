@@ -18,8 +18,13 @@ package dev.morling.onebrc;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
 
+import sun.misc.Unsafe;
+import java.lang.foreign.Arena;
+import java.lang.reflect.Field;
+
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
@@ -44,6 +49,21 @@ public class CalculateAverage_flippingbits {
 
     private static final int FASTER_HASH_MAP_CAPACITY = 200_000;
 
+    private static final Unsafe UNSAFE = initUnsafe();
+
+    private static int HASH_PRIME_NUMBER = 31;
+
+    private static Unsafe initUnsafe() {
+        try {
+            Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
+            theUnsafe.setAccessible(true);
+            return (Unsafe) theUnsafe.get(Unsafe.class);
+        }
+        catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public static void main(String[] args) throws IOException {
         var result = Arrays.asList(getSegments()).parallelStream()
                 .map(segment -> {
@@ -59,7 +79,7 @@ public class CalculateAverage_flippingbits {
 
         var sortedMap = new TreeMap<String, Station>();
         for (Station station : result.getValues()) {
-            sortedMap.put(station.getParsedName(), station);
+            sortedMap.put(station.getName(), station);
         }
 
         System.out.println(sortedMap);
@@ -67,80 +87,82 @@ public class CalculateAverage_flippingbits {
 
     private static long[][] getSegments() throws IOException {
         try (var file = new RandomAccessFile(FILE, "r")) {
-            var fileSize = file.length();
+            var channel = file.getChannel();
+
+            var fileSize = channel.size();
+            var startAddress = channel
+                    .map(FileChannel.MapMode.READ_ONLY, 0, fileSize, Arena.global())
+                    .address();
+
             // Split file into segments, so we can work around the size limitation of channels
-            var numSegments = (int) (fileSize / CHUNK_SIZE);
+            var numSegments = Runtime.getRuntime().availableProcessors();
+            var segmentSize = fileSize / numSegments;
 
-            var boundaries = new long[numSegments + 1][2];
-            var endPointer = 0L;
+            var boundaries = new long[numSegments][2];
+            var endPointer = startAddress;
 
-            for (var i = 0; i < numSegments; i++) {
+            for (var i = 0; i < numSegments - 1; i++) {
                 // Start of segment
-                boundaries[i][0] = Math.min(Math.max(endPointer, i * CHUNK_SIZE), fileSize);
-
-                // Seek end of segment, limited by the end of the file
-                file.seek(Math.min(boundaries[i][0] + CHUNK_SIZE - 1, fileSize));
+                boundaries[i][0] = endPointer;
 
                 // Extend segment until end of line or file
-                while (file.read() != '\n') {
+                endPointer = endPointer + segmentSize;
+                while (UNSAFE.getByte(endPointer) != '\n') {
+                    endPointer++;
                 }
 
                 // End of segment
-                endPointer = file.getFilePointer();
-                boundaries[i][1] = endPointer;
+                boundaries[i][1] = endPointer++;
             }
 
-            boundaries[numSegments][0] = Math.max(endPointer, numSegments * CHUNK_SIZE);
-            boundaries[numSegments][1] = fileSize;
+            boundaries[numSegments - 1][0] = endPointer;
+            boundaries[numSegments - 1][1] = startAddress + fileSize;
 
             return boundaries;
         }
     }
 
-    private static FasterHashMap processSegment(long startOfSegment, long endOfSegment)
-            throws IOException {
+    private static FasterHashMap processSegment(long startOfSegment, long endOfSegment) throws IOException {
         var fasterHashMap = new FasterHashMap();
-        var byteChunk = new byte[(int) (endOfSegment - startOfSegment)];
-        var nameBuffer = new byte[MAX_STATION_NAME_LENGTH];
-        try (var file = new RandomAccessFile(FILE, "r")) {
-            file.seek(startOfSegment);
-            file.read(byteChunk);
-            var i = 0;
-            while (i < byteChunk.length) {
-                // Station name has at least one byte
-                nameBuffer[0] = byteChunk[i++];
-                // Read station name
-                var nameLength = 1;
-                var nameHash = 0;
-                while (byteChunk[i] != ';') {
-                    nameHash = nameHash * 31 + byteChunk[i];
-                    nameBuffer[nameLength++] = byteChunk[i++];
-                }
+        for (var i = startOfSegment; i < endOfSegment; i += 3) {
+            // Read station name
+            var nameHash = 0;
+            // Station name consists of at least one byte
+            final var nameStartAddress = i++;
+
+            var character = UNSAFE.getByte(i);
+            while (character != ';') {
+                nameHash = nameHash * HASH_PRIME_NUMBER + character;
                 i++;
-
-                // Read measurement
-                var isNegative = byteChunk[i] == '-';
-                var measurement = 0;
-                if (isNegative) {
-                    i++;
-                    while (byteChunk[i] != '.') {
-                        measurement = measurement * 10 + byteChunk[i] - '0';
-                        i++;
-                    }
-                    measurement = (measurement * 10 + byteChunk[i + 1] - '0') * -1;
-                }
-                else {
-                    while (byteChunk[i] != '.') {
-                        measurement = measurement * 10 + byteChunk[i] - '0';
-                        i++;
-                    }
-                    measurement = measurement * 10 + byteChunk[i + 1] - '0';
-                }
-
-                // Update aggregate
-                fasterHashMap.addEntry(nameHash, nameBuffer, nameLength, (short) measurement);
-                i += 3;
+                character = UNSAFE.getByte(i);
             }
+            var nameLength = (int) (i - nameStartAddress);
+            i++;
+
+            // Read measurement
+            var isNegative = UNSAFE.getByte(i) == '-';
+            var measurement = 0;
+            if (isNegative) {
+                i++;
+                character = UNSAFE.getByte(i);
+                while (character != '.') {
+                    measurement = measurement * 10 + character - '0';
+                    i++;
+                    character = UNSAFE.getByte(i);
+                }
+                measurement = (measurement * 10 + UNSAFE.getByte(i + 1) - '0') * -1;
+            }
+            else {
+                character = UNSAFE.getByte(i);
+                while (character != '.') {
+                    measurement = measurement * 10 + character - '0';
+                    i++;
+                    character = UNSAFE.getByte(i);
+                }
+                measurement = measurement * 10 + UNSAFE.getByte(i + 1) - '0';
+            }
+
+            fasterHashMap.addEntry(nameHash, nameLength, nameStartAddress, (short) measurement);
         }
 
         for (Station station : fasterHashMap.getValues()) {
@@ -157,19 +179,21 @@ public class CalculateAverage_flippingbits {
         long sum = 0;
         short min = Short.MAX_VALUE;
         short max = Short.MIN_VALUE;
-        final byte[] name;
+        final long nameAddress;
         final int nameLength;
         final int nameHash;
 
-        public Station(int nameLength, byte[] name, int nameHash, short measurement) {
-            this.nameLength = nameLength;
-            this.name = name.clone();
+        public Station(int nameHash, int nameLength, long nameAddress, short measurement) {
             this.nameHash = nameHash;
+            this.nameLength = nameLength;
+            this.nameAddress = nameAddress;
             measurements[0] = measurement;
         }
 
-        public String getParsedName() {
-            return new String(name, 0, nameLength, StandardCharsets.UTF_8);
+        public String getName() {
+            byte[] name = new byte[nameLength];
+            UNSAFE.copyMemory(null, nameAddress, name, Unsafe.ARRAY_BYTE_BASE_OFFSET, nameLength);
+            return new String(name, StandardCharsets.UTF_8);
         }
 
         public void addMeasurementAndComputeAggregate(short measurement) {
@@ -208,6 +232,22 @@ public class CalculateAverage_flippingbits {
             sum = sum + otherAggregate.sum;
         }
 
+        public boolean nameEquals(long otherNameAddress) {
+            var swarLimit = (nameLength / Long.BYTES) * Long.BYTES;
+            var i = 0;
+            for (; i < swarLimit; i += Long.BYTES) {
+                if (UNSAFE.getLong(nameAddress + i) != UNSAFE.getLong(otherNameAddress + i)) {
+                    return false;
+                }
+            }
+            for (; i < nameLength; i++) {
+                if (UNSAFE.getByte(nameAddress + i) != UNSAFE.getByte(otherNameAddress + i)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         public String toString() {
             return String.format(
                     Locale.US,
@@ -232,23 +272,12 @@ public class CalculateAverage_flippingbits {
         Station[] entries = new Station[NUM_STATIONS + 1];
         int slotsInUse = 0;
 
-        private boolean arraysAreEqual(byte[] a, byte[] b, int lengthA, int lengthB) {
-            if (lengthA != lengthB) {
-                return false;
-            }
-            for (var i = 0; i < lengthA; i++) {
-                if (a[i] != b[i]) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        private int getOffsetIdx(int nameHash, byte[] name, int nameLength) {
+        private int getOffsetIdx(int nameHash, int nameLength, long nameAddress) {
             var offsetIdx = nameHash & (offsets.length - 1);
             var offset = offsets[offsetIdx];
 
-            while (offset != 0 && !arraysAreEqual(entries[offset].name, name, entries[offset].nameLength, nameLength)) {
+            while (offset != 0 &&
+                    (nameLength != entries[offset].nameLength || !entries[offset].nameEquals(nameAddress))) {
                 offsetIdx = (offsetIdx + 1) % offsets.length;
                 offset = offsets[offsetIdx];
             }
@@ -256,12 +285,13 @@ public class CalculateAverage_flippingbits {
             return offsetIdx;
         }
 
-        public void addEntry(int nameHash, byte[] name, int nameLength, short measurement) {
-            var offsetIdx = getOffsetIdx(nameHash, name, nameLength);
+        public void addEntry(int nameHash, int nameLength, long nameAddress, short measurement) {
+            var offsetIdx = getOffsetIdx(nameHash, nameLength, nameAddress);
             var offset = offsets[offsetIdx];
+
             if (offset == 0) {
                 slotsInUse++;
-                entries[slotsInUse] = new Station(nameLength, name, nameHash, measurement);
+                entries[slotsInUse] = new Station(nameHash, nameLength, nameAddress, measurement);
                 offsets[offsetIdx] = (short) slotsInUse;
             }
             else {
@@ -271,8 +301,9 @@ public class CalculateAverage_flippingbits {
 
         public FasterHashMap mergeWith(FasterHashMap otherMap) {
             for (Station station : otherMap.getValues()) {
-                var offsetIdx = getOffsetIdx(station.nameHash, station.name, station.nameLength);
+                var offsetIdx = getOffsetIdx(station.nameHash, station.nameLength, station.nameAddress);
                 var offset = offsets[offsetIdx];
+
                 if (offset == 0) {
                     slotsInUse++;
                     entries[slotsInUse] = station;
