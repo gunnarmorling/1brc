@@ -118,7 +118,7 @@ public class CalculateAverage_roman_r_m {
                         int len = (int) (offset - start);
                         // TODO can we not copy and use a reference into the memory segment to perform table lookup?
 
-                        UNSAFE.copyMemory(null, ms.address() + start, station.buf, Unsafe.ARRAY_BYTE_BASE_OFFSET, len);
+                        station.offset = start;
                         station.len = len;
                         station.hash = 0;
 
@@ -181,20 +181,22 @@ public class CalculateAverage_roman_r_m {
 
     static final class ByteString {
 
-        private final byte[] buf = new byte[100];
+        private long offset;
         private int len = 0;
         private int hash = 0;
 
         @Override
         public String toString() {
-            return new String(buf, 0, len);
+            var bytes = new byte[len];
+            MemorySegment.copy(ms, ValueLayout.JAVA_BYTE, offset, bytes, 0, len);
+            return new String(bytes, 0, len);
         }
 
         public ByteString copy() {
             var copy = new ByteString();
+            copy.offset = this.offset;
             copy.len = this.len;
             copy.hash = this.hash;
-            System.arraycopy(this.buf, 0, copy.buf, 0, this.len);
             return copy;
         }
 
@@ -210,13 +212,24 @@ public class CalculateAverage_roman_r_m {
             if (len != that.len)
                 return false;
 
-            // TODO use Vector
-            for (int i = 0; i < len; i++) {
-                if (buf[i] != that.buf[i]) {
+            int i = 0;
+
+            long base1 = ms.address() + offset;
+            long base2 = ms.address() + that.offset;
+            for (; i + 3 < len; i += 4) {
+                int i1 = UNSAFE.getInt(base1 + i);
+                int i2 = UNSAFE.getInt(base2 + i);
+                if (i1 != i2) {
                     return false;
                 }
             }
-
+            for (; i < len; i++) {
+                byte i1 = UNSAFE.getByte(base1 + i);
+                byte i2 = UNSAFE.getByte(base2 + i);
+                if (i1 != i2) {
+                    return false;
+                }
+            }
             return true;
         }
 
@@ -224,10 +237,9 @@ public class CalculateAverage_roman_r_m {
         public int hashCode() {
             if (hash == 0) {
                 // not sure why but it seems to be working a bit better
-                hash = len;
-                hash = hash * 31 + buf[0];
-                hash = len > 1 ? hash * 31 + buf[1] : hash;
-                hash = len > 2 ? hash * 31 + buf[2] : hash;
+                hash = UNSAFE.getInt(ms.address() + offset);
+                hash = hash >>> (8 * Math.max(0, 4 - len));
+                hash |= len;
             }
             return hash;
         }
