@@ -39,11 +39,9 @@ public class CalculateAverage_flippingbits {
 
     private static final String FILE = "./measurements.txt";
 
-    private static final long CHUNK_SIZE = 10 * 1024 * 1024; // 10 MB
+    private static final long MIN_FILE_SIZE_PARTITIONING = 10 * 1024 * 1024; // 10 MB
 
     private static final int SIMD_LANE_LENGTH = ShortVector.SPECIES_MAX.length();
-
-    private static final int MAX_STATION_NAME_LENGTH = 100;
 
     private static final int NUM_STATIONS = 10_000;
 
@@ -95,7 +93,9 @@ public class CalculateAverage_flippingbits {
                     .address();
 
             // Split file into segments, so we can work around the size limitation of channels
-            var numSegments = Runtime.getRuntime().availableProcessors();
+            var numSegments = (fileSize > MIN_FILE_SIZE_PARTITIONING)
+                    ? Runtime.getRuntime().availableProcessors()
+                    : 1;
             var segmentSize = fileSize / numSegments;
 
             var boundaries = new long[numSegments][2];
