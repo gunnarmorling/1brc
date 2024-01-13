@@ -24,6 +24,7 @@ import java.util.Arrays;
 import sun.misc.Unsafe;
 
 abstract class CalculateAverage_cliffclick {
+    // abstract class CNC {
     public static final int NCPUS = Runtime.getRuntime().availableProcessors();
     public static final long HASSEMI = 0x3B3B3B3B3B3B3B3BL;
 
@@ -58,7 +59,6 @@ abstract class CalculateAverage_cliffclick {
         String foo = w.toString();
         byte[] bar = new byte[foo.length()];
         foo.getBytes(0, foo.length(), bar, 0);
-        // System.out.print(foo); // Breaks on weird encodings, because System.out Absolutely Most Definitely has to "encode" this String
         System.out.write(bar);
         System.out.write('\n');
     }
@@ -131,7 +131,7 @@ abstract class CalculateAverage_cliffclick {
         }
     }
 
-    // Has a zero byte in a long
+    // Has a zero byte in a long, copied straight from Hackers Delight
     static long has0(long x) {
         return (x - 0x0101010101010101L) & (~x) & 0x8080808080808080L;
     }
@@ -142,17 +142,18 @@ abstract class CalculateAverage_cliffclick {
         assert mmap.isDirect();
         int idx = 0;
         int max = mmap.limit();
+        long base = UNSAFE.getLong(mmap, MMAP_ADDRESS);
 
         // If start>0, skip until first newline
         if (skip1)
-            idx = skipFirst(idx, mmap);
+            idx = skipFirst(idx, base);
 
         // The very last entry will want to fetch 8 bytes, some of which may go
         // past the mmap max - do this entry now, before looping.
         if (limit == max)
-            limit = skipLast(limit, w, mmap);
+            limit = skipLast(limit, w, base);
 
-        long base = UNSAFE.getLong(mmap, MMAP_ADDRESS);
+        // Edges of the ~2G region taken care of. Now do the giant middle part.
 
         // For this chunk of file do...
         while (idx < limit) {
@@ -188,19 +189,19 @@ abstract class CalculateAverage_cliffclick {
             idx++;
 
             // Reading tempature, and add
-            idx = parseData(idx, w, cityx, mmap, n8);
+            idx = parseData(idx, w, cityx, n8, base);
         }
     }
 
     // The very last entry will want to fetch 8 bytes, some of which may go
     // past the mmap max - do this entry now, before looping.
-    private static int skipLast(int limit, Work w, MappedByteBuffer mmap) {
+    private static int skipLast(int limit, Work w, long base) {
         limit--;
-        while (limit > 0 && mmap.get(limit - 1) != '\n')
+        while (limit > 0 && UNSAFE.getByte(base + limit - 1) != '\n')
             limit--;
         long n8 = 0, mask = 0, c;
         int i = limit;
-        while ((c = mmap.get(i)) != ';') {
+        while ((c = UNSAFE.getByte(base + i)) != ';') {
             mask = (mask >> 8) | (c << 56);
             i++;
             if (((limit - i) & 7) == 0) {
@@ -210,28 +211,28 @@ abstract class CalculateAverage_cliffclick {
         }
         int shr = (limit - i) & 7;
         n8 ^= (mask >> (shr << 3));
-        parseData(i + 1, w, limit, mmap, n8);
+        parseData(i + 1, w, limit, n8, base);
         return limit;
     }
 
     // Parse temp data, and insert entry into hash table
-    private static int parseData(int idx, Work w, int cityx, MappedByteBuffer mmap, long n8) {
+    private static int parseData(int idx, Work w, int cityx, long n8, long base) {
         // Reading tempature:
         int temp = 0;
         boolean neg = false;
-        byte b = mmap.get(idx++);
+        byte b = UNSAFE.getByte(base + idx++);
         if (b == '-') {
             neg = true;
-            b = mmap.get(idx++);
+            b = UNSAFE.getByte(base + idx++);
         }
         temp = b - '0';
-        b = mmap.get(idx++);
+        b = UNSAFE.getByte(base + idx++);
         if (b != '.') {
             temp = temp * 10 + b - '0';
             idx++;
         }
         // Read fraction digit; scaled decimal temp
-        b = mmap.get(idx++);
+        b = UNSAFE.getByte(base + idx++);
         temp = temp * 10 + b - '0';
         if (neg)
             temp = -temp;
@@ -240,12 +241,12 @@ abstract class CalculateAverage_cliffclick {
         // F*KING WINDOWS.
         // Skip CR
         // idx++;
-        w.insert(n8, temp, mmap, cityx);
+        w.insert(n8, temp, base, cityx);
         return idx;
     }
 
-    private static int skipFirst(int idx, MappedByteBuffer mmap) {
-        while (mmap.get(idx++) != '\n')
+    private static int skipFirst(int idx, long base) {
+        while (UNSAFE.getByte(base + idx++) != '\n')
             ;
         // WINDOWS
         // idx++;
@@ -264,8 +265,9 @@ abstract class CalculateAverage_cliffclick {
 
         // Gather for city bits
         final byte[] city = new byte[256];
+        int reprobes;
 
-        void insert(long n8, int temp, MappedByteBuffer mmap, int idx) {
+        void insert(long n8, int temp, long base, int cityx) {
             // 3 bytes uniquely id city, left at 4
             int uhash = (int) uhash_final(n8);
             // Index in small table
@@ -279,15 +281,16 @@ abstract class CalculateAverage_cliffclick {
                     cnt_key = uhash & 0xFFFFFFFFL;
                     min_max = min_max(0x7FFF, 0xF000, 0);
                     // Put city name in cities
-                    new_city(ihash, mmap, idx);
+                    new_city(ihash, base + cityx);
                     break;
                 }
-                // Reprobe
+                // Reprobe. Seeiong 53M reprobes out of 1000M rows, so a 5.3% reprobe rate
                 ihash = reprobe(ihash, uhash);
                 cnt_key = table[(ihash << 1)];
                 min_max = table[(ihash << 1) + 1];
                 key = key(cnt_key);
             }
+            // assert cities[ihash].equals(toChar(n8)) : String.format("uhash=0x%08x %s %s, FAILS FOR %d",uhash,cities[ihash],toChar(n8),X0);
 
             // Break down parts
             int min = min(min_max);
@@ -308,11 +311,11 @@ abstract class CalculateAverage_cliffclick {
         }
 
         // New city
-        void new_city(int ihash, MappedByteBuffer mmap, int idx) {
+        void new_city(int ihash, long base_cityx) {
             // Put city name in cities
             int i = 0;
             byte c;
-            while ((c = mmap.get(idx++)) != ';')
+            while ((c = UNSAFE.getByte(base_cityx++)) != ';')
                 city[i++] = c;
             cities[ihash] = new String(city, 0, 0, i);
         }
@@ -439,8 +442,29 @@ abstract class CalculateAverage_cliffclick {
                 double mean = temp / cnt;
                 sb.append(String.format("%s=%.1f/%.1f/%.1f, ", city, min, mean, max));
             }
-            sb.setLength(sb.length() - 2);
+            if (sb.length() > 2)
+                sb.setLength(sb.length() - 2);
             return sb.append("}").toString();
         }
+    }
+
+    // Debugging utilities
+    static String toHex(byte[] bs) {
+        StringBuilder sb = new StringBuilder().append("[");
+        for (byte b : bs)
+            sb.append(String.format("%02X,", b));
+        sb.setLength(sb.length() - 1);
+        return sb.append("]").toString();
+    }
+
+    static String toChar(long x) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 8; i++) {
+            char c = (char) (x & 0xFF);
+            if (c != 0)
+                sb.append(c);
+            x >>= 8;
+        }
+        return sb.toString();
     }
 }
