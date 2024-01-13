@@ -15,5 +15,5 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="--enable-preview --add-modules jdk.incubator.vector -XX:+UnlockExperimentalVMOptions -Xms500m -Xmx500m -XX:CompilationMode=high-only"
+JAVA_OPTS="--enable-preview --add-modules jdk.incubator.vector -XX:+UnlockExperimentalVMOptions -XX:ActiveProcessorCount=8 -Xms500m -Xmx500m -XX:CompilationMode=high-only -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0"
 java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_asun
