@@ -17,6 +17,7 @@ package dev.morling.onebrc;
 
 import sun.misc.Unsafe;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.lang.foreign.Arena;
@@ -32,6 +33,7 @@ public class CalculateAverage_JamalMulla {
 
     private static final Map<String, ResultRow> global = new HashMap<>();
     private static final String FILE = "./measurements.txt";
+    private static final FileChannel channel = initChannel();
     private static final Unsafe UNSAFE = initUnsafe();
     private static final Lock lock = new ReentrantLock();
     private static final int FNV_32_INIT = 0x811c9dc5;
@@ -44,6 +46,15 @@ public class CalculateAverage_JamalMulla {
             return (Unsafe) theUnsafe.get(Unsafe.class);
         }
         catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static FileChannel initChannel() {
+        try {
+            return new RandomAccessFile(FILE, "r").getChannel();
+        }
+        catch (FileNotFoundException e) {
             throw new RuntimeException(e);
         }
     }
@@ -73,14 +84,15 @@ public class CalculateAverage_JamalMulla {
     private record Chunk(Long start, Long length) {
     }
 
-    static List<Chunk> getChunks(int numThreads, FileChannel channel) throws IOException {
+    static Chunk[] getChunks(int numThreads, FileChannel channel) throws IOException {
         // get all chunk boundaries
         final long filebytes = channel.size();
         final long roughChunkSize = filebytes / numThreads;
-        final List<Chunk> chunks = new ArrayList<>(numThreads);
+        final Chunk[] chunks = new Chunk[numThreads];
         final long mappedAddress = channel.map(FileChannel.MapMode.READ_ONLY, 0, filebytes, Arena.global()).address();
         long chunkStart = 0;
         long chunkLength = Math.min(filebytes - chunkStart - 1, roughChunkSize);
+        int i = 0;
         while (chunkStart < filebytes) {
             // unlikely we need to read more than this many bytes to find the next newline
             MappedByteBuffer mbb = channel.map(FileChannel.MapMode.READ_ONLY, chunkStart + chunkLength,
@@ -90,10 +102,11 @@ public class CalculateAverage_JamalMulla {
                 chunkLength++;
             }
 
-            chunks.add(new Chunk(mappedAddress + chunkStart, chunkLength + 1));
+            chunks[i] = new Chunk(mappedAddress + chunkStart, chunkLength + 1);
             // to skip the nl in the next chunk
             chunkStart += chunkLength + 1;
             chunkLength = Math.min(filebytes - chunkStart - 1, roughChunkSize);
+            i++;
         }
         return chunks;
     }
@@ -112,7 +125,7 @@ public class CalculateAverage_JamalMulla {
         public void run() {
             // no names bigger than this
             final byte[] nameBytes = new byte[100];
-            short nameIndex = 0;
+            byte nameIndex = 0;
             int ot;
             // fnv hash
             int hash = FNV_32_INIT;
@@ -191,18 +204,17 @@ public class CalculateAverage_JamalMulla {
     }
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        FileChannel channel = new RandomAccessFile(FILE, "r").getChannel();
         int numThreads = 1;
         if (channel.size() > 64000) {
             numThreads = Runtime.getRuntime().availableProcessors();
         }
-        List<Chunk> chunks = getChunks(numThreads, channel);
-        List<Thread> threads = new ArrayList<>();
-        for (Chunk chunk : chunks) {
-            Thread thread = new Thread(new CalculateTask(chunk));
+        Chunk[] chunks = getChunks(numThreads, channel);
+        Thread[] threads = new Thread[chunks.length];
+        for (int i = 0; i < chunks.length; i++) {
+            Thread thread = new Thread(new CalculateTask(chunks[i]));
             thread.setPriority(Thread.MAX_PRIORITY);
             thread.start();
-            threads.add(thread);
+            threads[i] = thread;
         }
         for (Thread t : threads) {
             t.join();
