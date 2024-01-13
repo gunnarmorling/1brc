@@ -136,33 +136,30 @@ fi
 # Run tests and benchmark for each fork
 filetimestamp=$(date  +"%Y%m%d%H%M%S") # same for all fork.out files from this run
 failed=()
-test_output=$(mktemp)
 for fork in "$@"; do
   set +e # we don't want prepare.sh, test.sh or hyperfine failing on 1 fork to exit the script early
 
   # Run the test suite
-  print_and_execute $TIMEOUT ./test.sh $fork | tee $test_output > /dev/null 2>&1
+  print_and_execute $TIMEOUT ./test.sh $fork
   if [ $? -ne 0 ]; then
     failed+=("$fork")
     echo ""
     echo -e "${BOLD_RED}FAILURE${RESET}: ./test.sh $fork failed"
-    cat $test_output
-    echo ""
 
     continue
   fi
+  echo ""
 
   # Run the test on $MEASUREMENTS_FILE; this serves as the warmup
-  print_and_execute $TIMEOUT ./test.sh $fork $MEASUREMENTS_FILE | tee $test_output > /dev/null 2>&1
+  print_and_execute $TIMEOUT ./test.sh $fork $MEASUREMENTS_FILE
   if [ $? -ne 0 ]; then
     failed+=("$fork")
     echo ""
     echo -e "${BOLD_RED}FAILURE${RESET}: ./test.sh $fork $MEASUREMENTS_FILE failed"
-    cat $test_output
-    echo ""
 
     continue
   fi
+  echo ""
 
   # re-link measurements.txt since test.sh deleted it
   print_and_execute rm -f measurements.txt
@@ -197,7 +194,6 @@ for fork in "$@"; do
   fi
 done
 set -e
-rm $test_output
 
 # Summary
 echo -e "${BOLD_WHITE}Summary${RESET}"
