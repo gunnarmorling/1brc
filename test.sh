@@ -45,7 +45,7 @@ for sample in $(ls $INPUT); do
   rm -f measurements.txt
   ln -s $sample measurements.txt
 
-./compare_output.sh <("./calculate_average_$FORK.sh") ${sample%.txt}.out
+java --enable-preview --source=21 validate_output.java <("./calculate_average_$FORK.sh") ${sample%.txt}.out
 done
 
 rm measurements.txt

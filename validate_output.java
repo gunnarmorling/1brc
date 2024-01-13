@@ -34,7 +34,8 @@ public class validate_output {
         if (args[0].equals("--lenient")) {
             lenient = true;
             argIndex = 1;
-        } else {
+        }
+        else {
             lenient = false;
             argIndex = 0;
         }
