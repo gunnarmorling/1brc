@@ -24,7 +24,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collector;
 
-public class CalculateAverage {
+public class CalculateAverage_baseline {
 
     private static final String FILE = "./measurements.txt";
 
@@ -35,6 +35,7 @@ public class CalculateAverage {
     }
 
     private static record ResultRow(double min, double mean, double max) {
+
         public String toString() {
             return round(min) + "/" + round(mean) + "/" + round(max);
         }
@@ -79,7 +80,7 @@ public class CalculateAverage {
                     return res;
                 },
                 agg -> {
-                    return new ResultRow(agg.min, agg.sum / agg.count, agg.max);
+                    return new ResultRow(agg.min, (Math.round(agg.sum * 10.0) / 10.0) / agg.count, agg.max);
                 });
 
         Map<String, ResultRow> measurements = new TreeMap<>(Files.lines(Paths.get(FILE))

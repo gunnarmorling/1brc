@@ -10,7 +10,8 @@
 Thanks for your submission. Please go through the checklist above before submitting your pull request.
 Use [x] to mark that the item has been completed.
 
-Please submit only submissions that are taking less than 1 minute.
+Due to the large number of entries created so far,
+please submit only entries that are you are expecting to run in 10 seconds or less on the evaluation machine.
 
 Please make sure that you have followed the defined rules (https://github.com/gunnarmorling/1brc?tab=readme-ov-file#rules-and-limits).
 -->
