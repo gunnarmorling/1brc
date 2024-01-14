@@ -222,6 +222,7 @@ If you want to use a build not available via these channels, reach out to discus
 * There is a maximum of 10,000 unique station names
 * Line endings in the file are `\n` characters on all platforms
 * Implementations must not rely on specifics of a given data set, e.g. any valid station name as per the constraints above and any data distribution (number of measurements per station) must be supported
+* The rounding of output values must be done using the semantics of IEEE 754 rounding-direction "roundTowardPositive"
 
 ## Entering the Challenge
 
