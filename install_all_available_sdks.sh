@@ -1,0 +1,33 @@
+#!/bin/bash
+#
+#  Copyright 2023 The original authors
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+
+set -eo pipefail
+
+## SDKMAN Setup
+# 1. Custom check for sdkman installed; similar like in the evaluate.sh
+if [ ! -f "$HOME/.sdkman/bin/sdkman-init.sh" ]; then
+     echo -e "${BOLD_RED}ERROR${RESET}: sdkman is not installed." >&2
+    exit 1
+fi
+
+# 2. Init sdkman in this script
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+
+# 3. Go through the available_sdks.txt and install all off them
+while read sdk_to_install; do
+  sdk install java $sdk_to_install
+done <available_sdks.txt

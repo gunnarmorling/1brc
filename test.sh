@@ -35,6 +35,12 @@ if [ "$#" -eq 0 ] || [ "$#" -gt 2 ] || [ "$FORK" = "-h" ]; then
   exit 1
 fi
 
+CALCULATE_FILE="./calculate_average_$FORK.sh"
+if [ ! -f "$CALCULATE_FILE" ]; then
+    echo "$CALCULATE_FILE does not exist."
+    exit 1
+fi
+
 if [ -f "./prepare_$FORK.sh" ]; then
   "./prepare_$FORK.sh"
 fi
@@ -45,7 +51,7 @@ for sample in $(ls $INPUT); do
   rm -f measurements.txt
   ln -s $sample measurements.txt
 
-  diff --color=always <("./calculate_average_$FORK.sh" | ./tocsv.sh) <(./tocsv.sh < ${sample%.txt}.out)
+  diff --color=always <("./${CALCULATE_FILE}.sh" | ./tocsv.sh) <(./tocsv.sh < ${sample%.txt}.out)
 done
 
 rm measurements.txt
