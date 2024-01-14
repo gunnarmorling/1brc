@@ -25,11 +25,11 @@ import java.nio.channels.FileChannel;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 public class CalculateAverage_plbpietrz {
@@ -37,20 +37,78 @@ public class CalculateAverage_plbpietrz {
     private static final String FILE = "./measurements.txt";
     private static final int READ_SIZE = 1024;
     private static final int CPU_COUNT = Runtime.getRuntime().availableProcessors();
-    private static final Map<Integer, String> STATION_NAMES = new ConcurrentHashMap<>(512);
 
     private static class TemperatureStats {
         double min = 999, max = -999d;
         double accumulated;
         int count;
+
+        public void update(double temp) {
+            this.min = Math.min(this.min, temp);
+            this.max = Math.max(this.max, temp);
+            this.accumulated += temp;
+            this.count++;
+        }
     }
 
     private record FilePart(long pos, long size) {
     }
 
+    private static class WeatherStation {
+        private int length;
+        private int nameHash;
+        private byte[] nameBytes;
+        private String string;
+
+        public WeatherStation() {
+            nameBytes = new byte[128];
+        }
+
+        public WeatherStation(WeatherStation station) {
+            this.nameBytes = Arrays.copyOf(station.nameBytes, station.length);
+            this.length = station.length;
+            this.nameHash = station.nameHash;
+        }
+
+        @Override
+        public int hashCode() {
+            return nameHash;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o)
+                return true;
+            if (o instanceof WeatherStation s) {
+                return this.nameHash == s.nameHash && Arrays.equals(this.nameBytes, 0, this.length, s.nameBytes, 0, s.length);
+            }
+            return false;
+        }
+
+        @Override
+        public String toString() {
+            if (string == null)
+                string = new String(nameBytes, 0, length, Charset.defaultCharset());
+            return string;
+        }
+
+        public void appendByte(byte b) {
+            string = null;
+            nameBytes[length++] = b;
+            nameHash = nameHash * 31 + b;
+        }
+
+        public void clear() {
+            this.length = 0;
+            this.nameHash = 0;
+            this.string = null;
+        }
+
+    }
+
     public static void main(String[] args) throws IOException {
         Path inputFilePath = Path.of(FILE);
-        Map<Integer, TemperatureStats> results;// = new HashMap<>();
+        Map<WeatherStation, TemperatureStats> results;
         try (RandomAccessFile inputFile = new RandomAccessFile(inputFilePath.toFile(), "r")) {
             var parsedBuffers = partitionInput(inputFile)
                     .stream()
@@ -75,7 +133,7 @@ public class CalculateAverage_plbpietrz {
         List<FilePart> fileParts = new ArrayList<>();
         long fileLength = inputFile.length();
 
-        long blockSize = Math.min(fileLength, Math.max(1024, fileLength / CPU_COUNT));
+        long blockSize = Math.min(fileLength, Math.max(READ_SIZE, fileLength / CPU_COUNT));
 
         for (long start = 0, end; start < fileLength; start = end) {
             end = findMinBlockOffset(inputFile, start, blockSize);
@@ -106,18 +164,15 @@ public class CalculateAverage_plbpietrz {
         }
     }
 
-    private static Map<Integer, TemperatureStats> parseBuffer(MappedByteBuffer buffer) {
+    private static Map<WeatherStation, TemperatureStats> parseBuffer(MappedByteBuffer buffer) {
         byte[] readLong = new byte[READ_SIZE];
-        byte[] stationName = new byte[512];
         byte[] temperature = new byte[32];
-        int stationLineNameLenght = 0;
         int temperatureLineLenght = 0;
-        int stationNameHash = 0;
 
         int limit = buffer.limit();
         boolean readingName = true;
-        Map<Integer, TemperatureStats> temperatures = new HashMap<>();
-        Map<Integer, String> stationNames = new HashMap<>();
+        Map<WeatherStation, TemperatureStats> temperatures = new HashMap<>();
+        WeatherStation station = new WeatherStation();
 
         int bytesToRead = Math.min(READ_SIZE, limit - buffer.position());
         while (bytesToRead > 0) {
@@ -134,8 +189,7 @@ public class CalculateAverage_plbpietrz {
                 if (readingName) {
                     if (aChar != ';') {
                         if (aChar != '\n') {
-                            stationName[stationLineNameLenght++] = aChar;
-                            stationNameHash = stationNameHash * 31 + aChar;
+                            station.appendByte(aChar);
                         }
                     }
                     else {
@@ -147,31 +201,23 @@ public class CalculateAverage_plbpietrz {
                         temperature[temperatureLineLenght++] = aChar;
                     }
                     else {
-                        int len = stationLineNameLenght;
-                        Integer pos = stationNameHash;
-
                         double temp = parseTemperature(temperature, temperatureLineLenght);
-                        TemperatureStats weatherStats = temperatures.computeIfAbsent(pos, _ignored_ -> new TemperatureStats());
 
-                        weatherStats.min = Math.min(weatherStats.min, temp);
-                        weatherStats.max = Math.max(weatherStats.max, temp);
-                        weatherStats.accumulated += temp;
-                        weatherStats.count++;
+                        if (!temperatures.containsKey(station)) {
+                            temperatures.put(new WeatherStation(station), new TemperatureStats());
+                        }
+                        TemperatureStats weatherStats = temperatures.get(station);
+                        weatherStats.update(temp);
 
-                        stationLineNameLenght = 0;
+                        station.clear();
                         temperatureLineLenght = 0;
-                        stationNameHash = 0;
                         readingName = true;
-
-                        if (!stationNames.containsKey(pos))
-                            stationNames.put(pos, new String(stationName, 0, len, Charset.defaultCharset()));
                     }
                 }
             }
 
             bytesToRead = Math.min(READ_SIZE, limit - buffer.position());
         }
-        STATION_NAMES.putAll(stationNames);
         return temperatures;
     }
 
@@ -205,16 +251,16 @@ public class CalculateAverage_plbpietrz {
         return acc;
     }
 
-    private static void formatResults(PrintWriter pw, Map<Integer, TemperatureStats> resultsMap) {
+    private static void formatResults(PrintWriter pw, Map<WeatherStation, TemperatureStats> resultsMap) {
         pw.print('{');
         var results = new ArrayList<>(resultsMap.entrySet());
-        results.sort(Comparator.comparing(e -> STATION_NAMES.get(e.getKey())));
+        results.sort(Comparator.comparing(e -> e.getKey().toString()));
         var iterator = results.iterator();
         while (iterator.hasNext()) {
             var entry = iterator.next();
             TemperatureStats stats = entry.getValue();
             pw.printf("%s=%.1f/%.1f/%.1f",
-                    STATION_NAMES.get(entry.getKey()),
+                    entry.getKey(),
                     stats.min,
                     stats.accumulated / stats.count,
                     stats.max);
