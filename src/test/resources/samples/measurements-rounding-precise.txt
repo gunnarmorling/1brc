@@ -1,0 +1,4 @@
+Rounding;33.6
+Rounding;31.7
+Rounding;21.9
+Rounding;14.6

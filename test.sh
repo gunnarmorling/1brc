@@ -19,10 +19,11 @@ set -euo pipefail
 
 DEFAULT_INPUT="src/test/resources/samples/*.txt"
 FORK=${1:-""}
-INPUT=${2:-$DEFAULT_INPUT}
+TOLERANCE=${2:-""}
+INPUT=${3:-$DEFAULT_INPUT}
 
-if [ "$#" -eq 0 ] || [ "$#" -gt 2 ] || [ "$FORK" = "-h" ]; then
-  echo "Usage: ./test.sh <fork name> [input file pattern]"
+if [ "$#" -eq 0 ] || [ "$#" -gt 3 ] || [ "$FORK" = "-h" ]; then
+  echo "Usage: ./test.sh <fork name> [tolerance] [input file pattern]"
   echo
   echo "For each test sample matching <input file pattern> (default '$DEFAULT_INPUT')"
   echo "runs <fork name> implementation and diffs the result with the expected output."
@@ -30,8 +31,9 @@ if [ "$#" -eq 0 ] || [ "$#" -gt 2 ] || [ "$FORK" = "-h" ]; then
   echo
   echo "Examples:"
   echo "./test.sh baseline"
-  echo "./test.sh baseline src/test/resources/samples/measurements-1.txt"
-  echo "./test.sh baseline 'src/test/resources/samples/measurements-*.txt'"
+  echo "./test.sh baseline 0.1"
+  echo "./test.sh baseline 0 src/test/resources/samples/measurements-1.txt"
+  echo "./test.sh baseline 0 'src/test/resources/samples/measurements-*.txt'"
   exit 1
 fi
 
@@ -45,7 +47,11 @@ for sample in $(ls $INPUT); do
   rm -f measurements.txt
   ln -s $sample measurements.txt
 
-  diff --color=always <("./calculate_average_$FORK.sh" | ./tocsv.sh) <(./tocsv.sh < ${sample%.txt}.out)
+  java --class-path target/average-1.0.0-SNAPSHOT.jar \
+    com.github.AlexanderYastrebov.CompareResults \
+    ${sample%.txt}.out \
+    <("./calculate_average_$FORK.sh") \
+    $TOLERANCE
 done
 
 rm measurements.txt
