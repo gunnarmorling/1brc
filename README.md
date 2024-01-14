@@ -160,6 +160,31 @@ challenge entries may perform very differently across different configurations.
 These bonus results are provided here for informational purposes only.
 For the 1BRC challenge, only the results in the previous section are of importance.
 
+#### 32 Cores / 64 Threads
+
+For officially evaluating entries into the challenge, each contender is run on eight cores of the evaluation machine (AMD EPYC™ 7502P).
+Here are the results from running the top 15 entries (as of commit 2c26b511e741f4d96a51dda831001946ea27a591) running on all 32 cores / 64 threads (i.e. SMT is enabled) of the machine:
+
+Leaderboard
+
+| # | Result (m:s.ms) | Implementation     | JDK | Submitter     | Notes     |
+|---|-----------------|--------------------|-----|---------------|-----------|
+| 1 | 00:00.799 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_thomaswue.java)| 21.0.1-graal | [Thomas Wuerthinger](https://github.com/thomaswue) | GraalVM native binary |
+| 2 | 00:00.933 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_royvanrijn.java)| 21.0.1-graal | [Roy van Rijn](https://github.com/royvanrijn) | GraalVM native binary |
+| 3 | 00:01.236 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_artsiomkorzun.java)| 21.0.1-graal | [Artsiom Korzun](https://github.com/artsiomkorzun) |  |
+|   | 00:01.380 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_merykittyunsafe.java)| 21.0.1-open | [merykittyunsafe](https://github.com/merykittyunsafe) |  |
+|   | 00:01.383 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_cliffclick.java)| 21.0.1-open | [Cliff Click](https://github.com/cliffclick) |  |
+|   | 00:01.429 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_iziamos.java)| 21.0.1-open | [John Ziamos](https://github.com/iziamos) |  |
+|   | 00:01.464 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_obourgain.java)| 21.0.1-open | [Olivier Bourgain](https://github.com/obourgain) |  |
+|   | 00:01.603 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_abeobk.java)| java | [Van Phu DO](https://github.com/abeobk) |  |
+|   | 00:01.748 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_yavuztas.java)| 21.0.1-graal | [Yavuz Tas](https://github.com/yavuztas) |  |
+|   | 00:01.778 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_merykitty.java)| 21.0.1-open | [Quan Anh Mai](https://github.com/merykitty) |  |
+|   | 00:01.942 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_mtopolnik.java)| 21.0.1-graal | [Marko Topolnik](https://github.com/mtopolnik) |  |
+|   | 00:01.972 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_ebarlas.java)| 21.0.1-graal | [Elliot Barlas](https://github.com/ebarlas) |  |
+|   | 00:02.111 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_JamalMulla.java)| 21.0.1-graal | [Jamal Mulla](https://github.com/JamalMulla) |  |
+|   | 00:02.644 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_vaidhy.java)| 21.0.1-graal | [Vaidhy Mayilrangam](https://github.com/vaidhy) |  |
+|   | 00:03.697 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_hundredwatt.java)| 21.0.1-graal | [Jason Nochlin](https://github.com/hundredwatt) |  |
+
 #### 10K Key Set
 
 The 1BRC challenge data set contains 413 distinct weather stations, whereas the rules allow for 10,000 different station names to occur.
