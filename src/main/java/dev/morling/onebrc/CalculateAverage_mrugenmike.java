@@ -16,11 +16,8 @@
 package dev.morling.onebrc;
 
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.nio.MappedByteBuffer;
-import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -32,13 +29,9 @@ public class CalculateAverage_mrugenmike {
 
     private static final String FILE = "./measurements.txt";
 
-    private record ResultForACity(String city, double min, double max, double count, double sum) {
+    private record ResultForACity(String city, double min, double max, BigDecimal sum, long count) {
         public String toString() {
-            return round(min) + "/" + round(mean()) + "/" + round(max);
-        }
-
-        private double mean() {
-            return sum / count;
+            return round(min) + "/" + round(sum.doubleValue() / count) + "/" + round(max);
         }
 
         private double round(double value) {
@@ -52,11 +45,16 @@ public class CalculateAverage_mrugenmike {
             lines.parallel().forEach((line) -> {
                 final int semiColonIndex = line.indexOf(';');
                 final String city = line.substring(0, semiColonIndex).intern();
-                final double reading = Double.parseDouble(line.substring(semiColonIndex + 1).trim());
-                intermediateResult.computeIfAbsent(city, cityName -> new ResultForACity(cityName, reading, reading, 1, reading));
-
-                intermediateResult.computeIfPresent(city,
-                        (key, value) -> new ResultForACity(key, Math.min(reading, value.min), Math.min(reading, value.max), value.count + 1, value.sum + reading));
+                final double currentMeasurement = Double.parseDouble(line.substring(semiColonIndex + 1).trim());
+                intermediateResult.compute(city, (String cityName, ResultForACity previousValue) -> {
+                    if (previousValue == null) {
+                        BigDecimal sum = new BigDecimal(currentMeasurement).setScale(1, RoundingMode.HALF_UP);
+                        return new ResultForACity(cityName, currentMeasurement, currentMeasurement, sum, 1);
+                    }
+                    BigDecimal calculatedSum = previousValue.sum.add(new BigDecimal(currentMeasurement)).setScale(1, RoundingMode.HALF_UP);
+                    return new ResultForACity(cityName, Math.min(currentMeasurement, previousValue.min), Math.max(currentMeasurement, previousValue.max), calculatedSum,
+                            previousValue.count + 1);
+                });
             });
             TreeMap<String, ResultForACity> finalResult = new TreeMap<>(intermediateResult);
             System.out.println(finalResult);
