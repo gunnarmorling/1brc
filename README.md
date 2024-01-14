@@ -237,6 +237,8 @@ Execute the following steps to run the challenge:
     This will take a few minutes.
     **Attention:** the generated file has a size of approx. **12 GB**, so make sure to have enough diskspace.
 
+    If you're running the challenge with a non-Java language, there's a non-authoritative Python script to generate the measurements file at `src/main/python/create_measurements.py`. The authoritative method for generating the measurements is the Java program `dev.morling.onebrc.CreateMeasurements`.
+
 3. Calculate the average measurement values:
 
     ```
