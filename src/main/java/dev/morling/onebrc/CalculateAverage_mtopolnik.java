@@ -185,7 +185,10 @@ public class CalculateAverage_mtopolnik {
                 }
                 long hash = hash(word1);
                 assert nameLen > 0 && nameLen <= 100 : nameLen;
-                int temperature = parseTemperatureAndAdvanceCursor(nameStartAddress + nameLen + 1, withinSafeZone);
+                long tempStartAddress = nameStartAddress + nameLen + 1;
+                int temperature = withinSafeZone
+                        ? parseTemperatureSwarAndAdvanceCursor(tempStartAddress)
+                        : parseTemperatureSimpleAndAdvanceCursor(tempStartAddress);
                 updateStats(hash, nameStartAddress, nameLen, word1, word2, temperature, withinSafeZone);
             }
         }
@@ -217,12 +220,6 @@ public class CalculateAverage_mtopolnik {
                 UNSAFE.copyMemory(nameStartAddress, stats.nameAddress(), nameLen);
                 return;
             }
-        }
-
-        private int parseTemperatureAndAdvanceCursor(long tempStartAddress, boolean withinSafeZone) {
-            return withinSafeZone
-                    ? parseTemperatureSwarAndAdvanceCursor(tempStartAddress)
-                    : parseTemperatureSimpleAndAdvanceCursor(tempStartAddress);
         }
 
         // Credit: merykitty
