@@ -139,6 +139,13 @@ failed=()
 for fork in "$@"; do
   set +e # we don't want prepare.sh, test.sh or hyperfine failing on 1 fork to exit the script early
 
+  # Run prepare script
+  if [ -f "./prepare_$fork.sh" ]; then
+    print_and_execute source "./prepare_$fork.sh"
+  else
+    print_and_execute sdk use java $DEFAULT_JAVA_VERSION
+  fi
+
   # Run the test suite
   print_and_execute $TIMEOUT ./test.sh $fork
   if [ $? -ne 0 ]; then
@@ -164,13 +171,6 @@ for fork in "$@"; do
   # re-link measurements.txt since test.sh deleted it
   print_and_execute rm -f measurements.txt
   print_and_execute ln -s $MEASUREMENTS_FILE measurements.txt
-
-  # Run prepare script
-  if [ -f "./prepare_$fork.sh" ]; then
-    print_and_execute source "./prepare_$fork.sh"
-  else
-    print_and_execute sdk use java $DEFAULT_JAVA_VERSION
-  fi
 
   # Use hyperfine to run the benchmark for each fork
   HYPERFINE_OPTS="--warmup 0 --runs $RUNS --export-json $fork-$filetimestamp-timing.json --output ./$fork-$filetimestamp.out"
