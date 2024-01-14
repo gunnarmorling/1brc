@@ -15,10 +15,11 @@
  */
 package dev.morling.onebrc;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.lang.foreign.Arena;
 import java.lang.reflect.Field;
-import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -26,66 +27,61 @@ import java.nio.file.StandardOpenOption;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.function.IntFunction;
-import java.util.function.LongFunction;
-import java.util.function.Supplier;
-import java.util.stream.IntStream;
+import java.util.concurrent.ThreadLocalRandom;
 
 import sun.misc.Unsafe;
 
 /*
- 
-    BASELINE (Shell)
-        - 141.88user 20.25system 9:06.44elapsed 29%CPU (0avgtext+0avgdata 353580maxresident)k 
-          0inputs+2848outputs (357major+46292minor)pagefaults 0swaps
-    ROYVANRIJN (Bash)
-        -   real    1m19.580s
-            user    0m18.550s
-            sys     0m55.714s
-    ME - Attempt 1 (Bash)
-        -   real    1m21.375s
-            user    1m6.361s
-            sys     0m52.716s
-        -  Checking results difference from (https://www.diffchecker.com/text-compare/)
-            The two files are identical
-            There is no difference to show between these two files
-    ME - Attempt 2 [Some optimizations and changes to using longs for names] (Bash)
-        -   real    1m19.508s
-            user    0m42.588s
-            sys     0m53.621s
-    ME - Attempt 3 [Added timers, added long hashing for keys and offset to get proper key and reset the address, After Restart]
-        Timer:
-        - main.create-executors (1.30/1.30/1.30)
-        - main.map-channel (2.11/2.11/2.11)
-        - main.open-channel (3.75/3.75/3.75)
-        - main.processors (2.61/2.61/2.61)
-            - main.processors.locate-end (0.00/0.01/0.02)
-            - main.processors.schedule-task (0.04/0.14/1.23)
-        - main.task-merger (4,942.01/4,942.01/4,942.01)
-    ME - Attempt 4 [With OpenMap]
-        Timer:
-        - main.create-executors (1.30/1.30/1.30)
-        - main.map-channel (2.11/2.11/2.11)
-        - main.open-channel (3.75/3.75/3.75)
-        - main.processors (2.61/2.61/2.61)
-            - main.processors.locate-end (0.00/0.01/0.02)
-            - main.processors.schedule-task (0.04/0.14/1.23)
-        - main.task-merger (4,942.01/4,942.01/4,942.01)
-    royvanrijn - Current #1 tested on windows 
-        Millis 1,814.9423
-    Me - Remove timer
-        Millis 3,876.1646
+    Possibilities to improve:
+        * Reduce Standard Memory Reads and/or Swaps for threading 
+            - For the read file; using Unsafe or MemorySegment to map the file to an existing register instead of keeping the bytes local
+            - For normal variables; Most of the time reading a value performs a load from memory and registers it for faster lookups, but with multithreading causes each thread to re read and register each get [volatile] keyword
+        * Add multithreading to process multiple segments at once (When you have 1,000,000,000 cars driving might as well open as many lanes as possible)
+        * Improve Mapping of entries (More O(1) lookups the better, i.e. hashed key maps, preferebly open maps to skip needing linked lists or trees, also simplifies since we don't need to delete anything)
+        * Remove use of java streams (They can be much slower than expected, good for developer readability but not for performance 90% of the time)
+        * Reduce amount of bytecode instructions (Usually just a micro-optimization, but since we are reading 1,000,000,000 lines, then this is really helpful in the processing code)
+        * Never use division in processing code, division is 2x+ slower than multiplication (Easy fix is multiplying by decimal 2/2 vs 2*0.5)
 
+    My System:
+        Device:
+            Processor	11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz   3.60 GHz
+            Installed RAM	32.0 GB (31.8 GB usable)
+            Device ID	58C79E9F-1E2D-433B-A739-A901DFD2EDE1
+            Product ID	00326-10000-00000-AA794
+            System type	64-bit operating system, x64-based processor
+            Pen and touch	No pen or touch input is available for this display
+        Windows Specification:
+            Edition	Windows 11 Home
+            Version	23H2
+            OS build	22635.3061
+            Experience	Windows Feature Experience Pack 1000.22684.1000.0
+
+
+    Runs (Only IDE open, just after complete shutdown, measured using System.nanoTime around main method):
+        - Baseline
+            * 144,403.3814ms
+        - merrykittyunsafe (#1 on LB)
+            * 2,757.8295ms
+        - royvanrijn (#2 on LB)
+            * 1,643.9123ms ??? Assuming this is because of my system specs compared to specs on testing system
+        //Obviously there were more runs than this, but these were the significant jumps
+        - Me run 1 (Initial attempt;multithreading, file mapped to global Unsafe, long hash of name, read byte by byte, store in hashmap and merge from threads)
+            * 5,423.4432ms
+        - Me run 2 (Read longs instead of bytes to determine name hash)
+            * 3,937.3234ms
+        - Me run 3 (Swap to using a rolling long hash with murmur3 hashing function, change hashmap to be an openmap with unboxed long as the key)
+            * 2,951.6891ms
+        - Me run 4 (Change entire line reading to be long based with bit operations to determine number)
+            * 2,684.9823ms
+        - Me run 5 (Use main thread as one of the processing threads)
+            * 2,307.3038ms
+        - Me run 6 (Remove use of math.min and math.max in favor of ternary operator (Reduces getStatic operation))
+            * 2,265.3521ms
  */
 
 public class CalculateAverage_justplainlaake {
@@ -95,7 +91,6 @@ public class CalculateAverage_justplainlaake {
     private static final byte SEPERATOR_BYTE = ';';
     private static final byte NEW_LINE_BYTE = '\n';
     private static final DecimalFormat STATION_FORMAT = new DecimalFormat("#,##0.0");
-    private static final DecimalFormat TIMER_FORMAT = new DecimalFormat("#,##0.00");
 
     private static final long[] OFFSET_CLEARS = {
             0x0000000000000000L, // 8 Offset (Clear whole thing)
@@ -124,63 +119,14 @@ public class CalculateAverage_justplainlaake {
         UNSAFE = _unsafe;// Just to get around "The blank final field UNSAFE may not have been initialized"
     }
 
+    static int getCharNumber(long serial, int offset){
+        return (byte)((byte)(serial >> (8*offset)) - 48);
+    }
     public static void main(String[] args) throws IOException {
-
-        /* Possible combinations (x = number)
-         *  x.x
-         *  xx.x
-         *  -x.x
-         *  -xx.x
-         */
-
-        // System.out.println();
-        // long[][] unsafes = {
-        //     {7020080520972088369l, 143, 1},
-        //     {7449318865373114929l, 125, 1},
-        //     {7521378658417522481l, 174, 1},
-        //     {7009582564255150381l, -134, -1},
-        //     {7953728620758709037l, -38, -1},
-        //     {8533869686817107512l, 85, 1},
-        //     {7306036007582708019l, 314, 1},
-        //     {8458430025076649529l, 91, 1},
-        //     {8028864847236970802l, 291, 1},
-        //     {7089020999645933617l, 109, 1},
-        //     {7600188353344844851l, 343, 1},
-        //     {7238764587710820404l, 407, 1},
-        //     {7166706993672894513l, 187, 1},
-        //     {7449334258569458482l, 237, 1},
-        //     {7018951322530361906l, 223, 1},
-        //     {7020922746912519730l, 265, 1},
-        //     {7810733834998002477l, -36, -1},
-        // };
-
-
-        // for (int i = 0; i < unsafes.length; i++){
-        //     long unsafe = unsafes[i][0];
-        //     long num = unsafes[i][1];
-        //     long sign = unsafes[i][2];
-
-        //     int offset = 0;
-        //     byte attemptSign = (byte) ((unsafe >> offset) ^ 45);
-        //     long attemptedNum = attemptSign == 0 ? (((byte) (unsafe >> (offset+=8))) - 48) : (((byte) unsafe) - 48);
-        //     if ((byte) ((unsafe >> (offset+8)) ^ 46) != 0){//There can only be one more possible number
-        //         attemptedNum *= 10;
-        //         attemptedNum += ((byte) (unsafe >> (offset+=8))) - 48;
-        //     }
-        //     attemptedNum *= 10;
-        //     attemptedNum += ((byte) (unsafe >> (offset+16))) - 48;
-        //     System.out.println("Attempt " + num + ", " + (attemptSign == 0 ? -attemptedNum : attemptedNum));
-        // }
-
-        // if (true){
-        //     return;
-        // }
-
-        long start = System.nanoTime();
-
-        int processors = Runtime.getRuntime().availableProcessors() + 1;
+        int processors = Runtime.getRuntime().availableProcessors();
         ExecutorService e = Executors.newFixedThreadPool(processors);
         List<Future<OpenMap>> futures = new ArrayList<>();
+        OpenMap mainMap = null;
         try (FileChannel channel = FileChannel.open(Path.of(FILE), StandardOpenOption.READ)) {
             long fileSize = channel.size();
             long chunkSize = fileSize / processors;
@@ -199,12 +145,17 @@ public class CalculateAverage_justplainlaake {
                     currentAddress += 8;// forwardscan
                 }
                 long finalChunkStart = chunkStart, finalChunkEnd = Math.min(endAddress, currentAddress - 1);
-                futures.add(e.submit(() -> process(finalChunkStart, finalChunkEnd)));
+                if (i == processors-1){//if on last processor use main thread to optimize threading.
+                    mainMap = process(finalChunkStart, finalChunkEnd);
+                } else {
+                    futures.add(e.submit(() -> process(finalChunkStart, finalChunkEnd)));
+                }
                 chunkStart = currentAddress + 1;
                 currentAddress = Math.min(currentAddress + chunkSize, endAddress);
             }
         }
-        OpenMap merged = new OpenMap();
+        OpenMap merged = mainMap;
+        //The merging of processing takes ~10ms
         for (Future<OpenMap> f : futures) {
             try {
                 OpenMap processed = f.get();
@@ -220,11 +171,11 @@ public class CalculateAverage_justplainlaake {
                         return s1;
                     });
                 });
-            }
-            catch (InterruptedException | ExecutionException e1) {
+            } catch (InterruptedException | ExecutionException e1) {
                 e1.printStackTrace();
             }
         }
+        //Ordering and printing takes 50ms
         Station[] nameOrdered = merged.toArray();// TODO Convert to some other way to compare?
         Arrays.sort(nameOrdered, (n1, n2) -> n1.name.compareTo(n2.name));
         System.out.print("{");
@@ -235,105 +186,56 @@ public class CalculateAverage_justplainlaake {
             System.out.print(nameOrdered[i]);
         }
         System.out.print("}");
-        e.shutdown();
-
-        System.out.println("\nMillis: " + ((System.nanoTime() - start) / 1_000_000.0));
+        e.shutdownNow();
     }
 
     private static OpenMap process(long fromAddress, long toAddress) {
         OpenMap stationsLookup = new OpenMap();
-        long hash = 1;
-        int num = 0;
-        byte sign = 1;
-        Station station = null;
         long blockStart = fromAddress;
         long currentAddress = fromAddress;
         while (currentAddress < toAddress) {
             long read = 0l;
             short offset = -1;
+            long hash = 1;
             while ((offset = getMaskOffset(read = UNSAFE.getLong(currentAddress), SEPERATOR_BYTE)) == -1) {
                 currentAddress += 8;// forwardscan
                 hash = 997 * hash ^ 991 * getMurmurHash3(read);
             }
-            if (offset != -1) {
-                hash = 997 * hash ^ 991 * getMurmurHash3(read & OFFSET_CLEARS[offset]);
-                currentAddress += offset + 1;
-                station = stationsLookup.getOrCreate(hash, currentAddress, blockStart);// Bet on the likelyhood that there are no collisions in the hashed name (Extremely Rare, more likely to get eaten by a shark in Kansas)
-                // Odds are over 1 in 100 Billion since there are a max of 10,000 unique names
-            }
-            long unsafeNum = UNSAFE.getLong(currentAddress);
+            
+            hash = 997 * hash ^ 991 * getMurmurHash3(read & OFFSET_CLEARS[offset]);
+            currentAddress += offset + 1;
+            Station station = stationsLookup.getOrCreate(hash, currentAddress, blockStart);
+            // Bet on the likelyhood that there are no collisions in the hashed name (Extremely Rare, more likely to get eaten by a shark in Kansas)
+            // Odds are over 1 in 100 Billion since there are a max of 10,000 unique names
+
+            
+            /* Possible combinations (x = number) -99.9 -> 99.9; ex: 54.4, -31.7, -4.5, 1.9
+            *  x.x
+            *  xx.x
+            *  -x.x
+            *  -xx.x
+            */
+            read = UNSAFE.getLong(currentAddress);
             offset = 0;
-            sign = (byte) ((unsafeNum >> offset) ^ 45);
-            num = sign == 0 ? (((byte) (unsafeNum >> (offset+=8))) - 48) : (((byte) unsafeNum) - 48);
+            byte sign = (byte) ((read >> offset) ^ 45);
+            int num = sign == 0 ? (((byte) (read >> (offset+=8))) - 48) : (((byte) read) - 48);
             currentAddress += 4;//There will always be at least 3 digits to read and the newline digit (4 total)
-            if ((byte) ((unsafeNum >> (offset+8)) ^ 46) != 0){//There can only be one more possible number
+            if ((byte) ((read >> (offset+8)) ^ 46) != 0){//There can only be one more possible number for cases of (XY.X | -XY.X) where Y is that other number
                 num *= 10;
-                num += ((byte) (unsafeNum >> (offset+=8))) - 48;
+                num += ((byte) (read >> (offset+=8))) - 48;
                 currentAddress++;//Add one digit read if temp > 10
             }
             num *= 10;
-            num += ((byte) (unsafeNum >> (offset+16))) - 48;
+            num += ((byte) (read >> (offset+16))) - 48;
             if (sign == 0){
                 num *= -1;
                 currentAddress++;//Add another digit read for the negative sign
             }
-            station.min = Math.min(station.min, num);
-            station.max = Math.max(station.max, num);
+            station.min = station.min < num ? station.min : num;
+            station.max = station.max > num ? station.max : num;
             station.count++;
             station.sum += num;
-            hash = 0;
-            station = null;
-            blockStart = currentAddress;
-            
-            // K: for (int i = 0; i < 6; i++){
-            //     switch (UNSAFE.getByte(currentAddress++)) {
-            //         case NEW_LINE_BYTE:
-            //             num *= sign;
-            //             station.min = Math.min(station.min, num);
-            //             station.max = Math.max(station.max, num);
-            //             station.count++;
-            //             station.sum += num;
-            //             // Reset
-            //             station = null;
-            //             hash = 1;
-            //             sign = 1;
-            //             num = 0;
-            //             blockStart = currentAddress;
-            //             break K;
-            //         case 48:
-            //         case 49:
-            //         case 50:
-            //         case 51:
-            //         case 52:
-            //         case 53:
-            //         case 54:
-            //         case 55:
-            //         case 56:
-            //         case 57:
-            //             num *= 10;
-            //             num += UNSAFE.getByte(currentAddress - 1) - 48;
-            //             break;
-            //         case 45:// negative sign
-            //             sign = -1;
-            //             break;
-            //         case 46:// decimal
-            //             break;
-            //         default:
-            //             System.err.println("Found non valid byte " + UNSAFE.getByte(currentAddress - 1) + " @ " + (currentAddress - 1));
-            //             // System.err.println("Processing Line " + new String(threadBuffer));
-            //             // System.err.println("\t - " + Arrays.toString(threadBuffer));
-            //             System.exit(1);
-            //             break;
-            //     }
-            // }
-        }
-        if (station != null && blockStart != currentAddress) {
-            num *= sign;
-            station.min = Math.min(station.min, num);
-            station.max = Math.max(station.max, num);
-            station.count++;
-            station.sum += num;
-            // Reset
+            hash = 1;
             blockStart = currentAddress;
         }
         return stationsLookup;
@@ -380,7 +282,7 @@ public class CalculateAverage_justplainlaake {
 
         @Override
         public String toString() {
-            return name + "=" + STATION_FORMAT.format(min / 10.0) + '/' + STATION_FORMAT.format((sum / 10.0) / count) + '/' + STATION_FORMAT.format(max / 10.0);
+            return name + "=" + STATION_FORMAT.format(min * 0.1) + '/' + STATION_FORMAT.format((sum * 0.1) / count) + '/' + STATION_FORMAT.format(max * 0.1);
         }
 
     }
@@ -457,55 +359,6 @@ public class CalculateAverage_justplainlaake {
                 return values[pos];
             }
 
-            public boolean containsKey(final long k) {
-                int pos = (int) getMurmurHash3(k) & mask;
-                while (marked[pos]) {
-                    if (((keys[pos]) == (k)))
-                        return true;
-                    pos = (pos + 1) & mask;
-                }
-                return false;
-            }
-
-            protected void rehash(final int newCapacity) {
-                int i = 0, pos;
-                long k;
-                final int newMask = newCapacity - 1;
-                final long[] keys = this.keys;
-                final Station[] values = this.values;
-                final boolean[] marked = this.marked;
-
-                final long[] newKeys = new long[newCapacity];
-                final Station[] newValues = new Station[newCapacity];
-                final boolean[] newMarked = new boolean[newCapacity];
-                for (int j = size; j-- != 0;) {
-                    while (!marked[i])
-                        i++;
-                    k = keys[i];
-                    pos = (int) getMurmurHash3(k) & newMask;
-                    while (newMarked[pos])
-                        pos = (pos + 1) & newMask;
-                    newMarked[pos] = true;
-                    newKeys[pos] = k;
-                    newValues[pos] = values[i];
-                    i++;
-                }
-                capacity = newCapacity;
-                mask = newMask;
-                maxFill = (int) Math.ceil(capacity * LOAD_FACTOR);
-                this.keys = newKeys;
-                this.values = newValues;
-                this.marked = newMarked;
-            }
-
-            public void forEach(OpenConsumer consumer) {
-                for (int i = 0; i < this.capacity; i++) {
-                    if (marked[i]) {
-                        consumer.accept(keys[i], values[i]);
-                    }
-                }
-            }
-
             public Station[] toArray() {
                 Station[] array = new Station[size];
                 int setter = 0;
@@ -516,6 +369,42 @@ public class CalculateAverage_justplainlaake {
                     }
                 }
                 return array;
+            }
+
+            public void forEach(OpenConsumer consumer) {
+                for (int i = 0; i < this.capacity; i++) {
+                    if (marked[i]) {
+                        consumer.accept(keys[i], values[i]);
+                    }
+                }
+            }
+
+            protected void rehash(final int newCapacity) {
+                final long[] newKeys = new long[newCapacity];
+                final Station[] newValues = new Station[newCapacity];
+                final boolean[] newMarked = new boolean[newCapacity];
+
+                int i = 0, pos;
+                long k;
+                final int newMask = newCapacity - 1;
+                for (int j = size; j-- != 0;) {
+                    while (!this.marked[i])
+                        i++;
+                    k = this.keys[i];
+                    pos = (int) getMurmurHash3(k) & newMask;
+                    while (newMarked[pos])
+                        pos = (pos + 1) & newMask;
+                    newMarked[pos] = true;
+                    newKeys[pos] = k;
+                    newValues[pos] = this.values[i];
+                    i++;
+                }
+                capacity = newCapacity;
+                mask = newMask;
+                maxFill = (int) Math.ceil(capacity * LOAD_FACTOR);
+                this.keys = newKeys;
+                this.values = newValues;
+                this.marked = newMarked;
             }
 
             //Bit function
