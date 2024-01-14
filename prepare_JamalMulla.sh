@@ -20,7 +20,6 @@ sdk use java 21.0.1-graal 1>&2
 
 # ./mvnw clean verify removes target/ and will re-trigger native image creation.
 if [ ! -f target/CalculateAverage_JamalMulla_image ]; then
-    NATIVE_IMAGE_OPTS="--gc=epsilon -O3 -march=native --enable-preview --strict-image-heap -H:-DeleteLocalSymbols -H:+PreserveFramePointer"
-    # Use -H:MethodFilter=CalculateAverage_thomaswue.* -H:Dump=:2 -H:PrintGraph=Network for IdealGraphVisualizer graph dumping.
+    NATIVE_IMAGE_OPTS="--gc=epsilon -O3 -march=native --enable-preview --strict-image-heap -R:MaxHeapSize=64m --link-at-build-time -da -dsa --no-fallback"
     native-image $NATIVE_IMAGE_OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o target/CalculateAverage_JamalMulla_image dev.morling.onebrc.CalculateAverage_JamalMulla
 fi
