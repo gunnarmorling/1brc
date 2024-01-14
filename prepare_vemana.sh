@@ -15,6 +15,9 @@
 #  limitations under the License.
 #
 
-# Uncomment below to use sdk
-# source "$HOME/.sdkman/bin/sdkman-init.sh"
-# sdk use java 21.0.1-graal 1>&2
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+#sdk1 use java 21.0.1-open 1>&2
+sdk use java 21.0.1-graal 1>&2
+#sdk1 use java 21.0.1-zulu 1>&2
+#sdk1 use java 21.0.1-graalce 1>&2
+
