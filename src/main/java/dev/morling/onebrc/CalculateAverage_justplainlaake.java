@@ -15,9 +15,7 @@
  */
 package dev.morling.onebrc;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.PrintStream;
 import java.lang.foreign.Arena;
 import java.lang.reflect.Field;
 import java.nio.channels.FileChannel;
@@ -32,7 +30,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.ThreadLocalRandom;
 
 import sun.misc.Unsafe;
 
@@ -119,48 +116,60 @@ public class CalculateAverage_justplainlaake {
         UNSAFE = _unsafe;// Just to get around "The blank final field UNSAFE may not have been initialized"
     }
 
-    static int getCharNumber(long serial, int offset){
-        return (byte)((byte)(serial >> (8*offset)) - 48);
-    }
     public static void main(String[] args) throws IOException {
         int processors = Runtime.getRuntime().availableProcessors();
-        ExecutorService e = Executors.newFixedThreadPool(processors);
+
+        ExecutorService e = Executors.newFixedThreadPool(processors-1);//Create a ThreadPool based executor using the count of processors available
+        
         List<Future<OpenMap>> futures = new ArrayList<>();
         OpenMap mainMap = null;
         try (FileChannel channel = FileChannel.open(Path.of(FILE), StandardOpenOption.READ)) {
             long fileSize = channel.size();
-            long chunkSize = fileSize / processors;
-            long startAddress = channel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, Arena.global()).address();
+            long chunkSize = fileSize / processors;//Determine approximate size of each chunk based on amount of processors available
+
+            long startAddress = channel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, Arena.global())//Map the file channel into memory using the global arena (accessible by all threads)
+                .address();//And get the starting address of mapped section
+
             long endAddress = startAddress + fileSize;
             long currentAddress = startAddress + chunkSize;
             long chunkStart = startAddress;
-            for (int i = 0; i < processors; i++) {
-                while (currentAddress < endAddress) {
-                    long match = UNSAFE.getLong(currentAddress);
-                    short offset = getMaskOffset(match, NEW_LINE_BYTE);
-                    if (offset != -1) {
+
+            for (int i = 0; i < processors; i++) {//We need to chunk the file for each processor/thread
+
+                while (currentAddress < endAddress) {//While loop to locate the next new line character from the chunk we are in
+                    long match = UNSAFE.getLong(currentAddress);//Read the next 8 bytes as a long from the memory address
+                    short offset = getMaskOffset(match, NEW_LINE_BYTE);//find the byte in the long which equals 10 aka '\n', if it is not found this returns -1
+                    if (offset != -1) {//We found the offset, so add it to the current adress and break the while loop
                         currentAddress += offset;
                         break;
                     }
-                    currentAddress += 8;// forwardscan
+                    currentAddress += 8;//No offset was found so advance 8 bytes, aka 1 long
                 }
-                long finalChunkStart = chunkStart, finalChunkEnd = Math.min(endAddress, currentAddress - 1);
-                if (i == processors-1){//if on last processor use main thread to optimize threading.
+
+                long finalChunkStart = chunkStart, finalChunkEnd = Math.min(endAddress, currentAddress - 1);//Create final fields to pass to the thread call below, 
+                //Also Math.min doesn't matter here since its called x times where x = count of processors
+
+                if (i == processors - 1) {// if on last processor use main thread to optimize threading, doing on last processor means the others are already processing while this runs
                     mainMap = process(finalChunkStart, finalChunkEnd);
                 } else {
                     futures.add(e.submit(() -> process(finalChunkStart, finalChunkEnd)));
                 }
-                chunkStart = currentAddress + 1;
-                currentAddress = Math.min(currentAddress + chunkSize, endAddress);
+                chunkStart = currentAddress + 1;//Advance the start of the next chunk to be the end of this chunk + 1 to move past the new line character
+                currentAddress = Math.min(currentAddress + chunkSize, endAddress);//Advance the next chunks end to be the end of the mapped file or the end of the approximated chunk
             }
         }
-        OpenMap merged = mainMap;
-        //The merging of processing takes ~10ms
+
+        OpenMap merged = mainMap;//Set the main map created with the process called on main thread to make it effectively final
+
+        // The merging of processing takes ~10ms
         for (Future<OpenMap> f : futures) {
             try {
-                OpenMap processed = f.get();
+
+                OpenMap processed = f.get();//Waits until the process task is done but then returns the callable value from the process method
+
+                //Simple way to merge both lists, tried doing it more inline inside the map and ended up taking a 10ms longer
                 processed.forEach((i, s) -> {
-                    merged.compute(i, (key, s1) -> {
+                    merged.merge(i, (key, s1) -> {
                         if (s1 == null) {
                             return s;
                         }
@@ -175,9 +184,16 @@ public class CalculateAverage_justplainlaake {
                 e1.printStackTrace();
             }
         }
-        //Ordering and printing takes 50ms
-        Station[] nameOrdered = merged.toArray();// TODO Convert to some other way to compare?
-        Arrays.sort(nameOrdered, (n1, n2) -> n1.name.compareTo(n2.name));
+
+        //Mark threadpool to be shutdown, call it here to let the threadpool finish out while the rest of the processing occurs
+        e.shutdown();
+
+        // Ordering and printing takes 50ms
+        Station[] nameOrdered = merged.toArray();//Turn the merged map into an array to quickly sort it
+
+        Arrays.sort(nameOrdered, (n1, n2) -> n1.name.compareTo(n2.name));//Sort based on name, this might be optimizable based on the longs of the name, but would likely only gain some ms??
+
+        //Print results to the sys out
         System.out.print("{");
         for (int i = 0; i < nameOrdered.length; i++) {
             if (i != 0) {
@@ -185,63 +201,86 @@ public class CalculateAverage_justplainlaake {
             }
             System.out.print(nameOrdered[i]);
         }
-        System.out.print("}");
-        e.shutdownNow();
+        System.out.print("}\n");//Not sure if new line character is needed, most other implementations were calling println which adds it
     }
 
+    //Core processing functionality, processes a chunk of memory
     private static OpenMap process(long fromAddress, long toAddress) {
-        OpenMap stationsLookup = new OpenMap();
+
+        OpenMap stationsLookup = new OpenMap();//Create a new map for this specific chunk, this is also the returned value for the callable
+
         long blockStart = fromAddress;
         long currentAddress = fromAddress;
-        while (currentAddress < toAddress) {
+
+        while (currentAddress < toAddress) {//Just keep looping until we exhaust the chunk
+
             long read = 0l;
             short offset = -1;
+            //The hash is a long hash based on the murmur3 algorithm. Look at the getMurmurHash3 method to find link
             long hash = 1;
-            while ((offset = getMaskOffset(read = UNSAFE.getLong(currentAddress), SEPERATOR_BYTE)) == -1) {
+
+            while ((offset = getMaskOffset(read = UNSAFE.getLong(currentAddress), SEPERATOR_BYTE)) == -1) {//Read and compute the hash until we locate the seperator byte 59 or ';'
                 currentAddress += 8;// forwardscan
-                hash = 997 * hash ^ 991 * getMurmurHash3(read);
+                hash = (997 * hash) ^ (991 * getMurmurHash3(read));
             }
-            
-            hash = 997 * hash ^ 991 * getMurmurHash3(read & OFFSET_CLEARS[offset]);
+
+            //Compute the final hash based using the last read long but only the effective bits (anything before the byte 59 or ';'). 
+            //Using the OFFSET_CLEARS masks that are defined statically we can essentially segregate the important bits of the name based on the offset read above
+            hash = (997 * hash) ^ (991 * getMurmurHash3(read & OFFSET_CLEARS[offset]));
+
+            //Advance the current address/pointer to be 1 character past the end of the name Example: BillyJoel;29 would make the current address start at the '2' character
             currentAddress += offset + 1;
+
+
             Station station = stationsLookup.getOrCreate(hash, currentAddress, blockStart);
             // Bet on the likelyhood that there are no collisions in the hashed name (Extremely Rare, more likely to get eaten by a shark in Kansas)
             // Odds are over 1 in 100 Billion since there are a max of 10,000 unique names
 
-            
-            /* Possible combinations (x = number) -99.9 -> 99.9; ex: 54.4, -31.7, -4.5, 1.9
-            *  x.x
-            *  xx.x
-            *  -x.x
-            *  -xx.x
-            */
+            /*
+             * Possible combinations (x = number) -99.9 -> 99.9; ex: 54.4, -31.7, -4.5, 1.9
+             * x.x
+             * xx.x
+             * -x.x
+             * -xx.x
+             */
+
+            //Encoding is UTF8 however, since numbers in UTF8 are all single byte characters we can do some byte math to determin the number; 0=48 and 9=57, so character - 48 = number
+            //And since - and . are also single byte characters we can make some assumptions, leading us with the primary one that no matter what the number will be 3 to 5 bytes (see above combinations)
+            //Unfortunately since an integer is only 4 bytes we must read the long; Something to test would be to see if we could read an integer and then read an extra byte if it is the 5 character edge case
             read = UNSAFE.getLong(currentAddress);
-            offset = 0;
-            byte sign = (byte) ((read >> offset) ^ 45);
-            int num = sign == 0 ? (((byte) (read >> (offset+=8))) - 48) : (((byte) read) - 48);
-            currentAddress += 4;//There will always be at least 3 digits to read and the newline digit (4 total)
-            if ((byte) ((read >> (offset+8)) ^ 46) != 0){//There can only be one more possible number for cases of (XY.X | -XY.X) where Y is that other number
+
+            offset = 0;//reinitiate the offset to reuse the local address
+
+            byte sign = (byte) ((read >> offset) ^ 45);//Check the first byte of the new long to see if it is 45 aka '-', if it is this byte will be 0
+
+
+            //The logic below is based on the fact that we are reading 
+            int num = sign == 0 ? (((byte) (read >> (offset += 8))) - 48) : (((byte) read) - 48);//Start the number reading, if it is a negative advance 8 bits in the long (8 bits = 1 byte)
+            currentAddress += 4;// There will always be at least 3 digits to read and the newline digit (4 total)
+            if ((byte) ((read >> (offset + 8)) ^ 46) != 0) {// There can only be one more possible number for cases of (XY.X | -XY.X) where Y is that other number
                 num *= 10;
-                num += ((byte) (read >> (offset+=8))) - 48;
-                currentAddress++;//Add one digit read if temp > 10
+                num += ((byte) (read >> (offset += 8))) - 48;
+                currentAddress++;// Add one digit read if temp > 10
             }
             num *= 10;
-            num += ((byte) (read >> (offset+16))) - 48;
-            if (sign == 0){
+            num += ((byte) (read >> (offset + 16))) - 48;//Read the decimal character (no matter what it is 16 bits past the offset here, since 8 bits is the last number and 8 bits is the decimal)
+            if (sign == 0) {
                 num *= -1;
-                currentAddress++;//Add another digit read for the negative sign
+                currentAddress++;// Add another digit read for the negative sign
             }
+
+            //Assign the values, don't use Math.min or any special bit manipulation. Faster to just use ternary
             station.min = station.min < num ? station.min : num;
             station.max = station.max > num ? station.max : num;
             station.count++;
             station.sum += num;
-            hash = 1;
+            //And now set the next block to start at the current address
             blockStart = currentAddress;
         }
         return stationsLookup;
     }
 
-    //Avalanche hashing function for longs: https://github.com/aappleby/smhasher/blob/master/README.md
+    // Avalanche hashing function for longs: https://github.com/aappleby/smhasher/blob/master/README.md
     public final static long getMurmurHash3(long x) {
         x ^= x >>> 33;
         x *= 0xff51afd7ed558ccdL;
@@ -251,6 +290,8 @@ public class CalculateAverage_justplainlaake {
         return x;
     }
 
+    // Simple way to identify if a byte is set in a long at any of the 8 spots, and also to get the offset of that byte.
+    // On average this is fast but certain cases could make it slow (checking 500,000,000,000 longs that don't have the test byte at all...)
     private static short getMaskOffset(long value, byte test) {
         for (short i = 0; i < 8; i++) {
             if (((byte) value & 0xFF) == test) {
@@ -262,7 +303,7 @@ public class CalculateAverage_justplainlaake {
     }
 
     private static class Station {
-        protected final long nameStart, nameEnd;
+        protected final long nameStart, nameEnd;//Store the starting and ending address of the name, to fill it later
         protected int min = Integer.MAX_VALUE, max = Integer.MIN_VALUE, count;
         protected long sum;
         protected String name;
@@ -272,7 +313,7 @@ public class CalculateAverage_justplainlaake {
             this.nameEnd = nameEnd;
         }
 
-        protected void fillName(){
+        protected void fillName() {
             byte[] nameBuffer = new byte[(int) (nameEnd - nameStart)];
             for (int k = 0; k < nameBuffer.length; k++) {
                 nameBuffer[k] = UNSAFE.getByte(nameStart + k);
@@ -281,154 +322,127 @@ public class CalculateAverage_justplainlaake {
         }
 
         @Override
-        public String toString() {
+        public String toString() {//Use decimal format to print numbers
             return name + "=" + STATION_FORMAT.format(min * 0.1) + '/' + STATION_FORMAT.format((sum * 0.1) / count) + '/' + STATION_FORMAT.format(max * 0.1);
         }
 
     }
 
     @SuppressWarnings("unchecked")
-    public static  class OpenMap {
-            public static final float LOAD_FACTOR = 0.75f;
-            public static final int EXPECTED_INITIAL_SIZE = 100_000;
+    public static class OpenMap {
+        public static final float LOAD_FACTOR = 0.75f;
+        public static final int EXPECTED_INITIAL_SIZE = 100_000;
 
-            protected transient long[] keys;
-            protected transient Station[] values;
-            protected transient boolean[] marked;
-            protected transient int capacity;
-            protected transient int maxFill;
-            protected transient int mask;
-            protected int size;
+        protected transient long[] keys;//Use unboxed long values as a key, faster than a doing new HashMap<Long,X>() as with generics it will box/unbox every action (can be costly in large quantities)
+        protected transient Station[] values;
+        protected transient boolean[] set;
+        protected transient int capacity;
+        protected transient int maxFill;
+        protected transient int mask;
+        protected int size;
 
-            public OpenMap() {
-                capacity = (int) getNextPowerOfTwo((long) Math.ceil(EXPECTED_INITIAL_SIZE / LOAD_FACTOR));//need to base the capacity on the next power of two for the mask to work properly
-                mask = capacity - 1;
-                maxFill = (int) Math.ceil(capacity * 0.75f);
-                keys = new long[capacity];
-                values = new Station[capacity];
-                marked = new boolean[capacity];
-            }
-
-            public Station put(final long k, final Station v) {
-                int pos = (int) getMurmurHash3(k) & mask;
-                while (marked[pos]) {
-                    if (((keys[pos]) == (k))) {
-                        final Station oldValue = values[pos];
-                        values[pos] = v;
-                        return oldValue;
-                    }
-                    pos = (pos + 1) & mask;
-                }
-                marked[pos] = true;
-                keys[pos] = k;
-                values[pos] = v;
-                if (++size >= maxFill)
-                    rehash((int) getNextPowerOfTwo((long) Math.ceil((size+1) / LOAD_FACTOR)));
-                return null;
-            }
-
-            public void compute(long key, OpenFunction compute) {
-                Station value = compute.action(key, get(key));
-                if (value != null) {
-                    put(key, value);
-                }
-            }
-
-            public Station get(final long k) {
-                int pos = (int) getMurmurHash3(k) & mask;
-                while (marked[pos]) {
-                    if (((keys[pos]) == (k)))
-                        return values[pos];
-                    pos = (pos + 1) & mask;
-                }
-                return null;
-            }
-
-            public Station getOrCreate(final long key, long currentAddress, long blockStart) {
-                int pos = (int) getMurmurHash3(key) & mask;
-                while (marked[pos]) {
-                    if (((keys[pos]) == (key)))
-                        return values[pos];
-                    pos = (pos + 1) & mask;
-                }
-                marked[pos] = true;
-                keys[pos] = key;
-                values[pos] = new Station(blockStart, currentAddress-1);
-                if (++size >= maxFill)
-                    rehash((int) getNextPowerOfTwo((long) Math.ceil((size+1) / LOAD_FACTOR)));
-                return values[pos];
-            }
-
-            public Station[] toArray() {
-                Station[] array = new Station[size];
-                int setter = 0;
-                for (int i = 0; i < capacity; i++) {
-                    if (marked[i]) {
-                        array[setter++] = values[i];
-                        values[i].fillName();
-                    }
-                }
-                return array;
-            }
-
-            public void forEach(OpenConsumer consumer) {
-                for (int i = 0; i < this.capacity; i++) {
-                    if (marked[i]) {
-                        consumer.accept(keys[i], values[i]);
-                    }
-                }
-            }
-
-            protected void rehash(final int newCapacity) {
-                final long[] newKeys = new long[newCapacity];
-                final Station[] newValues = new Station[newCapacity];
-                final boolean[] newMarked = new boolean[newCapacity];
-
-                int i = 0, pos;
-                long k;
-                final int newMask = newCapacity - 1;
-                for (int j = size; j-- != 0;) {
-                    while (!this.marked[i])
-                        i++;
-                    k = this.keys[i];
-                    pos = (int) getMurmurHash3(k) & newMask;
-                    while (newMarked[pos])
-                        pos = (pos + 1) & newMask;
-                    newMarked[pos] = true;
-                    newKeys[pos] = k;
-                    newValues[pos] = this.values[i];
-                    i++;
-                }
-                capacity = newCapacity;
-                mask = newMask;
-                maxFill = (int) Math.ceil(capacity * LOAD_FACTOR);
-                this.keys = newKeys;
-                this.values = newValues;
-                this.marked = newMarked;
-            }
-
-            //Bit function
-            public long getNextPowerOfTwo(long length) {
-                if (length-- == 0)
-                    return 1;
-                length |= length >> 1;
-                length |= length >> 2;
-                length |= length >> 4;
-                length |= length >> 8;
-                length |= length >> 16;
-                return (length | length >> 32) + 1;
-            }
-
-            @FunctionalInterface
-            public static interface OpenConsumer {
-                void accept(long key, Station value);
-            }
-
-            @FunctionalInterface
-            public static interface OpenFunction {
-                Station action(long key, Station value);
-            }
-
+        public OpenMap() {
+            //capacity = (int) getNextPowerOfTwo((long) Math.ceil(EXPECTED_INITIAL_SIZE / LOAD_FACTOR));// need to base the capacity on the next power of two for the mask to work properly
+            //initial size of 100k gives 262,144 Capacity, since we know this and its way oversized for a max of 10k keys theres no need to recalculate
+            capacity = 262_144;
+            mask = capacity - 1;
+            maxFill = (int) Math.ceil(capacity * 0.75f);//Only allow 75% of capacity before resizing
+            keys = new long[capacity];
+            values = new Station[capacity];
+            set = new boolean[capacity];
         }
+
+        public Station put(final long key, final Station value) {
+            int pos = (int) getMurmurHash3(key) & mask;//Generate murmurhash and cap it by mask
+            while (set[pos]) {
+                if (keys[pos] == key) {
+                    final Station oldValue = values[pos];
+                    values[pos] = value;
+                    return oldValue;//Return old value, normal map operation
+                }
+                pos = (pos + 1) & mask;
+            }
+            set[pos] = true;
+            keys[pos] = key;
+            values[pos] = value;
+            size++;
+            return null;
+        }
+
+        public void merge(long key, OpenFunction merge) {
+            //Simple compute function, if exists pass existing, if it doesn't pass null
+            int pos = (int) getMurmurHash3(key) & mask;
+            while (set[pos]) {
+                if (((keys[pos]) == (key))) {
+                    final Station oldValue = values[pos];
+                    values[pos] = merge.action(key, oldValue);
+                    return;
+                }
+                pos = (pos + 1) & mask;
+            }
+            set[pos] = true;
+            keys[pos] = key;
+            values[pos] = merge.action(key, null);
+            
+            size++;
+        }
+
+        public Station getOrCreate(final long key, long currentAddress, long blockStart) {
+            int pos = (int) getMurmurHash3(key) & mask;//Generate murmurhash and cap it by mask
+            while (set[pos]) {//While position is set 
+                if (keys[pos] == key)//Check if key is correct
+                    return values[pos];
+                pos = (pos + 1) & mask;//Since this is an open map we keep checking next masked key for an open spot (Faster than tree or linked list on a specific node)
+            }
+            set[pos] = true;//It is a new entry, so set this position as being set
+            keys[pos] = key;
+            size++;
+            return values[pos] = new Station(blockStart, currentAddress - 1);//Since current address contains the splitter (we will subtract by 1 here, better to do here since this is only called when it doesn't exist less math = performance)
+        }
+
+        //Simple iterator for each set value
+        public void forEach(OpenConsumer consumer) {
+            for (int i = 0; i < this.capacity; i++) {
+                if (set[i]) {
+                    consumer.accept(keys[i], values[i]);
+                }
+            }
+        }
+
+        public Station[] toArray() {
+            Station[] array = new Station[size];
+            int setter = 0;
+            for (int i = 0; i < capacity; i++) {
+                if (set[i]) {
+                    array[setter++] = values[i];
+                    values[i].fillName();
+                }
+            }
+            return array;
+        }
+
+        // Bit function to get the next power of two on some number, used to determine best capacity based on initial size
+        public long getNextPowerOfTwo(long length) {
+            if (length-- == 0)
+                return 1;
+            length |= length >> 1;
+            length |= length >> 2;
+            length |= length >> 4;
+            length |= length >> 8;
+            length |= length >> 16;
+            return (length | length >> 32) + 1;
+        }
+
+        @FunctionalInterface
+        public static interface OpenConsumer {
+            void accept(long key, Station value);
+        }
+
+        @FunctionalInterface
+        public static interface OpenFunction {
+            Station action(long key, Station value);
+        }
+
+    }
 
 }

@@ -15,8 +15,9 @@
 #  limitations under the License.
 #
 
-source "$HOME/.sdkman/bin/sdkman-init.sh"
-sdk use java 21.0.1-graal 1>&2
+if [ -f target/CalculateAverage_justplainlaake_image ]; then #if there is a native image, then lets run it. Else fallback to standard java execution
+    target/CalculateAverage_justplainlaake_image
+else
+    java -XX:+UseG1GC --enable-preview -XX:+UnlockExperimentalVMOptions -XX:+TrustFinalNonStaticFields -dsa -XX:+UseNUMA --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_justplainlaake
+fi
 
-JAVA_OPTS="--enable-preview -XX:+UseG1GC"
-time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_justplainlaake
