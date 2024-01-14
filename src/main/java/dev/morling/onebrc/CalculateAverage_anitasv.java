@@ -109,14 +109,6 @@ public class CalculateAverage_anitasv {
             return mmapMemory.get(ValueLayout.JAVA_BYTE, address);
         }
 
-        long getAlignedLong(long address) {
-            return mmapMemory.get(ValueLayout.JAVA_LONG, address);
-        }
-
-        long getSlowLong(long address) {
-            return mmapMemory.get(ValueLayout.JAVA_LONG_UNALIGNED, address);
-        }
-
         long indexOf(long position, byte ch) {
             ByteBuffer buf = mmapMemory.asSlice(position,
                             Math.min(128, mmapMemory.byteSize() - position))
