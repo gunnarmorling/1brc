@@ -32,10 +32,10 @@ import java.util.stream.IntStream;
  * Simple solution that memory maps the input file, then splits it into one segment per available core and uses
  * sun.misc.Unsafe to directly access the mapped memory. Uses a long at a time when checking for collision.
  * <p>
- * Runs in 0.62s on my Intel i9-13900K
+ * Runs in 0.60s on my Intel i9-13900K
  * Perf stats:
- *     37,710,531,495      cpu_core/cycles/
- *     43,364,955,742      cpu_atom/cycles/
+ *     34,716,719,245      cpu_core/cycles/
+ *     40,776,530,892      cpu_atom/cycles/
  */
 public class CalculateAverage_thomaswue {
     private static final String FILE = "./measurements.txt";
@@ -112,7 +112,7 @@ public class CalculateAverage_thomaswue {
 
     // Main parse loop.
     private static Result[] parseLoop(long chunkStart, long chunkEnd) {
-        Result[] results = new Result[1 << 18];
+        Result[] results = new Result[1 << 17];
         Scanner scanner = new Scanner(chunkStart, chunkEnd);
         long word = scanner.getLong();
         int pos = findDelimiter(word);
@@ -200,7 +200,7 @@ public class CalculateAverage_thomaswue {
                 int i = 0;
                 for (; i < nameLength + 1 - 8; i += 8) {
                     if (scanner.getLongAt(existingResult.nameAddress + i) != scanner.getLongAt(nameAddress + i)) {
-                        tableIndex = (tableIndex + 1) & (results.length - 1);
+                        tableIndex = (tableIndex + 31) & (results.length - 1);
                         continue outer;
                     }
                 }
@@ -210,7 +210,7 @@ public class CalculateAverage_thomaswue {
                 }
                 else {
                     // Collision error, try next.
-                    tableIndex = (tableIndex + 1) & (results.length - 1);
+                    tableIndex = (tableIndex + 31) & (results.length - 1);
                 }
             }
 
@@ -237,8 +237,8 @@ public class CalculateAverage_thomaswue {
     }
 
     private static int hashToIndex(long hash, Result[] results) {
-        int hashAsInt = (int) (hash ^ (hash >>> 32));
-        int finalHash = (hashAsInt ^ (hashAsInt >>> 18));
+        int hashAsInt = (int) (hash ^ (hash >>> 28));
+        int finalHash = (hashAsInt ^ (hashAsInt >>> 15));
         return (finalHash & (results.length - 1));
     }
 
