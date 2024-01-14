@@ -31,77 +31,6 @@ import java.util.stream.IntStream;
 public class CalculateAverage_anitasv {
     private static final String FILE = "./measurements.txt";
 
-    private static class LongHashEntry<T> {
-        long key;
-        T value;
-        int next;
-    }
-
-    // Stolen from java.util.HashMap
-    static final int MAXIMUM_CAPACITY = 1 << 30;
-
-    static int tableSizeFor(int cap) {
-        int n = -1 >>> Integer.numberOfLeadingZeros(cap - 1);
-        return (n < 0) ? 1 : (n >= MAXIMUM_CAPACITY) ? MAXIMUM_CAPACITY : n + 1;
-    }
-
-    private static class LongHashMap<T> {
-        private final LongHashEntry<T>[] entries;
-        private int next = -1;
-
-        @SuppressWarnings("unchecked")
-        private LongHashMap(int capacity) {
-            this.entries = (LongHashEntry<T>[]) new LongHashEntry[tableSizeFor(capacity)];
-            for (int i = 0; i < entries.length; i++) {
-                this.entries[i] = new LongHashEntry<>();
-            }
-        }
-
-        public LongHashEntry<T> find(long key) {
-            int start = Long.hashCode(key) & (entries.length - 1);
-            int index = start;
-            do {
-                LongHashEntry<T> entry = entries[index];
-                if (entry.key == key) {
-                    return entry;
-                }
-                else if (entry.value == null) {
-                    entry.key = key;
-                    entry.next = next;
-                    next = index;
-                    return entry;
-                }
-                index++;
-                if (index == entries.length) {
-                    index = 0;
-                }
-            } while (index != start);
-            return null;
-        }
-
-        public List<T> values() {
-            List<T> values = new ArrayList<>();
-            int scan = next;
-            while (scan != -1) {
-                LongHashEntry<T> entry = entries[scan];
-                values.add(entry.value);
-                scan = entry.next;
-            }
-            return values;
-        }
-
-        public String toString() {
-            StringBuilder builder = new StringBuilder();
-            int scan = next;
-            while (scan != -1) {
-                LongHashEntry<T> entry = entries[scan];
-                builder.append(entry.key).append(",").append(entry.value).append("\n");
-                scan = entry.next;
-            }
-            return builder.toString();
-        }
-    }
-
     private record Shard(MemorySegment mmapMemory,
                          long chunkStart, long chunkEnd) {
 
@@ -151,7 +80,7 @@ public class CalculateAverage_anitasv {
             return normalized;
         }
 
-        public long computeHash(long position, long stationEnd) {
+        public int computeHash(long position, long stationEnd) {
             ByteBuffer buf2 = mmapMemory.asSlice(position, stationEnd - position)
                     .asByteBuffer();
             return buf2.hashCode();
@@ -172,7 +101,7 @@ public class CalculateAverage_anitasv {
     }
 
     private static Map<String, IntSummaryStatistics> process(Shard shard) {
-        LongHashMap<List<ResultRow>> result = new LongHashMap<>(1 << 14);
+        HashMap<Integer, List<ResultRow>> result = new HashMap<>(1 << 14);
 
         boolean skip = shard.chunkStart != 0;
         for (long position = shard.chunkStart; position < shard.chunkEnd; position++) {
@@ -182,19 +111,15 @@ public class CalculateAverage_anitasv {
             }
             else {
                 long stationEnd = shard.indexOf(position, (byte) ';');
-                long hash = shard.computeHash(position, stationEnd);
+                int hash = shard.computeHash(position, stationEnd);
 
                 long temperatureEnd = shard.indexOf(stationEnd + 1, (byte) '\n');
                 int temperature = shard.parseDouble(stationEnd + 1, temperatureEnd);
 
-                LongHashEntry<List<ResultRow>> entry = result.find(hash);
-                if (entry == null) {
-                    throw new IllegalStateException("Not enough space in hashmap.");
-                }
-                List<ResultRow> collisions = entry.value;
+                List<ResultRow> collisions = result.get(hash);
                 if (collisions == null) {
                     collisions = new ArrayList<>();
-                    entry.value = collisions;
+                    result.put(hash, collisions);
                 }
 
                 boolean found = false;
