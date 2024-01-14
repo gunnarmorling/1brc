@@ -18,13 +18,20 @@ package dev.morling.onebrc;
 import static java.util.stream.Collectors.*;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collector;
+import java.util.stream.Stream;
 
-public class CalculateAverage_baseline {
+public class CalculateAverage_javamak {
 
     private static final String FILE = "./measurements.txt";
 
@@ -35,7 +42,6 @@ public class CalculateAverage_baseline {
     }
 
     private static record ResultRow(double min, double mean, double max) {
-
         public String toString() {
             return round(min) + "/" + round(mean) + "/" + round(max);
         }
@@ -43,7 +49,9 @@ public class CalculateAverage_baseline {
         private double round(double value) {
             return Math.round(value * 10.0) / 10.0;
         }
-    };
+    }
+
+    ;
 
     private static class MeasurementAggregator {
         private double min = Double.POSITIVE_INFINITY;
@@ -79,14 +87,72 @@ public class CalculateAverage_baseline {
 
                     return res;
                 },
-                agg -> {
-                    return new ResultRow(agg.min, (Math.round(agg.sum * 10.0) / 10.0) / agg.count, agg.max);
-                });
+                agg -> new ResultRow(agg.min, agg.sum / agg.count, agg.max));
 
-        Map<String, ResultRow> measurements = new TreeMap<>(Files.lines(Paths.get(FILE))
-                .map(l -> new Measurement(l.split(";")))
-                .collect(groupingBy(m -> m.station(), collector)));
+        var path = Paths.get(FILE);
+
+        var a = calcChunks(path).entrySet().parallelStream()
+                .flatMap(entry -> getLinesFromFile(path, entry)) // read file for each chunk and get the lines
+                .map(l -> new Measurement(l.split(";")))// convert each line to measurement object
+                .collect(groupingBy(Measurement::station, collector));
+        Map<String, ResultRow> measurements = new TreeMap<>(a);
 
         System.out.println(measurements);
+    }
+
+    private static Stream<String> getLinesFromFile(Path path, Map.Entry<Long, Long> entry) {
+        try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
+            channel.position(entry.getKey());
+            ByteBuffer buffer = ByteBuffer.allocate((int) (entry.getValue() - entry.getKey() + 1));
+            channel.read(buffer);
+            String chunk = new String(buffer.array());
+            return Arrays.stream(chunk.split("\n"));
+        }
+        catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static Map<Long, Long> calcChunks(Path path) throws IOException {
+        long startPos = 0;
+        Map<Long, Long> retMap = new HashMap<>();
+        while (true) {
+            long endPos = calculateEndPosition(path, startPos, 1000 * 5000);
+            if (endPos == -1) {
+                break;
+            }
+            long finalStartPos = startPos;
+            retMap.put(finalStartPos, endPos);
+            startPos = endPos + 1;
+        }
+        return retMap;
+    }
+
+    private static long calculateEndPosition(Path path, long startPos, long chunkSize) throws IOException {
+        try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
+            if (startPos >= channel.size()) {
+                return -1;
+            }
+
+            long currentPos = startPos + chunkSize;
+            if (currentPos >= channel.size()) {
+                currentPos = channel.size() - 1;
+            }
+
+            channel.position(currentPos);
+            ByteBuffer buffer = ByteBuffer.allocate(1024);
+            int readBytes = channel.read(buffer);
+
+            if (readBytes > 0) {
+                for (int i = 0; i < readBytes; i++) {
+                    if (buffer.get(i) == '\n') {
+                        break;
+                    }
+                    currentPos++;
+                }
+            }
+
+            return currentPos;
+        }
     }
 }

@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 #  Copyright 2023 The original authors
 #
@@ -15,5 +15,10 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="-Xmx512m -Xms512m"
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_jbachorik $@
+if [ ! -e target/image_calculateaverage_Kidlike ]; then
+  source "$HOME/.sdkman/bin/sdkman-init.sh"
+  sdk use java 21.0.1-graal
+  #NATIVE_IMAGE_OPTS="--gc=epsilon -O3 -march=native --enable-preview"
+  NATIVE_IMAGE_OPTS="-O3 -march=native --enable-preview"
+  native-image $NATIVE_IMAGE_OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o target/image_calculateaverage_Kidlike dev.morling.onebrc.CalculateAverage_Kidlike
+fi

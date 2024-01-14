@@ -19,7 +19,7 @@ set -x
 
 if [ -z "$1" ]
   then
-    echo "Usage: prepare.sh <fork name>:<branch name>"
+    echo "Usage: checkout.sh <fork name>:<branch name>"
     exit 1
 fi
 

@@ -15,5 +15,5 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="-Xmx512m -Xms512m"
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_jbachorik $@
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+sdk use java 21.0.1-graal 1>&2
