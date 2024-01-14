@@ -76,7 +76,7 @@ public class CalculateAverage_flippingbits {
                 .get();
 
         var sortedMap = new TreeMap<String, Station>();
-        for (Station station : result.getValues()) {
+        for (Station station : result.getEntries()) {
             sortedMap.put(station.getName(), station);
         }
 
@@ -164,7 +164,7 @@ public class CalculateAverage_flippingbits {
             fasterHashMap.addEntry(nameHash, nameLength, nameStartAddress, (short) measurement);
         }
 
-        for (Station station : fasterHashMap.getValues()) {
+        for (Station station : fasterHashMap.getEntries()) {
             station.aggregateRemainingMeasurements();
         }
 
@@ -224,11 +224,11 @@ public class CalculateAverage_flippingbits {
             }
         }
 
-        public void mergeWith(Station otherAggregate) {
-            min = (short) Math.min(min, otherAggregate.min);
-            max = (short) Math.max(max, otherAggregate.max);
-            count = count + otherAggregate.count;
-            sum = sum + otherAggregate.sum;
+        public void mergeWith(Station otherStation) {
+            min = (short) Math.min(min, otherStation.min);
+            max = (short) Math.max(max, otherStation.max);
+            count = count + otherStation.count;
+            sum = sum + otherStation.sum;
         }
 
         public boolean nameEquals(long otherNameAddress) {
@@ -299,7 +299,7 @@ public class CalculateAverage_flippingbits {
         }
 
         public FasterHashMap mergeWith(FasterHashMap otherMap) {
-            for (Station station : otherMap.getValues()) {
+            for (Station station : otherMap.getEntries()) {
                 var offsetIdx = getOffsetIdx(station.nameHash, station.nameLength, station.nameAddress);
                 var offset = offsets[offsetIdx];
 
@@ -315,7 +315,7 @@ public class CalculateAverage_flippingbits {
             return this;
         }
 
-        public List<Station> getValues() {
+        public List<Station> getEntries() {
             return Arrays.asList(entries).subList(1, slotsInUse + 1);
         }
     }
