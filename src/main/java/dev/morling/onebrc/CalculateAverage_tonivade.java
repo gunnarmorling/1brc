@@ -15,27 +15,25 @@
  */
 package dev.morling.onebrc;
 
-import static java.util.stream.Collectors.*;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
-import java.util.stream.Collector;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 public class CalculateAverage_tonivade {
 
     private static final String FILE = "./measurements.txt";
 
-    private static record Measurement(String station, double value) {
-        private Measurement(String[] parts) {
-            this(parts[0], Double.parseDouble(parts[1]));
-        }
-    }
-
     private static record ResultRow(double min, double mean, double max) {
 
+        @Override
         public String toString() {
             return round(min) + "/" + round(mean) + "/" + round(max);
         }
@@ -50,43 +48,97 @@ public class CalculateAverage_tonivade {
         private double max = Double.NEGATIVE_INFINITY;
         private double sum;
         private long count;
+
+        void add(double value) {
+            min = Math.min(min, value);
+            max = Math.max(max, value);
+            sum += value;
+            count++;
+        }
+
+        ResultRow finish() {
+            return new ResultRow(
+                    this.min, (Math.round(this.sum * 10.0) / 10.0) / this.count, this.max);
+        }
     }
 
     public static void main(String[] args) throws IOException {
-        // Map<String, Double> measurements1 = Files.lines(Paths.get(FILE))
-        // .map(l -> l.split(";"))
-        // .collect(groupingBy(m -> m[0], averagingDouble(m -> Double.parseDouble(m[1]))));
-        //
-        // measurements1 = new TreeMap<>(measurements1.entrySet()
-        // .stream()
-        // .collect(toMap(e -> e.getKey(), e -> Math.round(e.getValue() * 10.0) / 10.0)));
-        // System.out.println(measurements1);
+        Map<String, Processor> map = new ConcurrentHashMap<>();
 
-        Collector<Measurement, MeasurementAggregator, ResultRow> collector = Collector.of(
-                MeasurementAggregator::new,
-                (a, m) -> {
-                    a.min = Math.min(a.min, m.value);
-                    a.max = Math.max(a.max, m.value);
-                    a.sum += m.value;
-                    a.count++;
-                },
-                (agg1, agg2) -> {
-                    var res = new MeasurementAggregator();
-                    res.min = Math.min(agg1.min, agg2.min);
-                    res.max = Math.max(agg1.max, agg2.max);
-                    res.sum = agg1.sum + agg2.sum;
-                    res.count = agg1.count + agg2.count;
-
-                    return res;
-                },
-                agg -> {
-                    return new ResultRow(agg.min, (Math.round(agg.sum * 10.0) / 10.0) / agg.count, agg.max);
+        Files.lines(Paths.get(FILE))
+                .parallel()
+                .forEach(line -> {
+                    var index = line.indexOf(';');
+                    map.computeIfAbsent(line.substring(0, index), Processor::new).add(line.substring(index + 1));
                 });
 
-        Map<String, ResultRow> measurements = new TreeMap<>(Files.lines(Paths.get(FILE))
-                .map(l -> new Measurement(l.split(";")))
-                .collect(groupingBy(m -> m.station(), collector)));
+        Map<String, ResultRow> measurements = map.values().stream()
+                .collect(Collectors.toMap(Processor::getStation, Processor::finish, (a, b) -> {
+                    throw new IllegalStateException();
+                }, TreeMap::new));
 
         System.out.println(measurements);
+    }
+
+    static final class Processor implements Runnable {
+
+        private final String station;
+        private final Thread thread;
+
+        private final BlockingQueue<String> queue = new ArrayBlockingQueue<>(1000);
+        private final MeasurementAggregator aggregator = new MeasurementAggregator();
+        private final AtomicBoolean stop = new AtomicBoolean();
+        private final AtomicBoolean finished = new AtomicBoolean();
+
+        public Processor(String station) {
+            this.station = station;
+            this.thread = Thread.ofVirtual().name(station).start(this);
+        }
+
+        public String getStation() {
+            return station;
+        }
+
+        public MeasurementAggregator getAggregator() {
+            return aggregator;
+        }
+
+        public void add(String measurement) {
+            try {
+                queue.put(measurement);
+            }
+            catch (InterruptedException e) {
+                // ignore
+            }
+        }
+
+        @Override
+        public void run() {
+            while (!stop.get()) {
+                try {
+                    aggregator.add(Double.parseDouble(queue.take()));
+                }
+                catch (InterruptedException e) {
+                    // ignore
+                }
+            }
+            // drain queue
+            queue.stream().map(Double::parseDouble).forEach(aggregator::add);
+            finished.set(true);
+        }
+
+        public ResultRow finish() {
+            stop.set(true);
+            thread.interrupt();
+            while (!finished.get()) {
+                try {
+                    Thread.sleep(10);
+                }
+                catch (InterruptedException e) {
+                    // ignore
+                }
+            }
+            return aggregator.finish();
+        }
     }
 }
