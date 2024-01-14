@@ -193,11 +193,8 @@ public class CalculateAverage_eriklumme {
                             mode = Mode.READ_STATION;
 
                             // We've run past our size, can happen
-                            if (buffer.position() - bytes.length + i > fileSizePerThread) {
-                                // It is possible that there bytes left in the buffer, we must ensure that is not the case
-                                // so that processing is stopped
-                                buffer.position(buffer.limit());
-                                break;
+                            if (buffer.position() - bytes.length + i >= fileSizePerThread) {
+                                return map;
                             }
                         }
                         else if (mode == Mode.UNINITIALIZED) {
