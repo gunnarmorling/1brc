@@ -23,11 +23,13 @@ import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.TreeMap;
 
 import static java.lang.Double.doubleToRawLongBits;
 import static java.lang.Double.longBitsToDouble;
-import static java.lang.foreign.ValueLayout.*;
+import static java.lang.foreign.ValueLayout.JAVA_BYTE;
+import static java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED;
 
 /**
  * Broad experiments in this implementation:
@@ -59,62 +61,92 @@ public class CalculateAverage_gamlerhart {
     final static ValueLayout.OfInt INT_UNALIGNED_BIG_ENDIAN = ValueLayout.JAVA_INT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
 
     public static void main(String[] args) throws Exception {
-        try (var arena = Arena.ofConfined();
+        try (var arena = Arena.ofShared();
                 FileChannel fc = FileChannel.open(Path.of(FILE))) {
-            var map = new PrivateHashMap();
             long fileSize = fc.size();
             MemorySegment fileContent = fc.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, arena);
 
+            ArrayList<Section> sections = splitFileIntoSections(fileSize, fileContent);
+
             var loopBound = byteVec.loopBound(fileSize) - vecLen;
-            for (long i = 0; i < fileSize;) {
-                long nameStart = i;
-                int simdSearchEnd = 0;
-                int nameLen = 0;
-                // Vectorized Search
-                if (i < loopBound) {
-                    do {
-                        var vec = byteVec.fromMemorySegment(fileContent, i, ByteOrder.BIG_ENDIAN);
-                        var hasSemi = vec.eq(semiColon);
-                        simdSearchEnd = hasSemi.firstTrue();
-                        i += simdSearchEnd;
-                        nameLen += simdSearchEnd;
-                    } while (simdSearchEnd == vecLen && i < loopBound);
-                }
-                // Left-over search
-                while (loopBound <= i && fileContent.get(JAVA_BYTE, i) != ';') {
-                    nameLen++;
-                    i++;
-                }
-                i++; // Consume ;
-                // Copied from yemreinci. I mostly wanted to experiment the vector math, not with parsing =)
-                double val;
-                {
-                    boolean negative = false;
-                    if ((fileContent.get(JAVA_BYTE, i)) == '-') {
-                        negative = true;
-                        i++;
-                    }
-                    byte b;
-                    double temp;
-                    if ((b = fileContent.get(JAVA_BYTE, i + 1)) == '.') { // temperature is in either XX.X or X.X form
-                        temp = (fileContent.get(JAVA_BYTE, i) - '0') + (fileContent.get(JAVA_BYTE, i + 2) - '0') / 10.0;
-                        i += 3;
-                    }
-                    else {
-                        temp = (fileContent.get(JAVA_BYTE, i) - '0') * 10 + (b - '0')
-                                + (fileContent.get(JAVA_BYTE, i + 3) - '0') / 10.0;
-                        i += 4;
-                    }
-                    val = (negative ? -temp : temp);
-                }
-                i++; // Consume \n
-                map.add(fileContent, nameStart, nameLen, val);
-            }
-            // System.out.println(map.debug_reprobeMax);
+            PrivateHashMap result = sections.stream()
+                    .parallel()
+                    .map(s -> {
+                        return parseSection(s.start, s.end, loopBound, fileContent);
+                    }).reduce((mine, other) -> {
+                        assert mine != other;
+                        mine.mergeFrom(fileContent, other);
+                        return mine;
+                    })
+                    .get();
+
             var measurements = new TreeMap<String, ResultRow>();
-            map.fill(fileContent, measurements);
+            result.fill(fileContent, measurements);
             System.out.println(measurements);
         }
+    }
+
+    private static PrivateHashMap parseSection(long start, long end, long loopBound, MemorySegment fileContent) {
+        var map = new PrivateHashMap();
+        for (long i = start; i < end;) {
+            long nameStart = i;
+            int simdSearchEnd = 0;
+            int nameLen = 0;
+            // Vectorized Search
+            if (i < loopBound) {
+                do {
+                    var vec = byteVec.fromMemorySegment(fileContent, i, ByteOrder.BIG_ENDIAN);
+                    var hasSemi = vec.eq(semiColon);
+                    simdSearchEnd = hasSemi.firstTrue();
+                    i += simdSearchEnd;
+                    nameLen += simdSearchEnd;
+                } while (simdSearchEnd == vecLen && i < loopBound);
+            }
+            // Left-over search
+            while (loopBound <= i && fileContent.get(JAVA_BYTE, i) != ';') {
+                nameLen++;
+                i++;
+            }
+            i++; // Consume ;
+            // Copied from yemreinci. I mostly wanted to experiment the vector math, not with parsing =)
+            double val;
+            {
+                boolean negative = false;
+                if ((fileContent.get(JAVA_BYTE, i)) == '-') {
+                    negative = true;
+                    i++;
+                }
+                byte b;
+                double temp;
+                if ((b = fileContent.get(JAVA_BYTE, i + 1)) == '.') { // temperature is in either XX.X or X.X form
+                    temp = (fileContent.get(JAVA_BYTE, i) - '0') + (fileContent.get(JAVA_BYTE, i + 2) - '0') / 10.0;
+                    i += 3;
+                }
+                else {
+                    temp = (fileContent.get(JAVA_BYTE, i) - '0') * 10 + (b - '0')
+                            + (fileContent.get(JAVA_BYTE, i + 3) - '0') / 10.0;
+                    i += 4;
+                }
+                val = (negative ? -temp : temp);
+            }
+            i++; // Consume \n
+            map.add(fileContent, nameStart, nameLen, val);
+        }
+        return map;
+    }
+
+    private static ArrayList<Section> splitFileIntoSections(long fileSize, MemorySegment fileContent) {
+        var cpuCount = Runtime.getRuntime().availableProcessors();
+        var roughChunkSize = fileSize / cpuCount;
+        ArrayList<Section> sections = new ArrayList<>(cpuCount);
+        for (long sStart = 0; sStart < fileSize;) {
+            var endGuess = Math.min(sStart + roughChunkSize, fileSize);
+            for (; endGuess < fileSize && fileContent.get(JAVA_BYTE, endGuess) != '\n'; endGuess++) {
+            }
+            sections.add(new Section(sStart, endGuess));
+            sStart = endGuess + 1;
+        }
+        return sections;
     }
 
     private static class PrivateHashMap {
@@ -142,6 +174,11 @@ public class CalculateAverage_gamlerhart {
         }
 
         public void add(MemorySegment file, long pos, int len, double val) {
+            int hashCode = calculateHash(file, pos, len);
+            doAdd(file, hashCode, pos, len, val);
+        }
+
+        private static int calculateHash(MemorySegment file, long pos, int len) {
             int hashCode = 1;
             int i = 0;
             int intBound = (len / 4) * 4;
@@ -153,12 +190,10 @@ public class CalculateAverage_gamlerhart {
                 int v = file.get(JAVA_BYTE, pos + i);
                 hashCode = 31 * hashCode + v;
             }
-
-            doAdd(file, hashCode, pos, len, val);
+            return hashCode;
         }
 
         private void doAdd(MemorySegment file, int hash, long pos, int len, double val) {
-            // var debug = new String(file.asSlice(pos, len).toArray(ValueLayout.JAVA_BYTE));
             int slot = hash & MASK;
             for (var probe = 0; probe < 20000; probe++) {
                 var iSl = ((slot + probe) & MASK) * 5;
@@ -200,9 +235,6 @@ public class CalculateAverage_gamlerhart {
             long keyPos = (slotEntry & MASK_POS) >> SHIFT_POS;
             int keyLen = (int) (slotEntry & MASK_LEN);
             var isSame = isSame(file, keyPos, pos, len);
-            // System.out.println("Entry:" + new String(file.asSlice(pos, len).toArray(JAVA_BYTE)) +
-            // ",Keys:" + new String(file.asSlice(keyPos, keyLen).toArray(JAVA_BYTE)) +
-            // ",match " + isSame);
             return isSame;
         }
 
@@ -236,6 +268,67 @@ public class CalculateAverage_gamlerhart {
             return true;
         }
 
+        public PrivateHashMap mergeFrom(MemorySegment file, PrivateHashMap other) {
+            for (int slot = 0; slot < other.keyValues.length / 5; slot++) {
+                int srcI = slot * 5;
+                long keyE = other.keyValues[srcI];
+                if (keyE != 0) {
+                    long oPos = (keyE & MASK_POS) >> SHIFT_POS;
+                    int oLen = (int) (keyE & MASK_LEN);
+                    addMerge(file, other, srcI, oPos, oLen);
+                }
+            }
+            return this;
+        }
+
+        private void addMerge(MemorySegment file, PrivateHashMap other, int srcI, long oPos, int oLen) {
+            int slot = calculateHash(file, oPos, oLen) & MASK;
+            for (var probe = 0; probe < 20000; probe++) {
+                var iSl = ((slot + probe) & MASK) * 5;
+                var slotEntry = keyValues[iSl];
+
+                var emtpy = slotEntry == 0;
+                // var debugKey = new String(file.asSlice(oPos, oLen).toArray(JAVA_BYTE));
+                if (emtpy) {
+                    // if (debugKey.equals("Cabo San Lucas")) {
+                    // System.out.println("=> VALUES (init) " + debugKey + "@" + iSl + " max: " + longBitsToDouble(other.keyValues[srcI + 2]) + "," + longBitsToDouble(keyValues[iSl + 2]));
+                    // }
+                    keyValues[iSl] = other.keyValues[srcI];
+                    keyValues[iSl + 1] = other.keyValues[srcI + 1];
+                    keyValues[iSl + 2] = other.keyValues[srcI + 2];
+                    keyValues[iSl + 3] = other.keyValues[srcI + 3];
+                    keyValues[iSl + 4] = other.keyValues[srcI + 4];
+                    // debug_size++;
+                    return;
+                }
+                else if (isSameEntry(file, slotEntry, oPos, oLen)) {
+                    // if (debugKey.equals("Cabo San Lucas")) {
+                    // System.out.println("=> VALUES (merge) " + "@" + iSl + debugKey + " max: " + longBitsToDouble(other.keyValues[srcI + 2]) + ","
+                    // + longBitsToDouble(keyValues[iSl + 2]) + "=> "
+                    // + Math.max(longBitsToDouble(keyValues[iSl + 2]), longBitsToDouble(other.keyValues[srcI + 2])));
+                    // }
+                    keyValues[iSl + 1] = doubleToRawLongBits(Math.min(longBitsToDouble(keyValues[iSl + 1]), longBitsToDouble(other.keyValues[srcI + 1])));
+                    keyValues[iSl + 2] = doubleToRawLongBits(Math.max(longBitsToDouble(keyValues[iSl + 2]), longBitsToDouble(other.keyValues[srcI + 2])));
+                    keyValues[iSl + 3] = doubleToRawLongBits(longBitsToDouble(keyValues[iSl + 3]) + longBitsToDouble(other.keyValues[srcI + 3]));
+                    keyValues[iSl + 4] = keyValues[iSl + 4] + other.keyValues[srcI + 4];
+                    // if (debugKey.equals("Cabo San Lucas")) {
+                    // System.out.println("=> VALUES (after-merge) self: "+ "@" + iSl + System.identityHashCode(this) + ":"+ debugKey + " max: " +
+                    // + longBitsToDouble(keyValues[iSl + 2]) + "=> ");
+                    // }
+                    return;
+                }
+                else {
+                    // long keyPos = (slotEntry & MASK_POS) >> SHIFT_POS;
+                    // int keyLen = (int) (slotEntry & MASK_LEN);
+                    // System.out.println("Colliding " + new String(file.asSlice(pos,len).toArray(ValueLayout.JAVA_BYTE)) +
+                    // " with key" + new String(file.asSlice(keyPos,keyLen).toArray(ValueLayout.JAVA_BYTE)) +
+                    // " hash " + hash + " slot " + slot + "+" + probe + " at " + iSl);
+                    // debug_reprobeMax = Math.max(debug_reprobeMax, probe);
+                }
+            }
+            throw new IllegalStateException("More than 20000 reprobes");
+        }
+
         public void fill(MemorySegment file, TreeMap<String, ResultRow> treeMap) {
             for (int i = 0; i < keyValues.length / 5; i++) {
                 var ji = i * 5;
@@ -254,6 +347,34 @@ public class CalculateAverage_gamlerhart {
                 }
             }
         }
+
+        public String debugPrint(MemorySegment file) {
+            StringBuilder b = new StringBuilder();
+            for (int i = 0; i < keyValues.length / 5; i++) {
+                var ji = i * 5;
+                long keyE = keyValues[ji];
+                if (keyE != 0) {
+                    long keyPos = (keyE & MASK_POS) >> SHIFT_POS;
+                    int keyLen = (int) (keyE & MASK_LEN);
+                    byte[] keyBytes = new byte[keyLen];
+                    MemorySegment.copy(file, JAVA_BYTE, keyPos, keyBytes, 0, keyLen);
+                    var key = new String(keyBytes);
+                    var min = longBitsToDouble(keyValues[ji + 1]);
+                    var max = longBitsToDouble(keyValues[ji + 2]);
+                    var sum = longBitsToDouble(keyValues[ji + 3]);
+                    var count = keyValues[ji + 4];
+                    b.append("{").append(key).append("@").append(ji)
+                            .append(",").append(min)
+                            .append(",").append(max)
+                            .append(",").append(sum)
+                            .append(",").append(count).append("},");
+                }
+            }
+            return b.toString();
+        }
+    }
+
+    record Section(long start, long end) {
     }
 
     private static record ResultRow(double min, double mean, double max) {
