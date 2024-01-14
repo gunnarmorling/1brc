@@ -15,7 +15,6 @@
 #  limitations under the License.
 #
 
+JAVA_OPTS="-Xm6G -Xm16G"
 
-JAVA_OPTS="-Xms6G -Xmx16G"
-
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_kumarsaurav123
+time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_kumarsaurav123
