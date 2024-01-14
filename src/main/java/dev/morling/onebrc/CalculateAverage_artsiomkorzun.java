@@ -15,345 +15,361 @@
  */
 package dev.morling.onebrc;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.MappedByteBuffer;
+import sun.misc.Unsafe;
+
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.reflect.Field;
+import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.function.Consumer;
-import java.util.stream.IntStream;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class CalculateAverage_artsiomkorzun {
 
     private static final Path FILE = Path.of("./measurements.txt");
-    private static final long FILE_SIZE = size(FILE);
+    private static final MemorySegment MAPPED_FILE = map(FILE);
 
-    private static final int SEGMENT_SIZE = 16 * 1024 * 1024;
-    private static final int SEGMENT_COUNT = (int) ((FILE_SIZE + SEGMENT_SIZE - 1) / SEGMENT_SIZE);
+    private static final int PARALLELISM = Runtime.getRuntime().availableProcessors();
+    private static final int SEGMENT_SIZE = 32 * 1024 * 1024;
+    private static final int SEGMENT_COUNT = (int) ((MAPPED_FILE.byteSize() + SEGMENT_SIZE - 1) / SEGMENT_SIZE);
     private static final int SEGMENT_OVERLAP = 1024;
+    private static final long COMMA_PATTERN = pattern(';');
+    private static final long DOT_BITS = 0x10101000;
+    private static final long MAGIC_MULTIPLIER = (100 * 0x1000000 + 10 * 0x10000 + 1);
 
-    public static void main(String[] args) throws Exception {
-        /*
-         * for (int i = 0; i < 10; i++) {
-         * long start = System.currentTimeMillis();
-         * execute();
-         * long end = System.currentTimeMillis();
-         * System.err.println("Time: " + (end - start));
-         * }
-         */
+    private static final ByteOrder BYTE_ORDER = ByteOrder.nativeOrder();
+    private static final Unsafe UNSAFE;
 
-        execute();
-    }
-
-    private static void execute() {
-        Aggregates aggregates = IntStream.range(0, SEGMENT_COUNT)
-                .parallel()
-                .mapToObj(CalculateAverage_artsiomkorzun::aggregate)
-                .reduce(new Aggregates(), CalculateAverage_artsiomkorzun::merge)
-                .sort();
-
-        print(aggregates);
-    }
-
-    private static Aggregates aggregate(int segment) {
-        long position = (long) SEGMENT_SIZE * segment;
-        int size = (int) Math.min(SEGMENT_SIZE + SEGMENT_OVERLAP, FILE_SIZE - position);
-        int limit = Math.min(SEGMENT_SIZE, size - 1);
-
-        MappedByteBuffer buffer = map(position, size); // leaking until gc
-
-        if (position > 0) {
-            next(buffer);
-        }
-
-        Aggregates aggregates = new Aggregates();
-        Row row = new Row();
-
-        while (buffer.position() <= limit) {
-            parse(buffer, row);
-            aggregates.add(row);
-        }
-
-        return aggregates;
-    }
-
-    private static Aggregates merge(Aggregates lefts, Aggregates rights) {
-        Aggregates to = (lefts.size() < rights.size()) ? rights : lefts;
-        Aggregates from = (lefts.size() < rights.size()) ? lefts : rights;
-        from.visit(to::merge);
-        return to;
-    }
-
-    private static void print(Aggregates aggregates) {
-        StringBuilder builder = new StringBuilder(aggregates.size() * 15 + 32);
-        builder.append("{");
-        aggregates.visit(aggregate -> {
-            if (builder.length() > 1) {
-                builder.append(", ");
-            }
-
-            builder.append(aggregate);
-        });
-        builder.append("}");
-        System.out.println(builder);
-    }
-
-    private static long size(Path file) {
+    static {
         try {
-            return Files.size(file);
-        }
-        catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private static MappedByteBuffer map(long position, int size) {
-        try (FileChannel channel = FileChannel.open(FILE, StandardOpenOption.READ)) {
-            return channel.map(FileChannel.MapMode.READ_ONLY, position, size); // leaking until gc
+            Field unsafe = Unsafe.class.getDeclaredField("theUnsafe");
+            unsafe.setAccessible(true);
+            UNSAFE = (Unsafe) unsafe.get(Unsafe.class);
         }
         catch (Throwable e) {
             throw new RuntimeException(e);
         }
     }
 
-    private static void next(ByteBuffer buffer) {
-        while (buffer.get() != '\n') {
-            // continue
+    public static void main(String[] args) throws Exception {
+        // for (int i = 0; i < 10; i++) {
+        // long start = System.currentTimeMillis();
+        // execute();
+        // long end = System.currentTimeMillis();
+        // System.err.println("Time: " + (end - start));
+        // }
+
+        execute();
+    }
+
+    private static void execute() throws Exception {
+        AtomicInteger counter = new AtomicInteger();
+        AtomicReference<Aggregates> result = new AtomicReference<>();
+        Aggregator[] aggregators = new Aggregator[PARALLELISM];
+
+        for (int i = 0; i < aggregators.length; i++) {
+            aggregators[i] = new Aggregator(counter, result);
+            aggregators[i].start();
+        }
+
+        for (int i = 0; i < aggregators.length; i++) {
+            aggregators[i].join();
+        }
+
+        Map<String, Aggregate> aggregates = result.get().aggregate();
+        System.out.println(text(aggregates));
+    }
+
+    private static MemorySegment map(Path file) {
+        try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ)) {
+            long size = channel.size();
+            return channel.map(FileChannel.MapMode.READ_ONLY, 0, size, Arena.global());
+        }
+        catch (Throwable e) {
+            throw new RuntimeException(e);
         }
     }
 
-    private static void parse(ByteBuffer buffer, Row row) {
-        int index = 0;
-        byte b;
-
-        while ((b = buffer.get()) != ';') {
-            row.station[index++] = b;
-        }
-
-        row.length = index;
-
-        double value = 0;
-        double multiplier = 1;
-
-        b = buffer.get();
-        if (b == '-') {
-            multiplier = -1;
-        }
-        else {
-            assert b >= '0' && b <= '9';
-            value = b - '0';
-        }
-
-        while ((b = buffer.get()) != '.') {
-            assert b >= '0' && b <= '9';
-            value = 10 * value + (b - '0');
-        }
-
-        b = buffer.get();
-        assert b >= '0' && b <= '9';
-        value = 10 * value + (b - '0');
-
-        b = buffer.get();
-        assert b == '\n';
-
-        row.temperature = value * multiplier;
+    private static long pattern(char c) {
+        long b = c & 0xFFL;
+        return b | (b << 8) | (b << 16) | (b << 24) | (b << 32) | (b << 40) | (b << 48) | (b << 56);
     }
 
-    private static class Row {
-        final byte[] station = new byte[256];
-        int length;
-        double temperature;
+    private static long getLongLittleEndian(long address) {
+        long value = UNSAFE.getLong(address);
 
-        @Override
-        public String toString() {
-            return new String(station, 0, length) + ":" + temperature;
+        if (BYTE_ORDER == ByteOrder.BIG_ENDIAN) {
+            value = Long.reverseBytes(value);
         }
+
+        return value;
     }
 
-    private static class Aggregate implements Comparable<Aggregate> {
-        final byte[] station;
-        double min;
-        double max;
-        double sum;
-        double count;
+    private static String text(Map<String, Aggregate> aggregates) {
+        StringBuilder text = new StringBuilder(aggregates.size() * 32 + 2);
+        text.append('{');
 
-        public Aggregate(byte[] station, int length, double temperature) {
-            this.station = Arrays.copyOf(station, length);
-            this.min = temperature;
-            this.max = temperature;
-            this.sum = temperature;
-            this.count = 1;
-        }
-
-        public void add(double temperature) {
-            min = Math.min(min, temperature);
-            max = Math.max(max, temperature);
-            sum += temperature;
-            count++;
-        }
-
-        public void merge(Aggregate right) {
-            min = Math.min(min, right.min);
-            max = Math.max(max, right.max);
-            sum += right.sum;
-            count += right.count;
-        }
-
-        @Override
-        public int compareTo(Aggregate that) {
-            byte[] lhs = this.station;
-            byte[] rhs = that.station;
-            int limit = Math.min(lhs.length, rhs.length);
-
-            for (int offset = 0; offset < limit; offset++) {
-                int left = lhs[offset];
-                int right = rhs[offset];
-
-                if (left != right) {
-                    return (left & 0xFF) - (right & 0xFF);
-                }
+        for (Map.Entry<String, Aggregate> entry : aggregates.entrySet()) {
+            if (text.length() > 1) {
+                text.append(", ");
             }
 
-            return lhs.length - rhs.length;
+            Aggregate aggregate = entry.getValue();
+            text.append(entry.getKey()).append('=')
+                    .append(round(aggregate.min)).append('/')
+                    .append(round(1.0 * aggregate.sum / aggregate.cnt)).append('/')
+                    .append(round(aggregate.max));
         }
 
-        @Override
-        public String toString() {
-            return new String(station) + "=" + round(min) + "/" + round(sum / count) + "/" + round(max);
-        }
+        text.append('}');
+        return text.toString();
+    }
 
-        private static double round(double v) {
-            return Math.round(v) / 10.0;
-        }
+    private static double round(double v) {
+        return Math.round(v) / 10.0;
+    }
+
+    private record Aggregate(int min, int max, long sum, int cnt) {
     }
 
     private static class Aggregates {
 
-        private static final int GROW_FACTOR = 4;
-        private static final float LOAD_FACTOR = 0.55f;
+        private static final int ENTRIES = 64 * 1024;
+        private static final int SIZE = 32 * ENTRIES;
 
-        private Aggregate[] aggregates = new Aggregate[1024];
-        private int limit = (int) (aggregates.length * LOAD_FACTOR);
-        private int size;
+        private final long pointer;
 
-        public int size() {
-            return size;
+        public Aggregates() {
+            long address = UNSAFE.allocateMemory(SIZE + 8096);
+            pointer = (address + 4095) & (~4095);
+            UNSAFE.setMemory(pointer, SIZE, (byte) 0);
         }
 
-        public void visit(Consumer<Aggregate> consumer) {
-            if (size > 0) {
-                for (Aggregate aggregate : aggregates) {
-                    if (aggregate != null) {
-                        consumer.accept(aggregate);
+        public void add(long reference, int length, int hash, int value) {
+            for (int offset = offset(hash);; offset = next(offset)) {
+                long address = pointer + offset;
+                long ref = UNSAFE.getLong(address);
+
+                if (ref == 0) {
+                    alloc(reference, length, hash, value, address);
+                    break;
+                }
+
+                if (equal(ref, reference, length)) {
+                    long sum = UNSAFE.getLong(address + 16) + value;
+                    int cnt = UNSAFE.getInt(address + 24) + 1;
+                    short min = (short) Math.min(UNSAFE.getShort(address + 28), value);
+                    short max = (short) Math.max(UNSAFE.getShort(address + 30), value);
+
+                    UNSAFE.putLong(address + 16, sum);
+                    UNSAFE.putInt(address + 24, cnt);
+                    UNSAFE.putShort(address + 28, min);
+                    UNSAFE.putShort(address + 30, max);
+                    break;
+                }
+            }
+        }
+
+        public void merge(Aggregates rights) {
+            for (int rightOffset = 0; rightOffset < SIZE; rightOffset += 32) {
+                long rightAddress = rights.pointer + rightOffset;
+                long reference = UNSAFE.getLong(rightAddress);
+
+                if (reference == 0) {
+                    continue;
+                }
+
+                int hash = UNSAFE.getInt(rightAddress + 8);
+                int length = UNSAFE.getInt(rightAddress + 12);
+
+                for (int offset = offset(hash);; offset = next(offset)) {
+                    long address = pointer + offset;
+                    long ref = UNSAFE.getLong(address);
+
+                    if (ref == 0) {
+                        UNSAFE.copyMemory(rightAddress, address, 32);
+                        break;
+                    }
+
+                    if (equal(ref, reference, length)) {
+                        long sum = UNSAFE.getLong(address + 16) + UNSAFE.getLong(rightAddress + 16);
+                        int cnt = UNSAFE.getInt(address + 24) + UNSAFE.getInt(rightAddress + 24);
+                        short min = (short) Math.min(UNSAFE.getShort(address + 28), UNSAFE.getShort(rightAddress + 28));
+                        short max = (short) Math.max(UNSAFE.getShort(address + 30), UNSAFE.getShort(rightAddress + 30));
+
+                        UNSAFE.putLong(address + 16, sum);
+                        UNSAFE.putInt(address + 24, cnt);
+                        UNSAFE.putShort(address + 28, min);
+                        UNSAFE.putShort(address + 30, max);
+                        break;
                     }
                 }
             }
         }
 
-        public void add(Row row) {
-            byte[] station = row.station;
-            int length = row.length;
-            double temperature = row.temperature;
+        public Map<String, Aggregate> aggregate() {
+            TreeMap<String, Aggregate> set = new TreeMap<>();
 
-            int hash = hash(station, length);
-            int index = hash & (aggregates.length - 1);
+            for (int offset = 0; offset < SIZE; offset += 32) {
+                long address = pointer + offset;
+                long ref = UNSAFE.getLong(address);
 
-            while (true) {
-                Aggregate aggregate = aggregates[index];
+                if (ref != 0) {
+                    int length = UNSAFE.getInt(address + 12) - 1;
+                    byte[] array = new byte[length];
+                    UNSAFE.copyMemory(null, ref, array, Unsafe.ARRAY_BYTE_BASE_OFFSET, length);
+                    String key = new String(array);
 
-                if (aggregate == null) {
-                    aggregates[index] = new Aggregate(station, length, temperature);
-                    if (++size >= limit) {
-                        grow();
-                    }
-                    break;
-                }
+                    long sum = UNSAFE.getLong(address + 16);
+                    int cnt = UNSAFE.getInt(address + 24);
+                    short min = UNSAFE.getShort(address + 28);
+                    short max = UNSAFE.getShort(address + 30);
 
-                if (equal(station, length, aggregate.station, aggregate.station.length)) {
-                    aggregate.add(temperature);
-                    break;
-                }
-
-                index = (index + 1) & (aggregates.length - 1);
-            }
-        }
-
-        public void merge(Aggregate right) {
-            byte[] station = right.station;
-
-            int hash = hash(station, station.length);
-            int index = hash & (aggregates.length - 1);
-
-            while (true) {
-                Aggregate aggregate = aggregates[index];
-
-                if (aggregate == null) {
-                    aggregates[index] = right;
-                    if (++size >= limit) {
-                        grow();
-                    }
-                    break;
-                }
-
-                if (equal(station, station.length, aggregate.station, aggregate.station.length)) {
-                    aggregate.merge(right);
-                    break;
-                }
-
-                index = (index + 1) & (aggregates.length - 1);
-            }
-        }
-
-        public Aggregates sort() {
-            Arrays.parallelSort(aggregates, Comparator.nullsLast(Aggregate::compareTo));
-            return this;
-        }
-
-        private void grow() {
-            Aggregate[] oldAggregates = aggregates;
-            aggregates = new Aggregate[oldAggregates.length * GROW_FACTOR];
-            limit = (int) (aggregates.length * LOAD_FACTOR);
-
-            for (Aggregate aggregate : oldAggregates) {
-                if (aggregate != null) {
-                    int hash = hash(aggregate.station, aggregate.station.length);
-                    int index = hash & (aggregates.length - 1);
-
-                    while (aggregates[index] != null) {
-                        index = (index + 1) & (aggregates.length - 1);
-                    }
-
-                    aggregates[index] = aggregate;
+                    Aggregate aggregate = new Aggregate(min, max, sum, cnt);
+                    set.put(key, aggregate);
                 }
             }
+
+            return set;
         }
 
-        private static int hash(byte[] array, int length) {
-            int hash = 0;
-
-            for (int i = 0; i < length; i++) {
-                hash = 71 * hash + array[i];
-            }
-
-            return hash;
+        private static void alloc(long reference, int length, int hash, int value, long address) {
+            UNSAFE.putLong(address, reference);
+            UNSAFE.putInt(address + 8, hash);
+            UNSAFE.putInt(address + 12, length);
+            UNSAFE.putLong(address + 16, value);
+            UNSAFE.putInt(address + 24, 1);
+            UNSAFE.putShort(address + 28, (short) value);
+            UNSAFE.putShort(address + 30, (short) value);
         }
 
-        private static boolean equal(byte[] left, int leftLength, byte[] right, int rightLength) {
-            if (leftLength != rightLength) {
-                return false;
-            }
+        private static int offset(int hash) {
+            return ((hash) & (ENTRIES - 1)) << 5;
+        }
 
-            for (int i = 0; i < leftLength; i++) {
-                if (left[i] != right[i]) {
+        private static int next(int prev) {
+            return (prev + 32) & (SIZE - 1);
+        }
+
+        private static boolean equal(long leftAddress, long rightAddress, int length) {
+            while (length > 8) {
+                long left = UNSAFE.getLong(leftAddress);
+                long right = UNSAFE.getLong(rightAddress);
+
+                if (left != right) {
                     return false;
                 }
+
+                leftAddress += 8;
+                rightAddress += 8;
+                length -= 8;
             }
 
-            return true;
+            int shift = (8 - length) << 3;
+            long left = getLongLittleEndian(leftAddress) << shift;
+            long right = getLongLittleEndian(rightAddress) << shift;
+            return (left == right);
+        }
+    }
+
+    private static class Aggregator extends Thread {
+
+        private final AtomicInteger counter;
+        private final AtomicReference<Aggregates> result;
+
+        public Aggregator(AtomicInteger counter, AtomicReference<Aggregates> result) {
+            super("aggregator");
+            this.counter = counter;
+            this.result = result;
+        }
+
+        @Override
+        public void run() {
+            Aggregates aggregates = new Aggregates();
+
+            for (int segment; (segment = counter.getAndIncrement()) < SEGMENT_COUNT;) {
+                long position = (long) SEGMENT_SIZE * segment;
+                int size = (int) Math.min(SEGMENT_SIZE + SEGMENT_OVERLAP, MAPPED_FILE.byteSize() - position);
+                long address = MAPPED_FILE.address() + position;
+                long limit = address + Math.min(SEGMENT_SIZE, size - 1);
+
+                if (segment > 0) {
+                    address = next(address);
+                }
+
+                aggregate(aggregates, address, limit);
+            }
+
+            while (!result.compareAndSet(null, aggregates)) {
+                Aggregates rights = result.getAndSet(null);
+
+                if (rights != null) {
+                    aggregates.merge(rights);
+                }
+            }
+        }
+
+        private static void aggregate(Aggregates aggregates, long position, long limit) {
+            // this parsing can produce seg fault at page boundaries
+            // e.g. file size is 4096 and the last entry is X=0.0, which is less than 8 bytes
+            // as a result a read will be split across pages, where one of them is not mapped
+            // but for some reason it works on my machine, leaving to investigate
+
+            for (long start = position, hash = 0; position <= limit;) {
+                int length; // idea: royvanrijn, explanation: https://richardstartin.github.io/posts/finding-bytes
+                {
+                    long word = getLongLittleEndian(position);
+                    long match = word ^ COMMA_PATTERN;
+                    long mask = (match - 0x0101010101010101L) & ~match & 0x8080808080808080L;
+
+                    if (mask == 0) {
+                        hash ^= word;
+                        position += 8;
+                        continue;
+                    }
+
+                    int bit = Long.numberOfTrailingZeros(mask);
+                    position += (bit >>> 3) + 1; // +sep
+                    hash ^= (word << (69 - bit));
+                    length = (int) (position - start);
+                }
+
+                int value; // idea: merykitty
+                {
+                    long word = getLongLittleEndian(position);
+                    long inverted = ~word;
+                    int dot = Long.numberOfTrailingZeros(inverted & DOT_BITS);
+                    long signed = (inverted << 59) >> 63;
+                    long mask = ~(signed & 0xFF);
+                    long digits = ((word & mask) << (28 - dot)) & 0x0F000F0F00L;
+                    long abs = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
+                    value = (int) ((abs ^ signed) - signed);
+                    position += (dot >> 3) + 3;
+                }
+
+                aggregates.add(start, length, mix(hash), value);
+
+                start = position;
+                hash = 0;
+            }
+        }
+
+        private static long next(long position) {
+            while (UNSAFE.getByte(position++) != '\n') {
+                // continue
+            }
+            return position;
+        }
+
+        private static int mix(long x) {
+            long h = x * -7046029254386353131L;
+            h ^= h >>> 32;
+            return (int) (h ^ h >>> 16);
         }
     }
 }

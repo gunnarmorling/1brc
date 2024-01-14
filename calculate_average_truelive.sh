@@ -15,6 +15,5 @@
 #  limitations under the License.
 #
 
-
-JAVA_OPTS="-Xmx4G"
-time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_truelive
+JAVA_OPTS="-Xmx8G -Xms2G"
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_truelive

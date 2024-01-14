@@ -1,0 +1,14 @@
+*.java          text
+*.md            text
+*.yml           text
+*.xml           text
+*.gradle        text
+*.properties    text
+mvnw            text eol=lf
+*.sh            text eol=lf
+*.bat           text eol=crlf
+*.cmd           text eol=crlf
+*.jar           binary
+
+src/test/resources/samples/*.txt text eol=lf
+src/test/resources/samples/*.out text eol=lf

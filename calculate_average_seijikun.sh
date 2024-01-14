@@ -15,6 +15,5 @@
 #  limitations under the License.
 #
 
-
-JAVA_OPTS="--enable-preview"
-time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_seijikun
+JAVA_OPTS="-XX:+UseParallelGC --enable-preview --add-modules jdk.incubator.vector"
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_seijikun
