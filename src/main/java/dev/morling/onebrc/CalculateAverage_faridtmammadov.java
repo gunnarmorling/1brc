@@ -16,14 +16,14 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 
-public class CalculateAverage_frd {
+public class CalculateAverage_faridtmammadov {
     private static final String FILE = "./measurements.txt";
 
     public static void main(String[] args) throws IOException {
         int availableProcessors = Runtime.getRuntime().availableProcessors();
 
         var map = getSegments(availableProcessors).stream()
-                .map(CalculateAverage_frd::aggregate).parallel()
+                .map(CalculateAverage_faridtmammadov::aggregate).parallel()
                 .flatMap(f -> f.entrySet().stream())
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, Aggregate::update, TreeMap::new));
 
