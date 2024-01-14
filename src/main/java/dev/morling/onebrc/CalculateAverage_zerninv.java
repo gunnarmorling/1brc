@@ -52,7 +52,7 @@ public class CalculateAverage_zerninv {
     public static void main(String[] args) throws IOException, InterruptedException {
         try (var channel = FileChannel.open(Path.of(FILE), StandardOpenOption.READ)) {
             var fileSize = channel.size();
-            var minChunkSize = fileSize < CHUNK_SIZE ? fileSize : fileSize / CORES;
+            var minChunkSize = Math.min(fileSize, CHUNK_SIZE);
 
             var tasks = new TaskThread[CORES];
             for (int i = 0; i < tasks.length; i++) {
