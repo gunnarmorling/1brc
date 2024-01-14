@@ -36,7 +36,7 @@ public class CalculateAverage_eriklumme {
 
     private static final String FILE = "./measurements.txt";
     private static final int NUM_CPUS = Runtime.getRuntime().availableProcessors();
-    private static final int LINE_OVERHEAD = 200;
+    private static final int LINE_OVERHEAD = 208;
     private static final int NUM_TASKS = NUM_CPUS * 6;
 
     private final CountDownLatch countDownLatch = new CountDownLatch(NUM_TASKS);
