@@ -155,7 +155,9 @@ public class CalculateAverage_mtopolnik {
             }
         }
 
-        private static final long DANGER_ZONE_LENGTH = (MAX_NAME_LEN - 1) / 8 * 8 + 8;
+        private static final int MAX_TEMPERATURE_LEN = 5;
+        private static final int MAX_ROW_LEN = MAX_NAME_LEN + 1 + MAX_TEMPERATURE_LEN + 1;
+        private static final long DANGER_ZONE_LENGTH = ((MAX_ROW_LEN - 1) / 8 * 8 + 8);
 
         private void processChunk() {
             while (cursor < inputSize) {
