@@ -126,10 +126,9 @@ public class CalculateAverage_flippingbits {
         var fasterHashMap = new FasterHashMap();
         for (var i = startOfSegment; i < endOfSegment; i += 3) {
             // Read station name
-            var nameHash = 0;
-            // Station name consists of at least one byte
             final var nameStartAddress = i++;
             var character = UNSAFE.getByte(i);
+            int nameHash = character;
             while (character != ';') {
                 nameHash = nameHash * HASH_PRIME_NUMBER + character;
                 i++;
