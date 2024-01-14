@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 #  Copyright 2023 The original authors
 #
@@ -15,10 +15,9 @@
 #  limitations under the License.
 #
 
-if [ -z "$1" ]
-  then
-    echo "Usage: eval.sh <fork name>"
-    exit 1
-fi
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+#sdk1 use java 21.0.1-open 1>&2
+sdk use java 21.0.1-graal 1>&2
+#sdk1 use java 21.0.1-zulu 1>&2
+#sdk1 use java 21.0.1-graalce 1>&2
 
-./evaluate.sh $1 2>&1 | tee $1.out
