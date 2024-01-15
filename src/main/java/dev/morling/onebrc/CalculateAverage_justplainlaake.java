@@ -168,16 +168,7 @@ public class CalculateAverage_justplainlaake {
 
                 // Simple way to merge both lists, tried doing it more inline inside the map and ended up taking a 10ms longer
                 processed.forEach((i, s) -> {
-                    merged.merge(i, (key, s1) -> {
-                        if (s1 == null) {
-                            return s;
-                        }
-                        s1.count += s.count;
-                        s1.max = Math.max(s1.max, s.max);
-                        s1.min = Math.min(s1.min, s.min);
-                        s1.sum += s.sum;
-                        return s1;
-                    });
+                    merged.merge(i, s);
                 });
             }
             catch (InterruptedException | ExecutionException e1) {
@@ -221,19 +212,17 @@ public class CalculateAverage_justplainlaake {
 
             while ((offset = getMaskOffset(read = UNSAFE.getLong(currentAddress), SEPERATOR_BYTE)) == -1) {// Read and compute the hash until we locate the seperator byte 59 or ';'
                 currentAddress += 8;// forwardscan
-                hash = (997 * hash) ^ (991 * getMurmurHash3(read));
+                hash = (997 * hash) ^ getMurmurHash3(991 * read);
             }
 
             // Compute the final hash based using the last read long but only the effective bits (anything before the byte 59 or ';').
             // Using the OFFSET_CLEARS masks that are defined statically we can essentially segregate the important bits of the name based on the offset read above
-            hash = (997 * hash) ^ (991 * getMurmurHash3(read & OFFSET_CLEARS[offset]));
+            hash = (997 * hash) ^ getMurmurHash3(991 * (read & OFFSET_CLEARS[offset]));
 
             // Advance the current address/pointer to be 1 character past the end of the name Example: BillyJoel;29 would make the current address start at the '2' character
             currentAddress += offset + 1;
 
             Station station = stationsLookup.getOrCreate(hash, currentAddress, blockStart);
-            // Bet on the likelyhood that there are no collisions in the hashed name (Extremely Rare, more likely to get eaten by a shark in Kansas)
-            // Odds are over 1 in 100 Billion since there are a max of 10,000 unique names
 
             /*
              * Possible combinations (x = number) -99.9 -> 99.9; ex: 54.4, -31.7, -4.5, 1.9
@@ -301,14 +290,16 @@ public class CalculateAverage_justplainlaake {
     }
 
     private static class Station {
-        protected final long nameStart, nameEnd;// Store the starting and ending address of the name, to fill it later
-        protected int min = Integer.MAX_VALUE, max = Integer.MIN_VALUE, count;
-        protected long sum;
-        protected String name;
+        private final long nameStart, nameEnd;// Store the starting and ending address of the name, to fill it later
+        private final int nameLength;
+        private int min = Integer.MAX_VALUE, max = Integer.MIN_VALUE, count;
+        private long sum;
+        private String name;
 
         Station(long nameStart, long nameEnd) {
             this.nameStart = nameStart;
             this.nameEnd = nameEnd;
+            this.nameLength = (int) (nameEnd - nameStart) + 1;// Add 1 to include seperator
         }
 
         protected void fillName() {
@@ -346,44 +337,42 @@ public class CalculateAverage_justplainlaake {
             values = new Station[capacity];
         }
 
-        public Station put(final long key, final Station value) {
+        public void merge(long key, Station toMerge) {
+            // Simple compute function, if exists pass existing, if it doesn't pass null
             int pos = (int) key & mask;// Key has already been hashed as we read, but cap it by mask
             while (values[pos] != null) {
                 if (keys[pos] == key) {
                     final Station oldValue = values[pos];
-                    values[pos] = value;
-                    return oldValue;// Return old value, normal map operation
+
+                    // If names are different size but key was same, then continue to next step as hash collided
+                    // Compare memory values to see if the name is same as well, prevents hash collision
+                    if (oldValue.nameLength == toMerge.nameLength && compareMemory(toMerge.nameStart, oldValue.nameStart, oldValue.nameLength)) {
+                        // Memory was the same, making these the same station
+                        oldValue.count += toMerge.count;
+                        oldValue.sum += toMerge.sum;
+                        oldValue.min = oldValue.min < toMerge.min ? oldValue.min : toMerge.min;
+                        oldValue.max = oldValue.max > toMerge.max ? oldValue.max : toMerge.max;
+                        return;
+                    }
                 }
                 pos = (pos + 1) & mask;
             }
             keys[pos] = key;
-            values[pos] = value;
-            size++;
-            return null;
-        }
-
-        public void merge(long key, OpenFunction merge) {
-            // Simple compute function, if exists pass existing, if it doesn't pass null
-            int pos = (int) key & mask;// Key has already been hashed as we read, but cap it by mask
-            while (values[pos] != null) {
-                if (((keys[pos]) == (key))) {
-                    final Station oldValue = values[pos];
-                    values[pos] = merge.action(key, oldValue);
-                    return;
-                }
-                pos = (pos + 1) & mask;
-            }
-            keys[pos] = key;
-            values[pos] = merge.action(key, null);
-
+            values[pos] = toMerge;
             size++;
         }
 
         public Station getOrCreate(final long key, long currentAddress, long blockStart) {
             int pos = (int) key & mask;// Key has already been hashed as we read, but cap it by mask
             while (values[pos] != null) {// While position is set
-                if (keys[pos] == key)// Check if key is correct
-                    return values[pos];
+                if (keys[pos] == key) {// Check if key is correct
+
+                    // If names are different size but key was same, then continue to next step as hash collided
+                    // Compare memory values to see if the name is same as well, prevents hash collision
+                    if (values[pos].nameLength == currentAddress - blockStart && compareMemory(blockStart, values[pos].nameStart, values[pos].nameLength)) {
+                        return values[pos];
+                    }
+                }
                 pos = (pos + 1) & mask;// Since this is an open map we keep checking next masked key for an open spot (Faster than tree or linked list on a specific node)
             }
             keys[pos] = key;
@@ -422,6 +411,28 @@ public class CalculateAverage_justplainlaake {
             length |= length >> 8;
             length |= length >> 16;
             return (length | length >> 32) + 1;
+        }
+
+        private boolean compareMemory(long start1, long start2, int length) {
+            while (length > 0) {
+                if (length >= 8) {
+                    if (UNSAFE.getLong(start1) != UNSAFE.getLong(start2)) {
+                        return false;
+                    }
+                }
+                else {
+                    if ((UNSAFE.getLong(start1) & OFFSET_CLEARS[length]) != (UNSAFE.getLong(start2) & OFFSET_CLEARS[length])) {
+                        System.out.println("Found collision: " + start1 + ": " + start2);
+                        System.out.println("Found collision: " + UNSAFE.getLong(start1) + ": " + UNSAFE.getLong(start2));
+                        System.out.println("Length: " + length);
+                        return false;
+                    }
+                }
+                length -= 8;
+                start1 += 8;
+                start2 += 8;
+            }
+            return true;
         }
 
         @FunctionalInterface
