@@ -192,7 +192,6 @@ public class CalculateAverage_abeobk {
                         addr += semi_pos;
 
                         int hash32 = xxh32(hash);
-
                         long keylen = (addr - row_addr);
                         tail = tail | (keylen << 56);
 
