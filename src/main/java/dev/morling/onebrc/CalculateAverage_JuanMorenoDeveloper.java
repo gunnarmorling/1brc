@@ -35,14 +35,16 @@ public class CalculateAverage_JuanMorenoDeveloper {
             var results = lines
                     .parallel()
                     .map(line -> line.split(";"))
-                    .map(values -> Map.entry(values[0], Double.parseDouble(values[1])))
+                    .map(values -> Map.entry(values[0]/*City*/, Double.parseDouble(values[1]) /*Measurement*/))
+                    /*Grouping and computation*/
                     .collect(groupingBy(Map.Entry::getKey, summarizingDouble(Map.Entry::getValue)))
                     .entrySet()
                     .parallelStream()
+                    /*Format & sorting*/
                     .collect(Collectors
                             .toMap(Map.Entry::getKey,
                                     entry -> "%.1f/%.1f/%.1f".formatted(entry.getValue().getMin(), entry.getValue().getAverage(), entry.getValue().getMax()),
-                                    (o1, o2) -> o1,
+                                    (o1, o2) -> o1 /*Unused*/,
                                     TreeMap::new));
 
             System.out.println(results);
