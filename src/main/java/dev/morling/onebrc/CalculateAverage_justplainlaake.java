@@ -48,8 +48,6 @@ import sun.misc.Unsafe;
         Device:
             Processor(16)	11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz   3.60 GHz
             Installed RAM	32.0 GB (31.8 GB usable)
-            Device ID	58C79E9F-1E2D-433B-A739-A901DFD2EDE1
-            Product ID	00326-10000-00000-AA794
             System type	64-bit operating system, x64-based processor
             Pen and touch	No pen or touch input is available for this display
         Windows Specification:
