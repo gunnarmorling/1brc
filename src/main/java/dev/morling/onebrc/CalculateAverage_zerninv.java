@@ -33,11 +33,18 @@ import java.util.concurrent.Future;
 public class CalculateAverage_zerninv {
     private static final String FILE = "./measurements.txt";
     private static final int MIN_FILE_SIZE = 1024 * 1024 * 16;
-    private static final char DELIMITER = ';';
-    private static final char LINE_SEPARATOR = '\n';
-    private static final char ZERO = '0';
-    private static final char NINE = '9';
-    private static final char MINUS = '-';
+
+    // #.##
+    private static final int THREE_DIGITS_MASK = 0x2e0000;
+    // #.#
+    private static final int TWO_DIGITS_MASK = 0x2e00;
+    // #.#-
+    private static final int TWO_NEGATIVE_DIGITS_MASK = 0x2e002d;
+    private static final int BYTE_MASK = 0xff;
+    private static final int ZERO = '0';
+
+    private static final byte DELIMITER = ';';
+    private static final byte LINE_SEPARATOR = '\n';
 
     private static final Unsafe UNSAFE = initUnsafe();
 
@@ -111,7 +118,7 @@ public class CalculateAverage_zerninv {
         var results = new MeasurementContainer();
 
         long cityOffset;
-        int hashCode, temperature, multiplier;
+        int hashCode, temperature, word;
         byte cityNameSize, b;
 
         while (offset < end) {
@@ -122,18 +129,27 @@ public class CalculateAverage_zerninv {
             }
             cityNameSize = (byte) (offset - cityOffset - 1);
 
-            multiplier = 1;
-            temperature = UNSAFE.getByte(offset++) - ZERO;
-            if (temperature == MINUS - ZERO) {
-                multiplier = -1;
-                temperature = 0;
+            word = UNSAFE.getInt(offset);
+            offset += 4;
+
+            if ((word & TWO_NEGATIVE_DIGITS_MASK) == TWO_NEGATIVE_DIGITS_MASK) {
+                word >>>= 8;
+                temperature = ZERO * 11 - ((word & BYTE_MASK) * 10 + ((word >>> 16) & BYTE_MASK));
             }
-            while ((b = UNSAFE.getByte(offset++)) != LINE_SEPARATOR) {
-                if (b >= ZERO && b <= NINE) {
-                    temperature = temperature * 10 + (b - ZERO);
-                }
+            else if ((word & THREE_DIGITS_MASK) == THREE_DIGITS_MASK) {
+                temperature = (word & BYTE_MASK) * 100 + ((word >>> 8) & BYTE_MASK) * 10 + ((word >>> 24) & BYTE_MASK) - ZERO * 111;
             }
-            results.put(cityOffset, cityNameSize, hashCode, (short) (temperature * multiplier));
+            else if ((word & TWO_DIGITS_MASK) == TWO_DIGITS_MASK) {
+                temperature = (word & BYTE_MASK) * 10 + ((word >>> 16) & BYTE_MASK) - ZERO * 11;
+                offset--;
+            }
+            else {
+                // #.##-
+                word = (word >>> 8) | (UNSAFE.getByte(offset++) << 24);
+                temperature = ZERO * 111 - ((word & BYTE_MASK) * 100 + ((word >>> 8) & BYTE_MASK) * 10 + ((word >>> 24) & BYTE_MASK));
+            }
+            offset++;
+            results.put(cityOffset, cityNameSize, hashCode, (short) temperature);
         }
         return results.toStringMap();
     }

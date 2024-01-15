@@ -15,5 +15,6 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="--add-modules=jdk.incubator.vector --enable-preview"
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_flippingbits
+JAVA_OPTS="-Xms500m -Xmx500m --enable-preview -dsa -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -XX:-AlwaysPreTouch"
+
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_arjenw
