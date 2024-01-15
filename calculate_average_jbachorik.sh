@@ -15,5 +15,5 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="-XX:+UseInlineCaches -XX:CICompilerCount=4 -Xmx512m -XX:+UseInlineCaches -XX:MaxInlineSize=512 -XX:FreqInlineSize=800 -XX:InlineSmallCode=190 -XX:CompileThreshold=2"
+JAVA_OPTS="-Xmx512m -Xms512m"
 java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_jbachorik $@

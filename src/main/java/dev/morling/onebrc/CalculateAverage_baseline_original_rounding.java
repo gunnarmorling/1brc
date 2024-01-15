@@ -24,7 +24,16 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collector;
 
-public class CalculateAverage_baseline {
+/**
+ * This is the original version of the baseline implementation. It contains a
+ * rounding bug, which can cause calculated mean values to be off by 0.1. See
+ * {@link CalculateAverage_baseline} for the correct behavior. This version here
+ * is only kept for reference, in particular for determining whether an
+ * implementation is valid with the old behavior. Any new or updated entries to
+ * the challenge must conform to the correct behavior as implemented by
+ * {@code CalculateAverage_baseline}.
+ */
+public class CalculateAverage_baseline_original_rounding {
 
     private static final String FILE = "./measurements.txt";
 
@@ -35,7 +44,6 @@ public class CalculateAverage_baseline {
     }
 
     private static record ResultRow(double min, double mean, double max) {
-
         public String toString() {
             return round(min) + "/" + round(mean) + "/" + round(max);
         }
@@ -80,7 +88,7 @@ public class CalculateAverage_baseline {
                     return res;
                 },
                 agg -> {
-                    return new ResultRow(agg.min, (Math.round(agg.sum * 10.0) / 10.0) / agg.count, agg.max);
+                    return new ResultRow(agg.min, agg.sum / agg.count, agg.max);
                 });
 
         Map<String, ResultRow> measurements = new TreeMap<>(Files.lines(Paths.get(FILE))
