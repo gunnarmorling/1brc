@@ -41,7 +41,7 @@ import java.util.concurrent.atomic.AtomicLongArray;
 
 // based on spullara's submission
 
-public class CalculateAverage_asun {
+class CalculateAverage_asun {
     private static final String FILE = "./measurements.txt";
 
     private static final VectorSpecies<Byte> BYTE_SPECIES = ByteVector.SPECIES_256;

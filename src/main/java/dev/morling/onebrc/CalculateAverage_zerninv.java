@@ -32,12 +32,19 @@ import java.util.concurrent.Future;
 
 public class CalculateAverage_zerninv {
     private static final String FILE = "./measurements.txt";
-    private static final int MIN_CHUNK_SIZE = 1024 * 1024 * 16;
-    private static final char DELIMITER = ';';
-    private static final char LINE_SEPARATOR = '\n';
-    private static final char ZERO = '0';
-    private static final char NINE = '9';
-    private static final char MINUS = '-';
+    private static final int MIN_FILE_SIZE = 1024 * 1024 * 16;
+
+    // #.##
+    private static final int THREE_DIGITS_MASK = 0x2e0000;
+    // #.#
+    private static final int TWO_DIGITS_MASK = 0x2e00;
+    // #.#-
+    private static final int TWO_NEGATIVE_DIGITS_MASK = 0x2e002d;
+    private static final int BYTE_MASK = 0xff;
+    private static final int ZERO = '0';
+
+    private static final byte DELIMITER = ';';
+    private static final byte LINE_SEPARATOR = '\n';
 
     private static final Unsafe UNSAFE = initUnsafe();
 
@@ -48,10 +55,8 @@ public class CalculateAverage_zerninv {
             var memorySegment = channel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, Arena.global());
             long address = memorySegment.address();
             var cores = Runtime.getRuntime().availableProcessors();
-            var chunkAmount = cores - 1;
-            // var maxChunkSize = Math.min(fileSize, MIN_CHUNK_SIZE);
-            var maxChunkSize = fileSize < MIN_CHUNK_SIZE ? fileSize : fileSize / chunkAmount;
-            var chunks = splitByChunks(address, address + fileSize, maxChunkSize);
+            var minChunkSize = fileSize < MIN_FILE_SIZE ? fileSize : fileSize / cores;
+            var chunks = splitByChunks(address, address + fileSize, minChunkSize);
 
             var executor = Executors.newFixedThreadPool(cores);
             List<Future<Map<String, MeasurementAggregation>>> fResults = new ArrayList<>();
@@ -97,15 +102,13 @@ public class CalculateAverage_zerninv {
         }
     }
 
-    private static List<Long> splitByChunks(long address, long end, long maxChunkSize) {
+    private static List<Long> splitByChunks(long address, long end, long minChunkSize) {
         List<Long> result = new ArrayList<>();
         result.add(address);
         while (address < end) {
-            long ptr = address + Math.min(end - address, maxChunkSize) - 1;
-            while (UNSAFE.getByte(ptr) != LINE_SEPARATOR) {
-                ptr--;
+            address += Math.min(end - address, minChunkSize);
+            while (address < end && UNSAFE.getByte(address++) != LINE_SEPARATOR) {
             }
-            address = ptr + 1;
             result.add(address);
         }
         return result;
@@ -114,29 +117,38 @@ public class CalculateAverage_zerninv {
     private static Map<String, MeasurementAggregation> calcForChunk(long offset, long end) {
         var results = new MeasurementContainer();
 
-        long cityOffset, temperatureOffset;
-        int hashCode, temperature;
+        long cityOffset;
+        int hashCode, temperature, word;
         byte cityNameSize, b;
 
         while (offset < end) {
             cityOffset = offset;
             hashCode = 0;
             while ((b = UNSAFE.getByte(offset++)) != DELIMITER) {
-                hashCode = 31 * hashCode + b;
+                hashCode = hashCode * 31 + b;
             }
+            cityNameSize = (byte) (offset - cityOffset - 1);
 
-            temperatureOffset = offset;
-            cityNameSize = (byte) (temperatureOffset - cityOffset - 1);
+            word = UNSAFE.getInt(offset);
+            offset += 4;
 
-            temperature = 0;
-            while ((b = UNSAFE.getByte(offset++)) != LINE_SEPARATOR) {
-                if (b >= ZERO && b <= NINE) {
-                    temperature = temperature * 10 + (b - ZERO);
-                }
+            if ((word & TWO_NEGATIVE_DIGITS_MASK) == TWO_NEGATIVE_DIGITS_MASK) {
+                word >>>= 8;
+                temperature = ZERO * 11 - ((word & BYTE_MASK) * 10 + ((word >>> 16) & BYTE_MASK));
             }
-            if (UNSAFE.getByte(temperatureOffset) == MINUS) {
-                temperature *= -1;
+            else if ((word & THREE_DIGITS_MASK) == THREE_DIGITS_MASK) {
+                temperature = (word & BYTE_MASK) * 100 + ((word >>> 8) & BYTE_MASK) * 10 + ((word >>> 24) & BYTE_MASK) - ZERO * 111;
             }
+            else if ((word & TWO_DIGITS_MASK) == TWO_DIGITS_MASK) {
+                temperature = (word & BYTE_MASK) * 10 + ((word >>> 16) & BYTE_MASK) - ZERO * 11;
+                offset--;
+            }
+            else {
+                // #.##-
+                word = (word >>> 8) | (UNSAFE.getByte(offset++) << 24);
+                temperature = ZERO * 111 - ((word & BYTE_MASK) * 100 + ((word >>> 8) & BYTE_MASK) * 10 + ((word >>> 24) & BYTE_MASK));
+            }
+            offset++;
             results.put(cityOffset, cityNameSize, hashCode, (short) temperature);
         }
         return results.toStringMap();
@@ -144,11 +156,11 @@ public class CalculateAverage_zerninv {
 
     private static final class MeasurementAggregation {
         private long sum;
-        private long count;
+        private int count;
         private short min;
         private short max;
 
-        public MeasurementAggregation(long sum, long count, short min, short max) {
+        public MeasurementAggregation(long sum, int count, short min, short max) {
             this.sum = sum;
             this.count = count;
             this.min = min;
@@ -174,14 +186,14 @@ public class CalculateAverage_zerninv {
     private static final class MeasurementContainer {
         private static final int SIZE = 1024 * 16;
 
-        private static final int ENTRY_SIZE = 8 + 1 + 4 + 8 + 8 + 2 + 2;
+        private static final int ENTRY_SIZE = 4 + 4 + 1 + 8 + 8 + 2 + 2;
         private static final int COUNT_OFFSET = 0;
+        private static final int HASH_OFFSET = 4;
         private static final int SIZE_OFFSET = 8;
-        private static final int HASH_OFFSET = 9;
-        private static final int ADDRESS_OFFSET = 13;
-        private static final int SUM_OFFSET = 21;
-        private static final int MIN_OFFSET = 29;
-        private static final int MAX_OFFSET = 31;
+        private static final int ADDRESS_OFFSET = 9;
+        private static final int SUM_OFFSET = 17;
+        private static final int MIN_OFFSET = 25;
+        private static final int MAX_OFFSET = 27;
 
         private final long address;
 
@@ -195,11 +207,23 @@ public class CalculateAverage_zerninv {
         }
 
         public void put(long address, byte size, int hash, short value) {
-            long ptr = findAddress(address, size, hash);
+            int idx = Math.abs(hash % SIZE);
+            long ptr = this.address + idx * ENTRY_SIZE;
+            int count;
 
-            UNSAFE.putLong(ptr + COUNT_OFFSET, UNSAFE.getLong(ptr + COUNT_OFFSET) + 1);
-            UNSAFE.putByte(ptr + SIZE_OFFSET, size);
+            while ((count = UNSAFE.getInt(ptr + COUNT_OFFSET)) != 0) {
+                if (UNSAFE.getInt(ptr + HASH_OFFSET) == hash
+                        && UNSAFE.getByte(ptr + SIZE_OFFSET) == size
+                        && isEqual(UNSAFE.getLong(ptr + ADDRESS_OFFSET), address, size)) {
+                    break;
+                }
+                idx = (idx + 1) % SIZE;
+                ptr = this.address + idx * ENTRY_SIZE;
+            }
+
+            UNSAFE.putInt(ptr + COUNT_OFFSET, count + 1);
             UNSAFE.putInt(ptr + HASH_OFFSET, hash);
+            UNSAFE.putByte(ptr + SIZE_OFFSET, size);
             UNSAFE.putLong(ptr + ADDRESS_OFFSET, address);
 
             UNSAFE.putLong(ptr + SUM_OFFSET, UNSAFE.getLong(ptr + SUM_OFFSET) + value);
@@ -213,12 +237,14 @@ public class CalculateAverage_zerninv {
 
         public Map<String, MeasurementAggregation> toStringMap() {
             var result = new HashMap<String, MeasurementAggregation>();
+            int count;
             for (int i = 0; i < SIZE; i++) {
                 long ptr = this.address + i * ENTRY_SIZE;
-                if (UNSAFE.getLong(ptr + COUNT_OFFSET) != 0) {
+                count = UNSAFE.getInt(ptr + COUNT_OFFSET);
+                if (count != 0) {
                     var measurements = new MeasurementAggregation(
                             UNSAFE.getLong(ptr + SUM_OFFSET),
-                            UNSAFE.getLong(ptr + COUNT_OFFSET),
+                            count,
                             UNSAFE.getShort(ptr + MIN_OFFSET),
                             UNSAFE.getShort(ptr + MAX_OFFSET));
                     var key = createString(UNSAFE.getLong(ptr + ADDRESS_OFFSET), UNSAFE.getByte(ptr + SIZE_OFFSET));
@@ -226,21 +252,6 @@ public class CalculateAverage_zerninv {
                 }
             }
             return result;
-        }
-
-        private long findAddress(long address, byte size, int hash) {
-            int idx = Math.abs(hash % SIZE);
-            long ptr = this.address + idx * ENTRY_SIZE;
-            while (UNSAFE.getLong(ptr + COUNT_OFFSET) != 0) {
-                if (UNSAFE.getByte(ptr + SIZE_OFFSET) == size
-                        && UNSAFE.getInt(ptr + HASH_OFFSET) == hash
-                        && isEqual(UNSAFE.getLong(ptr + ADDRESS_OFFSET), address, size)) {
-                    break;
-                }
-                idx = (idx + 1) % SIZE;
-                ptr = this.address + idx * ENTRY_SIZE;
-            }
-            return ptr;
         }
 
         private boolean isEqual(long address, long address2, byte size) {
