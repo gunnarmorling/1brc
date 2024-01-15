@@ -95,7 +95,7 @@ public class CalculateAverage_jparera {
 
         private static final int KEY_BYTES = 1 << KEY_LOG2_BYTES;
 
-        private static final int MAP_CAPACITY = 1 << 14;
+        private static final int MAP_CAPACITY = 1 << 16;
 
         private static final int BUCKET_MASK = MAP_CAPACITY - 1;
 
@@ -228,22 +228,25 @@ public class CalculateAverage_jparera {
             if (equals != BYTE_SPECIES_LANES) {
                 return equals >= len;
             }
-            long eo = 0L;
+            long eo = BYTE_SPECIES_SIZE;
             int total = BYTE_SPECIES_LANES;
-            while (equals == BYTE_SPECIES_LANES) {
-                eo += BYTE_SPECIES_SIZE;
+            while (equals == BYTE_SPECIES_LANES & eo < KEY_BYTES) {
                 offset += BYTE_SPECIES_SIZE;
                 ekey = ByteVector.fromMemorySegment(BYTE_SPECIES, entry.segment(), eo, ByteOrder.nativeOrder());
                 okey = ByteVector.fromMemorySegment(BYTE_SPECIES, segment, offset, ByteOrder.nativeOrder());
                 equals = ekey.eq(okey).not().firstTrue();
                 total += equals;
+                eo += BYTE_SPECIES_SIZE;
             }
             return total >= len;
         }
 
         private boolean equals(Entry entry, long offset, int len) {
-            return MemorySegment.mismatch(segment, offset, offset + len, entry.segment(), 0, len) == -1;
+            return MemorySegment.mismatch(this.segment, offset, offset + len, entry.segment(), 0, len) == -1;
         }
+
+        private static final int GOLDEN_RATIO = 0x9E3779B9;
+        private static final int HASH_LROTATE = 5;
 
         private static int hash(MemorySegment ms, long start, int len) {
             int x, y;
@@ -255,7 +258,7 @@ public class CalculateAverage_jparera {
                 x = ms.get(ValueLayout.JAVA_BYTE, start);
                 y = ms.get(ValueLayout.JAVA_BYTE, start + len - Byte.BYTES);
             }
-            return 31 * x + y;
+            return (Integer.rotateLeft(x * GOLDEN_RATIO, HASH_LROTATE) ^ y) * GOLDEN_RATIO;
         }
 
         private void expect(byte b) {
@@ -333,11 +336,14 @@ public class CalculateAverage_jparera {
 
         @Override
         public String toString() {
-            return round(min) + "/" + round((double) sum / (double) count) + "/" + round(max);
+            var average = Math.round(((sum / 10.0) / count) * 10.0);
+            return decimal(min) + "/" + decimal(average) + "/" + decimal(max);
         }
 
-        private static double round(double value) {
-            return Math.round(value) / 10.0;
+        private static String decimal(long value) {
+            boolean negative = value < 0;
+            value = Math.abs(value);
+            return (negative ? "-" : "") + (value / 10) + "." + (value % 10);
         }
     }
 }
