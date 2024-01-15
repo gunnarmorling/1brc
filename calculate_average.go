@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 )
 
 type cityData struct {
@@ -13,17 +12,21 @@ type cityData struct {
 	count           int
 }
 
-// open file 'measurements.txt'
-// for each line in file
-//
-//	split line into fields separated by semicolon
-//	convert field 2 to float64
-//	add field 2 to sum
-//	increment count
-//
-// close file
-// calculate average
-// print average
+func splitSemicolonOrNewline(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	for i := 0; i < len(data); i++ {
+		if data[i] == ';' || data[i] == '\n' {
+			return i + 1, data[:i], nil
+		}
+	}
+	if !atEOF {
+		return 0, nil, nil
+	}
+	// There is one final token to be delivered, which may be the empty string.
+	// Returning bufio.ErrFinalToken here tells Scan there are no more tokens after this
+	// but does not trigger an error to be returned from Scan itself.
+	return 0, data, bufio.ErrFinalToken
+}
+
 func main() {
 	name := "measurements.txt"
 	if os.Args[1] != "" {
@@ -36,13 +39,14 @@ func main() {
 
 	cities := make(map[string]cityData)
 	scanner := bufio.NewScanner(f)
-	scanner.Split(bufio.ScanLines)
-
+	scanner.Split(splitSemicolonOrNewline)
+	
 	for scanner.Scan() {
-		line := scanner.Text()
-		parts := strings.Split(line, ";")
-		city := parts[0]
-		tempAsFloat, err := strconv.ParseFloat(parts[1], 64)
+		city := scanner.Text()
+		if !scanner.Scan() {
+			break
+		}
+		tempAsFloat, err := strconv.ParseFloat(scanner.Text(), 64)
 		if err != nil {
 			panic(err)
 		}
