@@ -23,23 +23,15 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.channels.FileChannel;
 import java.util.*;
-import java.util.Collections;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Stream;
+import java.util.concurrent.ForkJoinPool;
 
-// 19.150 s for 100M rows baseline
-
+// Solution using project Panama and Map Reduce
 public class CalculateAverage_MahmoudFawzyKhalil {
 
-    private static String FILE = "./measurements.txt";
+    private static final String FILE = "./measurements.txt";
 
     public static void main(String[] args) throws Exception {
-        FILE = args.length > 0 ? args[1] : FILE;
-        long start = System.currentTimeMillis();
-        // streams();
         mapReduce();
-        long end = System.currentTimeMillis();
-        // System.out.println("time = " + (end - start) + "ms");
     }
 
     private static void mapReduce() throws IOException {
@@ -48,32 +40,32 @@ public class CalculateAverage_MahmoudFawzyKhalil {
             FileChannel channel = raf.getChannel();
             long fileSize = channel.size();
             MemorySegment ms = channel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, Arena.global());
-
-            int availableProcessors = Runtime.getRuntime().availableProcessors();
-            // System.out.println("availableProcessors = " + availableProcessors);
-            // System.out.println("fileSize = " + fileSize);
-
-            long chunkSize = fileSize / availableProcessors; // availableProcessors;
-            // System.out.println("chunkSize = " + chunkSize);
-
+            long chunkSize = fileSize / ForkJoinPool.commonPool().getParallelism();
             List<Chunk> chunks = getChunks(ms, chunkSize);
-            // System.out.println("chunks = " + chunks);
-            // System.out.println("chunks.size() = " + chunks.size());
-            // System.out.println("---");
-
             Map<String, MeasurementAggregate> result = chunks.stream()
                     .parallel()
                     .map(c -> readChunkToMap(c, ms))
                     .reduce(Collections.emptyMap(), (a, b) -> combine(a, b));
-
-//            var result = new ConcurrentHashMap<String, MeasurementAggregate>();
-//            chunks.stream()
-//                    .parallel()
-//                    .flatMap(c -> readChunkToAggregates(c, ms))
-//                    .forEach(p -> addMeasurement(result, p.city, p.reading));
-
             System.out.println(new TreeMap<>(result));
         }
+    }
+
+    private static List<Chunk> getChunks(MemorySegment ms, long chunkSize) {
+        List<Chunk> chunks = new ArrayList<>(32);
+        long start = 0;
+        long fileSize = ms.byteSize();
+        long end = chunkSize;
+
+        while (start < fileSize) {
+            byte b = ms.get(ValueLayout.JAVA_BYTE, end);
+            if (b == '\n') {
+                chunks.add(new Chunk(start, end));
+                start = end + 1;
+                end = Math.min(end + chunkSize, fileSize - 2);
+            }
+            end++;
+        }
+        return chunks;
     }
 
     private static Map<String, MeasurementAggregate> readChunkToMap(Chunk chunk, MemorySegment ms) {
@@ -104,35 +96,20 @@ public class CalculateAverage_MahmoudFawzyKhalil {
         return map;
     }
 
-    private static Stream<Pair> readChunkToAggregates(Chunk chunk, MemorySegment ms) {
-        Stream.Builder<Pair> builder = Stream.builder();
+    // Credit goes to imrafaelmerino for combine function
+    private static Map<String, MeasurementAggregate> combine(Map<String, MeasurementAggregate> xs, Map<String, MeasurementAggregate> ys) {
+        Map<String, MeasurementAggregate> result = new HashMap<>();
 
-        long start = chunk.start();
-        while (start < chunk.end()) {
-            long cityNameSize = 0;
-            while (ms.get(ValueLayout.JAVA_BYTE, start + cityNameSize) != ';') {
-                cityNameSize++;
-            }
-
-            String cityName = readString(ms, start, cityNameSize);
-            start = start + cityNameSize + 1;
-
-            long temperatureSize = 0;
-            while (ms.get(ValueLayout.JAVA_BYTE, start + temperatureSize) != '\n') {
-                temperatureSize++;
-            }
-
-            String temperature = readString(ms, start, temperatureSize);
-            start = start + temperatureSize + 1;
-
-            builder.add(new Pair(cityName, temperature));
+        for (var key : xs.keySet()) {
+            var m1 = xs.get(key);
+            var m2 = ys.get(key);
+            var combined = (m2 == null) ? m1 : (m1 == null) ? m2 : m1.combine(m2);
+            result.put(key, combined);
         }
 
-        return builder.build();
-    }
-
-    record Pair(String city, String reading) {
-
+        for (var key : ys.keySet())
+            result.putIfAbsent(key, ys.get(key));
+        return result;
     }
 
     private static String readString(MemorySegment ms, long start, long size) {
@@ -141,30 +118,12 @@ public class CalculateAverage_MahmoudFawzyKhalil {
         return new String(stringBytes);
     }
 
-    private static List<Chunk> getChunks(MemorySegment ms, long chunkSize) {
-        List<Chunk> chunks = new ArrayList<>(32);
-        long start = 0;
-        long fileSize = ms.byteSize();
-        long end = chunkSize;
-
-        while (start < fileSize) {
-            byte b = ms.get(ValueLayout.JAVA_BYTE, end);
-            if (b == '\n') {
-                chunks.add(new Chunk(start, end));
-                start = end + 1;
-                end = Math.min(end + chunkSize, fileSize - 2);
-            }
-            end++;
-        }
-        return chunks;
-    }
-
-    record Chunk(long start, long end) {
-    }
-
     private static void addMeasurement(Map<String, MeasurementAggregate> measurements, String station, String reading) {
         measurements.compute(station,
                 (_, oldMeasurements) -> oldMeasurements == null ? MeasurementAggregate.of(reading) : oldMeasurements.update(reading));
+    }
+
+    record Chunk(long start, long end) {
     }
 
     private static final class MeasurementAggregate {
@@ -227,22 +186,5 @@ public class CalculateAverage_MahmoudFawzyKhalil {
                     this.sum + m2.sum,
                     this.count + m2.count);
         }
-    }
-
-    private static Map<String, MeasurementAggregate> combine(Map<String, MeasurementAggregate> xs, Map<String, MeasurementAggregate> ys) {
-
-        Map<String, MeasurementAggregate> result = new HashMap<>();
-
-        for (var key : xs.keySet()) {
-            var m1 = xs.get(key);
-            var m2 = ys.get(key);
-            var combined = (m2 == null) ? m1 : (m1 == null) ? m2 : m1.combine(m2);
-            result.put(key, combined);
-        }
-
-        for (var key : ys.keySet())
-            result.putIfAbsent(key, ys.get(key));
-        return result;
-
     }
 }
