@@ -133,14 +133,15 @@ public class CalculateAverage_abeobk {
     // zero collision on test data
     static final int xxh32(long hash) {
         final int p1 = 0x85EBCA77; // prime
-        final int p2 = 0xC2B2AE3D; // prime
+        final int p2 = 0x165667B1; // prime
         int low = (int) hash;
         int high = (int) (hash >>> 32);
-        low ^= low >> 15;
-        low *= p1;
-        high ^= high >> 13;
-        high *= p2;
-        var h = low ^ high;
+        int h = low + high;
+        h ^= h >> 15;
+        h *= p1;
+        h ^= h >> 13;
+        h *= p2;
+        h ^= h >> 11;
         return h;
     }
 
@@ -191,6 +192,7 @@ public class CalculateAverage_abeobk {
                         addr += semi_pos;
 
                         int hash32 = xxh32(hash);
+
                         long keylen = (addr - row_addr);
                         tail = tail | (keylen << 56);
 
