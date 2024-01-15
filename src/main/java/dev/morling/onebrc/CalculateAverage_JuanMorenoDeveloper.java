@@ -22,7 +22,7 @@ public class CalculateAverage_JuanMorenoDeveloper {
                     .map(values -> Map.entry(values[0], Double.parseDouble(values[1])))
                     .collect(groupingBy(Map.Entry::getKey, summarizingDouble(Map.Entry::getValue)))
                     .entrySet()
-                    .stream()
+                    .parallelStream()
                     .collect(Collectors
                             .toMap(Map.Entry::getKey,
                                     entry -> "%.1f/%.1f/%.1f".formatted(entry.getValue().getMin(), entry.getValue().getAverage(), entry.getValue().getMax()),
