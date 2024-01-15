@@ -15,22 +15,5 @@
 #  limitations under the License.
 #
 
-set -x
-
-if [ -z "$1" ]
-  then
-    echo "Usage: prepare.sh <fork name>:<branch name>"
-    exit 1
-fi
-
-parts=(${1//:/ })
-echo "  User: ${parts[0]}"
-echo "Branch: ${parts[1]}"
-
-git branch -D ${parts[0]} &>/dev/null
-
-git checkout -b ${parts[0]}
-git fetch https://github.com/${parts[0]}/1brc.git ${parts[1]}
-# git fetch git@github.com:${parts[0]}/1brc.git ${parts[1]}
-git reset --hard FETCH_HEAD
-git rebase main
+JAVA_OPTS="--enable-preview"
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_anitasv

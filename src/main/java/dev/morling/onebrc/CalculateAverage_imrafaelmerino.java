@@ -144,6 +144,7 @@ public class CalculateAverage_imrafaelmerino {
         var field = new byte[FIELD_SIZE];
         while (bb.position() < limit) {
             var fieldCurrentIndex = 0;
+            field[fieldCurrentIndex++] = bb.get();
             while (bb.position() < limit) {
                 var fieldByte = bb.get();
                 if (fieldByte == ';')

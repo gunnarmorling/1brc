@@ -49,8 +49,8 @@ public class CalculateAverage_ebarlas {
 
     public static void main(String[] args) throws IOException, InterruptedException {
         var path = Paths.get("measurements.txt");
-        var numPartitions = Math.max(8, Runtime.getRuntime().availableProcessors());
         var channel = FileChannel.open(path, StandardOpenOption.READ);
+        var numPartitions = (int) Math.max((channel.size() / Integer.MAX_VALUE) + 1, Runtime.getRuntime().availableProcessors());
         var partitionSize = channel.size() / numPartitions;
         var partitions = new Partition[numPartitions];
         var threads = new Thread[numPartitions];
@@ -257,7 +257,19 @@ public class CalculateAverage_ebarlas {
         if (len1 != len2) {
             return false;
         }
-        for (long i = 0; i < len1; i++) {
+        if (len1 == 2) {
+            return UNSAFE.getLong(key1) == UNSAFE.getLong(key2);
+        }
+        if (len1 == 3) {
+            return UNSAFE.getInt(key1) == UNSAFE.getInt(key2) && UNSAFE.getInt(key1 + 4) == UNSAFE.getInt(key2 + 4);
+        }
+        if (len1 == 1) {
+            return UNSAFE.getInt(key1) == UNSAFE.getInt(key2);
+        }
+        if (len1 == 4) {
+            return UNSAFE.getLong(key1) == UNSAFE.getLong(key2) && UNSAFE.getLong(key1 + 8) == UNSAFE.getLong(key2 + 8);
+        }
+        for (int i = 0; i < len1; i++) {
             var offset = i << 2;
             if (UNSAFE.getInt(key1 + offset) != UNSAFE.getInt(key2 + offset)) {
                 return false;
