@@ -235,45 +235,40 @@ public class CalculateAverage_mtopolnik {
             return (int) ((absValue ^ signed) - signed);
         }
 
-        private int parseTemperatureSimpleAndAdvanceCursor(long startOffset) {
+        private int parseTemperatureSimpleAndAdvanceCursor(long tempStartAddress) {
             final byte minus = (byte) '-';
             final byte zero = (byte) '0';
             final byte dot = (byte) '.';
 
-            // Temperature plus the following newline is at least 4 chars, so this is always safe:
-            int fourCh = UNSAFE.getInt(inputBase + startOffset);
-            final int mask = 0xFF;
-            byte ch = (byte) (fourCh & mask);
-            int shift = 0;
+            byte ch = UNSAFE.getByte(tempStartAddress);
+            long address = tempStartAddress;
             int temperature;
             int sign;
             if (ch == minus) {
                 sign = -1;
-                shift += 8;
-                ch = (byte) ((fourCh & (mask << shift)) >>> shift);
+                address++;
+                ch = UNSAFE.getByte(address);
             }
             else {
                 sign = 1;
             }
             temperature = ch - zero;
-            shift += 8;
-            ch = (byte) ((fourCh & (mask << shift)) >>> shift);
+            address++;
+            ch = UNSAFE.getByte(address);
             if (ch == dot) {
-                shift += 8;
-                ch = (byte) ((fourCh & (mask << shift)) >>> shift);
+                address++;
+                ch = UNSAFE.getByte(address);
             }
             else {
                 temperature = 10 * temperature + (ch - zero);
-                shift += 16;
-                // The last character may be past the four loaded bytes, load it from memory.
-                // Checking that with another `if` is self-defeating for performance.
-                ch = UNSAFE.getByte(inputBase + startOffset + (shift / 8));
+                address += 2;
+                ch = UNSAFE.getByte(address);
             }
             temperature = 10 * temperature + (ch - zero);
-            // `shift` holds the number of bits in the temperature field.
+            // address - inputBase is the length of the temperature field.
             // A newline character follows the temperature, and so we advance
             // the cursor past the newline to the start of the next line.
-            cursor = startOffset + (shift / 8) + 2;
+            cursor = (address + 2) - inputBase;
             return sign * temperature;
         }
 
