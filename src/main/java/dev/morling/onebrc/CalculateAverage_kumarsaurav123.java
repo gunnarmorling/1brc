@@ -34,7 +34,7 @@ import static java.util.stream.Collectors.groupingBy;
 
 public class CalculateAverage_kumarsaurav123 {
 
-    private static final String FILE = "C:\\Users\\kumar saurav\\IdeaProjects\\1brc_2\\src\\test\\resources\\samples\\measurements-20.txt";
+    private static final String FILE = "./measurements.txt";
 
     private static record Measurement(String station, double value) {
         private Measurement(String[] parts) {
