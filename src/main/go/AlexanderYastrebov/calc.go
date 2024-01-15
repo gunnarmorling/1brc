@@ -132,8 +132,9 @@ func process(data []byte) map[string]*measurement {
 func processChunk(data []byte) map[string]*measurement {
 	// Use fixed size linear probe lookup table
 	const (
-		// use power of 2 for fast modulo calculation
-		entriesSize = 1 << 12
+		// use power of 2 for fast modulo calculation,
+		// should be larger than max number of keys which is 10_000
+		entriesSize = 1 << 14
 
 		// use FNV-1a hash
 		fnv1aOffset64 = 14695981039346656037
