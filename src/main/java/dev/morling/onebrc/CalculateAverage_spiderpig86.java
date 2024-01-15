@@ -56,6 +56,8 @@ public class CalculateAverage_spiderpig86 {
     }
 
     public static void main(String[] args) throws IOException {
+        // TODO Remove
+        long start = System.currentTimeMillis();
         // Map<String, Double> measurements1 = Files.lines(Paths.get(FILE))
         // .map(l -> l.split(";"))
         // .collect(groupingBy(m -> m[0], averagingDouble(m -> Double.parseDouble(m[1]))));
@@ -89,5 +91,6 @@ public class CalculateAverage_spiderpig86 {
                 .collect(groupingBy(Measurement::station, collector)));
 
         System.out.println(measurements);
+        System.out.println("Elapsed time ms: " + (System.currentTimeMillis() - start));
     }
 }
