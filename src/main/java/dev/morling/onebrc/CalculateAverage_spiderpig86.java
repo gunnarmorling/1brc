@@ -15,22 +15,25 @@
  */
 package dev.morling.onebrc;
 
-import static java.util.stream.Collectors.*;
-
+import java.io.BufferedReader;
+import java.io.FileReader;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.StringTokenizer;
 import java.util.TreeMap;
-import java.util.stream.Collector;
 
 /**
  * Changelog:
- *      - 1/15/24 - initial minor changes with syntax
+ *      - 1/15/24 - initial minor changes with syntax. 100k lines - 209ms
+ *      - 1/15/24 - new algorithm without streams, new splitting method, use of BufferedReader. 100k lines - 154ms,
+ *      1m lines - 578ms
  */
 public class CalculateAverage_spiderpig86 {
 
-    private static final String FILE = "./measurements.txt";
+    private static final String FILE = "./measurements2.txt";
 
     private record Measurement(String station, double value) {
         private Measurement(String[] parts) {
@@ -48,49 +51,61 @@ public class CalculateAverage_spiderpig86 {
         }
     };
 
-    private static class MeasurementAggregator {
-        private double min = Double.POSITIVE_INFINITY;
-        private double max = Double.NEGATIVE_INFINITY;
-        private double sum;
-        private long count;
-    }
-
     public static void main(String[] args) throws IOException {
         // TODO Remove
         long start = System.currentTimeMillis();
-        // Map<String, Double> measurements1 = Files.lines(Paths.get(FILE))
-        // .map(l -> l.split(";"))
-        // .collect(groupingBy(m -> m[0], averagingDouble(m -> Double.parseDouble(m[1]))));
-        //
-        // measurements1 = new TreeMap<>(measurements1.entrySet()
-        // .stream()
-        // .collect(toMap(e -> e.getKey(), e -> Math.round(e.getValue() * 10.0) / 10.0)));
-        // System.out.println(measurements1);
 
-        Collector<Measurement, MeasurementAggregator, ResultRow> collector = Collector.of(
-                MeasurementAggregator::new,
-                (a, m) -> {
-                    a.min = Math.min(a.min, m.value);
-                    a.max = Math.max(a.max, m.value);
-                    a.sum += m.value;
-                    a.count++;
-                },
-                (agg1, agg2) -> {
-                    var res = new MeasurementAggregator();
-                    res.min = Math.min(agg1.min, agg2.min);
-                    res.max = Math.max(agg1.max, agg2.max);
-                    res.sum = agg1.sum + agg2.sum;
-                    res.count = agg1.count + agg2.count;
+        // Read file
+        Map<String, List<Measurement>> stations = new HashMap<>();
+        try (BufferedReader reader = new BufferedReader(new FileReader(FILE))) {
+            String line;
 
-                    return res;
-                },
-                agg ->  new ResultRow(agg.min, (Math.round(agg.sum * 10.0) / 10.0) / agg.count, agg.max));
+            // Read to the end
+            while ((line = reader.readLine()) != null) {
+                Measurement measurement = parseRow(line);
+                if (!stations.containsKey(measurement.station)) {
+                    stations.put(measurement.station, new ArrayList<>());
+                }
+                stations.get(measurement.station).add(measurement);
+            }
+        }
+        catch (IOException e) {
+            e.printStackTrace();
+            return;
+        }
 
-        Map<String, ResultRow> measurements = new TreeMap<>(Files.lines(Paths.get(FILE))
-                .map(l -> new Measurement(l.split(";")))
-                .collect(groupingBy(Measurement::station, collector)));
+        // For each station, find the min, max, and mean. Station names must be in sorted order
+        Map<String, ResultRow> result = new TreeMap<>();
+        for (Map.Entry<String, List<Measurement>> entry : stations.entrySet()) {
+            result.put(entry.getKey(), getStats(entry.getValue()));
+        }
 
-        System.out.println(measurements);
-        System.out.println("Elapsed time ms: " + (System.currentTimeMillis() - start));
+        System.out.println(result);
+        // TODO Remove
+         System.out.println("Elapsed time ms: " + (System.currentTimeMillis() - start));
+    }
+
+    private static Measurement parseRow(String row) {
+        // Testing faster String splits
+        // https://stackoverflow.com/questions/11001330/java-split-string-performances
+        StringTokenizer stringTokenizer = new StringTokenizer(row, ";");
+
+        return new Measurement(new String[]{ stringTokenizer.nextToken(), stringTokenizer.nextToken() });
+    }
+
+    private static ResultRow getStats(List<Measurement> measurements) {
+        double min = Double.POSITIVE_INFINITY;
+        double max = Double.NEGATIVE_INFINITY;
+        double sum = 0.0;
+        long count = 0;
+
+        for (Measurement m : measurements) {
+            min = Math.min(min, m.value);
+            max = Math.max(max, m.value);
+            ++count;
+            sum += m.value;
+        }
+
+        return new ResultRow(min, (Math.round(sum * 10.0) / 10.0) / count, max);
     }
 }
