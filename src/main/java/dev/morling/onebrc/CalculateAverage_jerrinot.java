@@ -56,6 +56,7 @@ public class CalculateAverage_jerrinot {
         final int chunkCount = THREAD_COUNT * chunkPerThread;
         final var chunkStartOffsets = new long[chunkCount + 1];
         try (var raf = new RandomAccessFile(file, "r")) {
+            // credit - chunking code: mtopolnik
             final var inputBase = raf.getChannel().map(MapMode.READ_ONLY, 0, length, Arena.global()).address();
             for (int i = 1; i < chunkStartOffsets.length - 1; i++) {
                 var start = length * i / (chunkStartOffsets.length - 1);
@@ -167,7 +168,7 @@ public class CalculateAverage_jerrinot {
         private long maskD;
 
         // credit: merykitty
-        private long parseTemperature(long startCursor, long baseEntryPtr) {
+        private long parseAndStoreTemperature(long startCursor, long baseEntryPtr) {
             long word = UNSAFE.getLong(startCursor);
             final long negateda = ~word;
             final int dotPos = Long.numberOfTrailingZeros(negateda & 0x10101000);
@@ -185,6 +186,9 @@ public class CalculateAverage_jerrinot {
             int min = UNSAFE.getInt(minPtr);
             int max = UNSAFE.getInt(maxPtr);
             long sum = UNSAFE.getLong(sumPtr);
+            // try if min/max intrinsics are paying off
+            // maybe braching is better? the branch is becoming more predictable with
+            // each new sample.
             max = Math.max(max, temperature);
             min = Math.min(min, temperature);
             sum += temperature;
@@ -223,6 +227,7 @@ public class CalculateAverage_jerrinot {
                 int count = UNSAFE.getInt(baseAddress + COUNT_OFFSET);
                 long sum = UNSAFE.getLong(baseAddress + SUM_OFFSET);
 
+                // todo: lambdas bootstrap probably cost us
                 accumulator.compute(name, (_, v) -> {
                     if (v == null) {
                         return new StationStats(min, max, count, sum);
@@ -253,7 +258,7 @@ public class CalculateAverage_jerrinot {
         }
 
         private void doTail() {
-            // todo: we would be probably better of without all that code dup
+            // todo: we would be probably better of without all that code dup. ("compilers hates him!")
             // System.out.println("done ILP");
             while (cursorA < endA) {
                 long startA = cursorA;
@@ -274,7 +279,7 @@ public class CalculateAverage_jerrinot {
                 intHashA = intHashA ^ (intHashA >> 17);
 
                 long baseEntryPtrA = getOrCreateEntryBaseOffset(semicolonA, startA, intHashA, maskedWordA);
-                cursorA = parseTemperature(semicolonA + 1, baseEntryPtrA);
+                cursorA = parseAndStoreTemperature(semicolonA + 1, baseEntryPtrA);
             }
             // System.out.println("done A");
             while (cursorB < endB) {
@@ -296,7 +301,7 @@ public class CalculateAverage_jerrinot {
                 intHashB = intHashB ^ (intHashB >> 17);
 
                 long baseEntryPtrB = getOrCreateEntryBaseOffset(semicolonB, startB, intHashB, maskedWordB);
-                cursorB = parseTemperature(semicolonB + 1, baseEntryPtrB);
+                cursorB = parseAndStoreTemperature(semicolonB + 1, baseEntryPtrB);
             }
             // System.out.println("done B");
             while (cursorC < endC) {
@@ -318,7 +323,7 @@ public class CalculateAverage_jerrinot {
                 intHashC = intHashC ^ (intHashC >> 17);
 
                 long baseEntryPtrC = getOrCreateEntryBaseOffset(semicolonC, startC, intHashC, maskedWordC);
-                cursorC = parseTemperature(semicolonC + 1, baseEntryPtrC);
+                cursorC = parseAndStoreTemperature(semicolonC + 1, baseEntryPtrC);
             }
             // System.out.println("done C");
             while (cursorD < endD) {
@@ -340,7 +345,7 @@ public class CalculateAverage_jerrinot {
                 intHashD = intHashD ^ (intHashD >> 17);
 
                 long baseEntryPtrD = getOrCreateEntryBaseOffset(semicolonD, startD, intHashD, maskedWordD);
-                cursorD = parseTemperature(semicolonD + 1, baseEntryPtrD);
+                cursorD = parseAndStoreTemperature(semicolonD + 1, baseEntryPtrD);
             }
             // System.out.println("done D");
         }
@@ -348,6 +353,7 @@ public class CalculateAverage_jerrinot {
         @Override
         public void run() {
             while (cursorA < endA && cursorB < endB && cursorC < endC && cursorD < endD) {
+                // todo: experiment with different inter-leaving
                 long startA = cursorA;
                 long startB = cursorB;
                 long startC = cursorC;
@@ -425,10 +431,10 @@ public class CalculateAverage_jerrinot {
                 long baseEntryPtrC = getOrCreateEntryBaseOffset(semicolonC, startC, intHashC, maskedWordC);
                 long baseEntryPtrD = getOrCreateEntryBaseOffset(semicolonD, startD, intHashD, maskedWordD);
 
-                cursorA = parseTemperature(semicolonA + 1, baseEntryPtrA);
-                cursorB = parseTemperature(semicolonB + 1, baseEntryPtrB);
-                cursorC = parseTemperature(semicolonC + 1, baseEntryPtrC);
-                cursorD = parseTemperature(semicolonD + 1, baseEntryPtrD);
+                cursorA = parseAndStoreTemperature(semicolonA + 1, baseEntryPtrA);
+                cursorB = parseAndStoreTemperature(semicolonB + 1, baseEntryPtrB);
+                cursorC = parseAndStoreTemperature(semicolonC + 1, baseEntryPtrC);
+                cursorD = parseAndStoreTemperature(semicolonD + 1, baseEntryPtrD);
             }
             doTail();
         }
@@ -441,6 +447,7 @@ public class CalculateAverage_jerrinot {
                 long lenPtr = basePtr + LEN_OFFSET;
                 int len = UNSAFE.getInt(lenPtr);
                 if (len == 0) {
+                    // todo: uncommon branch maybe?
                     // empty slot
                     UNSAFE.copyMemory(semicolonA - lenA, basePtr + NAME_OFFSET, lenA);
                     UNSAFE.putInt(lenPtr, lenA);
@@ -453,6 +460,9 @@ public class CalculateAverage_jerrinot {
                     long namePtr = basePtr + NAME_OFFSET;
                     int fullLen = (len >> 3) << 3;
                     long offset;
+                    // todo: this is worth exploring further.
+                    // @mtopolnik has an interesting algo with 2 unconditioned long loads: this is sufficient
+                    // for majority of names. so we would be left with just a single branch which is almost never taken?
                     for (offset = 0; offset < fullLen; offset += 8) {
                         match &= (UNSAFE.getLong(startA + offset) == UNSAFE.getLong(namePtr + offset));
                     }
