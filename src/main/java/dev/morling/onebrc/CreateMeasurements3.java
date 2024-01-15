@@ -48,7 +48,7 @@ public class CreateMeasurements3 {
         final var weatherStations = generateWeatherStations();
         final var start = System.currentTimeMillis();
         final var rnd = ThreadLocalRandom.current();
-        try (var out = new BufferedWriter(new FileWriter("measurements.txt"))) {
+        try (var out = new BufferedWriter(new FileWriter("measurements3.txt"))) {
             for (int i = 1; i <= size; i++) {
                 var station = weatherStations.get(rnd.nextInt(KEYSET_SIZE));
                 double temp = rnd.nextGaussian(station.avgTemp, 7.0);

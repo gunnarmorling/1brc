@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 #  Copyright 2023 The original authors
 #
@@ -15,22 +15,6 @@
 #  limitations under the License.
 #
 
-set -x
-
-if [ -z "$1" ]
-  then
-    echo "Usage: prepare.sh <fork name>:<branch name>"
-    exit 1
-fi
-
-parts=(${1//:/ })
-echo "  User: ${parts[0]}"
-echo "Branch: ${parts[1]}"
-
-git branch -D ${parts[0]} &>/dev/null
-
-git checkout -b ${parts[0]}
-git fetch https://github.com/${parts[0]}/1brc.git ${parts[1]}
-# git fetch git@github.com:${parts[0]}/1brc.git ${parts[1]}
-git reset --hard FETCH_HEAD
-git rebase main
+# Uncomment below to use sdk
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+sdk use java 21.0.1-graal 1>&2
