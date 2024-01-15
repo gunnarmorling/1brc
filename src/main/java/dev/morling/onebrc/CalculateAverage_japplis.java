@@ -42,8 +42,8 @@ import java.util.concurrent.*;
  * - Removed BufferedInputStream and replaced Measurement with IntSummaryStatistics (thanks davecom): still 23" but cleaner code
  * - Execute same code on 1BRC server: 41"
  * - One HashMap per thread: 17" locally (12" on 1BRC server)
- * - Read file in multiple threads if available: 15" locally
- * - Changed String to BytesText with cache: 12" locally
+ * - Read file in multiple threads if available and
+ * - Changed String to (byte[]) Text with cache: 18" locally (but 8" -> 5" on laptop)
  *
  * @author Anthony Goubard - Japplis
  */
@@ -56,7 +56,7 @@ public class CalculateAverage_japplis {
     private int precision = -1;
     private int precisionLimitTenth;
     private long fileSize;
-    private Map<BytesText, IntSummaryStatistics> cityMeasurementMap = new ConcurrentHashMap<>(1_000);
+    private Map<Text, IntSummaryStatistics> cityMeasurementMap = new ConcurrentHashMap<>(10_000);
     private List<Byte> previousBlockLastLine = new ArrayList<>();
     private Semaphore readFileLock = new Semaphore(MAX_COMPUTE_THREADS);
     private Queue<ByteArray> bufferPool = new ConcurrentLinkedQueue<>();
@@ -98,7 +98,7 @@ public class CalculateAverage_japplis {
         threadPool.shutdownNow();
     }
 
-    private Callable<ByteArray> readBlock(File measurementsFile, int blockIndex) {
+    private Callable<ByteArray> readBlock(File measurementsFile, long blockIndex) {
         return () -> {
             long fileIndex = blockIndex * BUFFER_SIZE;
             if (fileIndex >= fileSize) {
@@ -106,13 +106,17 @@ public class CalculateAverage_japplis {
                 return new ByteArray(0);
             }
             try (InputStream measurementsFileIS = new FileInputStream(measurementsFile)) {
-                if (fileIndex > 0)
-                    measurementsFileIS.skip(fileIndex);
+                if (fileIndex > 0) {
+                    long skipped = measurementsFileIS.skip(fileIndex);
+                    while (skipped != fileIndex) {
+                        skipped += measurementsFileIS.skip(fileIndex - skipped);
+                    }
+                }
                 long bufferSize = Math.min(BUFFER_SIZE, fileSize - fileIndex);
                 ByteArray buffer = bufferSize == BUFFER_SIZE ? bufferPool.poll() : new ByteArray((int) bufferSize);
                 if (buffer == null)
                     buffer = new ByteArray(BUFFER_SIZE);
-                int totalRead = measurementsFileIS.read(buffer.array());
+                int totalRead = measurementsFileIS.read(buffer.array(), 0, (int) bufferSize);
                 while (totalRead < bufferSize) {
                     byte[] extraBuffer = new byte[(int) (bufferSize - totalRead)];
                     int readCount = measurementsFileIS.read(extraBuffer);
@@ -128,8 +132,8 @@ public class CalculateAverage_japplis {
     private Runnable parseTemperaturesBlock(ByteArray buffer, int startIndex) {
         Runnable countAverageRun = () -> {
             int bufferIndex = startIndex;
-            Map<BytesText, IntSummaryStatistics> blockCityMeasurementMap = new HashMap<>(1_000);
-            Map<Integer, BytesText> textPool = new HashMap<>(1_000);
+            Map<Text, IntSummaryStatistics> blockCityMeasurementMap = new HashMap<>(1_000);
+            Map<Integer, Text> textPool = new HashMap<>(1_000);
             byte[] bufferArray = buffer.array();
             try {
                 while (bufferIndex < bufferArray.length) {
@@ -203,13 +207,13 @@ public class CalculateAverage_japplis {
         return startIndex;
     }
 
-    private int readNextLine(int bufferIndex, byte[] buffer, Map<BytesText, IntSummaryStatistics> blockCityMeasurementMap, Map<Integer, BytesText> textPool) {
+    private int readNextLine(int bufferIndex, byte[] buffer, Map<Text, IntSummaryStatistics> blockCityMeasurementMap, Map<Integer, Text> textPool) {
         int startLineIndex = bufferIndex;
         while (buffer[bufferIndex] != (byte) ';') {
             bufferIndex++;
         }
         // String city = new String(buffer, startLineIndex, bufferIndex - startLineIndex, StandardCharsets.UTF_8);
-        BytesText city = BytesText.getByteText(buffer, startLineIndex, bufferIndex - startLineIndex, textPool);
+        Text city = Text.getByteText(buffer, startLineIndex, bufferIndex - startLineIndex, textPool);
         bufferIndex++; // skip ';'
         int temperature = readTemperature(buffer, bufferIndex);
         bufferIndex += precision + 3; // digit, dot and CR
@@ -225,20 +229,20 @@ public class CalculateAverage_japplis {
         boolean negative = text[measurementIndex] == (byte) '-';
         if (negative)
             measurementIndex++;
-        byte digitChar = text[measurementIndex++];
+        byte digit = text[measurementIndex++];
         int temperature = 0;
-        while (digitChar != (byte) '\n') {
-            temperature = temperature * 10 + (digitChar - (byte) '0');
-            digitChar = text[measurementIndex++];
-            if (digitChar == '.')
-                digitChar = text[measurementIndex++];
+        while (digit != (byte) '\n') {
+            temperature = temperature * 10 + (digit - (byte) '0');
+            digit = text[measurementIndex++];
+            if (digit == (byte) '.')
+                digit = text[measurementIndex++];
         }
         if (negative)
             temperature = -temperature;
         return temperature;
     }
 
-    private void addTemperature(BytesText city, int temperature, Map<BytesText, IntSummaryStatistics> blockCityMeasurementMap) {
+    private void addTemperature(Text city, int temperature, Map<Text, IntSummaryStatistics> blockCityMeasurementMap) {
         IntSummaryStatistics measurement = blockCityMeasurementMap.get(city);
         if (measurement == null) {
             measurement = new IntSummaryStatistics();
@@ -247,7 +251,7 @@ public class CalculateAverage_japplis {
         measurement.accept(temperature);
     }
 
-    private void mergeBlockResults(Map<BytesText, IntSummaryStatistics> blockCityMeasurementMap) {
+    private void mergeBlockResults(Map<Text, IntSummaryStatistics> blockCityMeasurementMap) {
         blockCityMeasurementMap.forEach((city, measurement) -> {
             IntSummaryStatistics oldMeasurement = cityMeasurementMap.putIfAbsent(city, measurement);
             if (oldMeasurement != null)
@@ -256,7 +260,7 @@ public class CalculateAverage_japplis {
     }
 
     private void printTemperatureStatsByCity() {
-        Set<BytesText> sortedCities = new TreeSet<>(cityMeasurementMap.keySet());
+        Set<Text> sortedCities = new TreeSet<>(cityMeasurementMap.keySet());
         StringBuilder result = new StringBuilder(cityMeasurementMap.size() * 40);
         result.append('{');
         sortedCities.forEach(city -> {
@@ -316,23 +320,23 @@ public class CalculateAverage_japplis {
         }
     }
 
-    private static class BytesText implements Comparable<BytesText> {
+    private static class Text implements Comparable<Text> {
 
         private final byte[] textBytes;
         private final int hash;
         private String text;
 
-        private BytesText(byte[] buffer, int startIndex, int length, int hash) {
+        private Text(byte[] buffer, int startIndex, int length, int hash) {
             textBytes = new byte[length];
             this.hash = hash;
             System.arraycopy(buffer, startIndex, textBytes, 0, length);
         }
 
-        private static BytesText getByteText(byte[] buffer, int startIndex, int length, Map<Integer, BytesText> textPool) {
+        private static Text getByteText(byte[] buffer, int startIndex, int length, Map<Integer, Text> textPool) {
             int hash = hashCode(buffer, startIndex, length);
-            BytesText textFromPool = textPool.get(hash);
+            Text textFromPool = textPool.get(hash);
             if (textFromPool == null || !Arrays.equals(buffer, startIndex, startIndex + length, textFromPool.textBytes, 0, length)) {
-                BytesText newText = new BytesText(buffer, startIndex, length, hash);
+                Text newText = new Text(buffer, startIndex, length, hash);
                 textPool.put(hash, newText);
                 return newText;
             }
@@ -357,13 +361,13 @@ public class CalculateAverage_japplis {
         public boolean equals(Object other) {
             if (hashCode() != other.hashCode())
                 return false;
-            if (!(other instanceof BytesText))
+            if (!(other instanceof Text))
                 return false;
-            return Arrays.equals(textBytes, ((BytesText) other).textBytes);
+            return Arrays.equals(textBytes, ((Text) other).textBytes);
         }
 
         @Override
-        public int compareTo(BytesText other) {
+        public int compareTo(Text other) {
             return toString().compareTo(other.toString());
         }
 
