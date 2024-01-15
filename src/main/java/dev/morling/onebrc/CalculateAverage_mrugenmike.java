@@ -30,14 +30,14 @@ public class CalculateAverage_mrugenmike {
     private static final String FILE = "./measurements.txt";
 
     private record ResultForACity(String city, double min, double max, BigDecimal sum, long count) {
-        public String toString() {
-            return round(min) + "/" + round(sum.doubleValue() / count) + "/" + round(max);
-        }
+            public String toString() {
+                return STR."\{round(min)}/\{round(sum.doubleValue() / count)}/\{round(max)}";
+            }
 
-        private double round(double value) {
-            return Math.round(value * 10.0) / 10.0;
+            private double round(double value) {
+                return Math.round(value * 10.0) / 10.0;
+            }
         }
-    }
 
     public static void main(String[] args) throws IOException {
         try (final Stream<String> lines = Files.lines(Path.of(FILE), StandardCharsets.UTF_8)) {

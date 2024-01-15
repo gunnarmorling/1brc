@@ -15,5 +15,5 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="-Xms6G -Xmx16G"
+JAVA_OPTS="--enable-preview -Xms14G -Xmx14G"
 java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_mrugenmike
