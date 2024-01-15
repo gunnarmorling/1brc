@@ -93,8 +93,9 @@ public class CalculateAverage_japplis {
                 }
             }
         }
-        for (Future parseBlockTask : parseBlockTasks) // Wait for all tasks to finish
+        for (Future parseBlockTask : parseBlockTasks) { // Wait for all tasks to finish
             parseBlockTask.get();
+        }
         threadPool.shutdownNow();
     }
 
@@ -114,8 +115,9 @@ public class CalculateAverage_japplis {
                 }
                 long bufferSize = Math.min(BUFFER_SIZE, fileSize - fileIndex);
                 ByteArray buffer = bufferSize == BUFFER_SIZE ? bufferPool.poll() : new ByteArray((int) bufferSize);
-                if (buffer == null)
+                if (buffer == null) {
                     buffer = new ByteArray(BUFFER_SIZE);
+                }
                 int totalRead = measurementsFileIS.read(buffer.array(), 0, (int) bufferSize);
                 while (totalRead < bufferSize) {
                     byte[] extraBuffer = new byte[(int) (bufferSize - totalRead)];
@@ -132,8 +134,8 @@ public class CalculateAverage_japplis {
     private Runnable parseTemperaturesBlock(ByteArray buffer, int startIndex) {
         Runnable countAverageRun = () -> {
             int bufferIndex = startIndex;
-            Map<Text, IntSummaryStatistics> blockCityMeasurementMap = new HashMap<>(1_000);
-            Map<Integer, Text> textPool = new HashMap<>(1_000);
+            Map<Text, IntSummaryStatistics> blockCityMeasurementMap = new HashMap<>(10_000);
+            Map<Integer, Text> textPool = new HashMap<>(10_000);
             byte[] bufferArray = buffer.array();
             try {
                 while (bufferIndex < bufferArray.length) {
@@ -197,8 +199,9 @@ public class CalculateAverage_japplis {
         int dotPos = bufferIndex;
         byte car = buffer[bufferIndex++];
         while (car != '\n') {
-            if (car == '.')
+            if (car == '.') {
                 dotPos = bufferIndex;
+            }
             car = buffer[bufferIndex++];
         }
         precision = bufferIndex - dotPos - 1;
@@ -217,28 +220,33 @@ public class CalculateAverage_japplis {
         bufferIndex++; // skip ';'
         int temperature = readTemperature(buffer, bufferIndex);
         bufferIndex += precision + 3; // digit, dot and CR
-        if (temperature < 0)
+        if (temperature < 0) {
             bufferIndex++;
-        if (temperature <= -precisionLimitTenth || temperature >= precisionLimitTenth)
+        }
+        if (temperature <= -precisionLimitTenth || temperature >= precisionLimitTenth) {
             bufferIndex++;
+        }
         addTemperature(city, temperature, blockCityMeasurementMap);
         return bufferIndex;
     }
 
-    private int readTemperature(byte[] text, int measurementIndex) {
-        boolean negative = text[measurementIndex] == (byte) '-';
-        if (negative)
-            measurementIndex++;
-        byte digit = text[measurementIndex++];
+    private int readTemperature(byte[] buffer, int bufferIndex) {
+        boolean negative = buffer[bufferIndex] == (byte) '-';
+        if (negative) {
+            bufferIndex++;
+        }
+        byte digit = buffer[bufferIndex++];
         int temperature = 0;
         while (digit != (byte) '\n') {
             temperature = temperature * 10 + (digit - (byte) '0');
-            digit = text[measurementIndex++];
-            if (digit == (byte) '.')
-                digit = text[measurementIndex++];
+            digit = buffer[bufferIndex++];
+            if (digit == (byte) '.') { // Skip '.'
+                digit = buffer[bufferIndex++];
+            }
         }
-        if (negative)
+        if (negative) {
             temperature = -temperature;
+        }
         return temperature;
     }
 
@@ -253,9 +261,13 @@ public class CalculateAverage_japplis {
 
     private void mergeBlockResults(Map<Text, IntSummaryStatistics> blockCityMeasurementMap) {
         blockCityMeasurementMap.forEach((city, measurement) -> {
-            IntSummaryStatistics oldMeasurement = cityMeasurementMap.putIfAbsent(city, measurement);
-            if (oldMeasurement != null)
-                oldMeasurement.combine(measurement);
+            cityMeasurementMap.compute(city, (town, currentMeasurement) -> {
+                if (currentMeasurement == null) {
+                    return measurement;
+                }
+                currentMeasurement.combine(measurement);
+                return currentMeasurement;
+            });
         });
     }
 
@@ -268,8 +280,9 @@ public class CalculateAverage_japplis {
             result.append(city);
             result.append(getTemperatureStats(measurement));
         });
-        if (!sortedCities.isEmpty())
+        if (!sortedCities.isEmpty()) {
             result.delete(result.length() - 2, result.length());
+        }
         result.append('}');
         String temperaturesByCity = result.toString();
         System.out.println(temperaturesByCity);
@@ -359,11 +372,10 @@ public class CalculateAverage_japplis {
 
         @Override
         public boolean equals(Object other) {
-            if (hashCode() != other.hashCode())
-                return false;
-            if (!(other instanceof Text))
-                return false;
-            return Arrays.equals(textBytes, ((Text) other).textBytes);
+            return other != null &&
+                    hashCode() == other.hashCode() &&
+                    other instanceof Text &&
+                    Arrays.equals(textBytes, ((Text) other).textBytes);
         }
 
         @Override
@@ -373,8 +385,9 @@ public class CalculateAverage_japplis {
 
         @Override
         public String toString() {
-            if (text == null)
+            if (text == null) {
                 text = new String(textBytes, StandardCharsets.UTF_8);
+            }
             return text;
         }
     }
