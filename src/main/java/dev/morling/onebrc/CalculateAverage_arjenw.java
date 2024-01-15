@@ -40,37 +40,40 @@ import java.util.stream.IntStream;
 // * memory-mapped file approach:           0m3.2s (also way simpler and neater code; inspired by spullara)
 // * smarter number parsing:                0m2.95s (inspired by iziamos)
 // * switching back to 21-tem vm            0m2.6s
+// * small optimizations                    0m2.5s (skip byte-array copy, optimal StationList array size avoiding collisions)
 
 public class CalculateAverage_arjenw {
-    private static final int TWO_BYTE_TO_INT = 480 + 48;
+    private static final int TWO_BYTE_TO_INT = 480 + 48; // 48 is the ASCII code for '0'
     private static final int THREE_BYTE_TO_INT = 4800 + 480 + 48;
     private static final String FILE = "./measurements.txt";
 
     public static void main(String[] args) {
-        var file = new File(FILE);
+        var file = new File(args.length > 0 ? args[0] : FILE);
         var fileSize = file.length();
         var numberOfProcessors = fileSize > 1_000_000 ? Runtime.getRuntime().availableProcessors() : 1;
-        var segmentSize = fileSize / numberOfProcessors;
-        var results = IntStream.range(0, numberOfProcessors)
+        var segmentSize = (int) Math.min(Integer.MAX_VALUE, fileSize / numberOfProcessors); // bytebuffer position is an int, so can be max Integer.MAX_VALUE
+        var segmentCount = (int) (fileSize / segmentSize);
+        var results = IntStream.range(0, segmentCount)
                 .mapToObj(segmentNr -> parseSegment(file, fileSize, segmentSize, segmentNr))
                 .parallel()
                 .reduce(StationList::merge)
                 .orElseGet(StationList::new)
                 .toStringArray();
-        Arrays.sort(results, Comparator.comparing(o -> take(o, '=')));
+        Arrays.sort(results, Comparator.comparing(o -> takeUntil(o, '=')));
         System.out.format("{%s}%n", String.join(", ", results));
     }
 
-    private static StationList parseSegment(File file, long fileSize, long segmentSize, int segmentNr) {
-        long segmentStart = segmentNr * segmentSize;
+    private static StationList parseSegment(File file, long fileSize, int segmentSize, int segmentNr) {
+        long segmentStart = segmentNr * (long) segmentSize;
         long segmentEnd = Math.min(fileSize, segmentStart + segmentSize + 100);
-        StationList stationList = new StationList();
         try (var fileChannel = (FileChannel) Files.newByteChannel(file.toPath(), StandardOpenOption.READ)) {
             var bb = fileChannel.map(FileChannel.MapMode.READ_ONLY, segmentStart, segmentEnd - segmentStart);
             if (segmentStart > 0) {
+                // noinspection StatementWithEmptyBody
                 while (bb.get() != '\n')
                     ; // skip to first new line
             }
+            StationList stationList = new StationList();
             var buffer = new byte[100];
             while (bb.position() < segmentSize) {
                 byte b;
@@ -103,8 +106,10 @@ public class CalculateAverage_arjenw {
                     bb.get(); // new line
                 }
 
-                stationList.add(buffer, i, Math.abs(hash), value);
+                if (stationList.add(buffer, i, Math.abs(hash), value))
+                    buffer = new byte[100]; // station was new, create new buffer to contain the next station's name
             }
+
             return stationList;
         }
         catch (IOException e) {
@@ -155,31 +160,29 @@ public class CalculateAverage_arjenw {
     }
 
     private static class StationList implements Iterable<Station> {
-        private final static int MAX_ENTRY = 32767; // choose a value that is binary all 1's.
-        private final Station[] array = new Station[MAX_ENTRY + 1];
+        private final static int MAX_ENTRY = 65375; // choose a value that _eliminates_ collisions on the test set.
+        private final Station[] array = new Station[MAX_ENTRY];
         private int size = 0;
 
-        private void add(int hash, Supplier<Station> create, Consumer<Station> update) {
-            var position = hash & MAX_ENTRY;
+        private boolean add(int hash, Supplier<Station> create, Consumer<Station> update) {
+            var position = hash % MAX_ENTRY;
             Station existing;
             while ((existing = array[position]) != null && existing.hash != hash) {
-                position = (position + 1) & MAX_ENTRY;
+                position = (position + 1) % MAX_ENTRY;
             }
             if (existing == null) {
                 array[position] = create.get();
                 size++;
+                return true;
             }
             else {
                 update.accept(existing);
+                return false;
             }
         }
 
-        public void add(byte[] data, int stationNameLength, int stationHash, int value) {
-            add(stationHash, () -> {
-                var stationName = new byte[stationNameLength];
-                System.arraycopy(data, 0, stationName, 0, stationNameLength);
-                return new Station(stationName, stationNameLength, stationHash, value);
-            }, existing -> existing.append(value));
+        public boolean add(byte[] data, int stationNameLength, int stationHash, int value) {
+            return add(stationHash, () -> new Station(data, stationNameLength, stationHash, value), existing -> existing.append(value));
         }
 
         public void add(Station station) {
@@ -210,7 +213,7 @@ public class CalculateAverage_arjenw {
                 @Override
                 public boolean hasNext() {
                     Station station = null;
-                    while (index <= MAX_ENTRY && (station = array[index]) == null)
+                    while (index < MAX_ENTRY && (station = array[index]) == null)
                         index++;
                     return station != null;
                 }
@@ -226,7 +229,7 @@ public class CalculateAverage_arjenw {
         }
     }
 
-    private static String take(String s, char c) {
+    private static String takeUntil(String s, char c) {
         var pos = s.indexOf(c);
         return pos > -1 ? s.substring(0, pos) : s;
     }
