@@ -315,7 +315,7 @@ public class CalculateAverage_justplainlaake {
 
         protected void fillName() {
             byte[] nameBuffer = new byte[(int) (nameEnd - nameStart)];
-            UNSAFE.copyMemory(null, this.nameStart, nameBuffer, Unsafe.ARRAY_BYTE_BASE_OFFSET, nameBuffer.length);//Quick memory copy, using null as src copies from the file we mapped earlier
+            UNSAFE.copyMemory(null, this.nameStart, nameBuffer, Unsafe.ARRAY_BYTE_BASE_OFFSET, nameBuffer.length);// Quick memory copy, using null as src copies from the file we mapped earlier
             name = new String(nameBuffer, StandardCharsets.UTF_8);
         }
 
