@@ -15,6 +15,5 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="-Xms500m -Xmx500m --enable-preview -dsa -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -XX:-AlwaysPreTouch"
-
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_arjenw $@
+JAVA_OPTS="-Xms6g -Xmx6g"
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_eriklumme
