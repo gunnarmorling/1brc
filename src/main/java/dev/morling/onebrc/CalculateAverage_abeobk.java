@@ -55,68 +55,53 @@ public class CalculateAverage_abeobk {
         }
     }
 
-    // stat
-    private static class Stat {
-        private int min;
-        private int max;
-        private long sum;
-        private int count;
+    static class Node {
+        long addr;
+        long[] buf = new long[13];
+        int min, max;
+        int count;
+        long sum;
 
-        Stat(int v) {
-            sum = min = max = v;
+        String key() {
+            byte[] sbuf = new byte[MAX_STR_LEN];
+            int kl = (int) (buf[12] >>> 56);
+            UNSAFE.copyMemory(null, addr, sbuf, Unsafe.ARRAY_BYTE_BASE_OFFSET, kl);
+            return new String(sbuf, 0, kl, StandardCharsets.UTF_8);
+        }
+
+        public String toString() {
+            return String.format("%.1f/%.1f/%.1f", min * 0.1, sum * 0.1 / count, max * 0.1);
+        }
+
+        Node(long a, int val, long[] b) {
+            sum = min = max = val;
             count = 1;
+            addr = a;
+            System.arraycopy(b, 0, buf, 0, (int) Math.ceilDiv(b[12] >>> 56, 8));
+            buf[12] = b[12];
         }
 
         void add(int val) {
-            min = Math.min(val, min);
-            max = Math.max(val, max);
+            min = Math.min(min, val);
+            max = Math.max(max, val);
             sum += val;
             count++;
         }
 
-        void merge(Stat other) {
+        void merge(Node other) {
             min = Math.min(other.min, min);
             max = Math.max(other.max, max);
             sum += other.sum;
             count += other.count;
         }
 
-        public String toString() {
-            return String.format("%.1f/%.1f/%.1f", min * 0.1, sum * 0.1 / count, max * 0.1);
-        }
-    }
-
-    static class Node {
-        long addr;
-        int keylen;
-        int hash;
-        long[] buf = new long[13];
-        Stat stat;
-
-        String key() {
-            byte[] buf = new byte[MAX_STR_LEN];
-            UNSAFE.copyMemory(null, addr, buf, Unsafe.ARRAY_BYTE_BASE_OFFSET, keylen);
-            return new String(buf, 0, keylen, StandardCharsets.UTF_8);
-        }
-
-        Node(long a, int kl, int h, int v, long[] b) {
-            stat = new Stat(v);
-            addr = a;
-            keylen = kl;
-            hash = h;
-            System.arraycopy(b, 0, buf, 0, Math.ceilDiv(kl, 8));
-        }
-
         boolean contentEquals(final long[] other_buf) {
-            int k = keylen / 8;
-            int r = keylen % 8;
             // Since the city name is most likely shorter than 16 characters
             // this should be faster than typical conditional checks
-            long sum = 0;
-            for (int i = 0; i < k; i++) {
+            long sum = buf[12] ^ other_buf[12];
+            for (int i = 0; i < (int) (buf[12] >>> 59); i++) {
                 sum += buf[i] ^ other_buf[i];
             }
-            sum += (buf[k] ^ other_buf[k]) & HASH_MASKS[r];
             return sum == 0;
         }
     }
@@ -135,12 +120,19 @@ public class CalculateAverage_abeobk {
         return ptrs;
     }
 
+    static final long getSemiPosCode(final long word) {
+        long xor_semi = word ^ 0x3b3b3b3b3b3b3b3bL; // xor with ;;;;;;;;
+        return (xor_semi - 0x0101010101010101L) & (~xor_semi & 0x8080808080808080L);
+    }
+
     public static void main(String[] args) throws InterruptedException, IOException {
-        int cpu_cnt = Runtime.getRuntime().availableProcessors();
         try (var file = FileChannel.open(Path.of(FILE), StandardOpenOption.READ)) {
             long start_addr = file.map(MapMode.READ_ONLY, 0, file.size(), Arena.global()).address();
             long file_size = file.size();
             long end_addr = start_addr + file_size;
+
+            // only use all cpus on large file
+            int cpu_cnt = file_size < 1e6 ? 1 : Runtime.getRuntime().availableProcessors();
             long chunk_size = Math.ceilDiv(file_size, cpu_cnt);
 
             // processing
@@ -152,7 +144,7 @@ public class CalculateAverage_abeobk {
                 int thread_id = i;
                 long start = ptrs[i];
                 long end = ptrs[i + 1];
-                maps[i] = new Node[BUCKET_SIZE + 16]; // extra space for collisions
+                maps[i] = new Node[BUCKET_SIZE + 10000]; // extra space for collisions
 
                 (threads[i] = new Thread(() -> {
                     long addr = start;
@@ -165,25 +157,33 @@ public class CalculateAverage_abeobk {
                         long word = 0;
                         long row_addr = addr;
                         int semi_pos = 8;
-                        while (semi_pos == 8) {
+                        word = UNSAFE.getLong(addr);
+                        buf[idx++] = word;
+                        long semipos_code = getSemiPosCode(word);
+                        while (semipos_code == 0) {
+                            hash ^= word;
+                            addr += 8;
                             word = UNSAFE.getLong(addr);
                             buf[idx++] = word;
-                            // idea from thomaswue & royvanrijn
-                            long xor_semi = word ^ 0x3b3b3b3b3b3b3b3bL; // xor with ;;;;;;;;
-                            long semipos_code = (xor_semi - 0x0101010101010101L) & ~xor_semi & 0x8080808080808080L;
-                            semi_pos = Long.numberOfTrailingZeros(semipos_code) >>> 3;
-                            addr += semi_pos;
-                            hash ^= word & HASH_MASKS[semi_pos];
+                            semipos_code = getSemiPosCode(word);
                         }
 
+                        semi_pos = Long.numberOfTrailingZeros(semipos_code) >>> 3;
+                        long tail = word & HASH_MASKS[semi_pos];
+                        hash ^= tail;
+                        addr += semi_pos;
+
                         int hash32 = (int) (hash ^ (hash >>> 31));
-                        int keylen = (int) (addr - row_addr);
+                        hash32 ^= hash32 >> 17;
+                        long keylen = (addr - row_addr);
+                        buf[12] = tail | (keylen << 56);
+
+                        addr++;
 
                         // great idea from merykitty (Quan Anh Mai)
-                        long num_word = UNSAFE.getLong(++addr);
+                        long num_word = UNSAFE.getLong(addr);
                         int dot_pos = Long.numberOfTrailingZeros(~num_word & 0x10101000);
                         addr += (dot_pos >>> 3) + 3;
-
                         int shift = 28 - dot_pos;
                         long signed = (~num_word << 59) >> 63;
                         long dsmask = ~(signed & 0xFF);
@@ -195,11 +195,11 @@ public class CalculateAverage_abeobk {
                         while (true) {
                             var node = map[bucket];
                             if (node == null) {
-                                map[bucket] = new Node(row_addr, keylen, hash32, val, buf);
+                                map[bucket] = new Node(row_addr, val, buf);
                                 break;
                             }
-                            if (node.keylen == keylen && node.hash == hash32 && node.contentEquals(buf)) {
-                                node.stat.add(val);
+                            if (node.contentEquals(buf)) {
+                                node.add(val);
                                 break;
                             }
                             bucket++;
@@ -213,14 +213,14 @@ public class CalculateAverage_abeobk {
                 thread.join();
 
             // collect results
-            TreeMap<String, Stat> ms = new TreeMap<>();
+            TreeMap<String, Node> ms = new TreeMap<>();
             for (var map : maps) {
                 for (var node : map) {
                     if (node == null)
                         continue;
-                    var stat = ms.putIfAbsent(node.key(), node.stat);
+                    var stat = ms.putIfAbsent(node.key(), node);
                     if (stat != null)
-                        stat.merge(node.stat);
+                        stat.merge(node);
                 }
             }
 
