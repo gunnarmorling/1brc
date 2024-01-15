@@ -24,6 +24,10 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collector;
 
+/**
+ * Changelog:
+ *      - 1/15/24 - initial minor changes with syntax
+ */
 public class CalculateAverage_spiderpig86 {
 
     private static final String FILE = "./measurements.txt";
@@ -52,14 +56,14 @@ public class CalculateAverage_spiderpig86 {
     }
 
     public static void main(String[] args) throws IOException {
-        Map<String, Double> measurements1 = Files.lines(Paths.get(FILE))
-                .map(l -> l.split(";"))
-                .collect(groupingBy(m -> m[0], averagingDouble(m -> Double.parseDouble(m[1]))));
-
-        measurements1 = new TreeMap<>(measurements1.entrySet()
-                .stream()
-                .collect(toMap(Map.Entry::getKey, e -> Math.round(e.getValue() * 10.0) / 10.0)));
-        System.out.println(measurements1);
+        // Map<String, Double> measurements1 = Files.lines(Paths.get(FILE))
+        // .map(l -> l.split(";"))
+        // .collect(groupingBy(m -> m[0], averagingDouble(m -> Double.parseDouble(m[1]))));
+        //
+        // measurements1 = new TreeMap<>(measurements1.entrySet()
+        // .stream()
+        // .collect(toMap(e -> e.getKey(), e -> Math.round(e.getValue() * 10.0) / 10.0)));
+        // System.out.println(measurements1);
 
         Collector<Measurement, MeasurementAggregator, ResultRow> collector = Collector.of(
                 MeasurementAggregator::new,
@@ -78,9 +82,7 @@ public class CalculateAverage_spiderpig86 {
 
                     return res;
                 },
-                agg ->
-                        new ResultRow(agg.min, agg.sum / agg.count, agg.max)
-        );
+                agg ->  new ResultRow(agg.min, (Math.round(agg.sum * 10.0) / 10.0) / agg.count, agg.max));
 
         Map<String, ResultRow> measurements = new TreeMap<>(Files.lines(Paths.get(FILE))
                 .map(l -> new Measurement(l.split(";")))
