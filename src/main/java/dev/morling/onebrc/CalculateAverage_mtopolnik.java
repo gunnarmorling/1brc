@@ -285,15 +285,27 @@ public class CalculateAverage_mtopolnik {
             return hash;
         }
 
-        private static boolean nameEquals(long statsAddr, long inputAddr, long len, long inputWord1, long inputWord2) {
+        private static boolean nameEquals(long statsAddr, long inputAddr, long len, long inputWord1, long inputWord2,
+                                          boolean withinSafeZone) {
             boolean mismatch1 = maskWord(inputWord1, len) != UNSAFE.getLong(statsAddr);
             boolean mismatch2 = maskWord(inputWord2, len - Long.BYTES) != UNSAFE.getLong(statsAddr + Long.BYTES);
-            if (mismatch1 | mismatch2) {
-                return false;
+            if (len <= 2 * Long.BYTES) {
+                return !(mismatch1 | mismatch2);
             }
-            for (int i = 2 * Long.BYTES; i < len; i++) {
-                if (UNSAFE.getByte(inputAddr + i) != UNSAFE.getByte(statsAddr + i)) {
-                    return false;
+            if (withinSafeZone) {
+                int i = 2 * Long.BYTES;
+                for (; i <= len - Long.BYTES; i += Long.BYTES) {
+                    if (UNSAFE.getLong(inputAddr + i) != UNSAFE.getLong(statsAddr + i)) {
+                        return false;
+                    }
+                }
+                return maskWord(UNSAFE.getLong(inputAddr + i), len - i) == UNSAFE.getLong(statsAddr + i);
+            }
+            else {
+                for (int i = 2 * Long.BYTES; i < len; i++) {
+                    if (UNSAFE.getByte(inputAddr + i) != UNSAFE.getByte(statsAddr + i)) {
+                        return false;
+                    }
                 }
             }
             return true;
