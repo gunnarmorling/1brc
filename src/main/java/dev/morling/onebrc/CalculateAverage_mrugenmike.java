@@ -15,49 +15,60 @@
  */
 package dev.morling.onebrc;
 
+import java.io.BufferedReader;
+import java.io.FileReader;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.util.Map;
 import java.util.TreeMap;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Stream;
+import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.stream.Collectors;
 
 public class CalculateAverage_mrugenmike {
 
     private static final String FILE = "./measurements.txt";
 
-    private record ResultForACity(String city, double min, double max, BigDecimal sum, long count) {
-            public String toString() {
-                return STR."\{round(min)}/\{round(sum.doubleValue() / count)}/\{round(max)}";
-            }
-
-            private double round(double value) {
-                return Math.round(value * 10.0) / 10.0;
-            }
+    private record ResultForACity(double min, double max, double sum, double count) {
+        public String toString() {
+            return STR."\{round(min)}/\{round(sum / count)}/\{round(max)}";
         }
+
+        private double round(double value) {
+            return Math.round(value * 10.0) / 10.0;
+        }
+    }
 
     public static void main(String[] args) throws IOException {
-        try (final Stream<String> lines = Files.lines(Path.of(FILE), StandardCharsets.UTF_8)) {
-            final ConcurrentHashMap<String, ResultForACity> intermediateResult = new ConcurrentHashMap<>();
-            lines.parallel().forEach((line) -> {
-                final int semiColonIndex = line.indexOf(';');
-                final String city = line.substring(0, semiColonIndex).intern();
-                final double currentMeasurement = Double.parseDouble(line.substring(semiColonIndex + 1).trim());
-                intermediateResult.compute(city, (String cityName, ResultForACity previousValue) -> {
-                    if (previousValue == null) {
-                        BigDecimal sum = new BigDecimal(currentMeasurement).setScale(1, RoundingMode.HALF_UP);
-                        return new ResultForACity(cityName, currentMeasurement, currentMeasurement, sum, 1);
-                    }
-                    BigDecimal calculatedSum = previousValue.sum.add(new BigDecimal(currentMeasurement)).setScale(1, RoundingMode.HALF_UP);
-                    return new ResultForACity(cityName, Math.min(currentMeasurement, previousValue.min), Math.max(currentMeasurement, previousValue.max), calculatedSum,
-                            previousValue.count + 1);
-                });
-            });
-            TreeMap<String, ResultForACity> finalResult = new TreeMap<>(intermediateResult);
-            System.out.println(finalResult);
+        long start = System.currentTimeMillis();
+//        try (final Stream<String> lines = Files.lines(Path.of(FILE), StandardCharsets.UTF_8)) {
+//            final ConcurrentSkipListMap<String, double[]> result = new ConcurrentSkipListMap<>();
+//            lines.parallel().forEach((line) -> processSingleLine(result, line));
+//            System.out.println(result);
+//        }
+        /* bufferedreader*/
+        final ConcurrentSkipListMap<String, double[]> result = new ConcurrentSkipListMap<>();
+        try (BufferedReader br = new BufferedReader(new FileReader(FILE))) {
+            br.lines().parallel().forEach(line -> processSingleLine(result, line));
+            System.out.println(new TreeMap<>(result.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, (e) -> new ResultForACity(e.getValue()[0], e.getValue()[1], e.getValue()[2], e.getValue()[3])))));
+        } catch (IOException e) {
+            e.printStackTrace();
         }
+        System.out.println(STR."Seconds=\{(System.currentTimeMillis() - start) / 1000}");
+    }
+
+    private static void processSingleLine(ConcurrentSkipListMap<String, double[]> result, String line) {
+        System.out.println("line" + line);
+        final int semiColonIndex = line.indexOf(';');
+        final String city = line.substring(0, semiColonIndex).intern();
+        final double currentMeasurement = Double.parseDouble(line.substring(semiColonIndex + 1).trim());
+        result.compute(city, (String cityName, double[] previousValue) -> {
+            if (previousValue == null) {
+                BigDecimal sum = new BigDecimal(currentMeasurement).setScale(1, RoundingMode.HALF_UP);
+                return new double[]{currentMeasurement, currentMeasurement, sum.doubleValue(), 1};
+            }
+            BigDecimal calculatedSum = BigDecimal.valueOf(previousValue[2]).add(new BigDecimal(currentMeasurement)).setScale(1, RoundingMode.HALF_UP);
+            return new double[]{Math.min(currentMeasurement, previousValue[0]), Math.max(currentMeasurement, previousValue[1]), calculatedSum.doubleValue(), previousValue[3] + 1};
+        });
     }
 }
