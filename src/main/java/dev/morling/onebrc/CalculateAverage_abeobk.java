@@ -28,6 +28,8 @@ import java.util.TreeMap;
 import sun.misc.Unsafe;
 
 public class CalculateAverage_abeobk {
+    private static final boolean SHOW_COLLISIONS = false;
+
     private static final String FILE = "./measurements.txt";
     private static final int BUCKET_SIZE = 1 << 16;
     private static final int BUCKET_MASK = BUCKET_SIZE - 1;
@@ -57,28 +59,27 @@ public class CalculateAverage_abeobk {
 
     static class Node {
         long addr;
-        long[] buf = new long[13];
+        long tail;
         int min, max;
         int count;
         long sum;
 
         String key() {
             byte[] sbuf = new byte[MAX_STR_LEN];
-            int kl = (int) (buf[12] >>> 56);
-            UNSAFE.copyMemory(null, addr, sbuf, Unsafe.ARRAY_BYTE_BASE_OFFSET, kl);
-            return new String(sbuf, 0, kl, StandardCharsets.UTF_8);
+            int keylen = (int) (tail >>> 56);
+            UNSAFE.copyMemory(null, addr, sbuf, Unsafe.ARRAY_BYTE_BASE_OFFSET, keylen);
+            return new String(sbuf, 0, keylen, StandardCharsets.UTF_8);
         }
 
         public String toString() {
             return String.format("%.1f/%.1f/%.1f", min * 0.1, sum * 0.1 / count, max * 0.1);
         }
 
-        Node(long a, int val, long[] b) {
+        Node(long a, long t, int val) {
+            addr = a;
+            tail = t;
             sum = min = max = val;
             count = 1;
-            addr = a;
-            System.arraycopy(b, 0, buf, 0, (int) Math.ceilDiv(b[12] >>> 56, 8));
-            buf[12] = b[12];
         }
 
         void add(int val) {
@@ -89,20 +90,22 @@ public class CalculateAverage_abeobk {
         }
 
         void merge(Node other) {
-            min = Math.min(other.min, min);
-            max = Math.max(other.max, max);
+            min = Math.min(min, other.min);
+            max = Math.max(max, other.max);
             sum += other.sum;
             count += other.count;
         }
 
-        boolean contentEquals(final long[] other_buf) {
-            // Since the city name is most likely shorter than 16 characters
-            // this should be faster than typical conditional checks
-            long sum = buf[12] ^ other_buf[12];
-            for (int i = 0; i < (int) (buf[12] >>> 59); i++) {
-                sum += buf[i] ^ other_buf[i];
+        boolean contentEquals(long other_addr, long other_tail) {
+            if (tail != other_tail) // compare tail & length at the same time
+                return false;
+            long my_addr = addr;
+            int nl = (int) (tail >> 59);
+            for (int i = 0; i < nl; i++, my_addr += 8, other_addr += 8) {
+                if (UNSAFE.getLong(my_addr) != UNSAFE.getLong(other_addr))
+                    return false;
             }
-            return sum == 0;
+            return true;
         }
     }
 
@@ -125,6 +128,22 @@ public class CalculateAverage_abeobk {
         return (xor_semi - 0x0101010101010101L) & (~xor_semi & 0x8080808080808080L);
     }
 
+    // very low collision mixer
+    // idea from https://github.com/Cyan4973/xxHash/tree/dev
+    // zero collision on test data
+    static final int xxh32(long hash) {
+        final int p1 = 0x85EBCA77; // prime
+        final int p2 = 0xC2B2AE3D; // prime
+        int low = (int) hash;
+        int high = (int) (hash >>> 32);
+        low ^= low >> 15;
+        low *= p1;
+        high ^= high >> 13;
+        high *= p2;
+        var h = low ^ high;
+        return h;
+    }
+
     public static void main(String[] args) throws InterruptedException, IOException {
         try (var file = FileChannel.open(Path.of(FILE), StandardOpenOption.READ)) {
             long start_addr = file.map(MapMode.READ_ONLY, 0, file.size(), Arena.global()).address();
@@ -139,6 +158,7 @@ public class CalculateAverage_abeobk {
             var threads = new Thread[cpu_cnt];
             var maps = new Node[cpu_cnt][];
             var ptrs = slice(start_addr, end_addr, chunk_size, cpu_cnt);
+            int[] cls = new int[cpu_cnt];
 
             for (int i = 0; i < cpu_cnt; i++) {
                 int thread_id = i;
@@ -149,22 +169,19 @@ public class CalculateAverage_abeobk {
                 (threads[i] = new Thread(() -> {
                     long addr = start;
                     var map = maps[thread_id];
-                    long[] buf = new long[13];
                     // parse loop
                     while (addr < end) {
-                        int idx = 0;
                         long hash = 0;
                         long word = 0;
                         long row_addr = addr;
                         int semi_pos = 8;
                         word = UNSAFE.getLong(addr);
-                        buf[idx++] = word;
                         long semipos_code = getSemiPosCode(word);
+
                         while (semipos_code == 0) {
                             hash ^= word;
                             addr += 8;
                             word = UNSAFE.getLong(addr);
-                            buf[idx++] = word;
                             semipos_code = getSemiPosCode(word);
                         }
 
@@ -173,10 +190,9 @@ public class CalculateAverage_abeobk {
                         hash ^= tail;
                         addr += semi_pos;
 
-                        int hash32 = (int) (hash ^ (hash >>> 31));
-                        hash32 ^= hash32 >> 17;
+                        int hash32 = xxh32(hash);
                         long keylen = (addr - row_addr);
-                        buf[12] = tail | (keylen << 56);
+                        tail = tail | (keylen << 56);
 
                         addr++;
 
@@ -195,14 +211,16 @@ public class CalculateAverage_abeobk {
                         while (true) {
                             var node = map[bucket];
                             if (node == null) {
-                                map[bucket] = new Node(row_addr, val, buf);
+                                map[bucket] = new Node(row_addr, tail, val);
                                 break;
                             }
-                            if (node.contentEquals(buf)) {
+                            if (node.contentEquals(row_addr, tail)) {
                                 node.add(val);
                                 break;
                             }
                             bucket++;
+                            if (SHOW_COLLISIONS)
+                                cls[thread_id]++;
                         }
                     }
                 })).start();
@@ -211,6 +229,12 @@ public class CalculateAverage_abeobk {
             // join all
             for (var thread : threads)
                 thread.join();
+
+            if (SHOW_COLLISIONS) {
+                for (int i = 0; i < cpu_cnt; i++) {
+                    System.out.println("thread-" + i + " collision = " + cls[i]);
+                }
+            }
 
             // collect results
             TreeMap<String, Node> ms = new TreeMap<>();
@@ -224,7 +248,8 @@ public class CalculateAverage_abeobk {
                 }
             }
 
-            System.out.println(ms);
+            if (!SHOW_COLLISIONS)
+                System.out.println(ms);
         }
     }
 }
