@@ -35,8 +35,9 @@ public class CalculateAverage_yavuztas {
 
     private static final Unsafe UNSAFE = unsafe();
 
-    // Tried all there: MappedByteBuffer, MemorySegment and Unsafe
-    // Accessing the memory using Unsafe is still the fastest in my experience
+    // I compared all three: MappedByteBuffer, MemorySegment and Unsafe.
+    // Accessing the memory using Unsafe is still the fastest in my experience.
+    // However, I would never use it in production, single programming error will crash your app.
     private static Unsafe unsafe() {
         try {
             final Field f = Unsafe.class.getDeclaredField("theUnsafe");
@@ -51,75 +52,87 @@ public class CalculateAverage_yavuztas {
     // Only one object, both for measurements and keys, less object creation in hotpots is always faster
     static class Record {
 
-        // keep memory starting address for each segment
-        // since we use Unsafe, this is enough to align and fetch the data
-        long segment;
-        int start;
-        int length;
-        int hash;
+        final long start; // memory address of the underlying data
+        final byte length;
+        final int hash;
 
-        private int min = 1000; // calculations over int is faster than double, we convert to double in the end only once
-        private int max = -1000;
+        private int min; // calculations over int is faster than double, we convert to double in the end only once
+        private int max;
         private long sum;
-        private long count;
+        private int count;
 
-        public Record(long segment, int start, int length, int hash) {
-            this.segment = segment;
+        public Record(long start, byte length, int hash, int temp) {
             this.start = start;
             this.length = length;
             this.hash = hash;
+            this.min = temp;
+            this.max = temp;
+            this.sum = temp;
+            this.count = 1;
         }
 
         @Override
         public boolean equals(Object o) {
             final Record record = (Record) o;
-            return equals(record.segment, record.start, record.length, record.hash);
+            return equals(record.start, record.length);
         }
 
         /**
-         * Stateless equals, no Record object needed
+         * Used to get extract value in the last remaining longs
          */
-        public boolean equals(long segment, int start, int length, int hash) {
-            if (this.length != length || this.hash != hash)
-                return false;
-
-            int i = 0; // bytes mismatch check
-            while (i < this.length
-                    && UNSAFE.getByte(this.segment + this.start + i) == UNSAFE.getByte(segment + start + i)) {
-                i++;
-            }
-            return i == this.length;
+        static long partial(long word, int step, int length) {
+            final long mask = ~0L << ((length - step) << 3);
+            return word & ~mask;
         }
 
-        @Override
-        public int hashCode() {
-            return this.hash;
+        /**
+         * Record equals, unsafe version
+         */
+        boolean equals(long start, int length) {
+            // equals check is done by comparing longs instead of byte by byte check
+            // this is slightly faster
+            int step;
+            int i = 0;
+            final int dataLength = length >> 3;
+            while (i < dataLength) {
+                step = i++ << 3; // 8 bytes
+                if (UNSAFE.getLong(this.start + step) != UNSAFE.getLong(start + step)) {
+                    return false;
+                }
+            }
+
+            // when left, check the remaining bytes partially
+            step = dataLength << 3; // * 8
+            return partial(UNSAFE.getLong(this.start + step), step, this.length) == partial(UNSAFE.getLong(start + step), step, length);
         }
 
         @Override
         public String toString() {
             final byte[] bytes = new byte[this.length];
-            int i = 0;
-            while (i < this.length) {
-                bytes[i] = UNSAFE.getByte(this.segment + this.start + i++);
-            }
-
+            UNSAFE.copyMemory(null, this.start, bytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, this.length);
             return new String(bytes, StandardCharsets.UTF_8);
         }
 
-        public Record collect(int temp) {
-            this.min = Math.min(this.min, temp);
-            this.max = Math.max(this.max, temp);
+        public void collect(int temp) {
+            if (temp < this.min) {
+                this.min = (short) temp;
+            }
+            if (temp > this.max) {
+                this.max = (short) temp;
+            }
             this.sum += temp;
             this.count++;
-            return this;
         }
 
-        public void merge(Record other) {
-            this.min = Math.min(this.min, other.min);
-            this.max = Math.max(this.max, other.max);
-            this.sum += other.sum;
-            this.count += other.count;
+        public void merge(Record that) {
+            if (that.min < this.min) {
+                this.min = that.min;
+            }
+            if (that.max > this.max) {
+                this.max = that.max;
+            }
+            this.sum += that.sum;
+            this.count += that.count;
         }
 
         public String measurements() {
@@ -135,10 +148,12 @@ public class CalculateAverage_yavuztas {
     }
 
     // Inspired by @spullara - customized hashmap on purpose
-    // The main difference is we hold only one array instead of two
+    // The main difference is we hold only one array instead of two, fewer objects is faster
     static class RecordMap {
 
-        static final int SIZE = 1 << 15; // 32k - bigger bucket size less collisions
+        // Bigger bucket size less collisions, but you have to find a sweet spot otherwise it is becoming slower.
+        // Also works good enough for 10K stations
+        static final int SIZE = 1 << 16; // 64kb
         static final int BITMASK = SIZE - 1;
         Record[] keys = new Record[SIZE];
 
@@ -147,32 +162,27 @@ public class CalculateAverage_yavuztas {
             return hash & BITMASK; // fast modulo, to find bucket
         }
 
-        void putAndCollect(long segment, int start, int length, int hash, int temp) {
+        void putAndCollect(long start, byte length, int hash, int temp) {
             int bucket = hashBucket(hash);
             Record existing = this.keys[bucket];
             if (existing == null) {
-                this.keys[bucket] = new Record(segment, start, length, hash)
-                        .collect(temp);
+                this.keys[bucket] = new Record(start, length, hash, temp);
                 return;
             }
 
-            if (!existing.equals(segment, start, length, hash)) {
-                // collision, linear probing to find a slot
-                while ((existing = this.keys[++bucket & BITMASK]) != null && !existing.equals(segment, start, length, hash)) {
+            if (!existing.equals(start, length)) { // collision
+                int step = 0; // quadratic probing helps to decrease collision in large data set of 10K
+                while ((existing = this.keys[bucket = ((++bucket + ++step) & BITMASK)]) != null && !existing.equals(start, length)) {
                     // can be stuck here if all the buckets are full :(
                     // However, since the data set is max 10K (unique) this shouldn't happen
                     // So, I'm happily leave here branchless :)
                 }
                 if (existing == null) {
-                    this.keys[bucket & BITMASK] = new Record(segment, start, length, hash)
-                            .collect(temp);
+                    this.keys[bucket] = new Record(start, length, hash, temp);
                     return;
                 }
-                existing.collect(temp);
             }
-            else {
-                existing.collect(temp);
-            }
+            existing.collect(temp);
         }
 
         void putOrMerge(Record key) {
@@ -183,28 +193,25 @@ public class CalculateAverage_yavuztas {
                 return;
             }
 
-            if (!existing.equals(key)) {
-                // collision, linear probing to find a slot
-                while ((existing = this.keys[++bucket & BITMASK]) != null && !existing.equals(key)) {
+            if (!existing.equals(key)) { // collision
+                int step = 0; // quadratic probing helps to decrease collision in large data set of 10K
+                while ((existing = this.keys[bucket = ((++bucket + ++step) & BITMASK)]) != null && !existing.equals(key)) {
                     // can be stuck here if all the buckets are full :(
                     // However, since the data set is max 10K (unique keys) this shouldn't happen
                     // So, I'm happily leave here branchless :)
                 }
                 if (existing == null) {
-                    this.keys[bucket & BITMASK] = key;
+                    this.keys[bucket] = key;
                     return;
                 }
-                existing.merge(key);
             }
-            else {
-                existing.merge(key);
-            }
+            existing.merge(key);
         }
 
         void forEach(Consumer<Record> consumer) {
             int pos = 0;
             Record key;
-            while (pos < this.keys.length) {
+            while (pos < SIZE) {
                 if ((key = this.keys[pos++]) == null) {
                     continue;
                 }
@@ -219,97 +226,160 @@ public class CalculateAverage_yavuztas {
     }
 
     // One actor for one thread, no synchronization
-    static class RegionActor {
+    static class RegionActor extends Thread {
 
         final FileChannel channel;
         final long startPos;
         final int size;
-        final RecordMap map = new RecordMap();
-        long segmentAddress;
-        int position;
-        Thread runner; // each actor has its own thread
+        long regionMemoryAddress;
 
-        public RegionActor(FileChannel channel, long startPos, int size) {
+        final RecordMap map = new RecordMap();
+
+        public RegionActor(FileChannel channel, long startPos, int size) throws IOException {
             this.channel = channel;
             this.startPos = startPos;
             this.size = size;
+            // get the segment memory address, this is the only thing we need for Unsafe
+            this.regionMemoryAddress = this.channel.map(FileChannel.MapMode.READ_ONLY, startPos, size, Arena.global()).address();
         }
 
-        void accumulate() {
-            this.runner = new Thread(() -> {
-                try {
-                    // get the segment memory address, this is the only thing we need for Unsafe
-                    this.segmentAddress = this.channel.map(FileChannel.MapMode.READ_ONLY, this.startPos, this.size, Arena.global()).address();
-                }
-                catch (IOException e) {
-                    // no-op - skip intentionally, no handling for the purpose of this challenge
-                }
+        @Override
+        public void run() {
+            int keyHash;
+            byte length;
+            byte b;
+            byte b2;
+            byte b3;
+            byte b4;
+            byte b5;
+            byte b6;
+            byte b7;
+            long start;
+            long pointer = this.regionMemoryAddress;
+            final long size = pointer + this.size;
+            while (pointer < size) { // line start
+                start = pointer; // save line start position
+                keyHash = UNSAFE.getByte(pointer++); // first byte is guaranteed not to be ';'
 
-                int start;
-                int keyHash;
-                int length;
-                while (this.position < this.size) {
-                    byte b;
-                    start = this.position; // save line start position
-                    keyHash = UNSAFE.getByte(this.segmentAddress + this.position++); // first byte is guaranteed not to be ';'
-                    length = 1; // min key length
-                    while ((b = UNSAFE.getByte(this.segmentAddress + this.position++)) != ';') { // read until semicolon
-                        keyHash = calculateHash(keyHash, b); // calculate key hash ahead, eleminates one more loop later
-                        length++;
+                while (true) { // read to the death :)
+                    if ((b = UNSAFE.getByte(pointer++)) != ';') { // unroll level 1
+                        if ((b2 = UNSAFE.getByte(pointer++)) != ';') { // unroll level 2
+                            if ((b3 = UNSAFE.getByte(pointer++)) != ';') { // unroll level 3
+                                if ((b4 = UNSAFE.getByte(pointer++)) != ';') { // unroll level 4
+                                    if ((b5 = UNSAFE.getByte(pointer++)) != ';') { // unroll level 5
+                                        if ((b6 = UNSAFE.getByte(pointer++)) != ';') { // unroll level 6
+                                            if ((b7 = UNSAFE.getByte(pointer++)) != ';') { // unroll level 7. It's not getting faster anymore, let's stop it :)
+                                                keyHash = calculateHash(keyHash, b, b2, b3, b4, b5, b6, b7);
+                                            }
+                                            else {
+                                                keyHash = calculateHash(keyHash, b, b2, b3, b4, b5, b6);
+                                                break;
+                                            }
+                                        }
+                                        else {
+                                            keyHash = calculateHash(keyHash, b, b2, b3, b4, b5);
+                                            break;
+                                        }
+                                    }
+                                    else {
+                                        keyHash = calculateHash(keyHash, b, b2, b3, b4);
+                                        break;
+                                    }
+                                }
+                                else {
+                                    keyHash = calculateHash(keyHash, b, b2, b3);
+                                    break;
+                                }
+                            }
+                            else {
+                                keyHash = calculateHash(keyHash, b, b2);
+                                break;
+                            }
+                        }
+                        else {
+                            keyHash = calculateHash(keyHash, b);
+                            break;
+                        }
                     }
-
-                    final int temp = readTemperature();
-                    this.map.putAndCollect(this.segmentAddress, start, length, keyHash, temp);
-
-                    this.position++; // skip linebreak
+                    else {
+                        break;
+                    }
                 }
-            });
-            this.runner.start();
+
+                // station length
+                length = (byte) (pointer - start - 1); // "-1" for ';'
+
+                // read temparature
+                final long numberPart = UNSAFE.getLong(pointer);
+                final int decimalPos = Long.numberOfTrailingZeros(~numberPart & 0x10101000);
+                final int temp = convertIntoNumber(decimalPos, numberPart);
+                pointer += (decimalPos >>> 3) + 3;
+
+                this.map.putAndCollect(start, length, keyHash, temp);
+            }
         }
 
+        /*
+         * Unrolled hash functions
+         */
         static int calculateHash(int hash, int b) {
             return 31 * hash + b;
         }
 
-        // 1. Inspired by @yemreinci - Reading temparature value without Double.parse
-        // 2. Inspired by @obourgain - Fetching first 4 bytes ahead, then masking
-        int readTemperature() {
-            int temp = 0;
-            // read 4 bytes ahead
-            final int first4 = UNSAFE.getInt(this.segmentAddress + this.position);
-            this.position += 3;
+        static int calculateHash(int hash, int b1, int b2) {
+            return (31 * 31 * hash) + (31 * b1) + b2;
+        }
 
-            final byte b1 = (byte) first4; // first byte
-            final byte b2 = (byte) ((first4 >> 8) & 0xFF); // second byte
-            final byte b3 = (byte) ((first4 >> 16) & 0xFF); // third byte
-            if (b1 == '-') {
-                if (b3 == '.') {
-                    temp -= 10 * (b2 - '0') + (byte) ((first4 >> 24) & 0xFF) - '0'; // fourth byte
-                    this.position++;
-                }
-                else {
-                    this.position++; // skip dot
-                    temp -= 100 * (b2 - '0') + 10 * (b3 - '0') + UNSAFE.getByte(this.segmentAddress + this.position++) - '0'; // fifth byte
-                }
-            }
-            else {
-                if (b2 == '.') {
-                    temp = 10 * (b1 - '0') + b3 - '0';
-                }
-                else {
-                    temp = 100 * (b1 - '0') + 10 * (b2 - '0') + (byte) ((first4 >> 24) & 0xFF) - '0'; // fourth byte
-                    this.position++;
-                }
-            }
+        static int calculateHash(int hash, int b1, int b2, int b3) {
+            return (31 * 31 * 31 * hash) + (31 * 31 * b1) + (31 * b2) + b3;
+        }
 
-            return temp;
+        static int calculateHash(int hash, int b1, int b2, int b3, int b4) {
+            return (31 * 31 * 31 * 31 * hash) + (31 * 31 * 31 * b1) + (31 * 31 * b2) + (31 * b3) + b4;
+        }
+
+        static int calculateHash(int hash, int b1, int b2, int b3, int b4, int b5) {
+            return (31 * 31 * 31 * 31 * 31 * hash) + (31 * 31 * 31 * 31 * b1) + (31 * 31 * 31 * b2) + (31 * 31 * b3) + (31 * b4) + b5;
+        }
+
+        static int calculateHash(int hash, int b1, int b2, int b3, int b4, int b5, int b6) {
+            return (31 * 31 * 31 * 31 * 31 * 31 * hash) + (31 * 31 * 31 * 31 * 31 * b1) + (31 * 31 * 31 * 31 * b2) + (31 * 31 * 31 * b3) + (31 * 31 * b4) + (31 * b5)
+                    + b6;
+        }
+
+        static int calculateHash(int hash, int b1, int b2, int b3, int b4, int b5, int b6, int b7) {
+            return (31 * 31 * 31 * 31 * 31 * 31 * 31 * hash) + (31 * 31 * 31 * 31 * 31 * 31 * b1) + (31 * 31 * 31 * 31 * 31 * b2) + (31 * 31 * 31 * 31 * b3)
+                    + (31 * 31 * 31 * b4) + (31 * 31 * b5) + (31 * b6) + b7;
+        }
+
+        // Credits to @merrykitty. Magical solution to parse temparature values branchless!
+        // Taken as without modification, comments belong to @merrykitty
+        private static int convertIntoNumber(int decimalSepPos, long numberWord) {
+            int shift = 28 - decimalSepPos;
+            // signed is -1 if negative, 0 otherwise
+            long signed = (~numberWord << 59) >> 63;
+            long designMask = ~(signed & 0xFF);
+            // Align the number to a specific position and transform the ascii code
+            // to actual digit value in each byte
+            long digits = ((numberWord & designMask) << shift) & 0x0F000F0F00L;
+            // Now digits is in the form 0xUU00TTHH00 (UU: units digit, TT: tens digit, HH: hundreds digit)
+            // 0xUU00TTHH00 * (100 * 0x1000000 + 10 * 0x10000 + 1) =
+            // 0x000000UU00TTHH00 +
+            // 0x00UU00TTHH000000 * 10 +
+            // 0xUU00TTHH00000000 * 100
+            // Now TT * 100 has 2 trailing zeroes and HH * 100 + TT * 10 + UU < 0x400
+            // This results in our value lies in the bit 32 to 41 of this product
+            // That was close :)
+            long absValue = ((digits * 0x640a0001) >>> 32) & 0x3FF;
+            long value = (absValue ^ signed) - signed;
+            return (int) value;
         }
 
         /**
          * blocks until the map is fully collected
          */
         RecordMap get() throws InterruptedException {
-            this.runner.join();
+            join();
             return this.map;
         }
     }
@@ -337,7 +407,7 @@ public class CalculateAverage_yavuztas {
 
     public static void main(String[] args) throws IOException, InterruptedException {
 
-        var concurrency = Runtime.getRuntime().availableProcessors();
+        var concurrency = 2 * Runtime.getRuntime().availableProcessors();
         final long fileSize = Files.size(FILE);
         long regionSize = fileSize / concurrency;
 
@@ -361,12 +431,12 @@ public class CalculateAverage_yavuztas {
             maxSize = findClosestLineEnd(startPos, (int) maxSize, channel);
 
             final RegionActor region = (actors[i] = new RegionActor(channel, startPos, (int) maxSize));
-            region.accumulate();
+            region.start(); // start processing
 
             startPos += maxSize;
         }
 
-        final RecordMap output = new RecordMap(); // output to merge all regions
+        final RecordMap output = new RecordMap(); // output to merge all records
         for (RegionActor actor : actors) {
             final RecordMap partial = actor.get(); // blocks until get the result
             output.merge(partial);
