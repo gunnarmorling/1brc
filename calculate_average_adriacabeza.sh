@@ -18,5 +18,5 @@
 
 
 JAVA_OPTS="-XX:+UseStringDeduplication -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC"
-time java --enable-preview  -classpath /Users/adria.cabezasantanna/personal_projects/1brc/target/classes dev.morling.onebrc.CalculateAverage_adriacabeza
+java --enable-preview  -classpath target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_adriacabeza
 
