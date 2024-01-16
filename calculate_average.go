@@ -5,14 +5,13 @@ import (
 	"bytes"
 	"fmt"
 	mmap "github.com/edsrzf/mmap-go"
-	"math"
 	"os"
 	"slices"
 	"strconv"
 )
 
 type cityData struct {
-	min, total, max float64
+	min, total, max int
 	count           int
 }
 
@@ -38,6 +37,14 @@ func main() {
 	printCities(cities)
 }
 
+func dataFileName() string {
+	name := "measurements.txt"
+	if len(os.Args) == 2 {
+		name = os.Args[1]
+	}
+	return name
+}
+
 func readData(name string) []byte {
 	f, err := os.Open(name)
 	if err != nil {
@@ -51,14 +58,6 @@ func readData(name string) []byte {
 	return data
 }
 
-func dataFileName() string {
-	name := "measurements.txt"
-	if len(os.Args) == 2 {
-		name = os.Args[1]
-	}
-	return name
-}
-
 func parseData(data []byte) map[string]cityData {
 	cities := make(map[string]cityData)
 	scanner := bufio.NewScanner(bytes.NewReader(data))
@@ -70,24 +69,25 @@ func parseData(data []byte) map[string]cityData {
 			break
 		}
 		tempAsFloat, err := strconv.ParseFloat(scanner.Text(), 64)
+		tempAsInt := int(tempAsFloat * 10)
 		if err != nil {
 			panic(err)
 		}
 		if previous, ok := cities[city]; !ok {
-			cities[city] = cityData{tempAsFloat, tempAsFloat, tempAsFloat, 1}
+			cities[city] = cityData{tempAsInt, tempAsInt, tempAsInt, 1}
 		} else {
-			var newMin, newMax float64
-			if tempAsFloat < previous.min {
-				newMin = tempAsFloat
+			var newMin, newMax int
+			if tempAsInt < previous.min {
+				newMin = tempAsInt
 			} else {
 				newMin = previous.min
 			}
-			if tempAsFloat > previous.max {
-				newMax = tempAsFloat
+			if tempAsInt > previous.max {
+				newMax = tempAsInt
 			} else {
 				newMax = previous.max
 			}
-			cities[city] = cityData{newMin, previous.total + tempAsFloat, newMax, previous.count + 1}
+			cities[city] = cityData{newMin, previous.total + tempAsInt, newMax, previous.count + 1}
 		}
 	}
 	return cities
@@ -102,9 +102,10 @@ func printCities(cities map[string]cityData) {
 	slices.Sort(keys)
 	for _, city := range keys {
 		data := cities[city]
-		average := data.total / float64(data.count)
-		average = math.Round(average*10) / 10
-		fmt.Printf("%s=%.1f/%.1f/%.1f, ", city, data.min, average, data.max)
+		min := float64(data.min) / 10.0
+		average := float64(data.total/data.count) / 10.0
+		max := float64(data.max) / 10.0
+		fmt.Printf("%s=%.1f/%.1f/%.1f, ", city, min, average, max)
 	}
 	fmt.Print("}")
 }
