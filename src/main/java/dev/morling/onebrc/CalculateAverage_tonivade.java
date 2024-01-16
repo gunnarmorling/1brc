@@ -15,31 +15,18 @@
  */
 package dev.morling.onebrc;
 
-import static java.util.stream.Collectors.toMap;
+import static java.util.Comparator.comparing;
+import static java.util.stream.Collectors.joining;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.TreeMap;
-import java.util.function.BinaryOperator;
 
 public class CalculateAverage_tonivade {
 
     private static final String FILE = "./measurements.txt";
-
-    private static record ResultRow(double min, double mean, double max) {
-
-        @Override
-        public String toString() {
-            return round(min) + "/" + round(mean) + "/" + round(max);
-        }
-
-        private double round(double value) {
-            return Math.round(value * 10.0) / 10.0;
-        }
-    }
 
     public static void main(String[] args) throws IOException {
         Map<String, Station> map = new HashMap<>();
@@ -48,20 +35,42 @@ public class CalculateAverage_tonivade {
                 .forEach(line -> {
                     var index = line.indexOf(';');
                     var name = line.substring(0, index);
-                    var value = Double.parseDouble(line.substring(index + 1));
+                    var value = parseDouble(line.substring(index + 1));
                     map.computeIfAbsent(name, Station::new).add(value);
                 });
 
-        Map<String, ResultRow> measurements = map.values().stream()
-                .collect(toMap(Station::getName, Station::finish, throwingMerger(), TreeMap::new));
+        var measurements = map.values().stream().sorted(comparing(Station::getName))
+                .map(Station::toString).collect(joining(", ", "{", "}"));
 
         System.out.println(measurements);
     }
 
-    private static BinaryOperator<ResultRow> throwingMerger() {
-        return (a, b) -> {
-            throw new IllegalStateException("Duplicated key exception");
-        };
+    // non null double between -99.9 (inclusive) and 99.9 (inclusive), always with one fractional digit
+    private static double parseDouble(String value) {
+        var period = value.indexOf('.');
+        if (value.charAt(0) == '-') {
+            var left = parseLeft(value.substring(1, period));
+            var right = parseRight(value.substring(period + 1));
+            return -(left + right);
+        }
+        var left = parseLeft(value.substring(0, period));
+        var right = parseRight(value.substring(period + 1));
+        return left + right;
+    }
+
+    private static double parseLeft(String left) {
+        if (left.length() == 1) {
+            return (double) left.charAt(0) - 48;
+        }
+        // two chars
+        var a = (double) left.charAt(0) - 48;
+        var b = (double) left.charAt(1) - 48;
+        return (a * 10) + b;
+    }
+
+    private static double parseRight(String right) {
+        var a = (double) (right.charAt(0) - 48);
+        return a / 10.;
     }
 
     static final class Station {
@@ -88,9 +97,17 @@ public class CalculateAverage_tonivade {
             count++;
         }
 
-        ResultRow finish() {
-            return new ResultRow(
-                    this.min, (Math.round(this.sum * 10.0) / 10.0) / this.count, this.max);
+        @Override
+        public String toString() {
+            return name + "=" + round(min) + "/" + round(mean()) + "/" + round(max);
+        }
+
+        private double mean() {
+            return round(this.sum) / this.count;
+        }
+
+        private double round(double value) {
+            return Math.round(value * 10.0) / 10.0;
         }
     }
 }
