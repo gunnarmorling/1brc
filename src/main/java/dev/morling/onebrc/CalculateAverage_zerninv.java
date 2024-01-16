@@ -25,7 +25,6 @@ import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.lang.reflect.Field;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
@@ -41,13 +40,26 @@ public class CalculateAverage_zerninv {
     private static final int CHUNK_SIZE = 1024 * 1024 * 32;
     private static final int CORES = Runtime.getRuntime().availableProcessors();
 
-    private static final VectorSpecies<Byte> BYTE_SPECIES = ByteVector.SPECIES_PREFERRED.length() >= 32
-            ? ByteVector.SPECIES_256
-            : ByteVector.SPECIES_PREFERRED;
-    private static final VectorSpecies<Integer> INT_SPECIES = IntVector.SPECIES_PREFERRED.length() >= 8
-            ? IntVector.SPECIES_256
-            : IntVector.SPECIES_PREFERRED;
+    private static final VectorSpecies<Integer> INT_SPECIES = IntVector.SPECIES_PREFERRED.length() > 8
+            ? IntVector.SPECIES_512
+            : IntVector.SPECIES_256;
+    private static final VectorSpecies<Byte> BYTE_SPECIES = INT_SPECIES.length() > 8
+            ? ByteVector.SPECIES_128
+            : ByteVector.SPECIES_64;
     private static final int CITY_NAME_VEC_LENGTH = 100 / BYTE_SPECIES.length() + 1;
+
+    private static final Unsafe UNSAFE = initUnsafe();
+
+    private static Unsafe initUnsafe() {
+        try {
+            Field unsafe = Unsafe.class.getDeclaredField("theUnsafe");
+            unsafe.setAccessible(true);
+            return (Unsafe) unsafe.get(Unsafe.class);
+        }
+        catch (IllegalAccessException | NoSuchFieldException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     public static void main(String[] args) throws IOException, InterruptedException {
         try (var channel = FileChannel.open(Path.of(FILE), StandardOpenOption.READ)) {
@@ -57,10 +69,10 @@ public class CalculateAverage_zerninv {
 
             var tasks = new TaskThread[CORES];
             for (int i = 0; i < tasks.length; i++) {
-                tasks[i] = new TaskThread(segment, new MeasurementContainer(segment), (int) (fileSize / minChunkSize / CORES + 1));
+                tasks[i] = new TaskThread(segment, new MeasurementContainer(), (int) (fileSize / minChunkSize / CORES + 1));
             }
 
-            var chunks = splitByChunks(segment, minChunkSize);
+            var chunks = splitByChunks(segment.address(), segment.address() + fileSize, minChunkSize);
             for (int i = 0; i < chunks.size() - 1; i++) {
                 var task = tasks[i % tasks.length];
                 task.addChunk(chunks.get(i), chunks.get(i + 1));
@@ -92,14 +104,12 @@ public class CalculateAverage_zerninv {
         }
     }
 
-    private static List<Long> splitByChunks(MemorySegment segment, long minChunkSize) {
-        long size = segment.byteSize();
-        List<Long> result = new ArrayList<>((int) (size / minChunkSize + 1));
-        long offset = 0;
+    private static List<Long> splitByChunks(long offset, long end, long minChunkSize) {
+        List<Long> result = new ArrayList<>((int) ((end - offset) / minChunkSize + 1));
         result.add(offset);
-        while (offset < size) {
-            offset += Math.min(size - offset, minChunkSize);
-            while (offset < size && segment.get(ValueLayout.JAVA_BYTE, offset++) != '\n') {
+        while (offset < end) {
+            offset += Math.min(end - offset, minChunkSize);
+            while (offset < end && UNSAFE.getByte(offset++) != '\n') {
             }
             result.add(offset);
         }
@@ -139,7 +149,7 @@ public class CalculateAverage_zerninv {
     }
 
     private static final class MeasurementContainer {
-        private static final int SIZE = 1024 * 16;
+        private static final int SIZE = 1 << 17;
 
         private static final int ENTRY_SIZE = 4 + 4 + 1 + 8 + 8 + 2 + 2;
         private static final int COUNT_OFFSET = 0;
@@ -150,24 +160,9 @@ public class CalculateAverage_zerninv {
         private static final int MIN_OFFSET = 25;
         private static final int MAX_OFFSET = 27;
 
-        private static final Unsafe UNSAFE = initUnsafe();
-
-        private final MemorySegment segment;
         private final long address;
 
-        private static Unsafe initUnsafe() {
-            try {
-                Field unsafe = Unsafe.class.getDeclaredField("theUnsafe");
-                unsafe.setAccessible(true);
-                return (Unsafe) unsafe.get(Unsafe.class);
-            }
-            catch (IllegalAccessException | NoSuchFieldException e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        private MeasurementContainer(MemorySegment segment) {
-            this.segment = segment;
+        private MeasurementContainer() {
             address = UNSAFE.allocateMemory(ENTRY_SIZE * SIZE);
             UNSAFE.setMemory(address, ENTRY_SIZE * SIZE, (byte) 0);
             for (long ptr = address; ptr < address + SIZE * ENTRY_SIZE; ptr += ENTRY_SIZE) {
@@ -180,6 +175,7 @@ public class CalculateAverage_zerninv {
             int idx = Math.abs(hash % SIZE);
             long ptr = address + idx * ENTRY_SIZE;
             int count;
+            boolean sameHash;
 
             while ((count = UNSAFE.getInt(ptr + COUNT_OFFSET)) != 0) {
                 if (UNSAFE.getInt(ptr + HASH_OFFSET) == hash
@@ -224,19 +220,16 @@ public class CalculateAverage_zerninv {
             return result;
         }
 
-        private boolean isEqual(long offset, long offset2, byte size) {
-            for (long i = 0; i < size / BYTE_SPECIES.length() + 1; i++) {
-                var v1 = VectorHelper.readByteVector(segment, offset + i * BYTE_SPECIES.length(), offset + size + 1);
-                var v2 = VectorHelper.readByteVector(segment, offset2 + i * BYTE_SPECIES.length(), offset2 + size + 1);
-                if (!v1.eq(v2).allTrue()) {
+        private boolean isEqual(long address, long address2, byte size) {
+            for (int i = 0; i < size; i++) {
+                if (UNSAFE.getByte(address + i) != UNSAFE.getByte(address2 + i)) {
                     return false;
                 }
             }
             return true;
         }
 
-        private String createString(long offset, byte size) {
-            long address = segment.address() + offset;
+        private String createString(long address, byte size) {
             byte[] arr = new byte[size];
             for (int i = 0; i < size; i++) {
                 arr[i] = UNSAFE.getByte(address + i);
@@ -271,7 +264,7 @@ public class CalculateAverage_zerninv {
         private static final IntVector[] COEFS = buildHashCoefs();
 
         private static IntVector[] buildHashCoefs() {
-            var coefs = new int[CITY_NAME_VEC_LENGTH * BYTE_SPECIES.length() / 4];
+            var coefs = new int[128];
             coefs[0] = 1;
             for (int i = 1; i < coefs.length; i++) {
                 coefs[i] = coefs[i - 1] * 31;
@@ -322,24 +315,23 @@ public class CalculateAverage_zerninv {
                 cityOffset = offset;
                 hashCode = 0;
                 for (int i = 0; i < CITY_NAME_VEC_LENGTH; i++) {
-                    vector = VectorHelper.readByteVector(segment, offset, end);
+                    vector = VectorHelper.readByteVector(segment, offset - segment.address(), end - segment.address());
                     delimiterIdx = vector.compare(VectorOperators.EQ, DELIMITER_MASK).firstTrue();
                     if (delimiterIdx != speciesLength) {
-                        hashCode += vector.expand(BYTE_SPECIES.indexInRange(0, delimiterIdx))
-                                .reinterpretAsInts()
-                                .mul(COEFS[i])
+                        hashCode += COEFS[i]
+                                .mul(vector.expand(BYTE_SPECIES.indexInRange(0, delimiterIdx)).castShape(INT_SPECIES, 0))
                                 .reduceLanes(VectorOperators.ADD);
                         offset += delimiterIdx;
                         break;
                     }
-                    hashCode += vector.reinterpretAsInts()
-                            .mul(COEFS[i])
+                    hashCode += COEFS[i]
+                            .mul(vector.castShape(INT_SPECIES, 0))
                             .reduceLanes(VectorOperators.ADD);
                     offset += speciesLength;
                 }
                 cityNameSize = (byte) (offset - cityOffset);
 
-                word = segment.get(ValueLayout.JAVA_INT_UNALIGNED, ++offset);
+                word = UNSAFE.getInt(++offset);
                 offset += 4;
 
                 if ((word & TWO_NEGATIVE_DIGITS_MASK) == TWO_NEGATIVE_DIGITS_MASK) {
@@ -355,10 +347,11 @@ public class CalculateAverage_zerninv {
                 }
                 else {
                     // #.##-
-                    word = (word >>> 8) | (segment.get(ValueLayout.JAVA_BYTE, offset++) << 24);
+                    word = (word >>> 8) | (UNSAFE.getByte(offset++) << 24);
                     temperature = ZERO * 111 - ((word & BYTE_MASK) * 100 + ((word >>> 8) & BYTE_MASK) * 10 + ((word >>> 24) & BYTE_MASK));
                 }
                 offset++;
+
                 container.put(cityOffset, cityNameSize, hashCode, (short) temperature);
             }
         }
