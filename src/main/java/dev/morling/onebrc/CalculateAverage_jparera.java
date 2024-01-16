@@ -208,7 +208,7 @@ public class CalculateAverage_jparera {
             if (consume(MINUS)) {
                 negative = true;
             }
-            for (int i = 0; i >= 0; i++) {
+            while (hasCurrent()) {
                 if ((current & 0xF0) == 0x30) {
                     value *= 10;
                     value += current - '0';
@@ -218,7 +218,9 @@ public class CalculateAverage_jparera {
                 }
                 next();
             }
-            expect(LF);
+            if (hasCurrent()) {
+                expect(LF);
+            }
             return negative ? -value : value;
         }
 
