@@ -151,54 +151,54 @@ public class CalculateAverage_zerninv {
     private static final class MeasurementContainer {
         private static final int SIZE = 1 << 17;
 
-        private static final int ENTRY_SIZE = 4 + 4 + 1 + 8 + 8 + 2 + 2;
+        private static final int ENTRY_SIZE = 4 + 4 + 1 + 100 + 8 + 2 + 2;
         private static final int COUNT_OFFSET = 0;
         private static final int HASH_OFFSET = 4;
         private static final int SIZE_OFFSET = 8;
-        private static final int ADDRESS_OFFSET = 9;
-        private static final int SUM_OFFSET = 17;
-        private static final int MIN_OFFSET = 25;
-        private static final int MAX_OFFSET = 27;
+        private static final int WORD_OFFSET = 9;
+        private static final int SUM_OFFSET = 109;
+        private static final int MIN_OFFSET = 117;
+        private static final int MAX_OFFSET = 119;
 
         private final long address;
 
         private MeasurementContainer() {
             address = UNSAFE.allocateMemory(ENTRY_SIZE * SIZE);
             UNSAFE.setMemory(address, ENTRY_SIZE * SIZE, (byte) 0);
-            for (long ptr = address; ptr < address + SIZE * ENTRY_SIZE; ptr += ENTRY_SIZE) {
-                UNSAFE.putShort(ptr + MIN_OFFSET, Short.MAX_VALUE);
-                UNSAFE.putShort(ptr + MAX_OFFSET, Short.MIN_VALUE);
-            }
         }
 
-        public void put(long offset, byte size, int hash, short value) {
+        public void put(long address, byte size, int hash, short value) {
             int idx = Math.abs(hash % SIZE);
-            long ptr = address + idx * ENTRY_SIZE;
+            long ptr = this.address + idx * ENTRY_SIZE;
             int count;
-            boolean sameHash;
 
             while ((count = UNSAFE.getInt(ptr + COUNT_OFFSET)) != 0) {
                 if (UNSAFE.getInt(ptr + HASH_OFFSET) == hash
                         && UNSAFE.getByte(ptr + SIZE_OFFSET) == size
-                        && isEqual(UNSAFE.getLong(ptr + ADDRESS_OFFSET), offset, size)) {
-                    break;
+                        && isEqual(ptr + WORD_OFFSET, address, size)) {
+
+                    UNSAFE.putInt(ptr + COUNT_OFFSET, count + 1);
+                    UNSAFE.putLong(ptr + SUM_OFFSET, UNSAFE.getLong(ptr + SUM_OFFSET) + value);
+                    if (value < UNSAFE.getShort(ptr + MIN_OFFSET)) {
+                        UNSAFE.putShort(ptr + MIN_OFFSET, value);
+                    }
+                    if (value > UNSAFE.getShort(ptr + MAX_OFFSET)) {
+                        UNSAFE.putShort(ptr + MAX_OFFSET, value);
+                    }
+                    return;
                 }
                 idx = (idx + 1) % SIZE;
-                ptr = address + idx * ENTRY_SIZE;
+                ptr = this.address + idx * ENTRY_SIZE;
             }
 
-            UNSAFE.putInt(ptr + COUNT_OFFSET, count + 1);
+            UNSAFE.putInt(ptr + COUNT_OFFSET, 1);
             UNSAFE.putInt(ptr + HASH_OFFSET, hash);
             UNSAFE.putByte(ptr + SIZE_OFFSET, size);
-            UNSAFE.putLong(ptr + ADDRESS_OFFSET, offset);
+            UNSAFE.copyMemory(address, ptr + WORD_OFFSET, size);
 
-            UNSAFE.putLong(ptr + SUM_OFFSET, UNSAFE.getLong(ptr + SUM_OFFSET) + value);
-            if (value < UNSAFE.getShort(ptr + MIN_OFFSET)) {
-                UNSAFE.putShort(ptr + MIN_OFFSET, value);
-            }
-            if (value > UNSAFE.getShort(ptr + MAX_OFFSET)) {
-                UNSAFE.putShort(ptr + MAX_OFFSET, value);
-            }
+            UNSAFE.putLong(ptr + SUM_OFFSET, value);
+            UNSAFE.putShort(ptr + MIN_OFFSET, value);
+            UNSAFE.putShort(ptr + MAX_OFFSET, value);
         }
 
         public List<Measurement> measurements() {
@@ -208,7 +208,7 @@ public class CalculateAverage_zerninv {
                 long ptr = this.address + i * ENTRY_SIZE;
                 count = UNSAFE.getInt(ptr + COUNT_OFFSET);
                 if (count != 0) {
-                    var station = createString(UNSAFE.getLong(ptr + ADDRESS_OFFSET), UNSAFE.getByte(ptr + SIZE_OFFSET));
+                    var station = createString(ptr + WORD_OFFSET, UNSAFE.getByte(ptr + SIZE_OFFSET));
                     var measurements = new TemperatureAggregation(
                             UNSAFE.getLong(ptr + SUM_OFFSET),
                             count,
@@ -220,7 +220,7 @@ public class CalculateAverage_zerninv {
             return result;
         }
 
-        private boolean isEqual(long address, long address2, byte size) {
+        private boolean isEqual(long address, long address2, int size) {
             for (int i = 0; i < size; i++) {
                 if (UNSAFE.getByte(address + i) != UNSAFE.getByte(address2 + i)) {
                     return false;
@@ -261,19 +261,33 @@ public class CalculateAverage_zerninv {
         private static final byte DELIMITER = ';';
 
         private static final ByteVector DELIMITER_MASK = ByteVector.broadcast(BYTE_SPECIES, DELIMITER);
-        private static final IntVector[] COEFS = buildHashCoefs();
+        private static final int[] COEFS_ARR = initCoefsArr();
+        private static final IntVector[] COEFS_VEC = buildHashCoefs();
+        private static final IntVector[] TAIL_MULTIPLIERS = buildTailMultipliers();
 
-        private static IntVector[] buildHashCoefs() {
+        private static int[] initCoefsArr() {
             var coefs = new int[128];
             coefs[0] = 1;
             for (int i = 1; i < coefs.length; i++) {
                 coefs[i] = coefs[i - 1] * 31;
             }
-            IntVector[] vectors = new IntVector[coefs.length / INT_SPECIES.length()];
+            return coefs;
+        }
+
+        private static IntVector[] buildHashCoefs() {
+            IntVector[] vectors = new IntVector[COEFS_ARR.length / INT_SPECIES.length()];
             for (int i = 0; i < vectors.length; i++) {
-                vectors[i] = IntVector.fromArray(INT_SPECIES, coefs, i * INT_SPECIES.length());
+                vectors[i] = IntVector.fromArray(INT_SPECIES, COEFS_ARR, i * INT_SPECIES.length());
             }
             return vectors;
+        }
+
+        private static IntVector[] buildTailMultipliers() {
+            var multipliers = new IntVector[INT_SPECIES.length() + 1];
+            for (int i = 0; i < multipliers.length; i++) {
+                multipliers[i] = (IntVector) INT_SPECIES.broadcast(1).expand(INT_SPECIES.indexInRange(0, i));
+            }
+            return multipliers;
         }
 
         private final MemorySegment segment;
@@ -308,29 +322,24 @@ public class CalculateAverage_zerninv {
             long cityOffset;
             int hashCode, temperature, word, delimiterIdx;
             byte cityNameSize;
+
             int speciesLength = BYTE_SPECIES.length();
 
             ByteVector vector;
             while (offset < end) {
+                delimiterIdx = speciesLength;
                 cityOffset = offset;
                 hashCode = 0;
-                for (int i = 0; i < CITY_NAME_VEC_LENGTH; i++) {
+                for (int i = 0; delimiterIdx == speciesLength && i < CITY_NAME_VEC_LENGTH; i++) {
                     vector = VectorHelper.readByteVector(segment, offset - segment.address(), end - segment.address());
                     delimiterIdx = vector.compare(VectorOperators.EQ, DELIMITER_MASK).firstTrue();
-                    if (delimiterIdx != speciesLength) {
-                        hashCode += COEFS[i]
-                                .mul(vector.expand(BYTE_SPECIES.indexInRange(0, delimiterIdx)).castShape(INT_SPECIES, 0))
-                                .reduceLanes(VectorOperators.ADD);
-                        offset += delimiterIdx;
-                        break;
-                    }
-                    hashCode += COEFS[i]
+                    hashCode += COEFS_VEC[i]
+                            .mul(TAIL_MULTIPLIERS[delimiterIdx])
                             .mul(vector.castShape(INT_SPECIES, 0))
                             .reduceLanes(VectorOperators.ADD);
-                    offset += speciesLength;
+                    offset += delimiterIdx;
                 }
                 cityNameSize = (byte) (offset - cityOffset);
-
                 word = UNSAFE.getInt(++offset);
                 offset += 4;
 
@@ -350,9 +359,9 @@ public class CalculateAverage_zerninv {
                     word = (word >>> 8) | (UNSAFE.getByte(offset++) << 24);
                     temperature = ZERO * 111 - ((word & BYTE_MASK) * 100 + ((word >>> 8) & BYTE_MASK) * 10 + ((word >>> 24) & BYTE_MASK));
                 }
-                offset++;
 
                 container.put(cityOffset, cityNameSize, hashCode, (short) temperature);
+                offset++;
             }
         }
     }
