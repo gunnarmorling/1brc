@@ -35,16 +35,24 @@ func main() {
 	name := dataFileName()
 	data := readData(name)
 	if len(data) > 1_00_000 {
-		_, _ = fmt.Fprintf(os.Stderr, "parallel %d\n", runtime.NumCPU())
-		c := make(chan map[string]cityData)
-		numCpu := 2
-		increment := len(data) / numCpu
+		numCpu := runtime.NumCPU()
+		_, _ = fmt.Fprintf(os.Stderr, "parallel %d\n", numCpu)
+
+		// calculate the places to split the work
+		increments := make([]int, numCpu+1)
 		for i := 0; i < numCpu; i++ {
-			from := i * increment
-			to := (i + 1) * increment
-			if i == numCpu-1 {
-				to = len(data)
+			increments[i] = i * len(data) / numCpu
+			// adjust the increments so that they start on the beginning of a city
+			for i > 0 && data[increments[i]-1] != '\n' {
+				increments[i]--
 			}
+		}
+		increments[numCpu] = len(data)
+
+		c := make(chan map[string]cityData)
+		for i := 0; i < numCpu; i++ {
+			from := increments[i]
+			to := increments[i+1]
 			go func() {
 				c <- parseData1(data[from:to])
 			}()
