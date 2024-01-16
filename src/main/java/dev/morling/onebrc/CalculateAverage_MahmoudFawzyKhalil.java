@@ -172,7 +172,7 @@ public class CalculateAverage_MahmoudFawzyKhalil {
         }
 
         public String toString() {
-            return round(min) + "/" + round(sum / count) + "/" + round(max);
+            return min + "/" + round(round(sum) / count) + "/" + max;
         }
 
         private double round(double value) {
