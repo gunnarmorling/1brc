@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"fmt"
 	mmap "github.com/edsrzf/mmap-go"
+	"math"
 	"os"
+	"slices"
 	"strconv"
 )
 
@@ -75,8 +77,15 @@ func main() {
 		}
 	}
 	fmt.Print("{")
-	for city, data := range cities {
+	keys := make([]string, 0)
+	for k, _ := range cities {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, city := range keys {
+		data := cities[city]
 		average := data.total / float64(data.count)
+		average = math.Round(average*10) / 10
 		fmt.Printf("%s=%.1f/%.1f/%.1f, ", city, data.min, average, data.max)
 	}
 	fmt.Print("}")
