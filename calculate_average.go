@@ -58,31 +58,19 @@ func readData(name string) []byte {
 	return data
 }
 
-/*
-State machine
-
-start , (not ;) -> cityState 		, init cityState name
-cityState  , (not ;) -> cityState			, accumulate cityState name
-cityState  , ; 		-> semicolon	, terminate cityState name
-semicolon , [0-9] 	-> temp			, init temperature
-temp , [0-9] 	-> temp			, accumulate temperature
-temp , '.'		-> temp			, do nothing
-temp , '\n'		-> start		, save measurement
-*/
-
 type state struct {
 	name string
 }
 
 var (
-	cityState   = state{"cityState"}
-	semicolon   = state{"semicolon"}
-	temperature = state{"temperature"}
+	parsingCityName    = state{"parsingCityName"}
+	skippingSemicolon  = state{"skippingSemicolon"}
+	parsingTemperature = state{"parsingTemperature"}
 )
 
 func parseData1(data []byte) map[string]cityData {
 	cities := make(map[string]cityData)
-	state := cityState
+	state := parsingCityName
 	var cityStartOffset, cityEndOffset int
 	var temp, sign int
 
@@ -90,33 +78,35 @@ func parseData1(data []byte) map[string]cityData {
 	for i := 0; i < len(data); i++ {
 		currentChar := data[i]
 		//fmt.Printf("%02d %c\n", i, currentChar)
-		if state == cityState && currentChar == ';' {
-			state = semicolon
+		if state == parsingCityName && currentChar == ';' {
+			state = skippingSemicolon
 			cityEndOffset = i
-		} else if state == cityState && (currentChar&0x80 == 0) {
+			//} else if state == parsingCityName {
+			//	// do nothing
+		} else if state == parsingCityName && (currentChar&0x80 == 0) {
 			// do nothing
-		} else if state == cityState && (currentChar&0xE0 == 0xC0) {
+		} else if state == parsingCityName && (currentChar&0xE0 == 0xC0) {
 			i++ // 2-byte utf8 char
-		} else if state == cityState && (currentChar&0xF0 == 0xE0) {
+		} else if state == parsingCityName && (currentChar&0xF0 == 0xE0) {
 			i += 2 // 3-byte utf8 char
-		} else if state == cityState && (currentChar&0xF8 == 0xF0) {
+		} else if state == parsingCityName && (currentChar&0xF8 == 0xF0) {
 			i += 3 // 4-byte utf8 char
-		} else if state == semicolon && currentChar == '-' {
-			state = temperature
+		} else if state == skippingSemicolon && currentChar == '-' {
+			state = parsingTemperature
 			temp = 0
 			sign = -1
-		} else if state == semicolon && currentChar >= '0' && currentChar <= '9' {
-			state = temperature
+		} else if state == skippingSemicolon && currentChar >= '0' && currentChar <= '9' {
+			state = parsingTemperature
 			temp = int(currentChar - '0')
 			sign = 1
-		} else if state == temperature && currentChar >= '0' && currentChar <= '9' {
+		} else if state == parsingTemperature && currentChar >= '0' && currentChar <= '9' {
 			temp = temp*10 + int(currentChar-'0')
-		} else if state == temperature && currentChar == '.' {
+		} else if state == parsingTemperature && currentChar == '.' {
 			// do nothing
-		} else if state == temperature && currentChar == '\n' {
-			city := string(data[cityStartOffset:cityEndOffset])
-			accumulate(cities, city, temp*sign)
-			state = cityState
+		} else if state == parsingTemperature && currentChar == '\n' {
+			cityName := string(data[cityStartOffset:cityEndOffset])
+			accumulate(cities, cityName, temp*sign)
+			state = parsingCityName
 			cityStartOffset = i + 1
 		} else {
 			panic(fmt.Sprintf("Unexpected: %s, %c", state, currentChar))
