@@ -15,6 +15,7 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="--enable-preview --enable-native-access=ALL-UNNAMED"
+JAVA_OPTS="--enable-preview --add-modules=jdk.incubator.vector --enable-native-access=ALL-UNNAMED"
 JAVA_OPTS="$JAVA_OPTS -XX:-TieredCompilation -XX:InlineSmallCode=10000 -XX:FreqInlineSize=10000"
+JAVA_OPTS="$JAVA_OPTS -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0"
 java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_jincongho
