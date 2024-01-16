@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	mmap "github.com/edsrzf/mmap-go"
 	"os"
 	"strconv"
 )
@@ -29,7 +31,7 @@ func splitSemicolonOrNewline(data []byte, atEOF bool) (advance int, token []byte
 
 func main() {
 	name := "measurements.txt"
-	if os.Args[1] != "" {
+	if len(os.Args) == 2 {
 		name = os.Args[1]
 	}
 	f, err := os.Open(name)
@@ -37,10 +39,15 @@ func main() {
 		panic(err)
 	}
 
+	data, err := mmap.Map(f, mmap.RDONLY, 0)
+	if err != nil {
+		panic(err)
+	}
+
 	cities := make(map[string]cityData)
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(bytes.NewReader(data))
 	scanner.Split(splitSemicolonOrNewline)
-	
+
 	for scanner.Scan() {
 		city := scanner.Text()
 		if !scanner.Scan() {
