@@ -31,12 +31,8 @@ import java.util.concurrent.atomic.AtomicReference;
 public class CalculateAverage_artsiomkorzun {
 
     private static final Path FILE = Path.of("./measurements.txt");
-    private static final MemorySegment MAPPED_FILE = map(FILE);
-
-    private static final int PARALLELISM = Runtime.getRuntime().availableProcessors();
-    private static final int SEGMENT_SIZE = 32 * 1024 * 1024;
-    private static final int SEGMENT_COUNT = (int) ((MAPPED_FILE.byteSize() + SEGMENT_SIZE - 1) / SEGMENT_SIZE);
-    private static final int SEGMENT_OVERLAP = 1024;
+    private static final long SEGMENT_SIZE = 32 * 1024 * 1024;
+    private static final long SEGMENT_OVERLAP = 1024;
     private static final long COMMA_PATTERN = 0x3B3B3B3B3B3B3B3BL;
     private static final long DOT_BITS = 0x10101000;
     private static final long MAGIC_MULTIPLIER = (100 * 0x1000000 + 10 * 0x10000 + 1);
@@ -66,12 +62,19 @@ public class CalculateAverage_artsiomkorzun {
     }
 
     private static void execute() throws Exception {
+        MemorySegment fileMemory = map(FILE);
+        long fileAddress = fileMemory.address();
+        long fileSize = fileMemory.byteSize();
+        int segmentCount = (int) ((fileSize + SEGMENT_SIZE - 1) / SEGMENT_SIZE);
+
         AtomicInteger counter = new AtomicInteger();
         AtomicReference<Aggregates> result = new AtomicReference<>();
-        Aggregator[] aggregators = new Aggregator[PARALLELISM];
+
+        int parallelism = Runtime.getRuntime().availableProcessors();
+        Aggregator[] aggregators = new Aggregator[parallelism];
 
         for (int i = 0; i < aggregators.length; i++) {
-            aggregators[i] = new Aggregator(counter, result);
+            aggregators[i] = new Aggregator(counter, result, fileAddress, fileSize, segmentCount);
             aggregators[i].start();
         }
 
@@ -306,21 +309,28 @@ public class CalculateAverage_artsiomkorzun {
 
         private final AtomicInteger counter;
         private final AtomicReference<Aggregates> result;
+        private final long fileAddress;
+        private final long fileSize;
+        private final int segmentCount;
 
-        public Aggregator(AtomicInteger counter, AtomicReference<Aggregates> result) {
+        public Aggregator(AtomicInteger counter, AtomicReference<Aggregates> result,
+                          long fileAddress, long fileSize, int segmentCount) {
             super("aggregator");
             this.counter = counter;
             this.result = result;
+            this.fileAddress = fileAddress;
+            this.fileSize = fileSize;
+            this.segmentCount = segmentCount;
         }
 
         @Override
         public void run() {
             Aggregates aggregates = new Aggregates();
 
-            for (int segment; (segment = counter.getAndIncrement()) < SEGMENT_COUNT;) {
-                long position = (long) SEGMENT_SIZE * segment;
-                int size = (int) Math.min(SEGMENT_SIZE + SEGMENT_OVERLAP, MAPPED_FILE.byteSize() - position);
-                long address = MAPPED_FILE.address() + position;
+            for (int segment; (segment = counter.getAndIncrement()) < segmentCount;) {
+                long position = SEGMENT_SIZE * segment;
+                long size = Math.min(SEGMENT_SIZE + SEGMENT_OVERLAP, fileSize - position);
+                long address = fileAddress + position;
                 long limit = address + Math.min(SEGMENT_SIZE, size - 1);
 
                 if (segment > 0) {
