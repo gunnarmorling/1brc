@@ -32,10 +32,10 @@ import java.util.stream.IntStream;
  * Simple solution that memory maps the input file, then splits it into one segment per available core and uses
  * sun.misc.Unsafe to directly access the mapped memory. Uses a long at a time when checking for collision.
  * <p>
- * Runs in 0.66s on my Intel i9-13900K
+ * Runs in 0.60s on my Intel i9-13900K
  * Perf stats:
- *     35,935,262,091      cpu_core/cycles/
- *     47,305,591,173      cpu_atom/cycles/
+ *     34,716,719,245      cpu_core/cycles/
+ *     40,776,530,892      cpu_atom/cycles/
  */
 public class CalculateAverage_thomaswue {
     private static final String FILE = "./measurements.txt";
@@ -112,25 +112,33 @@ public class CalculateAverage_thomaswue {
 
     // Main parse loop.
     private static Result[] parseLoop(long chunkStart, long chunkEnd) {
-        Result[] results = new Result[1 << 18];
+        Result[] results = new Result[1 << 17];
         Scanner scanner = new Scanner(chunkStart, chunkEnd);
+        long word = scanner.getLong();
+        int pos = findDelimiter(word);
         while (scanner.hasNext()) {
             long nameAddress = scanner.pos();
             long hash = 0;
 
             // Search for ';', one long at a time.
-            long word = scanner.getLong();
-            int pos = findDelimiter(word);
             if (pos != 8) {
                 scanner.add(pos);
                 word = mask(word, pos);
-                hash ^= word;
+                hash = word;
+
+                int number = scanNumber(scanner);
+                long nextWord = scanner.getLong();
+                int nextPos = findDelimiter(nextWord);
 
                 Result existingResult = results[hashToIndex(hash, results)];
                 if (existingResult != null && existingResult.lastNameLong == word) {
-                    scanAndRecord(scanner, existingResult);
+                    word = nextWord;
+                    pos = nextPos;
+                    record(existingResult, number);
                     continue;
                 }
+
+                scanner.setPos(nameAddress + pos);
             }
             else {
                 scanner.add(8);
@@ -142,9 +150,13 @@ public class CalculateAverage_thomaswue {
                     scanner.add(pos);
                     word = mask(word, pos);
                     hash ^= word;
+
                     Result existingResult = results[hashToIndex(hash, results)];
                     if (existingResult != null && existingResult.lastNameLong == word && existingResult.secondLastNameLong == prevWord) {
-                        scanAndRecord(scanner, existingResult);
+                        int number = scanNumber(scanner);
+                        word = scanner.getLong();
+                        pos = findDelimiter(word);
+                        record(existingResult, number);
                         continue;
                     }
                 }
@@ -188,7 +200,7 @@ public class CalculateAverage_thomaswue {
                 int i = 0;
                 for (; i < nameLength + 1 - 8; i += 8) {
                     if (scanner.getLongAt(existingResult.nameAddress + i) != scanner.getLongAt(nameAddress + i)) {
-                        tableIndex = (tableIndex + 1) & (results.length - 1);
+                        tableIndex = (tableIndex + 31) & (results.length - 1);
                         continue outer;
                     }
                 }
@@ -198,20 +210,23 @@ public class CalculateAverage_thomaswue {
                 }
                 else {
                     // Collision error, try next.
-                    tableIndex = (tableIndex + 1) & (results.length - 1);
+                    tableIndex = (tableIndex + 31) & (results.length - 1);
                 }
             }
+
+            word = scanner.getLong();
+            pos = findDelimiter(word);
         }
         return results;
     }
 
-    private static void scanAndRecord(Scanner scanPtr, Result existingResult) {
+    private static int scanNumber(Scanner scanPtr) {
         scanPtr.add(1);
         long numberWord = scanPtr.getLong();
         int decimalSepPos = Long.numberOfTrailingZeros(~numberWord & 0x10101000);
         int number = convertIntoNumber(decimalSepPos, numberWord);
         scanPtr.add((decimalSepPos >>> 3) + 3);
-        record(existingResult, number);
+        return number;
     }
 
     private static void record(Result existingResult, int number) {
@@ -222,8 +237,8 @@ public class CalculateAverage_thomaswue {
     }
 
     private static int hashToIndex(long hash, Result[] results) {
-        int hashAsInt = (int) (hash ^ (hash >>> 32));
-        int finalHash = (hashAsInt ^ (hashAsInt >>> 18));
+        int hashAsInt = (int) (hash ^ (hash >>> 28));
+        int finalHash = (hashAsInt ^ (hashAsInt >>> 15));
         return (finalHash & (results.length - 1));
     }
 
@@ -343,6 +358,10 @@ public class CalculateAverage_thomaswue {
             byte[] bytes = new byte[nameLength];
             UNSAFE.copyMemory(null, pos, bytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, nameLength);
             return new String(bytes, StandardCharsets.UTF_8);
+        }
+
+        public void setPos(long l) {
+            this.pos = l;
         }
     }
 }
