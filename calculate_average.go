@@ -32,10 +32,13 @@ func splitSemicolonOrNewline(data []byte, atEOF bool) (advance int, token []byte
 }
 
 func main() {
-	name := "measurements.txt"
-	if len(os.Args) == 2 {
-		name = os.Args[1]
-	}
+	name := dataFileName()
+	data := readData(name)
+	cities := parseData(data)
+	printCities(cities)
+}
+
+func readData(name string) []byte {
 	f, err := os.Open(name)
 	if err != nil {
 		panic(err)
@@ -45,7 +48,18 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	return data
+}
 
+func dataFileName() string {
+	name := "measurements.txt"
+	if len(os.Args) == 2 {
+		name = os.Args[1]
+	}
+	return name
+}
+
+func parseData(data []byte) map[string]cityData {
 	cities := make(map[string]cityData)
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	scanner.Split(splitSemicolonOrNewline)
@@ -76,6 +90,10 @@ func main() {
 			cities[city] = cityData{newMin, previous.total + tempAsFloat, newMax, previous.count + 1}
 		}
 	}
+	return cities
+}
+
+func printCities(cities map[string]cityData) {
 	fmt.Print("{")
 	keys := make([]string, 0)
 	for k, _ := range cities {
