@@ -62,6 +62,7 @@ public class CalculateAverage_adriacabeza {
             }
 
         }
+
         private final Map<String, StationData> resultMap;
 
         public Result() {
@@ -76,7 +77,8 @@ public class CalculateAverage_adriacabeza {
             resultMap.compute(city, (_, resultRow) -> {
                 if (resultRow == null) {
                     return new StationData(value);
-                } else {
+                }
+                else {
                     resultRow.update(value);
                     return resultRow;
                 }
@@ -84,14 +86,13 @@ public class CalculateAverage_adriacabeza {
         }
 
         public void merge(Result other) {
-            other.getResultMap().forEach((city, resultRow) ->
-                    resultMap.merge(city, resultRow, (existing, incoming) -> {
-                        existing.min = Math.min(existing.min, incoming.min);
-                        existing.max = Math.max(existing.max, incoming.max);
-                        existing.sum += incoming.sum;
-                        existing.count += incoming.count;
-                        return existing;
-                    }));
+            other.getResultMap().forEach((city, resultRow) -> resultMap.merge(city, resultRow, (existing, incoming) -> {
+                existing.min = Math.min(existing.min, incoming.min);
+                existing.max = Math.max(existing.max, incoming.max);
+                existing.sum += incoming.sum;
+                existing.count += incoming.count;
+                return existing;
+            }));
         }
 
         public String toString() {
@@ -128,7 +129,6 @@ public class CalculateAverage_adriacabeza {
 
         return channel.size(); // Return the end of the file if no newline is found after the current position
     }
-
 
     /**
      * Gets the mapped byte buffers for parallel processing.
