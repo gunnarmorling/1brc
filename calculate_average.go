@@ -6,6 +6,7 @@ import (
 	mmap "github.com/edsrzf/mmap-go"
 	"log"
 	"os"
+	"runtime"
 	"runtime/pprof"
 	"slices"
 )
@@ -33,8 +34,45 @@ func main() {
 
 	name := dataFileName()
 	data := readData(name)
-	cities := parseData1(data)
-	printCities(cities)
+	if len(data) > 1_00_000 {
+		_, _ = fmt.Fprintf(os.Stderr, "parallel %d\n", runtime.NumCPU())
+		c := make(chan map[string]cityData)
+		numCpu := 2
+		increment := len(data) / numCpu
+		for i := 0; i < numCpu; i++ {
+			from := i * increment
+			to := (i + 1) * increment
+			if i == numCpu-1 {
+				to = len(data)
+			}
+			go func() {
+				c <- parseData1(data[from:to])
+			}()
+		}
+		cities := <-c
+		for i := 1; i < numCpu; i++ {
+			cities = merge(cities, <-c)
+		}
+		printCities(cities)
+	} else {
+		cities := parseData1(data)
+		printCities(cities)
+	}
+}
+
+func merge(m0, m1 map[string]cityData) map[string]cityData {
+	for k, data0 := range m0 {
+		if data1, ok := m1[k]; ok {
+			m1[k] = cityData{
+				min(data0.min, data1.min),
+				data0.total + data1.total,
+				max(data0.max, data1.max),
+				data0.count + data1.count}
+		} else {
+			m1[k] = data0
+		}
+	}
+	return m1
 }
 
 func dataFileName() string {
