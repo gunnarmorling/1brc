@@ -31,6 +31,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class CalculateAverage_artsiomkorzun {
 
     private static final Path FILE = Path.of("./measurements.txt");
+    private static final double ISOLATION_FACTOR = 0.8;
     private static final long SEGMENT_SIZE = 32 * 1024 * 1024;
     private static final long SEGMENT_OVERLAP = 1024;
     private static final long COMMA_PATTERN = 0x3B3B3B3B3B3B3B3BL;
@@ -65,16 +66,20 @@ public class CalculateAverage_artsiomkorzun {
         MemorySegment fileMemory = map(FILE);
         long fileAddress = fileMemory.address();
         long fileSize = fileMemory.byteSize();
-        int segmentCount = (int) ((fileSize + SEGMENT_SIZE - 1) / SEGMENT_SIZE);
-
-        AtomicInteger counter = new AtomicInteger();
-        AtomicReference<Aggregates> result = new AtomicReference<>();
 
         int parallelism = Runtime.getRuntime().availableProcessors();
+        int segments = (int) ((fileSize + SEGMENT_SIZE - 1) / SEGMENT_SIZE);
+        int isolated = ((int) (segments * ISOLATION_FACTOR)) / parallelism;
+
+        AtomicInteger counter = new AtomicInteger(isolated * parallelism);
+        AtomicReference<Aggregates> result = new AtomicReference<>();
+
         Aggregator[] aggregators = new Aggregator[parallelism];
 
         for (int i = 0; i < aggregators.length; i++) {
-            aggregators[i] = new Aggregator(counter, result, fileAddress, fileSize, segmentCount);
+            int isolatedFrom = i * isolated;
+            int isolatedTo = isolatedFrom + isolated;
+            aggregators[i] = new Aggregator(counter, result, fileAddress, fileSize, isolatedFrom, isolatedTo, segments);
             aggregators[i].start();
         }
 
@@ -142,7 +147,7 @@ public class CalculateAverage_artsiomkorzun {
         private final long pointer;
 
         public Aggregates() {
-            long address = UNSAFE.allocateMemory(SIZE + 8096);
+            long address = UNSAFE.allocateMemory(SIZE + 8192);
             pointer = (address + 4095) & (~4095);
             UNSAFE.setMemory(pointer, SIZE, (byte) 0);
         }
@@ -206,14 +211,8 @@ public class CalculateAverage_artsiomkorzun {
 
                 for (int offset = offset(hash);; offset = next(offset)) {
                     long address = pointer + offset;
-                    int len = UNSAFE.getInt(address);
 
-                    if (len == 0) {
-                        UNSAFE.copyMemory(rightAddress, address, 24 + length);
-                        break;
-                    }
-
-                    if (len == length && equal(address + 24, rightAddress + 24, length)) {
+                    if (equal(address + 24, rightAddress + 24, length)) {
                         long sum = UNSAFE.getLong(address + 8) + UNSAFE.getLong(rightAddress + 8);
                         int cnt = UNSAFE.getInt(address + 16) + UNSAFE.getInt(rightAddress + 16);
                         short min = (short) Math.min(UNSAFE.getShort(address + 20), UNSAFE.getShort(rightAddress + 20));
@@ -223,6 +222,13 @@ public class CalculateAverage_artsiomkorzun {
                         UNSAFE.putInt(address + 16, cnt);
                         UNSAFE.putShort(address + 20, min);
                         UNSAFE.putShort(address + 22, max);
+                        break;
+                    }
+
+                    int len = UNSAFE.getInt(address);
+
+                    if (len == 0) {
+                        UNSAFE.copyMemory(rightAddress, address, length + 24);
                         break;
                     }
                 }
@@ -237,8 +243,8 @@ public class CalculateAverage_artsiomkorzun {
                 int length = UNSAFE.getInt(address);
 
                 if (length != 0) {
-                    byte[] array = new byte[length];
-                    UNSAFE.copyMemory(null, address + 24, array, Unsafe.ARRAY_BYTE_BASE_OFFSET, length);
+                    byte[] array = new byte[length - 1];
+                    UNSAFE.copyMemory(null, address + 24, array, Unsafe.ARRAY_BYTE_BASE_OFFSET, array.length);
                     String key = new String(array);
 
                     long sum = UNSAFE.getLong(address + 8);
@@ -271,7 +277,7 @@ public class CalculateAverage_artsiomkorzun {
         }
 
         private static boolean equal(long leftAddress, long leftWord, long rightAddress, int length) {
-            while (length >= 8) {
+            while (length > 8) {
                 long left = UNSAFE.getLong(leftAddress);
                 long right = UNSAFE.getLong(rightAddress);
 
@@ -311,15 +317,21 @@ public class CalculateAverage_artsiomkorzun {
         private final AtomicReference<Aggregates> result;
         private final long fileAddress;
         private final long fileSize;
+        private final int isolatedFrom;
+        private final int isolatedTo;
         private final int segmentCount;
 
         public Aggregator(AtomicInteger counter, AtomicReference<Aggregates> result,
-                          long fileAddress, long fileSize, int segmentCount) {
+                          long fileAddress, long fileSize,
+                          int isolateFrom, int isolatedTo,
+                          int segmentCount) {
             super("aggregator");
             this.counter = counter;
             this.result = result;
             this.fileAddress = fileAddress;
             this.fileSize = fileSize;
+            this.isolatedFrom = isolateFrom;
+            this.isolatedTo = isolatedTo;
             this.segmentCount = segmentCount;
         }
 
@@ -327,17 +339,16 @@ public class CalculateAverage_artsiomkorzun {
         public void run() {
             Aggregates aggregates = new Aggregates();
 
+            if (isolatedFrom < isolatedTo) {
+                aggregate(aggregates, isolatedFrom * SEGMENT_SIZE, isolatedTo * SEGMENT_SIZE);
+            }
+
             for (int segment; (segment = counter.getAndIncrement()) < segmentCount;) {
-                long position = SEGMENT_SIZE * segment;
-                long size = Math.min(SEGMENT_SIZE + SEGMENT_OVERLAP, fileSize - position);
-                long address = fileAddress + position;
-                long limit = address + Math.min(SEGMENT_SIZE, size - 1);
+                long from = segment * SEGMENT_SIZE;
+                long size = Math.min(SEGMENT_SIZE + SEGMENT_OVERLAP, fileSize - from);
+                long to = from + Math.min(SEGMENT_SIZE, size - 1);
 
-                if (segment > 0) {
-                    address = next(address);
-                }
-
-                aggregate(aggregates, address, limit);
+                aggregate(aggregates, from, to);
             }
 
             while (!result.compareAndSet(null, aggregates)) {
@@ -349,65 +360,75 @@ public class CalculateAverage_artsiomkorzun {
             }
         }
 
-        private static void aggregate(Aggregates aggregates, long position, long limit) {
-            // this parsing can produce seg fault at page boundaries
-            // e.g. file size is 4096 and the last entry is X=0.0, which is less than 8 bytes
-            // as a result a read will be split across pages, where one of them is not mapped
-            // but for some reason it works on my machine, leaving to investigate
+        private void aggregate(Aggregates aggregates, long from, long to) {
+            long position = fileAddress + from;
+            long limit = fileAddress + to;
 
-            while (position <= limit) { // branchy version, credit: thomaswue
-                int length;
-                int hash;
+            if (from > 0) {
+                position = next(position);
+            }
 
-                long ptr = 0;
-                long word = word(position);
-                long separator = separator(word);
+            while (position <= limit) {
+                position = process(aggregates, position);
+            }
+        }
+
+        // this parsing can produce seg fault at page boundaries
+        // e.g. file size is 4096 and the last entry is X=0.0, which is less than 8 bytes
+        // as a result a read will be split across pages, where one of them is not mapped
+        // but for some reason it works on my machine, leaving to investigate
+        private static long process(Aggregates aggregates, long position) {
+            int length;
+            int hash;
+
+            long ptr = 0;
+            long word = word(position);
+            long separator = separator(word);
+
+            if (separator != 0) { // branchy version, credit: thomaswue
+                length = length(separator);
+                word = mask(word, separator);
+                hash = mix(word);
+                ptr = aggregates.find(word, hash);
+            }
+            else {
+                long word0 = word;
+                word = word(position + 8);
+                separator = separator(word);
 
                 if (separator != 0) {
-                    length = length(separator);
+                    length = length(separator) + 8;
                     word = mask(word, separator);
-                    hash = mix(word);
-                    ptr = aggregates.find(word, hash);
+                    hash = mix(word ^ word0);
+                    ptr = aggregates.find(word0, word, hash);
                 }
                 else {
-                    long word0 = word;
-                    word = word(position + 8);
-                    separator = separator(word);
+                    length = 16;
+                    long h = word ^ word0;
 
-                    if (separator != 0) {
-                        length = length(separator) + 8;
-                        word = mask(word, separator);
-                        hash = mix(word ^ word0);
-                        ptr = aggregates.find(word0, word, hash);
-                    }
-                    else {
-                        length = 16;
-                        long h = word ^ word0;
+                    while (true) {
+                        word = word(position + length);
+                        separator = separator(word);
 
-                        while (true) {
-                            word = word(position + length);
-                            separator = separator(word);
-
-                            if (separator == 0) {
-                                length += 8;
-                                h ^= word;
-                                continue;
-                            }
-
-                            length += length(separator);
-                            word = mask(word, separator);
-                            hash = mix(h ^ word);
-                            break;
+                        if (separator == 0) {
+                            length += 8;
+                            h ^= word;
+                            continue;
                         }
+
+                        length += length(separator);
+                        word = mask(word, separator);
+                        hash = mix(h ^ word);
+                        break;
                     }
                 }
-
-                if (ptr == 0) {
-                    ptr = aggregates.put(position, word, length, hash);
-                }
-
-                position = update(ptr, position + length + 1);
             }
+
+            if (ptr == 0) {
+                ptr = aggregates.put(position, word, length, hash);
+            }
+
+            return update(ptr, position + length);
         }
 
         private static long update(long ptr, long position) {
@@ -431,12 +452,12 @@ public class CalculateAverage_artsiomkorzun {
         }
 
         private static long mask(long word, long separator) {
-            long mask = ((separator - 1) ^ separator) >>> 8;
+            long mask = separator ^ (separator - 1);
             return word & mask;
         }
 
         private static int length(long separator) {
-            return Long.numberOfTrailingZeros(separator) >>> 3;
+            return (Long.numberOfTrailingZeros(separator) >>> 3) + 1;
         }
 
         private static long next(long position) {
