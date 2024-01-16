@@ -16,6 +16,8 @@ type cityData struct {
 	count           int
 }
 
+type results map[string]cityData
+
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to `file`")
 
 func main() {
@@ -37,30 +39,10 @@ func main() {
 	if len(data) > 1_00_000 {
 		numCpu := runtime.NumCPU()
 		_, _ = fmt.Fprintf(os.Stderr, "parallel %d\n", numCpu)
+		c := make(chan results)
 
-		// calculate the places to split the work
-		increments := make([]int, numCpu+1)
-		for i := 0; i < numCpu; i++ {
-			increments[i] = i * len(data) / numCpu
-			// adjust the increments so that they start on the beginning of a city
-			for i > 0 && data[increments[i]-1] != '\n' {
-				increments[i]--
-			}
-		}
-		increments[numCpu] = len(data)
-
-		c := make(chan map[string]cityData)
-		for i := 0; i < numCpu; i++ {
-			from := increments[i]
-			to := increments[i+1]
-			go func() {
-				c <- parseData1(data[from:to])
-			}()
-		}
-		cities := <-c
-		for i := 1; i < numCpu; i++ {
-			cities = merge(cities, <-c)
-		}
+		runInParallel(numCpu, data, c)
+		cities := collectResults(c, numCpu)
 		printCities(cities)
 	} else {
 		cities := parseData1(data)
@@ -68,7 +50,36 @@ func main() {
 	}
 }
 
-func merge(m0, m1 map[string]cityData) map[string]cityData {
+func collectResults(c chan results, numCpu int) results {
+	cities := <-c
+	for i := 1; i < numCpu; i++ {
+		cities = merge(cities, <-c)
+	}
+	return cities
+}
+
+func runInParallel(numCpu int, data []byte, c chan results) {
+	// calculate the places to split the work
+	increments := make([]int, numCpu+1)
+	for i := 0; i < numCpu; i++ {
+		increments[i] = i * len(data) / numCpu
+		// adjust the increments so that they start on the beginning of a city
+		for i > 0 && data[increments[i]-1] != '\n' {
+			increments[i]--
+		}
+	}
+	increments[numCpu] = len(data)
+
+	for i := 0; i < numCpu; i++ {
+		from := increments[i]
+		to := increments[i+1]
+		go func() {
+			c <- parseData1(data[from:to])
+		}()
+	}
+}
+
+func merge(m0, m1 results) results {
 	for k, data0 := range m0 {
 		if data1, ok := m1[k]; ok {
 			m1[k] = cityData{
@@ -114,28 +125,19 @@ var (
 	parsingTemperature = state{"parsingTemperature"}
 )
 
-func parseData1(data []byte) map[string]cityData {
-	cities := make(map[string]cityData)
+func parseData1(data []byte) results {
+	cities := make(results)
 	state := parsingCityName
 	var cityStartOffset, cityEndOffset int
 	var temp, sign int
 
 	cityStartOffset = 0
 	for i, currentChar := range data {
-		//fmt.Printf("%02d %c\n", i, currentChar)
 		if state == parsingCityName && currentChar == ';' {
 			state = skippingSemicolon
 			cityEndOffset = i
 		} else if state == parsingCityName {
 			// do nothing
-			//} else if state == parsingCityName && (currentChar&0x80 == 0) {
-			//	// do nothing
-			//} else if state == parsingCityName && (currentChar&0xE0 == 0xC0) {
-			//	i++ // 2-byte utf8 char
-			//} else if state == parsingCityName && (currentChar&0xF0 == 0xE0) {
-			//	i += 2 // 3-byte utf8 char
-			//} else if state == parsingCityName && (currentChar&0xF8 == 0xF0) {
-			//	i += 3 // 4-byte utf8 char
 		} else if state == skippingSemicolon && currentChar == '-' {
 			state = parsingTemperature
 			temp = 0
@@ -160,26 +162,18 @@ func parseData1(data []byte) map[string]cityData {
 	return cities
 }
 
-func accumulate(cities map[string]cityData, city string, tempAsInt int) {
+func accumulate(cities results, city string, tempAsInt int) {
 	if previous, ok := cities[city]; !ok {
 		cities[city] = cityData{tempAsInt, tempAsInt, tempAsInt, 1}
 	} else {
-		var newMin, newMax int
-		if tempAsInt < previous.min {
-			newMin = tempAsInt
-		} else {
-			newMin = previous.min
-		}
-		if tempAsInt > previous.max {
-			newMax = tempAsInt
-		} else {
-			newMax = previous.max
-		}
-		cities[city] = cityData{newMin, previous.total + tempAsInt, newMax, previous.count + 1}
+		newMin := min(previous.min, tempAsInt)
+		newMax := max(previous.max, tempAsInt)
+		newTotal := previous.total + tempAsInt
+		cities[city] = cityData{newMin, newTotal, newMax, previous.count + 1}
 	}
 }
 
-func printCities(cities map[string]cityData) {
+func printCities(cities results) {
 	fmt.Print("{")
 	keys := make([]string, 0)
 	for k, _ := range cities {
