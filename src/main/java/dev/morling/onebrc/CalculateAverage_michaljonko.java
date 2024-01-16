@@ -18,10 +18,9 @@ package dev.morling.onebrc;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
-import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.lang.foreign.ValueLayout.OfChar;
+import java.lang.foreign.ValueLayout.OfByte;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
@@ -30,143 +29,96 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class CalculateAverage_michaljonko {
 
+    private static final int CPUs = Runtime.getRuntime().availableProcessors();
     private static final String FILE = "./measurements.txt";
     private static final Path PATH = Paths.get(FILE);
+    public static final int MAX_STATION_NAMES = 10_000;
 
     public static void main(String[] args) throws IOException {
-        System.out.println("cpus:" + Runtime.getRuntime().availableProcessors());
+        System.out.println("cpus:" + CPUs);
         System.out.println("file size:" + Files.size(PATH));
-        System.out.println("partition size:~" + Files.size(PATH) / Runtime.getRuntime().availableProcessors());
+        System.out.println("partition size:~" + Files.size(PATH) / CPUs);
         System.out.println();
 
-        System.out.println("-------------- PARSER --------------------");
+        System.out.println("--- multi");
+        memorySegmentMultiThread();
 
-        final var cache = new ParsingCache();
-        try (var lines = Files.lines(PATH).limit(10)) {
-            lines
-                    .map(line -> line.split(";")[1])
-                    .map(cache::parseIfAbsent)
-                    .forEach(System.out::println);
+        // System.out.println("--- single");
+        // memorySegmentSingleThread();
+    }
+
+    private static void memorySegmentMultiThread() {
+        var startTime = System.nanoTime();
+        var size = 0L;
+        var newLines = 0L;
+        var memorySegments = FilePartitioner.createSegments(PATH, CPUs);
+
+        MemorySegment memorySegment = memorySegments.getFirst();
+        final byte[] stationName = new byte[100];
+        final byte[] temperature = new byte[5];
+        byte b;
+        int stationNameIndex = 0;
+        int stationNameHash = 0;
+        int temperatureIndex = 0;
+        int temperatureHash = 0;
+        long offset = 0L;
+        long memorySegmentSize = memorySegment.byteSize();
+        ConcurrentHashMap<Integer, Station> stationsMap = new ConcurrentHashMap<>(MAX_STATION_NAMES);
+        while (offset < memorySegmentSize) {
+            while ((b = memorySegment.get(ValueLayout.JAVA_BYTE, offset++)) != ';') {
+                stationName[stationNameIndex++] = b;
+                stationNameHash = 31 * stationNameHash + b;
+            }
+            while (offset < memorySegmentSize && (b = memorySegment.get(ValueLayout.JAVA_BYTE, offset++)) != '\n') {
+                temperature[temperatureIndex++] = b;
+                temperatureHash = 31 * temperatureHash + b;
+            }
+
+            int finalStationNameIndex = stationNameIndex;
+            stationsMap.computeIfAbsent(stationNameHash, ignore -> new Station(stationName, finalStationNameIndex));
+
+            stationNameIndex = 0;
+            temperatureIndex = 0;
+            stationNameHash = 0;
+            temperatureHash = 0;
         }
 
-        System.out.println("-------------- PARTITIONS --------------------");
+//        stationsMap.forEach((hash, station) -> System.out.println(hash + " : " + station.value()));
+        System.out.println("Size: " + stationsMap.size());
 
-        var partitions = Math.max(1, Runtime.getRuntime().availableProcessors());
-        var filePartitioner = new FilePartitioner(partitions);
-        var mappedFiles = filePartitioner.createPartitions(PATH);
-        try {
-            mappedFiles.forEach(mappedFile -> {
-                try {
-                    final var aChar = mappedFile.memorySegment().get(OfChar.JAVA_BYTE, 0);
-                    System.out.println(aChar);
-                }
-                catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            });
-            // final var decoder = StandardCharsets.UTF_8.newDecoder();
-            // var mappedFile = mappedFiles.get(0);
-            // var memorySegment = mappedFile.memorySegment();
-        }
-        finally {
-            mappedFiles.forEach(x -> {
-                try {
-                    x.close();
-                }
-                catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            });
-        }
-
-        // try (var channel = FileChannel.open(Paths.get(FILE), StandardOpenOption.READ);
-        // Arena arena = Arena.ofShared();) {
-        // final var memorySegment = channel.map(MapMode.READ_ONLY, 0, Files.size(PATH), arena);
-        // final var mappedByteBuffer = channel.map(MapMode.READ_ONLY, 0, Files.size(PATH));
-        // final var decoder = StandardCharsets.UTF_8.newDecoder();
-        // final var charBuffer = decoder.decode(mappedByteBuffer);
+        // try (var executorService = Executors.newFixedThreadPool(CPUs)) {
+        // var callables = memorySegments.stream()
+        // .map(memorySegment -> (Callable<Pair<Long, Long>>) () -> memorySegmentPerThread(memorySegment))
+        // .toList();
+        // for (var future : executorService.invokeAll(callables)) {
+        // var pair = future.get();
+        // size += pair.right();
+        // newLines += pair.left();
         // }
+        // }
+        // catch (InterruptedException | ExecutionException e) {
+        // throw new RuntimeException(e);
+        // }
+        // System.out.println("Took :" + Duration.ofNanos(System.nanoTime() - startTime) + " size:" + size + " lines:" + newLines);
     }
 
-    static final class FilePartitioner {
+    private static final class Station {
+        private final byte[] raw;
 
-        private final int partitionsAmount;
-
-        FilePartitioner(int partitionsAmount) {
-            this.partitionsAmount = partitionsAmount;
+        private Station(byte[] _raw, int length) {
+            this.raw = new byte[length];
+            System.arraycopy(_raw, 0, this.raw, 0, length);
         }
 
-        public List<MappedFile> createPartitions(Path path) {
-            try {
-                final var size = Files.size(path);
-
-                if (partitionsAmount < 2) {
-                    return List.of(new MappedFile(PATH, 0, size));
-                }
-
-                final var partitionSize = size / partitionsAmount;
-                final var partitions = new MappedFile[partitionsAmount];
-                var startPosition = 0L;
-                var endPosition = partitionSize;
-                final var buffer = ByteBuffer.allocateDirect(256);
-                try (var channel = FileChannel.open(PATH, StandardOpenOption.READ)) {
-                    for (var partitionIndex = 0; partitionIndex < partitionsAmount; partitionIndex++) {
-                        channel.read(buffer.clear(), endPosition >= size ? endPosition = (size - 1) : endPosition);
-                        buffer.flip();
-                        while (buffer.get() != '\n' && endPosition < size) {
-                            endPosition++;
-                        }
-                        System.out.println("MappedFile start:" + startPosition + " end:" + endPosition + " size:" + (endPosition - startPosition));
-                        partitions[partitionIndex] = new MappedFile(PATH, startPosition, endPosition - startPosition);
-                        startPosition = ++endPosition;
-                        endPosition += partitionSize;
-                    }
-                }
-                return Arrays.asList(partitions);
-            }
-            catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-        }
-    }
-
-    private static final class MappedFile implements AutoCloseable {
-
-        private final FileChannel channel;
-        private final Arena arena;
-        private volatile MemorySegment memorySegment;
-        private final long position;
-        private final long size;
-        private final AtomicBoolean mapped = new AtomicBoolean(false);
-
-        private MappedFile(Path path, long position, long size) throws IOException {
-            this.position = position;
-            this.size = size;
-            this.channel = FileChannel.open(path, StandardOpenOption.READ);
-            this.arena = Arena.ofShared();
-        }
-
-        private MemorySegment memorySegment() throws IOException {
-            return (memorySegment == null && mapped.compareAndSet(false, true))
-                    ? (memorySegment = channel.map(MapMode.READ_ONLY, position, size, arena))
-                    : memorySegment;
-        }
-
-        @Override
-        public void close() throws IOException {
-            if (memorySegment != null) {
-                memorySegment.unload();
-            }
-            arena.close();
-            channel.close();
+        private String value() {
+            return new String(raw, 0, raw.length);
         }
 
         @Override
@@ -177,13 +129,96 @@ public final class CalculateAverage_michaljonko {
             if (o == null || getClass() != o.getClass()) {
                 return false;
             }
-            MappedFile that = (MappedFile) o;
-            return channel.equals(that.channel) && arena.equals(that.arena);
+
+            Station station = (Station) o;
+
+            return Arrays.equals(raw, station.raw);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(channel, arena);
+            return Arrays.hashCode(raw);
+        }
+    }
+
+    private static Pair<Long, Long> memorySegmentPerThread(MemorySegment memorySegment) {
+        var newLineCount = 0L;
+        var size = 0L;
+        final var memorySegmentSize = memorySegment.byteSize();
+        final byte[] bytes = new byte[256];
+        byte b = 0;
+        var index = 0;
+        for (long offset = 0; offset < memorySegmentSize; offset++) {
+            if ((b = memorySegment.get(ValueLayout.JAVA_BYTE, offset)) == '\n') {
+                size += new String(bytes, 0, index, StandardCharsets.UTF_8).length();
+                index = 0;
+                newLineCount++;
+            }
+            bytes[index++] = b;
+        }
+        return new Pair<>(newLineCount, size);
+    }
+
+    private static void memorySegmentSingleThread() throws IOException {
+        var startTime = System.nanoTime();
+        var channel = FileChannel.open(PATH, StandardOpenOption.READ);
+        var fileSize = Files.size(PATH);
+        var memorySegment = channel.map(MapMode.READ_ONLY, 0, fileSize, Arena.global());
+        channel.close();
+        var newLineCount = 0L;
+        var size = 0L;
+        for (long i = 0; i < fileSize; i++) {
+            if (memorySegment.get(ValueLayout.JAVA_BYTE, i) == '\n') {
+                newLineCount++;
+            }
+            size++;
+        }
+        System.out.println("Took:" + Duration.ofNanos(System.nanoTime() - startTime)
+                + " size:" + size
+                + " newlines:" + newLineCount);
+
+        System.out.println(new String(memorySegment.asSlice(fileSize / 2, 100).toArray(OfByte.JAVA_BYTE), StandardCharsets.UTF_8));
+    }
+
+    private record Pair<LEFT,RIGHT>(
+    LEFT left, RIGHT right)
+    {
+    }
+
+    public static final class FilePartitioner {
+
+        private final int partitionsAmount;
+
+        FilePartitioner(int partitionsAmount) {
+            this.partitionsAmount = partitionsAmount;
+        }
+
+        public static List<MemorySegment> createSegments(Path path, int partitionsAmount) {
+            try (var channel = FileChannel.open(PATH, StandardOpenOption.READ)) {
+                final var size = Files.size(path);
+                if (partitionsAmount < 2) {
+                    return List.of(channel.map(MapMode.READ_ONLY, 0, size, Arena.global()));
+                }
+                final var partitionSize = size / partitionsAmount;
+                final var partitions = new MemorySegment[partitionsAmount];
+                final var buffer = ByteBuffer.allocateDirect(128);
+                var startPosition = 0L;
+                var endPosition = partitionSize;
+                for (var partitionIndex = 0; partitionIndex < partitionsAmount; partitionIndex++) {
+                    channel.read(buffer.clear(), endPosition >= size ? endPosition = (size - 1) : endPosition);
+                    buffer.flip();
+                    while (buffer.get() != '\n' && endPosition < size) {
+                        endPosition++;
+                    }
+                    partitions[partitionIndex] = channel.map(MapMode.READ_ONLY, startPosition, endPosition - startPosition, Arena.ofShared());
+                    startPosition = ++endPosition;
+                    endPosition += partitionSize;
+                }
+                return List.of(partitions);
+            }
+            catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
         }
     }
 
