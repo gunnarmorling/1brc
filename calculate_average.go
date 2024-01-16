@@ -1,13 +1,13 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
+	"flag"
 	"fmt"
 	mmap "github.com/edsrzf/mmap-go"
+	"log"
 	"os"
+	"runtime/pprof"
 	"slices"
-	"strconv"
 )
 
 type cityData struct {
@@ -15,22 +15,22 @@ type cityData struct {
 	count           int
 }
 
-func splitSemicolonOrNewline(data []byte, atEOF bool) (advance int, token []byte, err error) {
-	for i := 0; i < len(data); i++ {
-		if data[i] == ';' || data[i] == '\n' {
-			return i + 1, data[:i], nil
-		}
-	}
-	if !atEOF {
-		return 0, nil, nil
-	}
-	// There is one final token to be delivered, which may be the empty string.
-	// Returning bufio.ErrFinalToken here tells Scan there are no more tokens after this
-	// but does not trigger an error to be returned from Scan itself.
-	return 0, data, bufio.ErrFinalToken
-}
+var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to `file`")
 
 func main() {
+	flag.Parse()
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal("could not create CPU profile: ", err)
+		}
+		defer f.Close() // error handling omitted for example
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal("could not start CPU profile: ", err)
+		}
+		defer pprof.StopCPUProfile()
+	}
+
 	name := dataFileName()
 	data := readData(name)
 	cities := parseData1(data)
@@ -75,22 +75,21 @@ func parseData1(data []byte) map[string]cityData {
 	var temp, sign int
 
 	cityStartOffset = 0
-	for i := 0; i < len(data); i++ {
-		currentChar := data[i]
+	for i, currentChar := range data {
 		//fmt.Printf("%02d %c\n", i, currentChar)
 		if state == parsingCityName && currentChar == ';' {
 			state = skippingSemicolon
 			cityEndOffset = i
-			//} else if state == parsingCityName {
-			//	// do nothing
-		} else if state == parsingCityName && (currentChar&0x80 == 0) {
+		} else if state == parsingCityName {
 			// do nothing
-		} else if state == parsingCityName && (currentChar&0xE0 == 0xC0) {
-			i++ // 2-byte utf8 char
-		} else if state == parsingCityName && (currentChar&0xF0 == 0xE0) {
-			i += 2 // 3-byte utf8 char
-		} else if state == parsingCityName && (currentChar&0xF8 == 0xF0) {
-			i += 3 // 4-byte utf8 char
+			//} else if state == parsingCityName && (currentChar&0x80 == 0) {
+			//	// do nothing
+			//} else if state == parsingCityName && (currentChar&0xE0 == 0xC0) {
+			//	i++ // 2-byte utf8 char
+			//} else if state == parsingCityName && (currentChar&0xF0 == 0xE0) {
+			//	i += 2 // 3-byte utf8 char
+			//} else if state == parsingCityName && (currentChar&0xF8 == 0xF0) {
+			//	i += 3 // 4-byte utf8 char
 		} else if state == skippingSemicolon && currentChar == '-' {
 			state = parsingTemperature
 			temp = 0
@@ -111,26 +110,6 @@ func parseData1(data []byte) map[string]cityData {
 		} else {
 			panic(fmt.Sprintf("Unexpected: %s, %c", state, currentChar))
 		}
-	}
-	return cities
-}
-
-func parseData(data []byte) map[string]cityData {
-	cities := make(map[string]cityData)
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	scanner.Split(splitSemicolonOrNewline)
-
-	for scanner.Scan() {
-		city := scanner.Text()
-		if !scanner.Scan() {
-			break
-		}
-		tempAsFloat, err := strconv.ParseFloat(scanner.Text(), 64)
-		tempAsInt := int(tempAsFloat * 10)
-		if err != nil {
-			panic(err)
-		}
-		accumulate(cities, city, tempAsInt)
 	}
 	return cities
 }
@@ -164,9 +143,22 @@ func printCities(cities map[string]cityData) {
 	for _, city := range keys {
 		data := cities[city]
 		min := float64(data.min) / 10.0
-		average := float64(data.total/data.count) / 10.0
+		average := formatTemperature(data.total / data.count)
 		max := float64(data.max) / 10.0
-		fmt.Printf("%s=%.1f/%.1f/%.1f, ", city, min, average, max)
+		fmt.Printf(
+			"%s=%.1f/%s/%.1f, ",
+			city,
+			min,
+			average,
+			max)
 	}
 	fmt.Print("}")
+}
+
+func formatTemperature(tempTimesTen int) string {
+	if tempTimesTen >= 0 {
+		return fmt.Sprintf("%d.%d", tempTimesTen/10, tempTimesTen%10)
+	} else {
+		return fmt.Sprintf("-%d.%d", -tempTimesTen/10, -tempTimesTen%10)
+	}
 }
