@@ -40,6 +40,8 @@ import java.util.concurrent.*;
  * - Replaced String with my own ByteText class: a bit slower (~10%)
  * - Replaced compute lambda call with synchronized(city.intern()): 43" (due to intern())
  * - Removed BufferedInputStream and replaced Measurement with IntSummaryStatistics (thanks davecom): still 23" but cleaner code
+ * - Execute same code on 1BRC server: 41"
+ * - One HashMap per thread: 17" locally
  *
  * @author Anthony Goubard - Japplis
  */
@@ -83,14 +85,16 @@ public class CalculateAverage_japplis {
         int startIndex = handleSplitLine(buffer, readCount);
         Runnable countAverageRun = () -> {
             int bufferIndex = startIndex;
+            Map<String, IntSummaryStatistics> blockCityMeasurementMap = new HashMap<>();
             try {
                 while (bufferIndex < readCount) {
-                    bufferIndex = readNextLine(bufferIndex, buffer);
+                    bufferIndex = readNextLine(bufferIndex, buffer, blockCityMeasurementMap);
                 }
             }
             catch (ArrayIndexOutOfBoundsException ex) {
                 // Done reading and parsing the buffer
             }
+            mergeBlockResults(blockCityMeasurementMap);
             readFileLock.release();
         };
         return countAverageRun;
@@ -128,7 +132,7 @@ public class CalculateAverage_japplis {
         for (int i = 0; i < splitLineBytes.length; i++) {
             splitLineBytes[i] = previousBlockLastLine.get(i);
         }
-        readNextLine(0, splitLineBytes);
+        readNextLine(0, splitLineBytes, cityMeasurementMap);
         return bufferIndex;
     }
 
@@ -154,7 +158,7 @@ public class CalculateAverage_japplis {
         return startIndex;
     }
 
-    private int readNextLine(int bufferIndex, byte[] buffer) {
+    private int readNextLine(int bufferIndex, byte[] buffer, Map<String, IntSummaryStatistics> blockCityMeasurementMap) {
         int startLineIndex = bufferIndex;
         while (buffer[bufferIndex] != ';')
             bufferIndex++;
@@ -166,7 +170,7 @@ public class CalculateAverage_japplis {
             bufferIndex++;
         if (temperature <= -precisionLimitTenth || temperature >= precisionLimitTenth)
             bufferIndex++;
-        addTemperature(city, temperature);
+        addTemperature(city, temperature, blockCityMeasurementMap);
         return bufferIndex;
     }
 
@@ -187,12 +191,20 @@ public class CalculateAverage_japplis {
         return temperature;
     }
 
-    private void addTemperature(String city, int temperature) {
-        cityMeasurementMap.compute(city, (town, measurement) -> {
-            if (measurement == null)
-                measurement = new IntSummaryStatistics();
-            measurement.accept(temperature);
-            return measurement;
+    private void addTemperature(String city, int temperature, Map<String, IntSummaryStatistics> blockCityMeasurementMap) {
+        IntSummaryStatistics measurement = blockCityMeasurementMap.get(city);
+        if (measurement == null) {
+            measurement = new IntSummaryStatistics();
+            blockCityMeasurementMap.put(city, measurement);
+        }
+        measurement.accept(temperature);
+    }
+
+    private void mergeBlockResults(Map<String, IntSummaryStatistics> blockCityMeasurementMap) {
+        blockCityMeasurementMap.forEach((city, measurement) -> {
+            IntSummaryStatistics oldMeasurement = cityMeasurementMap.putIfAbsent(city, measurement);
+            if (oldMeasurement != null)
+                oldMeasurement.combine(measurement);
         });
     }
 
