@@ -138,7 +138,7 @@ public class CalculateAverage_abeobk {
         final int p1 = 0x85EBCA77; // prime
         final int p2 = 0x165667B1; // prime
         int low = (int) hash;
-        int high = (int) (hash >>> 32);
+        int high = (int) (hash >>> 31);
         int h = low + high;
         h ^= h >> 15;
         h *= p1;
