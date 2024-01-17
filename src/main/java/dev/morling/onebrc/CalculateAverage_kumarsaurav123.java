@@ -114,7 +114,7 @@ public class CalculateAverage_kumarsaurav123 {
                 agg -> {
                     return new ResultRow(agg.station, agg.min, agg.sum / agg.count, agg.max, agg.sum, agg.count);
                 });
-        ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 8 * 2);
+        ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
         List<ResultRow> measurements = Collections.synchronizedList(new ArrayList<ResultRow>());
         int chunkSize = 1_0000_00;
         Map<Integer, List<byte[]>> leftOutsMap = new ConcurrentSkipListMap<>();
@@ -124,7 +124,7 @@ public class CalculateAverage_kumarsaurav123 {
         MemorySegment memorySegment = file.getChannel().map(FileChannel.MapMode.READ_ONLY, 0, filelength, Arena.global());
         int nChunks = 1000;
 
-        int pChunkSize = Math.min(Integer.MAX_VALUE, (int) (memorySegment.byteSize() / 1000));
+        int pChunkSize = Math.min(Integer.MAX_VALUE, (int) (memorySegment.byteSize() / (1000 * 20)));
         if (pChunkSize < 100) {
             pChunkSize = (int) memorySegment.byteSize();
             nChunks = 1;
