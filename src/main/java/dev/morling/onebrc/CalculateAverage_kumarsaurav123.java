@@ -122,7 +122,6 @@ public class CalculateAverage_kumarsaurav123 {
         long filelength = file.length();
         AtomicInteger kk = new AtomicInteger();
         MemorySegment memorySegment = file.getChannel().map(FileChannel.MapMode.READ_ONLY, 0, filelength, Arena.global());
-        memorySegment.load();
         int nChunks = 1000;
 
         int pChunkSize = Math.min(Integer.MAX_VALUE, (int) (memorySegment.byteSize() / 1000));
@@ -186,6 +185,7 @@ public class CalculateAverage_kumarsaurav123 {
                     byte[] allBytes2 = new byte[p.size];
                     MemorySegment lMemory = memorySegment.asSlice(p.start, p.size);
                     lMemory.asByteBuffer().get(allBytes2);
+                    lMemory.unload();
                     HashMap<Byte, Integer> map = new HashMap<>();
                     Runtime runtime = Runtime.getRuntime();
                     // long memoryMax = runtime.maxMemory();
