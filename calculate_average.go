@@ -40,7 +40,6 @@ func main() {
 		numCpu := runtime.NumCPU()
 		_, _ = fmt.Fprintf(os.Stderr, "parallel %d\n", numCpu)
 		c := make(chan results)
-
 		runInParallel(numCpu, data, c)
 		cities := collectResults(c, numCpu)
 		printCities(cities)
@@ -50,7 +49,7 @@ func main() {
 	}
 }
 
-func collectResults(c chan results, numCpu int) results {
+func collectResults(c <-chan results, numCpu int) results {
 	cities := <-c
 	for i := 1; i < numCpu; i++ {
 		cities = merge(cities, <-c)
@@ -58,7 +57,7 @@ func collectResults(c chan results, numCpu int) results {
 	return cities
 }
 
-func runInParallel(numCpu int, data []byte, c chan results) {
+func runInParallel(numCpu int, data []byte, c chan<- results) {
 	// calculate the places to split the work
 	increments := make([]int, numCpu+1)
 	for i := 0; i < numCpu; i++ {
