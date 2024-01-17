@@ -21,6 +21,7 @@ import static java.util.stream.Collectors.joining;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.channels.FileChannel.MapMode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
@@ -52,15 +53,13 @@ public class CalculateAverage_tonivade {
     private static void readFile(Consumer consumer) throws IOException {
         try (var channel = FileChannel.open(Paths.get(FILE), StandardOpenOption.READ)) {
             for (long consumed = 0; channel.size() - consumed > 0;) {
-                var buffer = ByteBuffer.allocate(1024 * 1024);
-                var readed = channel.read(buffer);
-                buffer.flip();
+                var buffer = channel.map(MapMode.READ_ONLY, consumed, Math.min(channel.size() - consumed, 1024 * 1024 * 4));
 
                 var last = 0;
                 var next = 0;
                 while (true) {
                     last = next;
-                    next = findNextEndOfLine(buffer, readed, last);
+                    next = findNextEndOfLine(buffer, last);
                     if (next < 0) {
                         break;
                     }
@@ -94,8 +93,8 @@ public class CalculateAverage_tonivade {
         return -1;
     }
 
-    private static int findNextEndOfLine(ByteBuffer buffer, int readed, int last) {
-        for (int i = last; i < readed; i++) {
+    private static int findNextEndOfLine(ByteBuffer buffer, int last) {
+        for (int i = last; i < buffer.remaining(); i++) {
             if (buffer.get(i) == 10) {
                 return i;
             }
