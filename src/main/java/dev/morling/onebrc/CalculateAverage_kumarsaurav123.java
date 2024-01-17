@@ -15,9 +15,10 @@
  */
 package dev.morling.onebrc;
 
+import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.util.*;
@@ -26,6 +27,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collector;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static java.util.stream.Collectors.groupingBy;
@@ -40,7 +42,7 @@ public class CalculateAverage_kumarsaurav123 {
         }
     }
 
-    private static record ResultRow(String station,double min, double mean, double max,double sum,double count) {
+    private static record ResultRow(String station, double min, double mean, double max, double sum, double count) {
         public String toString() {
             return round(min) + "/" + round(mean) + "/" + round(max);
         }
@@ -61,18 +63,8 @@ public class CalculateAverage_kumarsaurav123 {
         private String station;
     }
 
-    public static void main(String[] args) {
-        HashMap<Byte, Integer> map = new HashMap<>();
-        map.put((byte) 48, 0);
-        map.put((byte) 49, 1);
-        map.put((byte) 50, 2);
-        map.put((byte) 51, 3);
-        map.put((byte) 52, 4);
-        map.put((byte) 53, 5);
-        map.put((byte) 54, 6);
-        map.put((byte) 55, 7);
-        map.put((byte) 56, 8);
-        map.put((byte) 57, 9);
+    public static void main(String[] args) throws IOException {
+        long start = System.currentTimeMillis();
         Collector<ResultRow, MeasurementAggregator, ResultRow> collector2 = Collector.of(
                 MeasurementAggregator::new,
                 (a, m) -> {
@@ -91,7 +83,7 @@ public class CalculateAverage_kumarsaurav123 {
                     return res;
                 },
                 agg -> {
-                    return new ResultRow(agg.station, agg.min, agg.sum / agg.count, agg.max, agg.sum, agg.count);
+                    return new ResultRow(agg.station, agg.min, (Math.round(agg.sum * 10.0) / 10.0) / agg.count, agg.max, agg.sum, agg.count);
                 });
         Collector<Measurement, MeasurementAggregator, ResultRow> collector = Collector.of(
                 MeasurementAggregator::new,
@@ -114,101 +106,38 @@ public class CalculateAverage_kumarsaurav123 {
                 agg -> {
                     return new ResultRow(agg.station, agg.min, agg.sum / agg.count, agg.max, agg.sum, agg.count);
                 });
-
-        long start = System.currentTimeMillis();
-        long len = Paths.get(FILE).toFile().length();
-        Map<Integer, List<byte[]>> leftOutsMap = new ConcurrentSkipListMap<>();
-        int chunkSize = 1_0000_00;
-        long proc = Math.max(1, (len / chunkSize));
-        ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2 * 2 * 2);
+        ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 8 * 2);
         List<ResultRow> measurements = Collections.synchronizedList(new ArrayList<ResultRow>());
-        IntStream.range(0, (int) proc)
-                .mapToObj(i -> {
-                    return new Runnable() {
-                        @Override
-                        public void run() {
-                            try {
-                                RandomAccessFile file = new RandomAccessFile(FILE, "r");
-                                byte[] allBytes2 = new byte[chunkSize];
-                                file.seek((long) i * (long) chunkSize);
-                                int l = file.read(allBytes2);
-                                byte[] eol = "\n".getBytes(StandardCharsets.UTF_8);
-                                byte[] sep = ";".getBytes(StandardCharsets.UTF_8);
+        int chunkSize = 1_0000_00;
+        Map<Integer, List<byte[]>> leftOutsMap = new ConcurrentSkipListMap<>();
+        RandomAccessFile file = new RandomAccessFile(FILE, "r");
+        long filelength = file.length();
+        int kk = 0;
+        long loaded = 0;
+        while (filelength > loaded) {
+            FileChannel fileChannel = file.getChannel();
+            MappedByteBuffer mappedByteBuffer = fileChannel
+                    .map(FileChannel.MapMode.READ_ONLY, loaded, Math.min(filelength - loaded, Integer.MAX_VALUE));
+            loaded = loaded + Math.min(filelength - loaded, Integer.MAX_VALUE);
+            long st = 0;
 
-                                List<Measurement> mst = new ArrayList<>();
-                                int st = 0;
-                                int cnt = 0;
-                                ArrayList<byte[]> local = new ArrayList<>();
+            while (st < mappedByteBuffer.limit()) {
+                int size = (int) Math.min(chunkSize, mappedByteBuffer.limit() - st);
+                st = st + size;
+                byte[] allBytes2 = new byte[size];
+                mappedByteBuffer.get(allBytes2);
+                executorService.submit(createRunnable(kk++, allBytes2, allBytes2.length, collector, leftOutsMap, measurements));
+            }
+        }
 
-                                for (int i = 0; i < l; i++) {
-                                    if (allBytes2[i] == eol[0]) {
-                                        if (i != 0) {
-                                            byte[] s2 = new byte[i - st];
-                                            System.arraycopy(allBytes2, st, s2, 0, s2.length);
-                                            if (cnt != 0) {
-                                                for (int j = 0; j < s2.length; j++) {
-                                                    if (s2[j] == sep[0]) {
-                                                        byte[] city = new byte[j];
-                                                        byte[] value = new byte[s2.length - j - 1];
-                                                        System.arraycopy(s2, 0, city, 0, city.length);
-                                                        System.arraycopy(s2, city.length + 1, value, 0, value.length);
-                                                        double d = 0.0;
-                                                        int s = -1;
-                                                        for (int k = value.length - 1; k >= 0; k--) {
-                                                            if (value[k] == 45) {
-                                                                d = d * -1;
-                                                            }
-                                                            else if (value[k] == 46) {
-                                                            }
-                                                            else {
-                                                                d = d + map.get(value[k]).intValue() * Math.pow(10, s);
-                                                                s++;
-                                                            }
-                                                        }
-                                                        mst.add(new Measurement(new String(city), d));
-
-                                                    }
-                                                }
-
-                                            }
-                                            else {
-                                                local.add(s2);
-                                            }
-
-                                        }
-                                        cnt++;
-                                        st = i + 1;
-                                    }
-                                }
-                                if (st < l) {
-                                    byte[] s2 = new byte[allBytes2.length - st];
-                                    System.arraycopy(allBytes2, st, s2, 0, s2.length);
-                                    local.add(s2);
-                                }
-                                leftOutsMap.put(i, local);
-                                allBytes2 = null;
-                                measurements.addAll(mst.stream()
-                                        .collect(groupingBy(Measurement::station, collector))
-                                        .values());
-                                // System.out.println(measurements.size());
-                            }
-                            catch (Exception e) {
-                                // throw new RuntimeException(e);
-                                System.out.println("");
-                            }
-                        }
-                    };
-                })
-                .forEach(executor::submit);
-        executor.shutdown();
+        executorService.shutdown();
 
         try {
-            executor.awaitTermination(10, TimeUnit.MINUTES);
+            executorService.awaitTermination(10, TimeUnit.MINUTES);
         }
         catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
-        Collection<Measurement> lMeasure = new ArrayList<>();
         List<byte[]> leftOuts = leftOutsMap.values()
                 .stream()
                 .flatMap(List::stream)
@@ -223,17 +152,47 @@ public class CalculateAverage_kumarsaurav123 {
             System.arraycopy(leftOuts.get(i), 0, allBytes, pos, leftOuts.get(i).length);
             pos = pos + leftOuts.get(i).length;
         }
-        List<String> l = Arrays.asList(new String(allBytes).split(";"));
+        byte[] city = new byte[200];
+        byte[] value = new byte[200];
+        int cnt = 0;
+        boolean isCity = true;
+        int citylen = 0;
         List<Measurement> measurements1 = new ArrayList<>();
-        String city = l.get(0);
-        for (int i = 0; i < l.size() - 1; i++) {
-            int sIndex = l.get(i + 1).indexOf('.') + 2;
+        for (int i = 0; i < allBytes.length; i++) {
+            if (allBytes[i] == ';') {
+                isCity = !isCity;
+                if (isCity) {
+                    city = new byte[200];
+                    cnt = 0;
+                    citylen = 0;
+                }
+                else {
+                    value = new byte[200];
+                    cnt = 0;
+                }
+                continue;
+            }
+            if (isCity) {
+                city[cnt++] = allBytes[i];
+                citylen = cnt;
+            }
+            else {
+                if (allBytes[i] < 45 || allBytes[i] > 57) {
 
-            String tempp = l.get(i + 1).substring(0, sIndex);
-
-            measurements1.add(new Measurement(city, Double.parseDouble(tempp)));
-            city = l.get(i + 1).substring(sIndex);
+                    measurements1.add(addNewMeasurement(value, citylen, city));
+                    cnt = 0;
+                    isCity = true;
+                    city = new byte[200];
+                    city[cnt++] = allBytes[i];
+                    citylen = cnt;
+                }
+                else {
+                    value[cnt++] = allBytes[i];
+                }
+            }
         }
+        // read last city
+        measurements1.add(addNewMeasurement(value, citylen, city));
         measurements.addAll(measurements1.stream()
                 .collect(groupingBy(Measurement::station, collector))
                 .values());
@@ -242,15 +201,125 @@ public class CalculateAverage_kumarsaurav123 {
                 .parallel()
                 .collect(groupingBy(ResultRow::station, collector2)));
 
-        // Read from bytes 1000 to 2000
-        // Something like this
-
-        //
-        // Map<String, ResultRow> measurements = new TreeMap<>(Files.lines(Paths.get(FILE))
-        // .map(l -> new Measurement(l.split(";")))
-        // .collect(groupingBy(m -> m.station(), collector)));
-
         System.out.println(measurements2);
         // System.out.println(System.currentTimeMillis() - start);
+    }
+
+    private static Measurement addNewMeasurement(byte[] value, int citylen, byte[] city) {
+        HashMap<Byte, Integer> map = new HashMap<>();
+        map.put((byte) 48, 0);
+        map.put((byte) 49, 1);
+        map.put((byte) 50, 2);
+        map.put((byte) 51, 3);
+        map.put((byte) 52, 4);
+        map.put((byte) 53, 5);
+        map.put((byte) 54, 6);
+        map.put((byte) 55, 7);
+        map.put((byte) 56, 8);
+        map.put((byte) 57, 9);
+        double d = 0.0;
+        int s = -1;
+        for (int k = value.length - 1; k >= 0; k--) {
+            if (value[k] == 0) {
+                continue;
+            }
+            if (value[k] == 45) {
+                d = d * -1;
+            }
+            else if (value[k] == 46) {
+            }
+            else {
+                d = d + map.get(value[k]) * Math.pow(10, s);
+                s++;
+            }
+        }
+        byte[] fcity = new byte[citylen];
+        System.arraycopy(city, 0, fcity, 0, citylen);
+        return new Measurement(new String(fcity), d);
+    }
+
+    public static Runnable createRunnable(final int kk, final byte[] allBytes2, int l, Collector<Measurement, MeasurementAggregator, ResultRow> collector,
+                                          Map<Integer, List<byte[]>> leftOutsMap, List<ResultRow> measurements) {
+        return new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    long start = System.currentTimeMillis();
+                    HashMap<Byte, Integer> map = new HashMap<>();
+                    map.put((byte) 48, 0);
+                    map.put((byte) 49, 1);
+                    map.put((byte) 50, 2);
+                    map.put((byte) 51, 3);
+                    map.put((byte) 52, 4);
+                    map.put((byte) 53, 5);
+                    map.put((byte) 54, 6);
+                    map.put((byte) 55, 7);
+                    map.put((byte) 56, 8);
+                    map.put((byte) 57, 9);
+                    byte[] eol = "\n".getBytes(StandardCharsets.UTF_8);
+                    byte[] sep = ";".getBytes(StandardCharsets.UTF_8);
+
+                    List<Measurement> mst = new ArrayList<>();
+                    int st = 0;
+                    int cnt = 0;
+                    ArrayList<byte[]> local = new ArrayList<>();
+
+                    for (int i = 0; i < l; i++) {
+                        if (allBytes2[i] == eol[0]) {
+                            if (i != 0) {
+                                byte[] s2 = new byte[i - st];
+                                System.arraycopy(allBytes2, st, s2, 0, s2.length);
+                                if (cnt != 0) {
+                                    for (int j = 0; j < s2.length; j++) {
+                                        if (s2[j] == sep[0]) {
+                                            byte[] city = new byte[j];
+                                            byte[] value = new byte[s2.length - j - 1];
+                                            System.arraycopy(s2, 0, city, 0, city.length);
+                                            System.arraycopy(s2, city.length + 1, value, 0, value.length);
+                                            double d = 0.0;
+                                            int s = -1;
+                                            for (int k = value.length - 1; k >= 0; k--) {
+                                                if (value[k] == 45) {
+                                                    d = d * -1;
+                                                }
+                                                else if (value[k] == 46) {
+                                                }
+                                                else {
+                                                    d = d + map.get(value[k]).intValue() * Math.pow(10, s);
+                                                    s++;
+                                                }
+                                            }
+                                            mst.add(new Measurement(new String(city), d));
+
+                                        }
+                                    }
+
+                                }
+                                else {
+                                    local.add(s2);
+                                }
+
+                            }
+                            cnt++;
+                            st = i + 1;
+                        }
+                    }
+                    if (st < l) {
+                        byte[] s2 = new byte[allBytes2.length - st];
+                        System.arraycopy(allBytes2, st, s2, 0, s2.length);
+                        local.add(s2);
+                    }
+                    leftOutsMap.put(kk, local);
+                    measurements.addAll(mst.stream()
+                            .collect(groupingBy(Measurement::station, collector))
+                            .values());
+                    // System.out.println("Task " + kk + "Completed in " + (System.currentTimeMillis() - start));
+                }
+                catch (Exception e) {
+                    // throw new RuntimeException(e);
+                    System.out.println("");
+                }
+            }
+        };
     }
 }
