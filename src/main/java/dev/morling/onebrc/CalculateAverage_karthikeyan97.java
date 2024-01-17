@@ -22,8 +22,10 @@ import static java.util.stream.Collectors.*;
 import java.io.FileInputStream;
 
 import java.io.RandomAccessFile;
+import java.lang.foreign.Arena;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
+import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -33,6 +35,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Scanner;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.BiConsumer;
@@ -44,7 +47,20 @@ import java.util.stream.Collectors;
 
 public class CalculateAverage_karthikeyan97 {
 
-    private static final String FILE = "./measurements.txt";
+    private static final Unsafe UNSAFE = initUnsafe();
+
+    private static final String FILE = "./sample.txt";
+
+    private static Unsafe initUnsafe() {
+        try {
+            Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
+            theUnsafe.setAccessible(true);
+            return (Unsafe) theUnsafe.get(Unsafe.class);
+        }
+        catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     private record Measurement(modifiedbytearray station, double value) {
     }
@@ -73,7 +89,7 @@ public class CalculateAverage_karthikeyan97 {
     }
 
     public static void main(String[] args) throws Exception {
-        // long start = System.nanoTime();
+        long start = System.nanoTime();
         System.setSecurityManager(null);
         Collector<Map.Entry<modifiedbytearray, MeasurementAggregator>, MeasurementAggregator, MeasurementAggregator> collector = Collector.of(
                 MeasurementAggregator::new,
@@ -104,6 +120,8 @@ public class CalculateAverage_karthikeyan97 {
                 agg -> agg);
 
         RandomAccessFile raf = new RandomAccessFile(FILE, "rw");
+        FileChannel fileChannel = raf.getChannel();
+        final long mappedAddress = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, raf.length(), Arena.global()).address();
         long length = raf.length();
         int cores = length > 1000 ? Runtime.getRuntime().availableProcessors() : 1;
         long boundary[][] = new long[cores][2];
@@ -111,7 +129,6 @@ public class CalculateAverage_karthikeyan97 {
         long before = -1;
         for (int i = 0; i < cores - 1; i++) {
             boundary[i][0] = before + 1;
-            byte[] b = new byte[107];
             if (before + segments - 107 > 0) {
                 raf.seek(before + segments - 107);
             }
@@ -130,18 +147,14 @@ public class CalculateAverage_karthikeyan97 {
         f.setAccessible(true);
         Unsafe unsafe = (Unsafe) f.get(null);
 
-        int pageSize = unsafe.pageSize() * 10;
+        int pageSize = 8192;// unsafe.pageSize();
 
         System.out.println(new TreeMap((Arrays.stream(boundary).parallel().map(i -> {
             FileInputStream fileInputStream = null;
             try {
-                fileInputStream = new FileInputStream(FILE);
-                FileChannel fileChannel = fileInputStream.getChannel();
-                HashMap<modifiedbytearray, MeasurementAggregator> resultmap = new HashMap<>(12000, 100);
-
-                ByteBuffer buffer = ByteBuffer.allocateDirect(pageSize);
-
-                fileChannel.position(i[0]);
+                int seglen = (int) (i[1] - i[0] + 1);
+                HashMap<modifiedbytearray, MeasurementAggregator> resultmap = new HashMap<>(1000);
+                long segstart = mappedAddress + i[0];
                 int bytesReading = 0;
                 double num = 0;
                 int sign = 1;
@@ -149,48 +162,20 @@ public class CalculateAverage_karthikeyan97 {
                 byte bi;
                 modifiedbytearray stationName = null;
                 int hascode = 1;
-                int ctr = 0;
                 byte[] arr = new byte[100];
                 int arrptr = 0;
-                int seglen = (int) (i[1] - i[0] + 1);
                 while (bytesReading < seglen) {
-                    buffer.clear();
-                    int bytesRead = fileChannel.read(buffer);
-                    if ((bytesReading + bytesRead) <= seglen) {
-                        if (bytesRead < 0) {
-                            bytesRead = 0;
-                        }
-                    }
-                    else {
-                        bytesRead = (seglen - bytesReading);
-                    }
-                    buffer.flip();
                     int bytesptr = 0;
-                    byte[] bufferArr = new byte[bytesRead];
-                    buffer.get(bufferArr);
-                    while (bytesptr < bytesRead) {
+                    // int bytesread = buffer.remaining() > pageSize ? pageSize : buffer.remaining();
+                    // byte[] bufferArr = new byte[bytesread];
+                    // buffer.get(bufferArr);
+                    while (bytesptr < seglen) {
                         bytesReading += 1;
-                        bi = bufferArr[bytesptr++];
-                        if (ctr > 0) {
-                            arr[arrptr++] = bi;
-                            hascode = 31 * hascode + bi;
-                            ctr--;
-                        }
-                        else {
-                            if (bi >= 240) {
+                        bi = UNSAFE.getByte(segstart + bytesptr++);
+                        if (!isNumber) {
+                            if (bi >= 192) {
                                 arr[arrptr++] = bi;
                                 hascode = 31 * hascode + bi;
-                                ctr = 3;
-                            }
-                            else if (bi >= 224) {
-                                arr[arrptr++] = bi;
-                                hascode = 31 * hascode + bi;
-                                ctr = 2;
-                            }
-                            else if (bi >= 192) {
-                                arr[arrptr++] = bi;
-                                hascode = 31 * hascode + bi;
-                                ctr = 1;
                             }
                             else if (bi == 59) {
                                 isNumber = true;
@@ -199,48 +184,46 @@ public class CalculateAverage_karthikeyan97 {
                                 arrptr = 0;
                                 hascode = 1;
                             }
-                            else if (bi == 10) {
-                                hascode = 1;
-                                isNumber = false;
-                                MeasurementAggregator agg = resultmap.get(stationName);
-                                num *= sign;
-                                if (agg == null) {
-                                    agg = new MeasurementAggregator();
-                                    agg.min = num;
-                                    agg.max = num;
-                                    agg.sum = (long) (num);
-                                    agg.count = 1;
-                                    resultmap.put(stationName, agg);
-                                }
-                                else {
-                                    if (agg.min >= num) {
-                                        agg.min = num;
-                                    }
-                                    if (agg.max <= num) {
-                                        agg.max = num;
-                                    }
-                                    agg.sum += (long) (num);
-                                    agg.count++;
-                                }
-                                num = 0;
-                                sign = 1;
-                            }
                             else {
                                 hascode = 31 * hascode + bi;
-                                if (isNumber) {
-                                    switch (bi) {
-                                        case 0x2E:
-                                            break;
-                                        case 0x2D:
-                                            sign = -1;
-                                            break;
-                                        default:
-                                            num = num * 10 + (bi - 0x30);
+                                arr[arrptr++] = bi;
+                            }
+                        }
+                        else {
+                            switch (bi) {
+                                case 0x2E:
+                                    break;
+                                case 0x2D:
+                                    sign = -1;
+                                    break;
+                                case 10:
+                                    hascode = 1;
+                                    isNumber = false;
+                                    MeasurementAggregator agg = resultmap.get(stationName);
+                                    num *= sign;
+                                    if (agg == null) {
+                                        agg = new MeasurementAggregator();
+                                        agg.min = num;
+                                        agg.max = num;
+                                        agg.sum = (long) (num);
+                                        agg.count = 1;
+                                        resultmap.put(stationName, agg);
                                     }
-                                }
-                                else {
-                                    arr[arrptr++] = bi;
-                                }
+                                    else {
+                                        if (agg.min >= num) {
+                                            agg.min = num;
+                                        }
+                                        if (agg.max <= num) {
+                                            agg.max = num;
+                                        }
+                                        agg.sum += (long) (num);
+                                        agg.count++;
+                                    }
+                                    num = 0;
+                                    sign = 1;
+                                    break;
+                                default:
+                                    num = num * 10 + (bi - 0x30);
                             }
                         }
                     }
@@ -335,7 +318,7 @@ public class CalculateAverage_karthikeyan97 {
          */
         // Get the FileChannel from the FileInputStream
 
-        // System.out.println("time taken:" + (System.nanoTime() - start) / 1000000);
+        System.out.println("time taken:" + (System.nanoTime() - start) / 1000000);
         // System.out.println(measurements);
     }
 
