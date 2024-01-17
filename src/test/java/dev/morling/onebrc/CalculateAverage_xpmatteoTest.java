@@ -40,6 +40,35 @@ class CalculateAverage_xpmatteoTest {
         // assertThat(results).isEqualTo(Map.of("Kunming", new CalculateAverage_xpmatteo.CityData(10, 30, 20, 2)));
     }
 
+    @Test
+    void mergeDifferentEntries() {
+        CalculateAverage_xpmatteo.Results results0 = new CalculateAverage_xpmatteo.Results();
+        results0.put("Kunming", new CalculateAverage_xpmatteo.CityData(10, 30, 20, 2));
+        CalculateAverage_xpmatteo.Results results1 = new CalculateAverage_xpmatteo.Results();
+        results1.put("Koeln", new CalculateAverage_xpmatteo.CityData(1, 2, 3, 4));
+
+        CalculateAverage_xpmatteo.Results merge = CalculateAverage_xpmatteo.merge(results0, results1);
+
+        assertThat(merge).isEqualTo(Map.of(
+                "Kunming", new CalculateAverage_xpmatteo.CityData(10, 30, 20, 2),
+                "Koeln", new CalculateAverage_xpmatteo.CityData(1, 2, 3, 4)
+        ));
+    }
+
+    @Test
+    void mergeSameEntry() {
+        CalculateAverage_xpmatteo.Results results0 = new CalculateAverage_xpmatteo.Results();
+        results0.put("Koeln", new CalculateAverage_xpmatteo.CityData(10, 30, 20, 2));
+        CalculateAverage_xpmatteo.Results results1 = new CalculateAverage_xpmatteo.Results();
+        results1.put("Koeln", new CalculateAverage_xpmatteo.CityData(1, 2, 3, 4));
+
+        CalculateAverage_xpmatteo.Results merge = CalculateAverage_xpmatteo.merge(results0, results1);
+
+        assertThat(merge).isEqualTo(Map.of(
+                "Koeln", new CalculateAverage_xpmatteo.CityData(1, 32, 20, 6)
+        ));
+    }
+
     private static byte[] readAllData(String fileName1) throws IOException {
         String fileName = fileName1;
         byte[] bytes = CalculateAverage_xpmatteo.readAllData(fileName);

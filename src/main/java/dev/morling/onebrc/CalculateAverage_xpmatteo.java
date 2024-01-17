@@ -29,6 +29,7 @@ public class CalculateAverage_xpmatteo {
     public static void main(String[] args) throws IOException {
         var fileName = dataFileName(args);
         var data = readAllData(fileName);
+
         var cities = parseData(data);
         printCities(cities);
     }
@@ -105,7 +106,25 @@ public class CalculateAverage_xpmatteo {
         }
     }
 
+    protected static Results merge(Results a, Results b) {
+        for (var entry : b.entrySet()) {
+            CityData valueInA = a.get(entry.getKey());
+            if (null == valueInA) {
+                a.put(entry.getKey(), entry.getValue());
+            } else {
+                var valueInB = entry.getValue();
+                valueInA.min = Math.min(valueInA.min, valueInB.min);
+                valueInA.sum += valueInB.sum;
+                valueInA.max = Math.max(valueInA.max, valueInB.max);
+                valueInA.count += valueInB.count;
+            }
+        }
+
+        return a;
+    }
+
     protected static class Results extends TreeMap<String, CityData> {
+
     }
 
     protected static class CityData {
