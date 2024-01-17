@@ -15,9 +15,15 @@
  */
 package dev.morling.onebrc;
 
+import java.io.File;
 import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.TreeMap;
 
@@ -28,10 +34,51 @@ public class CalculateAverage_xpmatteo {
 
     public static void main(String[] args) throws IOException {
         var fileName = dataFileName(args);
-        var data = readAllData(fileName);
 
-        var cities = parseData(data);
-        printCities(cities);
+        try (
+                var file = new RandomAccessFile(new File(fileName), "r");
+                var channel = file.getChannel()) {
+            var numCpus = Runtime.getRuntime().availableProcessors();
+            var results = split(channel, numCpus).stream()
+                    .map(CalculateAverage_xpmatteo::parseData)
+                    .reduce(CalculateAverage_xpmatteo::merge)
+                    .orElseThrow();
+            printCities(results);
+        }
+    }
+
+    protected static List<ByteBuffer> split(FileChannel channel, int numCpus) throws IOException {
+        if (channel.size() < 1_000) {
+            return List.of(channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size()));
+        }
+
+        long[] increments = new long[numCpus + 1];
+        for (int i = 0; i < numCpus; i++) {
+            increments[i] = i * channel.size() / numCpus;
+            // adjust the increments so that they start on the beginning of a city
+            while (i > 0 && byteAt(channel, increments[i] - 1) != '\n') {
+                increments[i]--;
+            }
+        }
+        increments[numCpus] = channel.size();
+
+        List<ByteBuffer> result = new ArrayList<>(numCpus);
+        for (int i = 0; i < numCpus; i++) {
+            long from = increments[i];
+            long to = increments[i + 1];
+            result.add(channel.map(FileChannel.MapMode.READ_ONLY, from, to - from));
+        }
+        return result;
+    }
+
+    private static byte byteAt(FileChannel channel, long offset) throws IOException {
+        ByteBuffer buf = ByteBuffer.allocate(1);
+        channel.position(offset);
+        channel.read(buf);
+        buf.flip();
+        var bytes = new byte[1];
+        buf.get(bytes);
+        return bytes[0];
     }
 
     public static String dataFileName(String[] args) {
@@ -45,20 +92,29 @@ public class CalculateAverage_xpmatteo {
         return Files.readAllBytes(Path.of(fileName));
     }
 
+    protected static ByteBuffer memoryMap(String fileName) throws IOException {
+        try (RandomAccessFile file = new RandomAccessFile(new File(fileName), "r")) {
+            // Get file channel in read-only mode
+            FileChannel fileChannel = file.getChannel();
+
+            return fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size());
+        }
+    }
+
     protected enum State {
         PARSING_CITY_NAME,
         SKIPPING_SEMICOLON,
         PARSING_TEMPERATURE
     }
 
-    protected static Results parseData(byte[] data) {
+    protected static Results parseData(ByteBuffer data) {
         var results = new Results();
         var state = State.PARSING_CITY_NAME;
         int cityStartOffset = 0, cityEndOffset = 0;
         int temp = 0, sign = 0;
 
-        for (int i = 0; i < data.length; i++) {
-            byte currentChar = data[i];
+        for (int i = 0; i < data.limit(); i++) {
+            byte currentChar = data.get();
             if (state == State.PARSING_CITY_NAME && currentChar == ';') {
                 state = State.SKIPPING_SEMICOLON;
                 cityEndOffset = i;
@@ -83,7 +139,9 @@ public class CalculateAverage_xpmatteo {
                 // do nothing
             }
             else if (state == State.PARSING_TEMPERATURE && currentChar == '\n') {
-                var cityName = new String(data, cityStartOffset, cityEndOffset - cityStartOffset);
+                byte[] bytes = new byte[cityEndOffset - cityStartOffset];
+                data.get(cityStartOffset, bytes);
+                var cityName = new String(bytes);
                 accumulate(results, cityName, temp * sign);
                 state = State.PARSING_CITY_NAME;
                 cityStartOffset = i + 1;
@@ -111,7 +169,8 @@ public class CalculateAverage_xpmatteo {
             CityData valueInA = a.get(entry.getKey());
             if (null == valueInA) {
                 a.put(entry.getKey(), entry.getValue());
-            } else {
+            }
+            else {
                 var valueInB = entry.getValue();
                 valueInA.min = Math.min(valueInA.min, valueInB.min);
                 valueInA.sum += valueInB.sum;
