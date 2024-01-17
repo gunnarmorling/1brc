@@ -134,7 +134,8 @@ public class CalculateAverage_agoncal {
             StationStats s = entry.getValue();
             if (iterator.hasNext()) {
                 System.out.printf("%s=%.1f/%.1f/%.1f, ", entry.getKey(), round(s.min), round(s.getAverage()), round(s.max));
-            } else {
+            }
+            else {
                 System.out.printf("%s=%.1f/%.1f/%.1f", entry.getKey(), round(s.min), round(s.getAverage()), round(s.max));
             }
         }
