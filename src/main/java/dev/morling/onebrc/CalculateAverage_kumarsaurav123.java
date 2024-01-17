@@ -83,7 +83,7 @@ public class CalculateAverage_kumarsaurav123 {
                     return res;
                 },
                 agg -> {
-                    return new ResultRow(agg.station, agg.min, agg.sum / agg.count, agg.max, agg.sum, agg.count);
+                    return new ResultRow(agg.station, agg.min, (Math.round(agg.sum * 10.0) / 10.0) / agg.count, agg.max, agg.sum, agg.count);
                 });
         Collector<Measurement, MeasurementAggregator, ResultRow> collector = Collector.of(
                 MeasurementAggregator::new,
@@ -108,8 +108,7 @@ public class CalculateAverage_kumarsaurav123 {
                 });
         ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 8 * 2);
         List<ResultRow> measurements = Collections.synchronizedList(new ArrayList<ResultRow>());
-        int memory = (int) (Runtime.getRuntime().maxMemory() / (1024 * 1024 * 1024.0 * 8));
-        int chunkSize = 1_0000_00 * memory;
+        int chunkSize = 1_0000_00;
         Map<Integer, List<byte[]>> leftOutsMap = new ConcurrentSkipListMap<>();
         RandomAccessFile file = new RandomAccessFile(FILE, "r");
         long filelength = file.length();
