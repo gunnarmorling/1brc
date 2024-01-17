@@ -15,8 +15,6 @@
 #  limitations under the License.
 #
 
-set -euo pipefail
-
 DEFAULT_INPUT="src/test/resources/samples/*.txt"
 FORK=${1:-""}
 INPUT=${2:-$DEFAULT_INPUT}
@@ -36,8 +34,10 @@ if [ "$#" -eq 0 ] || [ "$#" -gt 2 ] || [ "$FORK" = "-h" ]; then
 fi
 
 if [ -f "./prepare_$FORK.sh" ]; then
-  "./prepare_$FORK.sh"
+  source "./prepare_$FORK.sh"
 fi
+
+set -euo pipefail
 
 for sample in $(ls $INPUT); do
   echo "Validating calculate_average_$FORK.sh -- $sample"
