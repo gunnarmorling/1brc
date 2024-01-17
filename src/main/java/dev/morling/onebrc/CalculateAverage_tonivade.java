@@ -33,6 +33,13 @@ public class CalculateAverage_tonivade {
 
     private static final String FILE = "./measurements.txt";
 
+    private static final int CHUNK_SIZE = 1024 * 1024 * 4;
+
+    private static final int EOL = 10;
+    private static final int MINUS = 45;
+    private static final int PERIOD = 46;
+    private static final int SEMICOLON = 59;
+
     static interface Consumer {
         void accept(SafeString station, double value);
     }
@@ -51,27 +58,27 @@ public class CalculateAverage_tonivade {
     }
 
     private static void readFile(Consumer consumer) throws IOException {
+        final byte[] line = new byte[256];
         try (var channel = FileChannel.open(Paths.get(FILE), StandardOpenOption.READ)) {
             for (long consumed = 0; channel.size() - consumed > 0;) {
-                var buffer = channel.map(MapMode.READ_ONLY, consumed, Math.min(channel.size() - consumed, 1024 * 1024 * 4));
+                var buffer = channel.map(MapMode.READ_ONLY, consumed, Math.min(channel.size() - consumed, CHUNK_SIZE));
 
-                var last = 0;
-                var next = 0;
+                int last = 0;
+                int next = 0;
                 while (true) {
                     last = next;
                     next = findNextEndOfLine(buffer, last);
                     if (next < 0) {
                         break;
                     }
-                    byte[] line = new byte[next - last];
-                    buffer.get(line, 0, line.length);
+                    int length = next - last;
+                    buffer.get(line, 0, length);
 
-                    var semicolon = findChar(line, 59);
+                    int semicolon = findChar(line, 0, SEMICOLON);
 
-                    var station = Arrays.copyOfRange(line, 0, semicolon);
-                    var value = Arrays.copyOfRange(line, semicolon + 1, line.length);
-
-                    consumer.accept(new SafeString(station), parseDouble(value));
+                    consumer.accept(
+                            new SafeString(line, 0, semicolon),
+                            parseDouble(line, semicolon + 1));
 
                     // consume \n
                     buffer.get();
@@ -84,8 +91,8 @@ public class CalculateAverage_tonivade {
         }
     }
 
-    private static int findChar(byte[] line, int c) {
-        for (int i = 0; i < line.length; i++) {
+    private static int findChar(byte[] line, int offset, int c) {
+        for (int i = offset; i < line.length; i++) {
             if (line[i] == c) {
                 return i;
             }
@@ -95,7 +102,7 @@ public class CalculateAverage_tonivade {
 
     private static int findNextEndOfLine(ByteBuffer buffer, int last) {
         for (int i = last; i < buffer.remaining(); i++) {
-            if (buffer.get(i) == 10) {
+            if (buffer.get(i) == EOL) {
                 return i;
             }
         }
@@ -103,30 +110,30 @@ public class CalculateAverage_tonivade {
     }
 
     // non null double between -99.9 (inclusive) and 99.9 (inclusive), always with one fractional digit
-    private static double parseDouble(byte[] value) {
-        var period = findChar(value, 46);
-        if (value[0] == 45) {
-            var left = parseLeft(Arrays.copyOfRange(value, 1, period));
-            var right = parseRight(Arrays.copyOfRange(value, period + 1, value.length));
+    private static double parseDouble(byte[] value, int offset) {
+        int period = findChar(value, offset, PERIOD);
+        if (value[offset] == MINUS) {
+            double left = parseLeft(value, offset + 1, period);
+            double right = parseRight(value[period + 1]);
             return -(left + right);
         }
-        var left = parseLeft(Arrays.copyOfRange(value, 0, period));
-        var right = parseRight(Arrays.copyOfRange(value, period + 1, value.length));
+        double left = parseLeft(value, offset, period);
+        double right = parseRight(value[period + 1]);
         return left + right;
     }
 
-    private static double parseLeft(byte[] left) {
-        if (left.length == 1) {
-            return charToDouble(left[0]);
+    private static double parseLeft(byte[] value, int start, int end) {
+        if (end - start == 1) {
+            return charToDouble(value[start]);
         }
         // two chars
-        var a = charToDouble(left[0]) * 10.;
-        var b = charToDouble(left[1]);
+        double a = charToDouble(value[start]) * 10.;
+        double b = charToDouble(value[start + 1]);
         return a + b;
     }
 
-    private static double parseRight(byte[] right) {
-        var a = charToDouble(right[0]);
+    private static double parseRight(byte right) {
+        double a = charToDouble(right);
         return a / 10.;
     }
 
@@ -138,8 +145,9 @@ public class CalculateAverage_tonivade {
 
         private final byte[] value;
 
-        SafeString(byte[] value) {
-            this.value = value;
+        SafeString(byte[] value, int offset, int length) {
+            this.value = new byte[length];
+            System.arraycopy(value, offset, this.value, 0, length);
         }
 
         @Override
