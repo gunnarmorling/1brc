@@ -20,12 +20,109 @@ import java.io.RandomAccessFile;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.Charset;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
 
 public class CalculateAverage_yonatang {
     private static final String FILE = "./measurements.txt";
+    // private static final String FILE = "./measurements_100M.txt";
+
+    private static final int DICT_SIZE = 12000;
+    private static final long NO_VALUE = Long.MIN_VALUE;
+
+    private static class HashTable {
+        private final int dataSize = DICT_SIZE * 3;
+
+        // Continuous array of [key, min, max, count, sum], which will be more CPU cache friendly.
+        private final long[] data = new long[dataSize];
+        private int size = 0;
+
+        public HashTable() {
+            long d1 = ((Short.MAX_VALUE) | (Short.MIN_VALUE << 16)) & 0xFFFFFFFFL;
+            for (int i = 0; i < dataSize; i += 3) {
+                data[i] = NO_VALUE;
+                data[i + 1] = d1;
+                data[i + 2] = 0;
+            }
+        }
+
+        public int size() {
+            return size;
+        }
+
+        private int getIndex(long key) {
+            int idx = Math.abs((int) (key % DICT_SIZE)) * 3;
+            while (data[idx] != NO_VALUE && data[idx] != key) {
+                idx += 3;
+                if (idx >= dataSize) {
+                    idx = 0;
+                }
+            }
+            if (data[idx] == NO_VALUE) {
+                data[idx] = key;
+                size++;
+            }
+            return idx;
+        }
+
+        public void addRawMeasurmentAgg(long key, long d1, long d2) {
+            int idx = getIndex(key);
+            short currentMin = (short) (data[idx + 1] & 0xFFFF);
+            short currentMax = (short) ((data[idx + 1] >> 16) & 0xFFFF);
+            int currentCount = (int) ((data[idx + 1] >> 32) & 0xFFFFFFFF);
+
+            short thisMin = (short) (d1 & 0xFFFF);
+            short thisMax = (short) ((d1 >> 16) & 0xFFFF);
+            int thisCount = (int) ((d1 >> 32) & 0xFFFFFFFF);
+
+            thisMin = (short) Math.min(thisMin, currentMin);
+            thisMax = (short) Math.max(thisMax, currentMax);
+            thisCount += currentCount;
+
+            data[idx + 1] = ((long) thisMin & 0xFFFF) | (((long) thisMax & 0xFFFF) << 16) | (((long) thisCount & 0xFFFFFFFF) << 32);
+
+            data[idx + 2] += d2;
+        }
+
+        public TreeMap<String, ResultRow> toMap(HashMap<Long, String> nameDict) {
+            TreeMap<String, ResultRow> finalMap = new TreeMap<>();
+            for (int i = 0; i < data.length; i += 3) {
+                if (data[i] != NO_VALUE) {
+                    short min = (short) (data[i + 1] & 0xFFFF);
+                    short max = (short) ((data[i + 1] >> 16) & 0xFFFF);
+                    int count = (int) ((data[i + 1] >> 32) & 0xFFFFFFFF);
+                    long sum = data[i + 2];
+                    String station = nameDict.get(data[i]);
+                    finalMap.put(station, new ResultRow(min / 10.0, (sum / 10.0) / count, max / 10.0));
+                }
+            }
+            return finalMap;
+        }
+
+        public void addMeasurment(long key, int temp) {
+            int idx = getIndex(key);
+            short min = (short) (data[idx + 1] & 0xFFFF);
+            short max = (short) ((data[idx + 1] >> 16) & 0xFFFF);
+            int count = (int) ((data[idx + 1] >> 32) & 0xFFFFFFFF);
+            min = (short) Math.min(min, temp);
+            max = (short) Math.max(max, temp);
+            count += 1;
+
+            data[idx + 1] = ((long) min & 0xFFFF) | (((long) max & 0xFFFF) << 16) | (((long) count & 0xFFFFFFFF) << 32);
+            data[idx + 2] += temp;
+        }
+
+        public void mergeInto(HashTable other) {
+            for (int i = 0; i < dataSize; i += 3) {
+                if (data[i] != NO_VALUE) {
+                    other.addRawMeasurmentAgg(data[i], data[i + 1], data[i + 2]);
+                }
+            }
+        }
+
+    }
 
     private static class Measurement {
         final long stationId;
@@ -55,13 +152,6 @@ public class CalculateAverage_yonatang {
         private double round(double value) {
             return Math.round(value * 10.0) / 10.0;
         }
-    }
-
-    private static class MeasurementAggregator {
-        double min = Double.POSITIVE_INFINITY;
-        double max = Double.NEGATIVE_INFINITY;
-        double sum;
-        long count;
     }
 
     private static class StationId {
@@ -137,11 +227,10 @@ public class CalculateAverage_yonatang {
     }
 
     private static final int MARGIN = 130;
-    private static final int MAX_KEYS = 10000;
 
-    private static void processChunk(FileChannel fc, int j, long chunkSize, HashMap[] maps, boolean isLast) {
+    private static void processChunk(FileChannel fc, int j, long chunkSize, HashTable[] maps, boolean isLast) {
         try {
-            HashMap<Long, MeasurementAggregator> agg = new HashMap<>(MAX_KEYS);
+            HashTable agg = new HashTable();
             maps[j] = agg;
 
             long startIdx = Math.max(j * chunkSize - MARGIN, 0);
@@ -173,11 +262,7 @@ public class CalculateAverage_yonatang {
             while (byteBuffer.hasRemaining()) {
                 Measurement measurement = parseMeasurement(byteBuffer);
                 if (measurement != null) {
-                    MeasurementAggregator magg = agg.computeIfAbsent(measurement.stationId, ma -> new MeasurementAggregator());
-                    magg.min = Math.min(magg.min, measurement.value);
-                    magg.max = Math.max(magg.max, measurement.value);
-                    magg.sum += measurement.value;
-                    magg.count++;
+                    agg.addMeasurment(measurement.stationId, (int) (measurement.value * 10));
                 }
 
             }
@@ -232,18 +317,19 @@ public class CalculateAverage_yonatang {
     }
 
     public static void main(String[] args) throws Exception {
+        // long start = System.nanoTime();
 
         File f = new File(FILE);
         try (RandomAccessFile raf = new RandomAccessFile(f, "r");
                 FileChannel fc = raf.getChannel()) {
 
-            int chunks = f.length() < 1_048_576 ? 1 : Runtime.getRuntime().availableProcessors();
+            int chunks = f.length() < 1_048_576 ? 1 : (Runtime.getRuntime().availableProcessors());
 
             long chunkSize = f.length() / chunks;
 
             Thread[] threads = new Thread[chunks];
-            HashMap<Long, MeasurementAggregator> totalAgg = new HashMap<>(MAX_KEYS);
-            HashMap[] maps = new HashMap[chunks];
+            HashTable totalAgg = new HashTable();
+            HashTable[] maps = new HashTable[chunks];
 
             for (int i = 0; i < chunks; i++) {
                 final int j = i;
@@ -253,24 +339,15 @@ public class CalculateAverage_yonatang {
             }
             for (int i = 0; i < chunks; i++) {
                 threads[i].join();
-                maps[i].forEach((k, ga) -> {
-                    MeasurementAggregator a = (MeasurementAggregator) ga;
-                    MeasurementAggregator totalAgg2 = totalAgg.computeIfAbsent((Long) k, ma -> new MeasurementAggregator());
-                    totalAgg2.min = Math.min(totalAgg2.min, a.min);
-                    totalAgg2.max = Math.max(totalAgg2.max, a.max);
-                    totalAgg2.sum += a.sum;
-                    totalAgg2.count += a.count;
-                });
+                maps[i].mergeInto(totalAgg);
             }
-            Map<String, ResultRow> finalMap = new TreeMap<>();
-            HashMap<Long, String> nameDict = createNameDict(totalAgg.size(), fc);
 
-            totalAgg.entrySet().stream().forEach(e -> {
-                MeasurementAggregator v = e.getValue();
-                String station = nameDict.get(e.getKey());
-                finalMap.put(station, new ResultRow(v.min, (Math.round(v.sum * 10.0) / 10.0) / v.count, v.max));
-            });
+            HashMap<Long, String> nameDict = createNameDict(totalAgg.size(), fc);
+            Map<String, ResultRow> finalMap = totalAgg.toMap(nameDict);
+            // long end = System.nanoTime();
+
             System.out.println(finalMap);
+            // System.out.println("Total time: " + Duration.ofNanos(end - start).toMillis() + "ms");
         }
 
     }
