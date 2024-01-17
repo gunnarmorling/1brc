@@ -182,22 +182,14 @@ func printCities(cities results) {
 	for _, city := range keys {
 		data := cities[city]
 		min := float64(data.min) / 10.0
-		average := formatTemperature(data.total / data.count)
+		average := float64(data.total/data.count) / 10
 		max := float64(data.max) / 10.0
 		fmt.Printf(
-			"%s=%.1f/%s/%.1f, ",
+			"%s=%.1f/%.1f/%.1f, ",
 			city,
 			min,
 			average,
 			max)
 	}
 	fmt.Print("}")
-}
-
-func formatTemperature(tempTimesTen int) string {
-	if tempTimesTen >= 0 {
-		return fmt.Sprintf("%d.%d", tempTimesTen/10, tempTimesTen%10)
-	} else {
-		return fmt.Sprintf("-%d.%d", -tempTimesTen/10, -tempTimesTen%10)
-	}
 }
