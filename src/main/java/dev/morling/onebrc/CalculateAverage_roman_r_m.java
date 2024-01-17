@@ -71,10 +71,15 @@ public class CalculateAverage_roman_r_m {
         private final long end;
         private long offset;
 
-        public Worker(MemorySegment ms, long start, long end) {
-            this.ms = ms.asSlice(start, end - start);
-            this.offset = 0;
-            this.end = end - start;
+        public Worker(FileChannel channel, long start, long end) {
+            try {
+                this.ms = channel.map(FileChannel.MapMode.READ_ONLY, start, end - start, Arena.ofConfined());
+                this.offset = 0;
+                this.end = end - start;
+            }
+            catch (Exception e) {
+                throw new RuntimeException(e);
+            }
         }
 
         private void parseName(ByteString station) {
@@ -178,18 +183,27 @@ public class CalculateAverage_roman_r_m {
         long fileSize = new File(FILE).length();
 
         var channel = FileChannel.open(Paths.get(FILE));
-        MemorySegment ms = channel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, Arena.ofAuto());
+        MemorySegment ms = channel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, Arena.ofConfined());
 
         int numThreads = fileSize > Integer.MAX_VALUE ? Runtime.getRuntime().availableProcessors() : 1;
         long chunk = fileSize / numThreads;
 
+        var bounds = IntStream.range(0, numThreads).mapToLong(i -> {
+            boolean lastChunk = i == numThreads - 1;
+            return lastChunk ? fileSize : nextNewline((i + 1) * chunk, ms);
+        }).toArray();
+
+        ms.unload();
+
         var result = IntStream.range(0, numThreads)
                 .parallel()
                 .mapToObj(i -> {
-                    boolean lastChunk = i == numThreads - 1;
-                    long chunkStart = i == 0 ? 0 : nextNewline(i * chunk, ms) + 1;
-                    long chunkEnd = lastChunk ? fileSize : nextNewline((i + 1) * chunk, ms);
-                    return new Worker(ms, chunkStart, chunkEnd).run();
+                    long start = i == 0 ? 0 : bounds[i - 1] + 1;
+                    long end = bounds[i];
+                    Worker worker = new Worker(channel, start, end);
+                    var res = worker.run();
+                    worker.ms.unload();
+                    return res;
                 }).reduce((m1, m2) -> {
                     m2.forEach((k, v) -> m1.merge(k, v, ResultRow::merge));
                     return m1;
