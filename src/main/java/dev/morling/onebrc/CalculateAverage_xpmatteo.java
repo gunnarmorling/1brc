@@ -26,29 +26,54 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 @SuppressWarnings({ "ReassignedVariable", "StatementWithEmptyBody" })
 public class CalculateAverage_xpmatteo {
 
     private static final String FILE = "./measurements.txt";
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException, InterruptedException {
         var fileName = dataFileName(args);
 
         try (
                 var file = new RandomAccessFile(new File(fileName), "r");
                 var channel = file.getChannel()) {
             var numCpus = Runtime.getRuntime().availableProcessors();
-            var results = split(channel, numCpus).stream()
-                    .map(CalculateAverage_xpmatteo::parseData)
+            var threads = split(channel, numCpus).stream()
+                    .map(Worker::new)
+                    .toList();
+            threads.forEach(Thread::start);
+            for (Worker thread : threads) {
+                thread.join();
+            }
+            var results = threads.stream().map(Worker::getResults)
                     .reduce(CalculateAverage_xpmatteo::merge)
                     .orElseThrow();
             printCities(results);
         }
     }
 
+    public static class Worker extends Thread {
+        private final ByteBuffer buffer;
+        private Results results;
+
+        public Worker(ByteBuffer buffer) {
+            this.buffer = buffer;
+        }
+
+        @Override
+        public void run() {
+            this.results = parseData(this.buffer);
+        }
+
+        public Results getResults() {
+            return results;
+        }
+    }
+
     protected static List<ByteBuffer> split(FileChannel channel, int numCpus) throws IOException {
-        if (channel.size() < 1_000) {
+        if (channel.size() < 10_000) {
             return List.of(channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size()));
         }
 
@@ -56,7 +81,7 @@ public class CalculateAverage_xpmatteo {
         for (int i = 0; i < numCpus; i++) {
             increments[i] = i * channel.size() / numCpus;
             // adjust the increments so that they start on the beginning of a city
-            while (i > 0 && byteAt(channel, increments[i] - 1) != '\n') {
+            while (increments[i] > 0 && byteAt(channel, increments[i] - 1) != '\n') {
                 increments[i]--;
             }
         }
