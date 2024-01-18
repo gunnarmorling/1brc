@@ -27,9 +27,8 @@ import java.util.TreeMap;
 
 public class CalculateAverage_yonatang {
     private static final String FILE = "./measurements.txt";
-    // private static final String FILE = "./measurements_100M.txt";
 
-    private static final int DICT_SIZE = 12000;
+    private static final int DICT_SIZE = 15000;
     private static final int DICT_RECORD_SIZE = 3;
     private static final int DICT_SIZE_BYTES = DICT_SIZE * DICT_RECORD_SIZE;
     private static final long DICT_NO_VALUE = Long.MIN_VALUE;
