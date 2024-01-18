@@ -16,5 +16,5 @@
 #
 
 
-JAVA_OPTS=""
+JAVA_OPTS="--enable-preview -da -dsa -Xms128m -Xmx128m -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -XX:+AlwaysPreTouch"
 java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_armandino

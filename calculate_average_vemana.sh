@@ -18,6 +18,8 @@
 # Basics
 JAVA_OPTS=""
 JAVA_OPTS="$JAVA_OPTS --enable-preview"
+JAVA_OPTS="$JAVA_OPTS --add-exports java.base/jdk.internal.ref=ALL-UNNAMED"
+JAVA_OPTS="$JAVA_OPTS --add-opens java.base/java.nio=ALL-UNNAMED"
 #JAVA_OPTS="$JAVA_OPTS --add-modules jdk.incubator.vector"
 #JAVA_OPTS="$JAVA_OPTS -XX:+UnlockDiagnosticVMOptions"
 
