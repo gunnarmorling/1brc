@@ -15,12 +15,8 @@
 #  limitations under the License.
 #
 
-if [ -f target/CalculateAverage_abeobk_image ]; then
-    echo "Picking up existing native image 'target/CalculateAverage_abeobk_image', delete the file to select JVM mode." 1>&2
-    target/CalculateAverage_abeobk_image
-else
-    JAVA_OPTS="--enable-preview"
-    echo "Chosing to run the app in JVM mode as no native image was found, use prepare_abeobk.sh to generate." 1>&2
-    java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_abeobk
-fi
-
+JAVA_OPTS="--enable-preview --add-modules=jdk.incubator.vector"
+JAVA_OPTS="$JAVA_OPTS -XX:-TieredCompilation"
+JAVA_OPTS="$JAVA_OPTS -XX:InlineSmallCode=15000 -XX:FreqInlineSize=400 -XX:MaxInlineSize=400"
+#JAVA_OPTS="$JAVA_OPTS -XX:+PrintCompilation -XX:+UnlockDiagnosticVMOptions -XX:+PrintInlining"
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_plevart $*
