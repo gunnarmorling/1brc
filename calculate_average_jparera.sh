@@ -15,11 +15,5 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="--enable-preview
-  -XX:+UnlockExperimentalVMOptions \
-  -XX:+UseEpsilonGC -Xms16m -Xmx16m -XX:-AlwaysPreTouch \
-  -XX:-TieredCompilation -XX:CICompilerCount=1 -XX:CompilationMode=high-only \
-  -XX:C1MaxTrivialSize=500 -XX:-UseCountedLoopSafepoints -XX:+UseCMoveUnconditionally -XX:+DisableAttachMechanism \
-  -XX:-PreserveFramePointer -Xnoclassgc -disablesystemassertions -XX:-UsePerfData  \
-  -XX:-UseTransparentHugePages -XX:-UseCompressedOops"
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_iziamos
+JAVA_OPTS="--enable-preview --add-modules=jdk.incubator.vector -XX:-TieredCompilation"
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_jparera
