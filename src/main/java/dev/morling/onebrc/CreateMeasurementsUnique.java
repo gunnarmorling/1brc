@@ -48,14 +48,15 @@ public class CreateMeasurementsUnique {
         final var weatherStations = generateWeatherStations();
         final var start = System.currentTimeMillis();
         final var rnd = ThreadLocalRandom.current();
-        final var fmt = "%0" + String.format("%d", args[0].length() + 2) + "d";
+        final var numLength = args[0].length() + 2;
+        final var fmt = "%0" + String.format("%d", numLength) + "d%s";
 
         try (var out = new BufferedWriter(new FileWriter(String.format("measurements-unique-%d.txt", size)))) {
             for (int i = 1; i <= size; i++) {
                 var station = weatherStations.get(rnd.nextInt(KEYSET_SIZE));
                 double temp = rnd.nextGaussian(station.avgTemp, 7.0);
-                out.write(String.format(fmt, i));
-                out.write(station.name);
+                var name = String.format(fmt, i, station.name);
+                out.write(name.substring(0, Math.min(name.length(), 99)));
                 out.write(';');
                 out.write(Double.toString(Math.round(temp * 10.0) / 10.0));
                 out.newLine();
