@@ -34,7 +34,7 @@ if [ ! -r "${baseline}" ]; then
 fi
 
 prep="prepare_${user}.sh"
-test -x "${prep}" && ./${prep}
+test -r "${prep}" && bash ./${prep}
 
 ./reset-sdk.sh
 
