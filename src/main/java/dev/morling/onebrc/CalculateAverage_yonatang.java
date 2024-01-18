@@ -32,7 +32,7 @@ public class CalculateAverage_yonatang {
     private static final int DICT_SIZE = 12000;
     private static final int DICT_RECORD_SIZE = 3;
     private static final int DICT_SIZE_BYTES = DICT_SIZE * DICT_RECORD_SIZE;
-    private static final long NO_VALUE = Long.MIN_VALUE;
+    private static final long DICT_NO_VALUE = Long.MIN_VALUE;
 
     private static class HashTable {
 
@@ -41,9 +41,9 @@ public class CalculateAverage_yonatang {
         private int size = 0;
 
         public HashTable() {
-            long d1 = ((Short.MAX_VALUE) | (Short.MIN_VALUE << 16)) & 0xFFFFFFFFL;
+            long d1 = ((long) Short.MAX_VALUE & 0xFFFF) | (((long) Short.MIN_VALUE & 0xFFFF) << 16);
             for (int i = 0; i < DICT_SIZE_BYTES; i += 3) {
-                data[i] = NO_VALUE;
+                data[i] = DICT_NO_VALUE;
                 data[i + 1] = d1;
                 data[i + 2] = 0;
             }
@@ -57,13 +57,13 @@ public class CalculateAverage_yonatang {
             int idx = Math.abs((int) (key % DICT_SIZE)) * DICT_RECORD_SIZE;
 
             // data[idx]!=key should be first, it is more likely to stop there
-            while (data[idx] != key && data[idx] != NO_VALUE) {
+            while (data[idx] != key && data[idx] != DICT_NO_VALUE) {
                 idx += 3;
                 if (idx >= DICT_SIZE_BYTES) {
                     idx = 0;
                 }
             }
-            if (data[idx] == NO_VALUE) {
+            if (data[idx] == DICT_NO_VALUE) {
                 data[idx] = key;
                 size++;
             }
@@ -74,11 +74,11 @@ public class CalculateAverage_yonatang {
             int idx = getIndex(key);
             short currentMin = (short) (data[idx + 1] & 0xFFFF);
             short currentMax = (short) ((data[idx + 1] >> 16) & 0xFFFF);
-            int currentCount = (int) ((data[idx + 1] >> 32) & 0xFFFFFFFF);
+            int currentCount = (int) (data[idx + 1] >> 32);
 
             short thisMin = (short) (d1 & 0xFFFF);
             short thisMax = (short) ((d1 >> 16) & 0xFFFF);
-            int thisCount = (int) ((d1 >> 32) & 0xFFFFFFFF);
+            int thisCount = (int) (d1 >> 32);
 
             thisMin = (short) Math.min(thisMin, currentMin);
             thisMax = (short) Math.max(thisMax, currentMax);
@@ -92,10 +92,10 @@ public class CalculateAverage_yonatang {
         public TreeMap<String, ResultRow> toMap(HashMap<Long, String> nameDict) {
             TreeMap<String, ResultRow> finalMap = new TreeMap<>();
             for (int i = 0; i < DICT_SIZE_BYTES; i += DICT_RECORD_SIZE) {
-                if (data[i] != NO_VALUE) {
+                if (data[i] != DICT_NO_VALUE) {
                     short min = (short) (data[i + 1] & 0xFFFF);
                     short max = (short) ((data[i + 1] >> 16) & 0xFFFF);
-                    int count = (int) ((data[i + 1] >> 32) & 0xFFFFFFFF);
+                    int count = (int) (data[i + 1] >> 32);
                     long sum = data[i + 2];
                     String station = nameDict.get(data[i]);
                     finalMap.put(station, new ResultRow(min / 10.0, (sum / 10.0) / count, max / 10.0));
@@ -108,7 +108,7 @@ public class CalculateAverage_yonatang {
             int idx = getIndex(key);
             short min = (short) (data[idx + 1] & 0xFFFF);
             short max = (short) ((data[idx + 1] >> 16) & 0xFFFF);
-            int count = (int) ((data[idx + 1] >> 32) & 0xFFFFFFFF);
+            int count = (int) (data[idx + 1] >> 32);
             min = (short) Math.min(min, temp);
             max = (short) Math.max(max, temp);
             count += 1;
@@ -119,7 +119,7 @@ public class CalculateAverage_yonatang {
 
         public void mergeInto(HashTable other) {
             for (int i = 0; i < DICT_SIZE_BYTES; i += 3) {
-                if (data[i] != NO_VALUE) {
+                if (data[i] != DICT_NO_VALUE) {
                     other.addRawMeasurementAgg(data[i], data[i + 1], data[i + 2]);
                 }
             }
