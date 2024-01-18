@@ -39,7 +39,8 @@ public class CalculateAverage_zerninv {
             Field unsafe = Unsafe.class.getDeclaredField("theUnsafe");
             unsafe.setAccessible(true);
             return (Unsafe) unsafe.get(Unsafe.class);
-        } catch (IllegalAccessException | NoSuchFieldException e) {
+        }
+        catch (IllegalAccessException | NoSuchFieldException e) {
             throw new RuntimeException(e);
         }
     }
@@ -88,7 +89,8 @@ public class CalculateAverage_zerninv {
             if (b >= '0' && b <= '9') {
                 temperature += (b - '0') * multiplier;
                 multiplier *= 10;
-            } else if (b == '-') {
+            }
+            else if (b == '-') {
                 temperature = -temperature;
             }
         }
@@ -209,7 +211,8 @@ public class CalculateAverage_zerninv {
                                 count,
                                 UNSAFE.getShort(ptr + MIN_OFFSET),
                                 UNSAFE.getShort(ptr + MAX_OFFSET)));
-                    } else {
+                    }
+                    else {
                         result.merge(UNSAFE.getLong(ptr + SUM_OFFSET), count, UNSAFE.getShort(ptr + MIN_OFFSET), UNSAFE.getShort(ptr + MAX_OFFSET));
                     }
                 }
@@ -311,12 +314,15 @@ public class CalculateAverage_zerninv {
                 if ((word & TWO_NEGATIVE_DIGITS_MASK) == TWO_NEGATIVE_DIGITS_MASK) {
                     word >>>= 8;
                     temperature = ZERO * 11 - ((word & BYTE_MASK) * 10 + ((word >>> 16) & BYTE_MASK));
-                } else if ((word & THREE_DIGITS_MASK) == THREE_DIGITS_MASK) {
+                }
+                else if ((word & THREE_DIGITS_MASK) == THREE_DIGITS_MASK) {
                     temperature = (word & BYTE_MASK) * 100 + ((word >>> 8) & BYTE_MASK) * 10 + ((word >>> 24) & BYTE_MASK) - ZERO * 111;
-                } else if ((word & TWO_DIGITS_MASK) == TWO_DIGITS_MASK) {
+                }
+                else if ((word & TWO_DIGITS_MASK) == TWO_DIGITS_MASK) {
                     temperature = (word & BYTE_MASK) * 10 + ((word >>> 16) & BYTE_MASK) - ZERO * 11;
                     offset--;
-                } else {
+                }
+                else {
                     // #.##-
                     word = (word >>> 8) | (UNSAFE.getByte(offset++) << 24);
                     temperature = ZERO * 111 - ((word & BYTE_MASK) * 100 + ((word >>> 8) & BYTE_MASK) * 10 + ((word >>> 24) & BYTE_MASK));
