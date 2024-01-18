@@ -30,18 +30,19 @@ public class CalculateAverage_yonatang {
     // private static final String FILE = "./measurements_100M.txt";
 
     private static final int DICT_SIZE = 12000;
+    private static final int DICT_RECORD_SIZE = 3;
+    private static final int DICT_SIZE_BYTES = DICT_SIZE * DICT_RECORD_SIZE;
     private static final long NO_VALUE = Long.MIN_VALUE;
 
     private static class HashTable {
-        private final int dataSize = DICT_SIZE * 3;
 
         // Continuous array of [key, min, max, count, sum], which will be more CPU cache friendly.
-        private final long[] data = new long[dataSize];
+        private final long[] data = new long[DICT_SIZE_BYTES];
         private int size = 0;
 
         public HashTable() {
             long d1 = ((Short.MAX_VALUE) | (Short.MIN_VALUE << 16)) & 0xFFFFFFFFL;
-            for (int i = 0; i < dataSize; i += 3) {
+            for (int i = 0; i < DICT_SIZE_BYTES; i += 3) {
                 data[i] = NO_VALUE;
                 data[i + 1] = d1;
                 data[i + 2] = 0;
@@ -53,10 +54,12 @@ public class CalculateAverage_yonatang {
         }
 
         private int getIndex(long key) {
-            int idx = Math.abs((int) (key % DICT_SIZE)) * 3;
-            while (data[idx] != NO_VALUE && data[idx] != key) {
+            int idx = Math.abs((int) (key % DICT_SIZE)) * DICT_RECORD_SIZE;
+
+            // data[idx]!=key should be first, it is more likely to stop there
+            while (data[idx] != key && data[idx] != NO_VALUE) {
                 idx += 3;
-                if (idx >= dataSize) {
+                if (idx >= DICT_SIZE_BYTES) {
                     idx = 0;
                 }
             }
@@ -67,7 +70,7 @@ public class CalculateAverage_yonatang {
             return idx;
         }
 
-        public void addRawMeasurmentAgg(long key, long d1, long d2) {
+        private void addRawMeasurementAgg(long key, long d1, long d2) {
             int idx = getIndex(key);
             short currentMin = (short) (data[idx + 1] & 0xFFFF);
             short currentMax = (short) ((data[idx + 1] >> 16) & 0xFFFF);
@@ -88,7 +91,7 @@ public class CalculateAverage_yonatang {
 
         public TreeMap<String, ResultRow> toMap(HashMap<Long, String> nameDict) {
             TreeMap<String, ResultRow> finalMap = new TreeMap<>();
-            for (int i = 0; i < data.length; i += 3) {
+            for (int i = 0; i < DICT_SIZE_BYTES; i += DICT_RECORD_SIZE) {
                 if (data[i] != NO_VALUE) {
                     short min = (short) (data[i + 1] & 0xFFFF);
                     short max = (short) ((data[i + 1] >> 16) & 0xFFFF);
@@ -101,7 +104,7 @@ public class CalculateAverage_yonatang {
             return finalMap;
         }
 
-        public void addMeasurment(long key, int temp) {
+        public void addMeasurement(long key, short temp) {
             int idx = getIndex(key);
             short min = (short) (data[idx + 1] & 0xFFFF);
             short max = (short) ((data[idx + 1] >> 16) & 0xFFFF);
@@ -115,23 +118,13 @@ public class CalculateAverage_yonatang {
         }
 
         public void mergeInto(HashTable other) {
-            for (int i = 0; i < dataSize; i += 3) {
+            for (int i = 0; i < DICT_SIZE_BYTES; i += 3) {
                 if (data[i] != NO_VALUE) {
-                    other.addRawMeasurmentAgg(data[i], data[i + 1], data[i + 2]);
+                    other.addRawMeasurementAgg(data[i], data[i + 1], data[i + 2]);
                 }
             }
         }
 
-    }
-
-    private static class Measurement {
-        final long stationId;
-        final double value;
-
-        public Measurement(long stationId, double value) {
-            this.stationId = stationId;
-            this.value = value;
-        }
     }
 
     private static class ResultRow {
@@ -164,12 +157,12 @@ public class CalculateAverage_yonatang {
         }
     }
 
-    private static StationId parseStationId(MappedByteBuffer bb) {
+    private static StationId parseStationId(MappedByteBuffer byteBuffer) {
         long stationId = 0L;
         boolean valid = false;
         int len = 0;
-        while (bb.hasRemaining()) {
-            byte ch = bb.get();
+        while (byteBuffer.hasRemaining()) {
+            byte ch = byteBuffer.get();
             if (ch == '\n') {
                 continue;
             }
@@ -187,12 +180,12 @@ public class CalculateAverage_yonatang {
         return new StationId(stationId, len);
     }
 
-    private static double parseDouble(MappedByteBuffer bb) {
+    private static short parseShort(MappedByteBuffer byteBuffer) {
         boolean valid = false;
         boolean negative = false;
         int num = 0;
-        while (bb.hasRemaining()) {
-            byte ch = bb.get();
+        while (byteBuffer.hasRemaining()) {
+            byte ch = byteBuffer.get();
             if (ch == '\n') {
                 valid = true;
                 break;
@@ -204,26 +197,14 @@ public class CalculateAverage_yonatang {
                 // noop
             }
             else {
-                num = num * 10 + (ch - '0');
+                num = (num * 10 + (ch - '0'));
             }
         }
         if (!valid) {
-            return Double.NaN;
+            return Short.MIN_VALUE;
         }
-        return (negative ? -num : num) / 10.0;
-    }
 
-    private static Measurement parseMeasurement(MappedByteBuffer bb) {
-        StationId stationIdWrapper = parseStationId(bb);
-        if (stationIdWrapper == null) {
-            return null;
-        }
-        long stationId = stationIdWrapper.stationId;
-        double d = parseDouble(bb);
-        if (Double.isNaN(d)) {
-            return null;
-        }
-        return new Measurement(stationId, d);
+        return (short) (negative ? -num : num);
     }
 
     private static final int MARGIN = 130;
@@ -260,11 +241,16 @@ public class CalculateAverage_yonatang {
             }
 
             while (byteBuffer.hasRemaining()) {
-                Measurement measurement = parseMeasurement(byteBuffer);
-                if (measurement != null) {
-                    agg.addMeasurment(measurement.stationId, (int) (measurement.value * 10));
+                StationId stationIdWrapper = parseStationId(byteBuffer);
+                if (stationIdWrapper == null) {
+                    continue;
                 }
-
+                long stationId = stationIdWrapper.stationId;
+                short value = parseShort(byteBuffer);
+                if (value == Short.MIN_VALUE) {
+                    continue;
+                }
+                agg.addMeasurement(stationId, value);
             }
         }
         catch (Exception e) {
@@ -286,24 +272,24 @@ public class CalculateAverage_yonatang {
         // If one of the station appear only after 2gb of file, we're screwed.
         // statistically impossible.
         long size = Math.min(Integer.MAX_VALUE, fc.size());
-        MappedByteBuffer bb = fc.map(FileChannel.MapMode.READ_ONLY, 0, size);
-        while (bb.hasRemaining()) {
-            StationId stationIdWrapper = parseStationId(bb);
+        MappedByteBuffer byteBuffer = fc.map(FileChannel.MapMode.READ_ONLY, 0, size);
+        while (byteBuffer.hasRemaining()) {
+            StationId stationIdWrapper = parseStationId(byteBuffer);
             if (stationIdWrapper == null) {
                 throw new RuntimeException("Err");
             }
             int len = stationIdWrapper.len;
             long stationId = stationIdWrapper.stationId;
             if (!nameDict.containsKey(stationId)) {
-                String name = readStationName(bb, len);
+                String name = readStationName(byteBuffer, len);
                 nameDict.put(stationId, name);
                 if (nameDict.size() == expected) {
                     return nameDict;
                 }
             }
             boolean valid = false;
-            while (bb.hasRemaining()) {
-                byte ch = bb.get();
+            while (byteBuffer.hasRemaining()) {
+                byte ch = byteBuffer.get();
                 if (ch == '\n') {
                     valid = true;
                     break;
