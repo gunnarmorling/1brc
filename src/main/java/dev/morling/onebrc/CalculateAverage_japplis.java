@@ -43,20 +43,25 @@ import java.util.concurrent.*;
  * - Execute same code on 1BRC server: 41"
  * - One HashMap per thread: 17" locally (12" on 1BRC server)
  * - Read file in multiple threads if available and
- * - Changed String to (byte[]) Text with cache: 18" locally (but 8" -> 5" on laptop)
+ * - Changed String to (byte[]) Text with cache: 18" locally (but 8" -> 5" on laptop) (10" on 1BRC server)
+ * - Changed Map.combine() to Map.merge() and Map.forEach() to 'for each' loop
+ * - Replaced Map[Integer, Text] to IntObjectHashMap[Text] (5" on laptop)
+ *
+ * Measure-Command { java -cp .\target\average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_japplis }
  *
  * @author Anthony Goubard - Japplis
  */
 public class CalculateAverage_japplis {
 
+    private static final int MAP_CAPACITY = 10_000;
     private static final String DEFAULT_MEASUREMENT_FILE = "measurements.txt";
     private static final int BUFFER_SIZE = 5 * 1024 * 1024; // 5 MB
     private static final int MAX_COMPUTE_THREADS = Runtime.getRuntime().availableProcessors();
 
-    private int precision = -1;
-    private int precisionLimitTenth;
+    private int fractionDigitCount = -1;
+    private int tenDegreesInt;
     private long fileSize;
-    private Map<Text, IntSummaryStatistics> cityMeasurementMap = new ConcurrentHashMap<>(10_000);
+    private Map<Text, IntSummaryStatistics> cityMeasurementMap = new ConcurrentHashMap<>(MAP_CAPACITY);
     private List<Byte> previousBlockLastLine = new ArrayList<>();
     private Semaphore readFileLock = new Semaphore(MAX_COMPUTE_THREADS);
     private Queue<ByteArray> bufferPool = new ConcurrentLinkedQueue<>();
@@ -134,8 +139,8 @@ public class CalculateAverage_japplis {
     private Runnable parseTemperaturesBlock(ByteArray buffer, int startIndex) {
         Runnable countAverageRun = () -> {
             int bufferIndex = startIndex;
-            Map<Text, IntSummaryStatistics> blockCityMeasurementMap = new HashMap<>(10_000);
-            Map<Integer, Text> textPool = new HashMap<>(10_000);
+            Map<Text, IntSummaryStatistics> blockCityMeasurementMap = new HashMap<>(MAP_CAPACITY);
+            IntObjectHashMap<Text> textPool = new IntObjectHashMap<>(MAP_CAPACITY);
             byte[] bufferArray = buffer.array();
             try {
                 while (bufferIndex < bufferArray.length) {
@@ -183,12 +188,12 @@ public class CalculateAverage_japplis {
         for (int i = 0; i < splitLineBytes.length; i++) {
             splitLineBytes[i] = previousBlockLastLine.get(i);
         }
-        readNextLine(0, splitLineBytes, cityMeasurementMap, new HashMap<>());
+        readNextLine(0, splitLineBytes, cityMeasurementMap, new IntObjectHashMap<>(2));
         return bufferIndex;
     }
 
     private int readFirstLines(byte[] buffer) {
-        if (precision >= 0)
+        if (fractionDigitCount >= 0)
             return 0; // not the first lines of the file
         int bufferIndex = 0;
         while (buffer[bufferIndex] == '#') { // read comments (like in weather_stations.csv)
@@ -204,13 +209,12 @@ public class CalculateAverage_japplis {
             }
             car = buffer[bufferIndex++];
         }
-        precision = bufferIndex - dotPos - 1;
-        int precisionLimit = (int) Math.pow(10, precision);
-        precisionLimitTenth = precisionLimit * 10;
+        fractionDigitCount = bufferIndex - dotPos - 1;
+        tenDegreesInt = (int) Math.pow(10, fractionDigitCount) * 10;
         return startIndex;
     }
 
-    private int readNextLine(int bufferIndex, byte[] buffer, Map<Text, IntSummaryStatistics> blockCityMeasurementMap, Map<Integer, Text> textPool) {
+    private int readNextLine(int bufferIndex, byte[] buffer, Map<Text, IntSummaryStatistics> blockCityMeasurementMap, IntObjectHashMap<Text> textPool) {
         int startLineIndex = bufferIndex;
         while (buffer[bufferIndex] != (byte) ';') {
             bufferIndex++;
@@ -219,13 +223,7 @@ public class CalculateAverage_japplis {
         Text city = Text.getByteText(buffer, startLineIndex, bufferIndex - startLineIndex, textPool);
         bufferIndex++; // skip ';'
         int temperature = readTemperature(buffer, bufferIndex);
-        bufferIndex += precision + 3; // digit, dot and CR
-        if (temperature < 0) {
-            bufferIndex++;
-        }
-        if (temperature <= -precisionLimitTenth || temperature >= precisionLimitTenth) {
-            bufferIndex++;
-        }
+        bufferIndex += getIndexOffset(temperature);
         addTemperature(city, temperature, blockCityMeasurementMap);
         return bufferIndex;
     }
@@ -250,6 +248,20 @@ public class CalculateAverage_japplis {
         return temperature;
     }
 
+    private int getIndexOffset(int temperature) {
+        // offset is at least fractionDigitCount + 3 (digit, dot and LF)
+        if (temperature >= tenDegreesInt) {
+            return fractionDigitCount + 4;
+        }
+        if (temperature >= 0) {
+            return fractionDigitCount + 3;
+        }
+        if (temperature <= -tenDegreesInt) {
+            return fractionDigitCount + 5;
+        }
+        return fractionDigitCount + 4;
+    }
+
     private void addTemperature(Text city, int temperature, Map<Text, IntSummaryStatistics> blockCityMeasurementMap) {
         IntSummaryStatistics measurement = blockCityMeasurementMap.get(city);
         if (measurement == null) {
@@ -260,15 +272,12 @@ public class CalculateAverage_japplis {
     }
 
     private void mergeBlockResults(Map<Text, IntSummaryStatistics> blockCityMeasurementMap) {
-        blockCityMeasurementMap.forEach((city, measurement) -> {
-            cityMeasurementMap.compute(city, (town, currentMeasurement) -> {
-                if (currentMeasurement == null) {
-                    return measurement;
-                }
-                currentMeasurement.combine(measurement);
-                return currentMeasurement;
+        for (Map.Entry<Text, IntSummaryStatistics> cityMeasurement : blockCityMeasurementMap.entrySet()) {
+            cityMeasurementMap.merge(cityMeasurement.getKey(), cityMeasurement.getValue(), (m1, m2) -> {
+                m1.combine(m2);
+                return m1;
             });
-        });
+        }
     }
 
     private void printTemperatureStatsByCity() {
@@ -303,11 +312,11 @@ public class CalculateAverage_japplis {
 
     private void appendTemperature(StringBuilder resultBuilder, int temperature) {
         String temperatureAsText = String.valueOf(temperature);
-        int minCharacters = precision + (temperature < 0 ? 2 : 1);
+        int minCharacters = fractionDigitCount + (temperature < 0 ? 2 : 1);
         for (int i = temperatureAsText.length(); i < minCharacters; i++) {
             temperatureAsText = temperature < 0 ? "-0" + temperatureAsText.substring(1) : "0" + temperatureAsText;
         }
-        int dotPosition = temperatureAsText.length() - precision;
+        int dotPosition = temperatureAsText.length() - fractionDigitCount;
         resultBuilder.append(temperatureAsText.substring(0, dotPosition));
         resultBuilder.append('.');
         resultBuilder.append(temperatureAsText.substring(dotPosition));
@@ -322,7 +331,7 @@ public class CalculateAverage_japplis {
 
     private class ByteArray {
 
-        private byte[] array;
+        private final byte[] array;
 
         private ByteArray(int size) {
             array = new byte[size];
@@ -345,10 +354,10 @@ public class CalculateAverage_japplis {
             System.arraycopy(buffer, startIndex, textBytes, 0, length);
         }
 
-        private static Text getByteText(byte[] buffer, int startIndex, int length, Map<Integer, Text> textPool) {
+        private static Text getByteText(byte[] buffer, int startIndex, int length, IntObjectHashMap<Text> textPool) {
             int hash = hashCode(buffer, startIndex, length);
             Text textFromPool = textPool.get(hash);
-            if (textFromPool == null || !Arrays.equals(buffer, startIndex, startIndex + length, textFromPool.textBytes, 0, length)) {
+            if (textFromPool == null || !Arrays.equals(buffer, startIndex, startIndex + length, textFromPool.textBytes, 0, textFromPool.textBytes.length)) {
                 Text newText = new Text(buffer, startIndex, length, hash);
                 textPool.put(hash, newText);
                 return newText;
@@ -389,6 +398,120 @@ public class CalculateAverage_japplis {
                 text = new String(textBytes, StandardCharsets.UTF_8);
             }
             return text;
+        }
+    }
+
+    // inspiration from https://javaexplorer03.blogspot.com/2015/10/create-own-hashmap.html
+    private static class IntObjectHashMap<V> extends AbstractMap<Integer, V> {
+        private static class IntEntry<V> implements Map.Entry<Integer, V> {
+            private int key;
+            private V value;
+            private IntEntry next;
+
+            private IntEntry(int key, V value) {
+                this.key = key;
+                this.value = value;
+            }
+
+            public int getIntKey() {
+                return key;
+            }
+
+            @Override
+            public Integer getKey() {
+                return key;
+            }
+
+            @Override
+            public V getValue() {
+                return value;
+            }
+
+            @Override
+            public V setValue(V value) {
+                V oldValue = this.value;
+                this.value = value;
+                return oldValue;
+            }
+        }
+
+        private IntEntry<V>[] entries;
+        private int size;
+
+        public IntObjectHashMap(int capacity) {
+            entries = new IntEntry[capacity];
+        }
+
+        @Override
+        public Set<Map.Entry<Integer, V>> entrySet() {
+            Set<Map.Entry<Integer, V>> entrySet = new HashSet<>(entries.length);
+            for (IntEntry entry : this.entries) {
+                if (entry != null) {
+                    entrySet.add(entry);
+                }
+            }
+            return entrySet;
+        }
+
+        public V put(int key, V value) {
+            int location = key < 0 ? (-key % entries.length) : (key % entries.length);
+            IntEntry<V> entry = entries[location];
+            if (entry == null) {
+                entries[location] = new IntEntry<>(key, value);
+                size++;
+                return null;
+            }
+            while (entry.next != null && entry.key != key) {
+                entry = entry.next;
+            }
+            if (entry.key == key) {
+                V oldValue = entry.setValue(value);
+                return oldValue;
+            }
+            entry.next = new IntEntry<>(key, value);
+            size++;
+            return null;
+        }
+
+        public V get(int key) {
+            int location = key < 0 ? (-key % entries.length) : (key % entries.length);
+            IntEntry<V> entry = entries[location];
+            if (entry == null) {
+                return null;
+            }
+            while (entry.next != null && entry.key != key) {
+                entry = entry.next;
+            }
+            if (entry.key == key) {
+                return entry.getValue();
+            }
+            return null;
+        }
+
+        @Override
+        public V put(Integer key, V value) {
+            return put(key.intValue(), value);
+        }
+
+        @Override
+        public V get(Object key) {
+            return get(((Integer) key).intValue());
+        }
+
+        @Override
+        public void clear() {
+            entries = new IntEntry[entries.length];
+            size = 0;
+        }
+
+        @Override
+        public int size() {
+            return size;
+        }
+
+        @Override
+        public V remove(Object key) {
+            throw new UnsupportedOperationException("Removing item is not supported");
         }
     }
 }
