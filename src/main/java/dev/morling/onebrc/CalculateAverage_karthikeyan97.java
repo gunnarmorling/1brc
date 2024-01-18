@@ -49,7 +49,7 @@ public class CalculateAverage_karthikeyan97 {
 
     private static final Unsafe UNSAFE = initUnsafe();
 
-    private static final String FILE = "./sample.txt";
+    private static final String FILE = "./measurements.txt";
 
     private static Unsafe initUnsafe() {
         try {
@@ -89,8 +89,8 @@ public class CalculateAverage_karthikeyan97 {
     }
 
     public static void main(String[] args) throws Exception {
-        // long start = System.nanoTime();
-        System.setSecurityManager(null);
+        //long start = System.nanoTime();
+        // System.setSecurityManager(null);
         Collector<Map.Entry<modifiedbytearray, MeasurementAggregator>, MeasurementAggregator, MeasurementAggregator> collector = Collector.of(
                 MeasurementAggregator::new,
                 (a, m) -> {
@@ -119,11 +119,11 @@ public class CalculateAverage_karthikeyan97 {
                 },
                 agg -> agg);
 
-        RandomAccessFile raf = new RandomAccessFile(FILE, "rw");
+        RandomAccessFile raf = new RandomAccessFile(FILE, "r");
         FileChannel fileChannel = raf.getChannel();
         final long mappedAddress = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, raf.length(), Arena.global()).address();
         long length = raf.length();
-        int cores = length > 1000 ? Runtime.getRuntime().availableProcessors() : 1;
+        int cores = length > 1000 ? Runtime.getRuntime().availableProcessors() * 2 : 1;
         long boundary[][] = new long[cores][2];
         long segments = length / (cores);
         long before = -1;
@@ -147,7 +147,7 @@ public class CalculateAverage_karthikeyan97 {
         f.setAccessible(true);
         Unsafe unsafe = (Unsafe) f.get(null);
 
-        int pageSize = 8192;// unsafe.pageSize();
+        int l3Size = (128 * 1024 * 1024) / (cores == 1 ? 1 : cores - 1);// unsafe.l3Size();
 
         System.out.println(new TreeMap((Arrays.stream(boundary).parallel().map(i -> {
             FileInputStream fileInputStream = null;
@@ -155,7 +155,7 @@ public class CalculateAverage_karthikeyan97 {
                 int seglen = (int) (i[1] - i[0] + 1);
                 HashMap<modifiedbytearray, MeasurementAggregator> resultmap = new HashMap<>(1000);
                 long segstart = mappedAddress + i[0];
-                int bytesReading = 0;
+                int bytesRemaining = seglen;
                 double num = 0;
                 int sign = 1;
                 boolean isNumber = false;
@@ -164,14 +164,16 @@ public class CalculateAverage_karthikeyan97 {
                 int hascode = 1;
                 byte[] arr = new byte[100];
                 int arrptr = 0;
-                while (bytesReading < seglen) {
+                while (bytesRemaining > 0) {
                     int bytesptr = 0;
-                    // int bytesread = buffer.remaining() > pageSize ? pageSize : buffer.remaining();
+                    // int bytesread = buffer.remaining() > l3Size ? l3Size : buffer.remaining();
                     // byte[] bufferArr = new byte[bytesread];
                     // buffer.get(bufferArr);
-                    while (bytesptr < seglen) {
-                        bytesReading += 1;
-                        bi = UNSAFE.getByte(segstart + bytesptr++);
+                    int readSize = bytesRemaining > l3Size ? l3Size : bytesRemaining;
+                    byte[] readArr = new byte[readSize];
+                    UNSAFE.copyMemory(null, segstart, readArr, UNSAFE.ARRAY_BYTE_BASE_OFFSET, readSize);
+                    while (bytesptr < readSize) {
+                        bi = readArr[bytesptr++];// UNSAFE.getByte(segstart + bytesReading++);
                         if (!isNumber) {
                             if (bi >= 192) {
                                 arr[arrptr++] = bi;
@@ -227,6 +229,8 @@ public class CalculateAverage_karthikeyan97 {
                             }
                         }
                     }
+                    bytesRemaining -= readSize;
+                    segstart += readSize;
                 }
                 /*
                  * while (bytesReading < (i[1] - i[0] + 1) && buffer.position() < buffer.limit()) {
@@ -318,7 +322,7 @@ public class CalculateAverage_karthikeyan97 {
          */
         // Get the FileChannel from the FileInputStream
 
-        // System.out.println("time taken:" + (System.nanoTime() - start) / 1000000);
+        // System.out.println("time taken1:" + (System.nanoTime() - start) / 1000000);
         // System.out.println(measurements);
     }
 
