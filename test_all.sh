@@ -33,14 +33,47 @@ if [ "$INPUT" = "-h" ] || [ "$#" -gt 1 ]; then
   exit 1
 fi
 
+if [ -t 1 ]; then
+  GREEN='\033[0;32m'
+  RED='\033[0;31m'
+  RESET='\033[0m'
+else
+  GREEN=""
+  RED=""
+  RESET=""
+fi
+
+WITH_TIMEOUT=""
+if [ -x "$(command -v timeout)" ]; then
+  WITH_TIMEOUT="timeout -s KILL 5s"
+elif [ -x "$(command -v gtimeout)" ]; then # MacOS from `brew install coreutils`
+  WITH_TIMEOUT="gtimeout -s KILL 5s"
+else
+  echo "$0: timeout command not available, tests may run indefinitely long." 1>&2
+fi
+
 for impl in $(ls calculate_average_*.sh | sort); do
   noext="${impl%%.sh}"
   fork=${noext##calculate_average_}
 
-  if output=$(./test.sh "$fork" "$INPUT" 2>&1); then
-    echo "PASS $fork"
+  # ./test.sh calls ./prepare_$fork.sh e.g. to build native image
+  # which may take some time.
+  # Here we run it upfront, assuming that prepare result is cached
+  # to avoid timeout due to long preparation.
+  if [ -f "./prepare_$fork.sh" ]; then
+    if ! output=$("./prepare_$fork.sh" 2>&1); then
+      echo "$output" 1>&2
+      echo "FAIL $fork"
+      continue
+    fi
+  fi
+
+  if output=$($WITH_TIMEOUT ./test.sh "$fork" "$INPUT" 2>&1); then
+    echo -e "${GREEN}PASS${RESET} $fork"
+  elif [ $? -eq 137 ]; then
+    echo -e "${RED}TIME${RESET} $fork"
   else
-    echo "FAIL $fork"
     echo "$output" 1>&2
+    echo -e "${RED}FAIL${RESET} $fork"
   fi
 done
