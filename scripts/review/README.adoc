@@ -1,0 +1,123 @@
+= Code review made easy
+:toc: left
+:icons: font
+:branch: feature/review-made-easy
+
+If you want to perform a local review of a GitHub pull-request, these scripts will help (checkout) prepare, test and rollback the code.
+
+== Pre-requisites
+
+Make sure the following assumptions are true
+
+. You can access GitHub via SSH (cf. GitHub docs)
+. You have the `gh` CLI tool installed (e.g., via `brew install gh` on macOS)
+. You have a current version of the original repository cloned locally on your machine (e.g., by `git clone git@github.com:gunnarmorling/1brc`)
+. You perform all future steps from this directory (i.e., `cd 1brc` in the beginning)
+
+== Preparation
+
+=== Copy scripts (mandatory for misc. use cases)
+
+As long as the code is not merged, you perhaps need to copy the script files into your local directory (depending on the work mode).
+This is necessary since they may vanish when you switch tasks.
+
+[NOTE]
+====
+Once it is merged, or if you work on a subbranch of the current development branch, you may skip this step.
+If you want to use the current branch for these changes as baseline, we recommend to set the environment variable: `export REVIEW_BASE_BRANCH={branch}` (or whatever your local branch is named).
+====
+
+Use the latest version from my repository
+
+[source, bash, subs='normal']
+----
+git remote add ascheman git@github.com:ascheman/1brc
+git checkout {branch}
+----
+
+[[prepare-link]]
+Copy (or better link) the files to the base directory.
+
+[source, bash]
+.Copy/Link scripts to local directory
+----
+ln scripts/review/prepare.sh ./review-prepare.sh
+ln scripts/review/rollback.sh ./review-rollback.sh
+----
+
+[[sec:environment]]
+=== Environment variables
+
+Set the environment variable +`${EDITOR}`+ to your favored editor, e.g., `vim` on Linux.
+It enables to review source code later in this application.
+
+[TIP]
+.Use IntelliJ (or other IDE)
+====
+If you use IntelliJ, you can point the editor variable to the IntelliJ executable.
+If you run the subsequent tasks from an existing IntelliJ project, it will then open the files in the IDE then.
+This should work with other IDEs as well, e.g., Visual Studio Code.
+
+IntelliJ IDEA may install a convenience wrapper script `idea` directly to `/usr/local/bin` (or some other directory at your disposal).
+If you have that directory on your +`${PATH}`+, you may just set `export EDITOR=idea`.
+====
+
+== Usage
+
+=== Show existing PRs
+
+Check the open PRs
+
+[script, bash]
+----
+gh pr list
+----
+
+=== Check out PR
+
+[CAUTION]
+====
+The following may only work on open (or draft) PRs.
+====
+
+Pick one of the open PRs and call the _prepare_ script.
+
+[source, bash]
+----
+./review-prepare.sh <pr> # <1>
+----
+<1> Depending on whether you have executed the <<prepare-link,link prepare>> step (otherwise you my use `./scripts/review/prepare.sh` instead).
+
+The script will perform the following steps
+
+. Fetch repository for the PR
+. Prepare merge of PR branch (but do not commit)
+. Build jar (and other artifacts using the respective `prepare_...` script if it exists and is executable)
+. Execute default `test.sh`
+. Execute tests with 100.000 unique measure points to check for hash conflicts
+. Show PR and comments
+. Optionally open changed files in your editor/IDE (cf. <<sec:environment>>).
+
+[NOTE]
+====
+As the script prepares (but does not commit) a merge, you will find all changed files in the Git index (just execute `git status` to see the list of changed files).
+====
+
+=== Roll back PR
+
+[CAUTION]
+====
+Make sure you do not change some files (either from the PR or other existing files).
+Otherwise, automatic rollback is not so easy.
+
+In this case, we trust your Git knowledge to get rid of the changes.
+If all else fails, check the actions performed in the{nbsp}link:rollback.sh[] script.
+====
+
+Once you are finished with your work, you can roll back the checked-out files and get back to the state of your original branch.
+
+[source, bash]
+----
+./review-rollback.sh <pr> # <1>
+----
+<1> Depending on whether you have executed the <<prepare-link,link prepare>> step (otherwise you may use `./scripts/review/rollback.sh` instead).

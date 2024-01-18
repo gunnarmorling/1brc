@@ -39,6 +39,9 @@ nbactions.xml
 # Local environment
 .env
 
+# Direnv
+.envrc
+
 #JReleaser
 out/
 
