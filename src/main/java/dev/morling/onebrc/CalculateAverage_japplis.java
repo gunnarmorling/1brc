@@ -448,6 +448,10 @@ public class CalculateAverage_japplis {
             for (IntEntry entry : this.entries) {
                 if (entry != null) {
                     entrySet.add(entry);
+                    while (entry.next != null) {
+                        entry = entry.next;
+                        entrySet.add(entry);
+                    }
                 }
             }
             return entrySet;
