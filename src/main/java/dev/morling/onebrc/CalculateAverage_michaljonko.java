@@ -28,6 +28,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +37,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 public final class CalculateAverage_michaljonko {
@@ -48,9 +52,9 @@ public final class CalculateAverage_michaljonko {
     private static final int MAX_STATION_NAMES = 10_000;
 
     public static void main(String[] args) throws IOException {
-        var results = calculate(PATH, CPUs);
+        var results = calculate(PATH, 2 * CPUs);
         System.out.println(results.values().stream()
-                .sorted((o1, o2) -> Arrays.compare(o1.station().raw(), o2.station().raw()))
+                .sorted(Comparator.comparing(stationMeasurement -> stationMeasurement.station().value()))
                 .map(StationMeasurement::data)
                 .collect(Collectors.joining(", ", "{", "}")));
     }
@@ -108,19 +112,23 @@ public final class CalculateAverage_michaljonko {
     }
 
     private static final class Station {
+
+        private static final ConcurrentHashMap<byte[], String> NAME_CACHE = new ConcurrentHashMap<>(MAX_STATION_NAMES);
         private final byte[] raw;
+        private final String name;
 
         private Station(byte[] _raw, int length) {
             this.raw = new byte[length];
             System.arraycopy(_raw, 0, this.raw, 0, length);
+            name = NAME_CACHE.compute(this.raw, (k, v) -> v == null ? new String(raw, 0, raw.length) : v);
         }
 
-        public byte[] raw() {
+        private byte[] raw() {
             return raw;
         }
 
         private String value() {
-            return new String(raw, 0, raw.length);
+            return name;
         }
 
         @Override
@@ -171,7 +179,7 @@ public final class CalculateAverage_michaljonko {
             this.count += stationMeasurement.count;
             this.sum += stationMeasurement.sum;
             this.min = Math.min(this.min, stationMeasurement.min);
-            this.max = Math.min(this.max, stationMeasurement.max);
+            this.max = Math.max(this.max, stationMeasurement.max);
             return this;
         }
 
@@ -234,7 +242,7 @@ public final class CalculateAverage_michaljonko {
 
         private static final int PARTITIONING_THRESHOLD = 50 * 1_024 * 1_024;
 
-        public static List<MemorySegment> createSegments(Path path, int partitionsAmount) {
+        private static List<MemorySegment> createSegments(Path path, int partitionsAmount) {
             try (var channel = FileChannel.open(PATH, StandardOpenOption.READ)) {
                 final var size = Files.size(path);
                 final var memorySegment = channel.map(MapMode.READ_ONLY, 0, size, Arena.global());
@@ -246,11 +254,14 @@ public final class CalculateAverage_michaljonko {
                 var startPosition = 0L;
                 var endPosition = partitionSize;
                 for (var partitionIndex = 0; partitionIndex < partitionsAmount; partitionIndex++) {
+                    if (endPosition >= size) {
+                        endPosition = size - 1;
+                    }
                     while (endPosition < size
                             && memorySegment.get(ValueLayout.JAVA_BYTE, endPosition) != '\n') {
                         endPosition++;
                     }
-                    partitions[partitionIndex] = memorySegment.asSlice(0, endPosition - startPosition);
+                    partitions[partitionIndex] = memorySegment.asSlice(startPosition, endPosition - startPosition);
                     startPosition = ++endPosition;
                     endPosition += partitionSize;
                 }
