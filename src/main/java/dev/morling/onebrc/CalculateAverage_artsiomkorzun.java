@@ -431,7 +431,8 @@ public class CalculateAverage_artsiomkorzun {
         }
 
         private static long mask(long word, long separator) {
-            return word & ((separator >>> 7) - 1) & 0x00FFFFFFFFFFFFFFL;
+            long mask = ((separator - 1) ^ separator) >>> 8;
+            return word & mask;
         }
 
         private static int length(long separator) {
