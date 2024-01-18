@@ -20,93 +20,91 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.lang.foreign.ValueLayout.OfByte;
-import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
-import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.stream.Collectors;
 
 public final class CalculateAverage_michaljonko {
 
+    private static final int MAX_STATION_NAME_LENGTH = 100;
+    private static final int MAX_TEMPERATURE_LENGTH = 5;
     private static final int CPUs = Runtime.getRuntime().availableProcessors();
     private static final String FILE = "./measurements.txt";
     private static final Path PATH = Paths.get(FILE);
-    public static final int MAX_STATION_NAMES = 10_000;
+    private static final int MAX_STATION_NAMES = 10_000;
 
     public static void main(String[] args) throws IOException {
-        System.out.println("cpus:" + CPUs);
-        System.out.println("file size:" + Files.size(PATH));
-        System.out.println("partition size:~" + Files.size(PATH) / CPUs);
-        System.out.println();
-
-        System.out.println("--- multi");
-        memorySegmentMultiThread();
-
-        // System.out.println("--- single");
-        // memorySegmentSingleThread();
+        var results = calculate(PATH, CPUs);
+        System.out.println(results.values().stream()
+                .sorted((o1, o2) -> Arrays.compare(o1.station().raw(), o2.station().raw()))
+                .map(StationMeasurement::data)
+                .collect(Collectors.joining(", ", "{", "}")));
     }
 
-    private static void memorySegmentMultiThread() {
-        var startTime = System.nanoTime();
-        var size = 0L;
-        var newLines = 0L;
-        var memorySegments = FilePartitioner.createSegments(PATH, CPUs);
+    static Map<Station, StationMeasurement> calculate(Path path, int partitionsAmount) {
+        var memorySegments = FilePartitioner.createSegments(path, partitionsAmount);
 
-        MemorySegment memorySegment = memorySegments.getFirst();
-        final byte[] stationName = new byte[100];
-        final byte[] temperature = new byte[5];
+        try (var executorService = Executors.newFixedThreadPool(CPUs)) {
+            var futures = new ArrayList<Future<ConcurrentHashMap<Integer, StationMeasurement>>>(memorySegments.size());
+            for (var memorySegment : memorySegments) {
+                futures.add(executorService.submit(() -> parseMemorySegment(memorySegment)));
+            }
+            final var finalMap = new HashMap<Station, StationMeasurement>();
+            for (var future : futures) {
+                future.get().forEach((k, v) -> finalMap.merge(v.station(), v, StationMeasurement::update));
+            }
+            return finalMap;
+        }
+        catch (InterruptedException | ExecutionException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static ConcurrentHashMap<Integer, StationMeasurement> parseMemorySegment(MemorySegment memorySegment) {
+        final var stationName = new byte[MAX_STATION_NAME_LENGTH];
+        final var temperature = new byte[MAX_TEMPERATURE_LENGTH];
         byte b;
-        int stationNameIndex = 0;
-        int stationNameHash = 0;
-        int temperatureIndex = 0;
-        int temperatureHash = 0;
-        long offset = 0L;
-        long memorySegmentSize = memorySegment.byteSize();
-        ConcurrentHashMap<Integer, Station> stationsMap = new ConcurrentHashMap<>(MAX_STATION_NAMES);
+        var stationNameIndex = 0;
+        var stationNameHash = 0;
+        var temperatureIndex = 0;
+        var offset = 0L;
+        var memorySegmentSize = memorySegment.byteSize();
+        var stationsMap = new ConcurrentHashMap<Integer, StationMeasurement>(MAX_STATION_NAMES);
         while (offset < memorySegmentSize) {
             while ((b = memorySegment.get(ValueLayout.JAVA_BYTE, offset++)) != ';') {
                 stationName[stationNameIndex++] = b;
                 stationNameHash = 31 * stationNameHash + b;
             }
+
             while (offset < memorySegmentSize && (b = memorySegment.get(ValueLayout.JAVA_BYTE, offset++)) != '\n') {
                 temperature[temperatureIndex++] = b;
-                temperatureHash = 31 * temperatureHash + b;
             }
 
-            int finalStationNameIndex = stationNameIndex;
-            stationsMap.computeIfAbsent(stationNameHash, ignore -> new Station(stationName, finalStationNameIndex));
+            var finalStationNameIndex = stationNameIndex;
+            var parsedTemperature = TemperatureParser.parse(temperature, temperatureIndex);
+            stationsMap.compute(stationNameHash, (hash, stationMeasurement) -> stationMeasurement == null
+                    ? new StationMeasurement(new Station(stationName, finalStationNameIndex)).update(parsedTemperature)
+                    : stationMeasurement.update(parsedTemperature));
 
             stationNameIndex = 0;
             temperatureIndex = 0;
             stationNameHash = 0;
-            temperatureHash = 0;
         }
-
-//        stationsMap.forEach((hash, station) -> System.out.println(hash + " : " + station.value()));
-        System.out.println("Size: " + stationsMap.size());
-
-        // try (var executorService = Executors.newFixedThreadPool(CPUs)) {
-        // var callables = memorySegments.stream()
-        // .map(memorySegment -> (Callable<Pair<Long, Long>>) () -> memorySegmentPerThread(memorySegment))
-        // .toList();
-        // for (var future : executorService.invokeAll(callables)) {
-        // var pair = future.get();
-        // size += pair.right();
-        // newLines += pair.left();
-        // }
-        // }
-        // catch (InterruptedException | ExecutionException e) {
-        // throw new RuntimeException(e);
-        // }
-        // System.out.println("Took :" + Duration.ofNanos(System.nanoTime() - startTime) + " size:" + size + " lines:" + newLines);
+        return stationsMap;
     }
 
     private static final class Station {
@@ -115,6 +113,10 @@ public final class CalculateAverage_michaljonko {
         private Station(byte[] _raw, int length) {
             this.raw = new byte[length];
             System.arraycopy(_raw, 0, this.raw, 0, length);
+        }
+
+        public byte[] raw() {
+            return raw;
         }
 
         private String value() {
@@ -141,76 +143,114 @@ public final class CalculateAverage_michaljonko {
         }
     }
 
-    private static Pair<Long, Long> memorySegmentPerThread(MemorySegment memorySegment) {
-        var newLineCount = 0L;
-        var size = 0L;
-        final var memorySegmentSize = memorySegment.byteSize();
-        final byte[] bytes = new byte[256];
-        byte b = 0;
-        var index = 0;
-        for (long offset = 0; offset < memorySegmentSize; offset++) {
-            if ((b = memorySegment.get(ValueLayout.JAVA_BYTE, offset)) == '\n') {
-                size += new String(bytes, 0, index, StandardCharsets.UTF_8).length();
-                index = 0;
-                newLineCount++;
+    private static final class StationMeasurement {
+
+        private final Station station;
+        private int min = Integer.MAX_VALUE;
+        private int max = Integer.MIN_VALUE;
+        private long count = 0L;
+        private long sum = 0L;
+
+        private StationMeasurement(Station station) {
+            this.station = station;
+        }
+
+        private StationMeasurement update(int value) {
+            if (value < min) {
+                min = value;
             }
-            bytes[index++] = b;
-        }
-        return new Pair<>(newLineCount, size);
-    }
-
-    private static void memorySegmentSingleThread() throws IOException {
-        var startTime = System.nanoTime();
-        var channel = FileChannel.open(PATH, StandardOpenOption.READ);
-        var fileSize = Files.size(PATH);
-        var memorySegment = channel.map(MapMode.READ_ONLY, 0, fileSize, Arena.global());
-        channel.close();
-        var newLineCount = 0L;
-        var size = 0L;
-        for (long i = 0; i < fileSize; i++) {
-            if (memorySegment.get(ValueLayout.JAVA_BYTE, i) == '\n') {
-                newLineCount++;
+            if (value > max) {
+                max = value;
             }
-            size++;
+            sum += value;
+            count++;
+            return this;
         }
-        System.out.println("Took:" + Duration.ofNanos(System.nanoTime() - startTime)
-                + " size:" + size
-                + " newlines:" + newLineCount);
 
-        System.out.println(new String(memorySegment.asSlice(fileSize / 2, 100).toArray(OfByte.JAVA_BYTE), StandardCharsets.UTF_8));
+        private StationMeasurement update(StationMeasurement stationMeasurement) {
+            this.count += stationMeasurement.count;
+            this.sum += stationMeasurement.sum;
+            this.min = Math.min(this.min, stationMeasurement.min);
+            this.max = Math.min(this.max, stationMeasurement.max);
+            return this;
+        }
+
+        private Station station() {
+            return station;
+        }
+
+        private String data() {
+            return String.format("%s=%.1f/%.1f/%.1f", station.value(), min / 10.0, (sum / count) / 10.0, max / 10.0);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+
+            StationMeasurement that = (StationMeasurement) o;
+
+            if (min != that.min) {
+                return false;
+            }
+            if (max != that.max) {
+                return false;
+            }
+            if (count != that.count) {
+                return false;
+            }
+            if (sum != that.sum) {
+                return false;
+            }
+            return Objects.equals(station, that.station);
+        }
+
+        @Override
+        public int hashCode() {
+            return station != null ? station.hashCode() : 0;
+        }
     }
 
-    private record Pair<LEFT,RIGHT>(
-    LEFT left, RIGHT right)
-    {
+    private static final class TemperatureParser {
+
+        private static int parse(byte[] raw, int size) {
+            var sign = raw[0] == '-' ? -1 : 1;
+            var offset = sign > 0 ? 0 : 1;
+            var relativeSize = size - offset;
+            return sign * switch (relativeSize) {
+                case 2 -> (raw[size - 1] - '0');
+                case 3 -> (raw[size - 1] - '0') + 10 * (raw[size - 3] - '0');
+                case 4 -> (raw[size - 1] - '0') + 10 * (raw[size - 3] - '0') + 100 * (raw[size - 4] - '0');
+                default -> 0;
+            };
+        }
     }
 
-    public static final class FilePartitioner {
+    private static final class FilePartitioner {
 
-        private final int partitionsAmount;
-
-        FilePartitioner(int partitionsAmount) {
-            this.partitionsAmount = partitionsAmount;
-        }
+        private static final int PARTITIONING_THRESHOLD = 50 * 1_024 * 1_024;
 
         public static List<MemorySegment> createSegments(Path path, int partitionsAmount) {
             try (var channel = FileChannel.open(PATH, StandardOpenOption.READ)) {
                 final var size = Files.size(path);
-                if (partitionsAmount < 2) {
-                    return List.of(channel.map(MapMode.READ_ONLY, 0, size, Arena.global()));
+                final var memorySegment = channel.map(MapMode.READ_ONLY, 0, size, Arena.global());
+                if (partitionsAmount < 2 || size < PARTITIONING_THRESHOLD) {
+                    return List.of(memorySegment);
                 }
                 final var partitionSize = size / partitionsAmount;
                 final var partitions = new MemorySegment[partitionsAmount];
-                final var buffer = ByteBuffer.allocateDirect(128);
                 var startPosition = 0L;
                 var endPosition = partitionSize;
                 for (var partitionIndex = 0; partitionIndex < partitionsAmount; partitionIndex++) {
-                    channel.read(buffer.clear(), endPosition >= size ? endPosition = (size - 1) : endPosition);
-                    buffer.flip();
-                    while (buffer.get() != '\n' && endPosition < size) {
+                    while (endPosition < size
+                            && memorySegment.get(ValueLayout.JAVA_BYTE, endPosition) != '\n') {
                         endPosition++;
                     }
-                    partitions[partitionIndex] = channel.map(MapMode.READ_ONLY, startPosition, endPosition - startPosition, Arena.ofShared());
+                    partitions[partitionIndex] = memorySegment.asSlice(0, endPosition - startPosition);
                     startPosition = ++endPosition;
                     endPosition += partitionSize;
                 }
@@ -219,51 +259,6 @@ public final class CalculateAverage_michaljonko {
             catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
-        }
-    }
-
-    public static final class ParsingCache {
-
-        private final ConcurrentHashMap<String, Double> cache = new ConcurrentHashMap<>(10_000);
-
-        private static double parseRawDouble(String rawValue) {
-            if (rawValue == null) {
-                return Double.NaN;
-            }
-            final var rawValueArray = rawValue.toCharArray();
-            if (rawValueArray.length == 0) {
-                return Double.NaN;
-            }
-
-            final var sign = (rawValueArray[0] - '-') == 0 ? -1 : 1;
-            final var arrayBeginning = sign > 0 ? 0 : 1;
-            var separatorIndex = -1;
-            var integer = 0;
-
-            for (int index = rawValueArray.length - 1, factor = 1; index >= arrayBeginning; index--) {
-                if (rawValueArray[index] == '.') {
-                    separatorIndex = index;
-                }
-                else {
-                    integer += (rawValueArray[index] - '0') * factor;
-                    factor *= 10;
-                }
-            }
-
-            if (separatorIndex < 0) {
-                return sign * integer;
-            }
-
-            var div = 1;
-            while (rawValueArray.length - (++separatorIndex) > 0) {
-                div *= 10;
-            }
-
-            return 1.0d * sign * integer / div;
-        }
-
-        public double parseIfAbsent(String rawValue) {
-            return cache.computeIfAbsent(rawValue, ParsingCache::parseRawDouble);
         }
     }
 }
