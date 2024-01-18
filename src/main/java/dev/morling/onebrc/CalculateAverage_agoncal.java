@@ -86,31 +86,36 @@ public class CalculateAverage_agoncal {
 
     private static final String FILE = "./measurements.txt";
 
-    record Measurement(String station, float temperature) {
+    record Measurement(String station, double temperature) {
     }
 
     static class StationStats {
-        float min;
-        float max;
-        float sum;
+        double min;
+        double max;
+        double sum;
         int count;
 
-        public StationStats(float temperature) {
+        public StationStats(double temperature) {
             this.min = temperature;
             this.max = temperature;
             this.sum = 0;
             this.count = 0;
         }
 
-        synchronized void update(float temperature) {
+        synchronized void update(double temperature) {
             min = Math.min(min, temperature);
             max = Math.max(max, temperature);
             sum += temperature;
             count++;
         }
 
-        float getAverage() {
-            return sum / count;
+        double getAverage() {
+            return round(sum) / count;
+        }
+
+        @Override
+        public String toString() {
+            return String.format("%.1f/%.1f/%.1f", round(min), round(getAverage()), round(max));
         }
     }
 
@@ -121,7 +126,7 @@ public class CalculateAverage_agoncal {
                 int separatorIndex = line.indexOf(';');
                 String station = line.substring(0, separatorIndex);
                 String temperature = line.substring(separatorIndex + 1);
-                Measurement m = new Measurement(station, Float.parseFloat(temperature));
+                Measurement m = new Measurement(station, Double.parseDouble(temperature));
                 stats.computeIfAbsent(m.station, k -> new StationStats(m.temperature)).update(m.temperature);
             });
         }
@@ -133,16 +138,16 @@ public class CalculateAverage_agoncal {
             Map.Entry<String, StationStats> entry = iterator.next();
             StationStats s = entry.getValue();
             if (iterator.hasNext()) {
-                System.out.printf("%s=%.1f/%.1f/%.1f, ", entry.getKey(), round(s.min), round(s.getAverage()), round(s.max));
+                System.out.printf("%s=%s, ", entry.getKey(), s.toString());
             }
             else {
-                System.out.printf("%s=%.1f/%.1f/%.1f", entry.getKey(), round(s.min), round(s.getAverage()), round(s.max));
+                System.out.printf("%s=%s", entry.getKey(), s.toString());
             }
         }
         System.out.println("}");
     }
 
-    private static double round(float value) {
+    private static double round(double value) {
         return Math.round(value * 10.0) / 10.0;
     }
 }
