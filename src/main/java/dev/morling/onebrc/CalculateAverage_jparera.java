@@ -36,8 +36,8 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import jdk.incubator.vector.ByteVector;
-import jdk.incubator.vector.VectorSpecies;
 import jdk.incubator.vector.VectorOperators;
+import jdk.incubator.vector.VectorSpecies;
 
 public class CalculateAverage_jparera {
     private static final String FILE = "./measurements.txt";
@@ -45,11 +45,23 @@ public class CalculateAverage_jparera {
     private static final VarHandle BYTE_HANDLE = MethodHandles
             .memorySegmentViewVarHandle(ValueLayout.JAVA_BYTE);
 
+    static byte getByte(MemorySegment ms, long offset) {
+        return (byte) BYTE_HANDLE.get(ms, offset);
+    }
+
     private static final VarHandle INT_HANDLE = MethodHandles
             .memorySegmentViewVarHandle(ValueLayout.JAVA_INT_UNALIGNED);
 
+    static int getInt(MemorySegment ms, long offset) {
+        return (int) INT_HANDLE.get(ms, offset);
+    }
+
     private static final VarHandle LONG_LE_HANDLE = MethodHandles
             .memorySegmentViewVarHandle(ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN));
+
+    static long getLongLittleEndian(MemorySegment ms, long offset) {
+        return (long) LONG_LE_HANDLE.get(ms, offset);
+    }
 
     private static final VectorSpecies<Byte> BYTE_SPECIES = ByteVector.SPECIES_PREFERRED;
 
@@ -65,7 +77,7 @@ public class CalculateAverage_jparera {
 
     private static final byte NEG = '-';
 
-    public static void main(String[] args) throws IOException, InterruptedException {
+    public static void main(String[] args) throws IOException {
         try (var fc = FileChannel.open(Path.of(FILE), StandardOpenOption.READ)) {
             try (var arena = Arena.ofShared()) {
                 var fs = fc.map(MapMode.READ_ONLY, 0, fc.size(), arena);
@@ -91,7 +103,7 @@ public class CalculateAverage_jparera {
         long offset = 0;
         while (offset < fileSize) {
             var end = Math.min(offset + expectedChunkSize, fileSize);
-            while (end < fileSize && (byte) BYTE_HANDLE.get(ms, end++) != LF) {
+            while (end < fileSize && getByte(ms, end++) != LF) {
             }
             long len = end - offset;
             chunks.add(new Chunk(ms.asSlice(offset, len)));
@@ -101,15 +113,19 @@ public class CalculateAverage_jparera {
     }
 
     private static final class Chunk {
-        private static final int KEY_LOG2_BYTES = 7;
-
-        private static final int KEY_BYTES = 1 << KEY_LOG2_BYTES;
-
-        private static final int ENTRIES_LOG2_CAPACITY = 16;
+        private static final int ENTRIES_LOG2_CAPACITY = 15;
 
         private static final int ENTRIES_CAPACITY = 1 << ENTRIES_LOG2_CAPACITY;
 
         private static final int ENTRIES_MASK = ENTRIES_CAPACITY - 1;
+
+        private static final int KEY_LOG2_BYTES = 7;
+
+        private static final int KEY_BYTES = 1 << KEY_LOG2_BYTES;
+
+        private static final int KEYS_CAPACITY = ENTRIES_CAPACITY * KEY_BYTES;
+
+        private static final int KEYS_MASK = KEYS_CAPACITY - 1;
 
         private final MemorySegment segment;
 
@@ -117,11 +133,11 @@ public class CalculateAverage_jparera {
 
         private final Entry[] entries = new Entry[ENTRIES_CAPACITY];
 
-        private final byte[] keys = new byte[ENTRIES_CAPACITY * KEY_BYTES];
+        private final int[] ids = new int[ENTRIES_CAPACITY];
+
+        private final byte[] keys = new byte[KEYS_CAPACITY];
 
         private final MemorySegment kms = MemorySegment.ofArray(this.keys);
-
-        private static final int KEYS_MASK = (ENTRIES_CAPACITY * KEY_BYTES) - 1;
 
         private long offset;
 
@@ -136,53 +152,58 @@ public class CalculateAverage_jparera {
 
         public List<Entry> parse() {
             long safe = size - KEY_BYTES;
-            while (offset < safe) {
-                vectorizedEntry().add(vectorizedValue());
+            while (this.offset < safe) {
+                vectorizedEntry();
             }
             next();
             while (hasCurrent()) {
-                entry().add(value());
+                entry();
             }
-            var output = new ArrayList<Entry>(entries.length);
-            for (int i = 0, o = 0; i < entries.length; i++, o += KEY_BYTES) {
-                var e = entries[i];
-                if (e != null) {
-                    e.setkey(keys, o);
+            var output = new ArrayList<Entry>(ENTRIES_CAPACITY);
+            for (int i = 0, o = 0; i < ENTRIES_CAPACITY; i++, o += KEY_BYTES) {
+                int id = ids[i];
+                if (id != 0L) {
+                    var e = this.entries[i];
+                    e.setKey(this.keys, o, id & 0x7F);
                     output.add(e);
                 }
             }
             return output;
         }
 
-        private Entry vectorizedEntry() {
+        private void vectorizedEntry() {
             var separators = ByteVector.broadcast(BYTE_SPECIES, SEPARATOR);
             int len = 0;
             for (int i = 0;; i += BYTE_SPECIES_LANES) {
-                var block = ByteVector.fromMemorySegment(BYTE_SPECIES, this.segment, offset + i, NATIVE_ORDER);
+                var block = ByteVector.fromMemorySegment(BYTE_SPECIES, this.segment, this.offset + i, NATIVE_ORDER);
                 int equals = block.compare(VectorOperators.EQ, separators).firstTrue();
                 len += equals;
                 if (equals != BYTE_SPECIES_LANES) {
                     break;
                 }
             }
-            var start = this.offset;
+            long start = this.offset;
             this.offset = start + len + 1;
             int hash = hash(segment, start, len);
+            int value = vectorizedValue();
+            int id = (hash & 0xFFFFFF80) + len;
             int index = (hash - (hash >>> -ENTRIES_LOG2_CAPACITY)) & ENTRIES_MASK;
             int keyOffset = index << KEY_LOG2_BYTES;
             int count = 0;
             while (count < ENTRIES_MASK) {
                 index = index & ENTRIES_MASK;
                 keyOffset = keyOffset & KEYS_MASK;
-                var e = this.entries[index];
-                if (e == null) {
-                    MemorySegment.copy(this.segment, start, kms, keyOffset, len);
-                    return this.entries[index] = new Entry(len, hash);
+                int eid = this.ids[index];
+                if (eid == 0) {
+                    MemorySegment.copy(this.segment, start, this.kms, keyOffset, len);
+                    this.ids[index] = id;
+                    this.entries[index] = new Entry(value);
+                    return;
                 }
-                else if (e.hash == hash && e.keyLength == len) {
+                else if (eid == id) {
                     int total = 0;
                     for (int i = 0; i < KEY_BYTES; i += BYTE_SPECIES_LANES) {
-                        var ekey = ByteVector.fromArray(BYTE_SPECIES, keys, keyOffset + i);
+                        var ekey = ByteVector.fromArray(BYTE_SPECIES, this.keys, keyOffset + i);
                         var okey = ByteVector.fromMemorySegment(BYTE_SPECIES, this.segment, start + i, NATIVE_ORDER);
                         int equals = ekey.compare(VectorOperators.NE, okey).firstTrue();
                         total += equals;
@@ -191,7 +212,8 @@ public class CalculateAverage_jparera {
                         }
                     }
                     if (total >= len) {
-                        return e;
+                        this.entries[index].add(value);
+                        return;
                     }
                 }
                 count++;
@@ -201,7 +223,7 @@ public class CalculateAverage_jparera {
             throw new IllegalStateException("Map is full!");
         }
 
-        private Entry entry() {
+        private void entry() {
             long start = this.offset - 1;
             int len = 0;
             while (hasCurrent() && current != SEPARATOR) {
@@ -209,28 +231,33 @@ public class CalculateAverage_jparera {
                 next();
             }
             expect(SEPARATOR);
-            int hash = hash(segment, start, len);
+            int hash = hash(this.segment, start, len);
+            int value = value();
+            int id = (hash & 0xFFFFFF80) + len;
             int index = (hash - (hash >>> -ENTRIES_LOG2_CAPACITY)) & ENTRIES_MASK;
             int keyOffset = index << KEY_LOG2_BYTES;
             int count = 0;
             while (count < ENTRIES_MASK) {
                 index = index & ENTRIES_MASK;
                 keyOffset = keyOffset & KEYS_MASK;
-                var e = this.entries[index];
-                if (e == null) {
-                    MemorySegment.copy(this.segment, start, kms, keyOffset, len);
-                    return this.entries[index] = new Entry(len, hash);
+                int eid = this.ids[index];
+                if (eid == 0) {
+                    MemorySegment.copy(this.segment, start, this.kms, keyOffset, len);
+                    this.ids[index] = id;
+                    this.entries[index] = new Entry(value);
+                    return;
                 }
-                else if (e.hash == hash && e.keyLength == len) {
+                else if (eid == id) {
                     int total = 0;
                     for (int i = 0; i < len; i++) {
-                        if (((byte) BYTE_HANDLE.get(this.segment, start + i)) != this.keys[keyOffset + i]) {
+                        if (getByte(this.segment, start + i) != this.keys[keyOffset + i]) {
                             break;
                         }
                         total++;
                     }
                     if (total >= len) {
-                        return e;
+                        this.entries[index].add(value);
+                        return;
                     }
                 }
                 count++;
@@ -243,7 +270,7 @@ public class CalculateAverage_jparera {
         private static final long MULTIPLY_ADD_DIGITS = 100 * (1L << 24) + 10 * (1L << 16) + 1;
 
         private int vectorizedValue() {
-            long dw = (long) LONG_LE_HANDLE.get(this.segment, this.offset);
+            long dw = getLongLittleEndian(this.segment, this.offset);
             int zeros = Long.numberOfTrailingZeros(~dw & 0x10101000L);
             boolean negative = ((dw & 0xFF) ^ NEG) == 0;
             dw = ((negative ? (dw & ~0xFF) : dw) << (28 - zeros)) & 0x0F000F0F00L;
@@ -280,12 +307,12 @@ public class CalculateAverage_jparera {
         private static int hash(MemorySegment ms, long start, int len) {
             int x, y;
             if (len >= Integer.BYTES) {
-                x = (int) INT_HANDLE.get(ms, start);
-                y = (int) INT_HANDLE.get(ms, start + len - Integer.BYTES);
+                x = getInt(ms, start);
+                y = getInt(ms, start + len - Integer.BYTES);
             }
             else {
-                x = (byte) BYTE_HANDLE.get(ms, start) & 0xFF;
-                y = (byte) BYTE_HANDLE.get(ms, start + len - Byte.BYTES) & 0xFF;
+                x = getByte(ms, start) & 0xFF;
+                y = getByte(ms, start + len - Byte.BYTES) & 0xFF;
             }
             return (Integer.rotateLeft(x * GOLDEN_RATIO, HASH_LROTATE) ^ y) * GOLDEN_RATIO;
         }
@@ -309,8 +336,8 @@ public class CalculateAverage_jparera {
         }
 
         private void next() {
-            if (offset < size) {
-                this.current = (byte) BYTE_HANDLE.get(segment, offset++);
+            if (offset < this.size) {
+                this.current = getByte(this.segment, offset++);
             }
             else {
                 this.hasCurrent = false;
@@ -319,10 +346,6 @@ public class CalculateAverage_jparera {
     }
 
     private static final class Entry {
-        final int keyLength;
-
-        final int hash;
-
         private int min = Integer.MAX_VALUE;
 
         private int max = Integer.MIN_VALUE;
@@ -333,17 +356,19 @@ public class CalculateAverage_jparera {
 
         private String key;
 
-        Entry(int keyLength, int hash) {
-            this.keyLength = keyLength;
-            this.hash = hash;
+        public Entry(int value) {
+            min = value;
+            max = value;
+            sum = value;
+            count = 1;
         }
 
         public String key() {
             return key;
         }
 
-        void setkey(byte[] keys, int offset) {
-            this.key = new String(keys, offset, keyLength, StandardCharsets.UTF_8);
+        void setKey(byte[] keys, int offset, int len) {
+            this.key = new String(keys, offset, len, StandardCharsets.UTF_8);
         }
 
         public void add(int value) {
