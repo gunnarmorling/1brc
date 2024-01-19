@@ -64,7 +64,7 @@ public final class CalculateAverage_michaljonko {
     private static Collection<StationMeasurement> calculate(Path path, int partitionsAmount) {
         var memorySegments = FilePartitioner.createSegments(path, partitionsAmount);
 
-        try (var executorService = Executors.newFixedThreadPool(CPUs)) {
+        try (var executorService = Executors.newFixedThreadPool(partitionsAmount)) {
             var futures = new ArrayList<Future<HashMap<Integer, StationMeasurement>>>(memorySegments.size());
             for (var memorySegment : memorySegments) {
                 futures.add(executorService.submit(() -> parse(memorySegment)));
