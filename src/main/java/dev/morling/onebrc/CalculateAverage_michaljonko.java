@@ -26,6 +26,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -51,7 +52,7 @@ public final class CalculateAverage_michaljonko {
     public static void main(String[] args) throws IOException {
         System.out.println(
                 sortedResults(
-                        calculate(PATH, 2 * CPUs)));
+                        calculate(PATH, CPUs)));
     }
 
     private static String sortedResults(Collection<StationMeasurement> results) {
@@ -65,7 +66,7 @@ public final class CalculateAverage_michaljonko {
         var memorySegments = FilePartitioner.createSegments(path, partitionsAmount);
 
         try (var executorService = Executors.newFixedThreadPool(CPUs)) {
-            var futures = new ArrayList<Future<ConcurrentHashMap<Integer, StationMeasurement>>>(memorySegments.size());
+            var futures = new ArrayList<Future<HashMap<Integer, StationMeasurement>>>(memorySegments.size());
             for (var memorySegment : memorySegments) {
                 futures.add(executorService.submit(() -> parse(memorySegment)));
             }
@@ -80,7 +81,7 @@ public final class CalculateAverage_michaljonko {
         }
     }
 
-    private static ConcurrentHashMap<Integer, StationMeasurement> parse(MemorySegment memorySegment) {
+    private static HashMap<Integer, StationMeasurement> parse(MemorySegment memorySegment) {
         final var stationName = new byte[MAX_STATION_NAME_LENGTH];
         final var temperature = new byte[MAX_TEMPERATURE_LENGTH];
         byte b;
@@ -89,7 +90,7 @@ public final class CalculateAverage_michaljonko {
         var temperatureIndex = 0;
         var offset = 0L;
         var memorySegmentSize = memorySegment.byteSize();
-        var stationsMap = new ConcurrentHashMap<Integer, StationMeasurement>(MAX_STATION_NAMES);
+        var stationsMap = new HashMap<Integer, StationMeasurement>(MAX_STATION_NAMES);
         while (offset < memorySegmentSize) {
             while ((b = memorySegment.get(ValueLayout.JAVA_BYTE, offset++)) != ';') {
                 stationName[stationNameIndex++] = b;
@@ -115,7 +116,7 @@ public final class CalculateAverage_michaljonko {
 
     private static final class Station {
 
-        private static final ConcurrentHashMap<byte[], String> NAME_CACHE = new ConcurrentHashMap<>(MAX_STATION_NAMES, 1);
+        private static final ConcurrentHashMap<byte[], String> NAME_CACHE = new ConcurrentHashMap<>(MAX_STATION_NAMES);
         private final byte[] raw;
         private final String name;
 
