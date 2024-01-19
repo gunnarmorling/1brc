@@ -16,6 +16,6 @@
 #
 
 
-#JAVA_OPTS="-agentpath:/usr/lib/async-profiler/build/libasyncProfiler.so=start,event=cpu,interval=100000000,file=profile.html --enable-preview"
-JAVA_OPTS="--enable-preview"
+JAVA_OPTS="-agentpath:/usr/lib/async-profiler/build/libasyncProfiler.so=start,event=wall,threads,ann,interval=5000000,file=/home/michaljonko/Desktop/profile.html --enable-preview"
+#JAVA_OPTS="--enable-preview"
 java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_michaljonko

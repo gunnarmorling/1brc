@@ -51,7 +51,7 @@ public final class CalculateAverage_michaljonko {
     public static void main(String[] args) throws IOException {
         System.out.println(
                 sortedResults(
-                        calculate(PATH, CPUs)));
+                        calculate(PATH, CPUs + 1)));
     }
 
     private static String sortedResults(Collection<StationMeasurement> results) {
