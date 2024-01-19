@@ -15,68 +15,80 @@
  */
 package dev.morling.onebrc;
 
-import java.io.Closeable;
+import sun.misc.Unsafe;
+
 import java.io.IOException;
+import java.lang.foreign.Arena;
+import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
-import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.TreeMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 public class CalculateAverage_yavuztas {
 
     private static final Path FILE = Path.of("./measurements.txt");
 
-    static class Measurement {
-        private double min;
-        private double max;
-        private double sum;
-        private int count = 1;
+    private static final Unsafe UNSAFE = unsafe();
 
-        public Measurement(double initial) {
-            this.min = initial;
-            this.max = initial;
-            this.sum = initial;
+    // Tried all there: MappedByteBuffer, MemorySegment and Unsafe
+    // Accessing the memory using Unsafe is still the fastest in my experience
+    private static Unsafe unsafe() {
+        try {
+            final Field f = Unsafe.class.getDeclaredField("theUnsafe");
+            f.setAccessible(true);
+            return (Unsafe) f.get(null);
         }
-
-        public String toString() {
-            return round(this.min) + "/" + round(this.sum / this.count) + "/" + round(this.max);
-        }
-
-        private double round(double value) {
-            return Math.round(value * 10.0) / 10.0;
+        catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 
-    static class KeyBuffer {
+    // Only one object, both for measurements and keys, less object creation in hotpots is always faster
+    static class Record {
 
-        ByteBuffer value;
+        // keep memory starting address for each segment
+        // since we use Unsafe, this is enough to align and fetch the data
+        long segment;
+        int start;
+        int length;
         int hash;
 
-        public KeyBuffer(ByteBuffer buffer) {
-            this.value = buffer;
-            this.hash = buffer.hashCode();
+        private int min = 1000; // calculations over int is faster than double, we convert to double in the end only once
+        private int max = -1000;
+        private long sum;
+        private long count;
+
+        public Record(long segment, int start, int length, int hash) {
+            this.segment = segment;
+            this.start = start;
+            this.length = length;
+            this.hash = hash;
         }
 
         @Override
         public boolean equals(Object o) {
-            if (this == o)
-                return true;
+            final Record record = (Record) o;
+            return equals(record.segment, record.start, record.length, record.hash);
+        }
 
-            final KeyBuffer keyBuffer = (KeyBuffer) o;
-            if (o == null || getClass() != o.getClass() || this.hash != keyBuffer.hash)
+        /**
+         * Stateless equals, no Record object needed
+         */
+        public boolean equals(long segment, int start, int length, int hash) {
+            if (this.length != length || this.hash != hash)
                 return false;
 
-            return this.value.equals(keyBuffer.value);
+            int i = 0; // bytes mismatch check
+            while (i < this.length
+                    && UNSAFE.getByte(this.segment + this.start + i) == UNSAFE.getByte(segment + start + i)) {
+                i++;
+            }
+            return i == this.length;
         }
 
         @Override
@@ -86,202 +98,285 @@ public class CalculateAverage_yavuztas {
 
         @Override
         public String toString() {
-            final int limit = this.value.limit();
-            final byte[] bytes = new byte[limit];
-            this.value.get(bytes);
-            return new String(bytes, 0, limit, StandardCharsets.UTF_8);
+            final byte[] bytes = new byte[this.length];
+            int i = 0;
+            while (i < this.length) {
+                bytes[i] = UNSAFE.getByte(this.segment + this.start + i++);
+            }
+
+            return new String(bytes, StandardCharsets.UTF_8);
+        }
+
+        public Record collect(int temp) {
+            this.min = Math.min(this.min, temp);
+            this.max = Math.max(this.max, temp);
+            this.sum += temp;
+            this.count++;
+            return this;
+        }
+
+        public void merge(Record other) {
+            this.min = Math.min(this.min, other.min);
+            this.max = Math.max(this.max, other.max);
+            this.sum += other.sum;
+            this.count += other.count;
+        }
+
+        public String measurements() {
+            // here is only executed once for each unique key, so StringBuilder creation doesn't harm
+            final StringBuilder sb = new StringBuilder(14);
+            sb.append(this.min / 10.0);
+            sb.append("/");
+            sb.append(round((this.sum / 10.0) / this.count));
+            sb.append("/");
+            sb.append(this.max / 10.0);
+            return sb.toString();
         }
     }
 
-    static class FixedRegionDataAccessor {
+    // Inspired by @spullara - customized hashmap on purpose
+    // The main difference is we hold only one array instead of two
+    static class RecordMap {
 
-        static final byte SEMI_COLON = 59; // ';'
-        static final byte LINE_BREAK = 10; // '\n'
+        static final int SIZE = 1 << 15; // 32k - bigger bucket size less collisions
+        static final int BITMASK = SIZE - 1;
+        Record[] keys = new Record[SIZE];
 
-        final byte[] workBuffer = new byte[256]; // assuming max 256 bytes for a row is enough
+        static int hashBucket(int hash) {
+            hash = hash ^ (hash >>> 16); // naive bit spreading but surprisingly decreases collision :)
+            return hash & BITMASK; // fast modulo, to find bucket
+        }
 
-        long startPos;
-        long size;
-        ByteBuffer buffer;
-        int position; // relative
+        void putAndCollect(long segment, int start, int length, int hash, int temp) {
+            int bucket = hashBucket(hash);
+            Record existing = this.keys[bucket];
+            if (existing == null) {
+                this.keys[bucket] = new Record(segment, start, length, hash)
+                        .collect(temp);
+                return;
+            }
 
-        public FixedRegionDataAccessor(long startPos, long size, ByteBuffer buffer) {
+            if (!existing.equals(segment, start, length, hash)) {
+                // collision, linear probing to find a slot
+                while ((existing = this.keys[++bucket & BITMASK]) != null && !existing.equals(segment, start, length, hash)) {
+                    // can be stuck here if all the buckets are full :(
+                    // However, since the data set is max 10K (unique) this shouldn't happen
+                    // So, I'm happily leave here branchless :)
+                }
+                if (existing == null) {
+                    this.keys[bucket & BITMASK] = new Record(segment, start, length, hash)
+                            .collect(temp);
+                    return;
+                }
+                existing.collect(temp);
+            }
+            else {
+                existing.collect(temp);
+            }
+        }
+
+        void putOrMerge(Record key) {
+            int bucket = hashBucket(key.hash);
+            Record existing = this.keys[bucket];
+            if (existing == null) {
+                this.keys[bucket] = key;
+                return;
+            }
+
+            if (!existing.equals(key)) {
+                // collision, linear probing to find a slot
+                while ((existing = this.keys[++bucket & BITMASK]) != null && !existing.equals(key)) {
+                    // can be stuck here if all the buckets are full :(
+                    // However, since the data set is max 10K (unique keys) this shouldn't happen
+                    // So, I'm happily leave here branchless :)
+                }
+                if (existing == null) {
+                    this.keys[bucket & BITMASK] = key;
+                    return;
+                }
+                existing.merge(key);
+            }
+            else {
+                existing.merge(key);
+            }
+        }
+
+        void forEach(Consumer<Record> consumer) {
+            int pos = 0;
+            Record key;
+            while (pos < this.keys.length) {
+                if ((key = this.keys[pos++]) == null) {
+                    continue;
+                }
+                consumer.accept(key);
+            }
+        }
+
+        void merge(RecordMap other) {
+            other.forEach(this::putOrMerge);
+        }
+
+    }
+
+    // One actor for one thread, no synchronization
+    static class RegionActor {
+
+        final FileChannel channel;
+        final long startPos;
+        final int size;
+        final RecordMap map = new RecordMap();
+        long segmentAddress;
+        int position;
+        Thread runner; // each actor has its own thread
+
+        public RegionActor(FileChannel channel, long startPos, int size) {
+            this.channel = channel;
             this.startPos = startPos;
             this.size = size;
-            this.buffer = buffer;
         }
 
-        void traverse(BiConsumer<KeyBuffer, Double> consumer) {
-
-            int semiColonPos = 0;
-            int lineBreakPos = 0;
-            while (this.buffer.hasRemaining()) {
-
-                while ((this.workBuffer[0] = this.buffer.get()) != LINE_BREAK) {
-                    if (this.workBuffer[0] == SEMI_COLON) { // save semicolon pos
-                        semiColonPos = this.buffer.position(); // semicolon exclusive
-                    }
+        void accumulate() {
+            this.runner = new Thread(() -> {
+                try {
+                    // get the segment memory address, this is the only thing we need for Unsafe
+                    this.segmentAddress = this.channel.map(FileChannel.MapMode.READ_ONLY, this.startPos, this.size, Arena.global()).address();
                 }
-                // found linebreak
-                lineBreakPos = this.buffer.position();
+                catch (IOException e) {
+                    // no-op - skip intentionally, no handling for the purpose of this challenge
+                }
 
-                this.buffer.position(this.position); // set back to line start
-                final int length1 = semiColonPos - this.position; // station length
-                final int length2 = lineBreakPos - semiColonPos; // temperature length
-
-                final ByteBuffer station = getRef(length1); // read station
-                final String temperature = readString(length2); // read temperature
-
-                this.position = lineBreakPos; // skip to line end
-
-                consumer.accept(new KeyBuffer(station), Double.parseDouble(temperature));
-            }
-        }
-
-        Map<KeyBuffer, Measurement> accumulate(Map<KeyBuffer, Measurement> initial) {
-
-            traverse((station, temperature) -> {
-                initial.compute(station, (k, m) -> {
-                    if (m == null) {
-                        return new Measurement(temperature);
+                int start;
+                int keyHash;
+                int length;
+                while (this.position < this.size) {
+                    byte b;
+                    start = this.position; // save line start position
+                    keyHash = UNSAFE.getByte(this.segmentAddress + this.position++); // first byte is guaranteed not to be ';'
+                    length = 1; // min key length
+                    while ((b = UNSAFE.getByte(this.segmentAddress + this.position++)) != ';') { // read until semicolon
+                        keyHash = calculateHash(keyHash, b); // calculate key hash ahead, eleminates one more loop later
+                        length++;
                     }
-                    // aggregate
-                    m.min = Math.min(m.min, temperature);
-                    m.max = Math.max(m.max, temperature);
-                    m.sum += temperature;
-                    m.count++;
-                    return m;
-                });
+
+                    final int temp = readTemperature();
+                    this.map.putAndCollect(this.segmentAddress, start, length, keyHash, temp);
+
+                    this.position++; // skip linebreak
+                }
             });
-
-            return initial;
+            this.runner.start();
         }
 
-        String readString(int length) {
-            this.buffer.get(this.workBuffer, 0, length);
-            return new String(this.workBuffer, 0, length - 1, // strip the last char
-                    StandardCharsets.UTF_8);
+        static int calculateHash(int hash, int b) {
+            return 31 * hash + b;
         }
 
-        ByteBuffer getRef(int length) {
-            final ByteBuffer slice = this.buffer.slice().limit(length - 1);
-            skip(this.buffer, length);
-            return slice;
-        }
+        // 1. Inspired by @yemreinci - Reading temparature value without Double.parse
+        // 2. Inspired by @obourgain - Fetching first 4 bytes ahead, then masking
+        int readTemperature() {
+            int temp = 0;
+            // read 4 bytes ahead
+            final int first4 = UNSAFE.getInt(this.segmentAddress + this.position);
+            this.position += 3;
 
-        static void skip(ByteBuffer buffer, int length) {
-            final int pos = buffer.position();
-            buffer.position(pos + length);
-        }
-
-    }
-
-    static class FastDataReader implements Closeable {
-
-        private final FixedRegionDataAccessor[] accessors;
-        private final ExecutorService mergerThread;
-        private final ExecutorService accessorPool;
-
-        public FastDataReader(Path path) throws IOException {
-            var concurrency = Runtime.getRuntime().availableProcessors();
-            final long fileSize = Files.size(path);
-            long regionSize = fileSize / concurrency;
-
-            if (regionSize > Integer.MAX_VALUE) {
-                // TODO multiply concurrency and try again
-                throw new IllegalArgumentException("Bigger than integer!");
-            }
-            // handling extreme cases
-            if (regionSize <= 256) { // small file, no need concurrency
-                concurrency = 1;
-                regionSize = fileSize;
-            }
-
-            long startPosition = 0;
-            this.accessors = new FixedRegionDataAccessor[concurrency];
-            for (int i = 0; i < concurrency - 1; i++) {
-                // map regions
-                try (final FileChannel channel = (FileChannel) Files.newByteChannel(path, StandardOpenOption.READ)) {
-                    final long maxSize = startPosition + regionSize > fileSize ? fileSize - startPosition : regionSize;
-                    final MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_ONLY, startPosition, maxSize);
-                    this.accessors[i] = new FixedRegionDataAccessor(startPosition, maxSize, buffer);
-                    // adjust positions back and forth until we find a linebreak!
-                    final int closestPos = findClosestLineEnd((int) maxSize - 1, buffer);
-                    buffer.limit(closestPos + 1);
-                    startPosition += closestPos + 1;
+            final byte b1 = (byte) first4; // first byte
+            final byte b2 = (byte) ((first4 >> 8) & 0xFF); // second byte
+            final byte b3 = (byte) ((first4 >> 16) & 0xFF); // third byte
+            if (b1 == '-') {
+                if (b3 == '.') {
+                    temp -= 10 * (b2 - '0') + (byte) ((first4 >> 24) & 0xFF) - '0'; // fourth byte
+                    this.position++;
+                }
+                else {
+                    this.position++; // skip dot
+                    temp -= 100 * (b2 - '0') + 10 * (b3 - '0') + UNSAFE.getByte(this.segmentAddress + this.position++) - '0'; // fifth byte
                 }
             }
-            // map the last region
-            try (final FileChannel channel = (FileChannel) Files.newByteChannel(path, StandardOpenOption.READ)) {
-                final long maxSize = fileSize - startPosition; // last region will take the rest
-                final MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_ONLY, startPosition, maxSize);
-                this.accessors[concurrency - 1] = new FixedRegionDataAccessor(startPosition, maxSize, buffer);
+            else {
+                if (b2 == '.') {
+                    temp = 10 * (b1 - '0') + b3 - '0';
+                }
+                else {
+                    temp = 100 * (b1 - '0') + 10 * (b2 - '0') + (byte) ((first4 >> 24) & 0xFF) - '0'; // fourth byte
+                    this.position++;
+                }
             }
-            // create executors
-            this.mergerThread = Executors.newSingleThreadExecutor();
-            this.accessorPool = Executors.newFixedThreadPool(concurrency);
-        }
 
-        void readAndCollect(Map<KeyBuffer, Measurement> output) {
-            for (final FixedRegionDataAccessor accessor : this.accessors) {
-                this.accessorPool.submit(() -> {
-                    final Map<KeyBuffer, Measurement> partial = accessor.accumulate(new HashMap<>(1 << 10, 1)); // aka 1k
-                    this.mergerThread.submit(() -> mergeMaps(output, partial));
-                });
-            }
-        }
-
-        @Override
-        public void close() {
-            try {
-                this.accessorPool.shutdown();
-                this.accessorPool.awaitTermination(60, TimeUnit.SECONDS);
-                this.mergerThread.shutdown();
-                this.mergerThread.awaitTermination(60, TimeUnit.SECONDS);
-            }
-            catch (Exception e) {
-                this.accessorPool.shutdownNow();
-                this.mergerThread.shutdownNow();
-            }
+            return temp;
         }
 
         /**
-         * Scans the given buffer to the left
+         * blocks until the map is fully collected
          */
-        private static int findClosestLineEnd(int regionSize, ByteBuffer buffer) {
-            int position = regionSize;
-            int left = regionSize;
-            while (buffer.get(position) != FixedRegionDataAccessor.LINE_BREAK) {
-                position = --left;
+        RecordMap get() throws InterruptedException {
+            this.runner.join();
+            return this.map;
+        }
+    }
+
+    private static double round(double value) {
+        return Math.round(value * 10.0) / 10.0;
+    }
+
+    /**
+     * Scans the given buffer to the left
+     */
+    private static long findClosestLineEnd(long start, int size, FileChannel channel) throws IOException {
+        final long position = start + size;
+        final long left = Math.max(position - 101, 0);
+        final ByteBuffer buffer = ByteBuffer.allocate(101); // enough size to find at least one '\n'
+        if (channel.read(buffer.clear(), left) != -1) {
+            int bufferPos = buffer.position() - 1;
+            while (buffer.get(bufferPos) != '\n') {
+                bufferPos--;
+                size--;
             }
-            return position;
         }
-
-        private static Map<KeyBuffer, Measurement> mergeMaps(Map<KeyBuffer, Measurement> map1, Map<KeyBuffer, Measurement> map2) {
-            map2.forEach((s, measurement) -> {
-                map1.merge(s, measurement, (m1, m2) -> {
-                    m1.min = Math.min(m1.min, m2.min);
-                    m1.max = Math.max(m1.max, m2.max);
-                    m1.sum += m2.sum;
-                    m1.count += m2.count;
-                    return m1;
-                });
-            });
-
-            return map1;
-        }
-
+        return size;
     }
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        final Map<KeyBuffer, Measurement> output = new HashMap<>(1 << 10, 1); // aka 1k
-        try (final FastDataReader reader = new FastDataReader(FILE)) {
-            reader.readAndCollect(output);
+
+        var concurrency = Runtime.getRuntime().availableProcessors();
+        final long fileSize = Files.size(FILE);
+        long regionSize = fileSize / concurrency;
+
+        // handling extreme cases
+        while (regionSize > Integer.MAX_VALUE) {
+            concurrency *= 2;
+            regionSize /= 2;
+        }
+        if (fileSize <= 1 << 20) { // small file (1mb), no need concurrency
+            concurrency = 1;
+            regionSize = fileSize;
         }
 
-        final TreeMap<String, Measurement> sorted = new TreeMap<>();
-        output.forEach((s, measurement) -> sorted.put(s.toString(), measurement));
+        long startPos = 0;
+        final FileChannel channel = (FileChannel) Files.newByteChannel(FILE, StandardOpenOption.READ);
+        final RegionActor[] actors = new RegionActor[concurrency];
+        for (int i = 0; i < concurrency; i++) {
+            // calculate boundaries
+            long maxSize = (startPos + regionSize > fileSize) ? fileSize - startPos : regionSize;
+            // shift position to back until we find a linebreak
+            maxSize = findClosestLineEnd(startPos, (int) maxSize, channel);
+
+            final RegionActor region = (actors[i] = new RegionActor(channel, startPos, (int) maxSize));
+            region.accumulate();
+
+            startPos += maxSize;
+        }
+
+        final RecordMap output = new RecordMap(); // output to merge all regions
+        for (RegionActor actor : actors) {
+            final RecordMap partial = actor.get(); // blocks until get the result
+            output.merge(partial);
+        }
+
+        // sort and print the result
+        final TreeMap<String, String> sorted = new TreeMap<>();
+        output.forEach(key -> sorted.put(key.toString(), key.measurements()));
         System.out.println(sorted);
+
     }
 
 }

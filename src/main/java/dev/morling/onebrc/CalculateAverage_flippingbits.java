@@ -18,8 +18,14 @@ package dev.morling.onebrc;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
 
+import sun.misc.Unsafe;
+import java.lang.foreign.Arena;
+import java.lang.reflect.Field;
+
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
@@ -33,145 +39,170 @@ public class CalculateAverage_flippingbits {
 
     private static final String FILE = "./measurements.txt";
 
-    private static final long CHUNK_SIZE = 100 * 1024 * 1024; // 100 MB
+    private static final long MINIMUM_FILE_SIZE_PARTITIONING = 10 * 1024 * 1024; // 10 MB
 
     private static final int SIMD_LANE_LENGTH = ShortVector.SPECIES_MAX.length();
 
+    private static final int NUM_STATIONS = 10_000;
+
+    private static final int HASH_MAP_OFFSET_CAPACITY = 200_000;
+
+    private static final Unsafe UNSAFE = initUnsafe();
+
+    private static int HASH_PRIME_NUMBER = 31;
+
+    private static Unsafe initUnsafe() {
+        try {
+            Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
+            theUnsafe.setAccessible(true);
+            return (Unsafe) theUnsafe.get(Unsafe.class);
+        }
+        catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public static void main(String[] args) throws IOException {
-        try (var file = new RandomAccessFile(FILE, "r")) {
-            // Calculate chunk boundaries
-            long[][] chunkBoundaries = getChunkBoundaries(file);
-            // Process chunks
-            var result = Arrays.asList(chunkBoundaries).stream()
-                    .map(chunk -> {
-                        try {
-                            return processChunk(chunk[0], chunk[1]);
-                        }
-                        catch (IOException e) {
-                            throw new RuntimeException(e);
-                        }
-                    })
-                    .parallel()
-                    .reduce((firstMap, secondMap) -> {
-                        for (var entry : secondMap.entrySet()) {
-                            PartitionAggregate firstAggregate = firstMap.get(entry.getKey());
-                            if (firstAggregate == null) {
-                                firstMap.put(entry.getKey(), entry.getValue());
-                            }
-                            else {
-                                firstAggregate.mergeWith(entry.getValue());
-                            }
-                        }
-                        return firstMap;
-                    })
-                    .map(hashMap -> new TreeMap(hashMap)).get();
+        var result = Arrays.asList(getSegments()).parallelStream()
+                .map(segment -> {
+                    try {
+                        return processSegment(segment[0], segment[1]);
+                    }
+                    catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                })
+                .reduce(FasterHashMap::mergeWith)
+                .get();
 
-            System.out.println(result);
+        var sortedMap = new TreeMap<String, Station>();
+        for (Station station : result.getEntries()) {
+            sortedMap.put(station.getName(), station);
         }
+
+        System.out.println(sortedMap);
     }
 
-    private static long[][] getChunkBoundaries(RandomAccessFile file) throws IOException {
-        var fileSize = file.length();
-        // Split file into chunks, so we can work around the size limitation of channels
-        var chunks = (int) (fileSize / CHUNK_SIZE);
+    private static long[][] getSegments() throws IOException {
+        try (var file = new RandomAccessFile(FILE, "r")) {
+            var channel = file.getChannel();
 
-        long[][] chunkBoundaries = new long[chunks + 1][2];
-        var endPointer = 0L;
+            var fileSize = channel.size();
+            var startAddress = channel
+                    .map(FileChannel.MapMode.READ_ONLY, 0, fileSize, Arena.global())
+                    .address();
 
-        for (var i = 0; i <= chunks; i++) {
-            // Start of chunk
-            chunkBoundaries[i][0] = Math.min(Math.max(endPointer, i * CHUNK_SIZE), fileSize);
+            // Split file into segments, so we can work around the size limitation of channels
+            var numSegments = (fileSize > MINIMUM_FILE_SIZE_PARTITIONING)
+                    ? Runtime.getRuntime().availableProcessors()
+                    : 1;
+            var segmentSize = fileSize / numSegments;
 
-            // Seek end of chunk, limited by the end of the file
-            file.seek(Math.min(chunkBoundaries[i][0] + CHUNK_SIZE - 1, fileSize));
+            var boundaries = new long[numSegments][2];
+            var endPointer = startAddress;
 
-            // Extend chunk until end of line or file
-            while (true) {
-                var character = file.read();
-                if (character == '\n' || character == -1) {
-                    break;
+            for (var i = 0; i < numSegments - 1; i++) {
+                // Start of segment
+                boundaries[i][0] = endPointer;
+
+                // Extend segment until end of line or file
+                endPointer = endPointer + segmentSize;
+                while (UNSAFE.getByte(endPointer) != '\n') {
+                    endPointer++;
                 }
+
+                // End of segment
+                boundaries[i][1] = endPointer++;
             }
 
-            // End of chunk
-            endPointer = file.getFilePointer();
-            chunkBoundaries[i][1] = endPointer;
-        }
+            boundaries[numSegments - 1][0] = endPointer;
+            boundaries[numSegments - 1][1] = startAddress + fileSize;
 
-        return chunkBoundaries;
+            return boundaries;
+        }
     }
 
-    private static Map<String, PartitionAggregate> processChunk(long startOfChunk, long endOfChunk)
-            throws IOException {
-        Map<String, PartitionAggregate> stationAggregates = new HashMap<>(10_000);
-        byte[] byteChunk = new byte[(int) (endOfChunk - startOfChunk)];
-        try (var file = new RandomAccessFile(FILE, "r")) {
-            file.seek(startOfChunk);
-            file.read(byteChunk);
-            var i = 0;
-            while (i < byteChunk.length) {
-                final var startPosStation = i;
-
-                // read station name
-                while (byteChunk[i] != ';') {
-                    i++;
-                }
-                var station = new String(Arrays.copyOfRange(byteChunk, startPosStation, i));
+    private static FasterHashMap processSegment(long startOfSegment, long endOfSegment) throws IOException {
+        var fasterHashMap = new FasterHashMap();
+        for (var i = startOfSegment; i < endOfSegment; i += 3) {
+            // Read station name
+            int nameHash = UNSAFE.getByte(i);
+            final var nameStartAddress = i++;
+            var character = UNSAFE.getByte(i);
+            while (character != ';') {
+                nameHash = nameHash * HASH_PRIME_NUMBER + character;
                 i++;
-
-                // read measurement
-                final var startPosMeasurement = i;
-                while (byteChunk[i] != '\n') {
-                    i++;
-                }
-
-                var measurement = Arrays.copyOfRange(byteChunk, startPosMeasurement, i);
-                var aggregate = stationAggregates.getOrDefault(station, new PartitionAggregate());
-                aggregate.addMeasurementAndComputeAggregate(measurement);
-                stationAggregates.put(station, aggregate);
-                i++;
+                character = UNSAFE.getByte(i);
             }
-            stationAggregates.values().forEach(PartitionAggregate::aggregateRemainingMeasurements);
+            var nameLength = (int) (i - nameStartAddress);
+            i++;
+
+            // Read measurement
+            var isNegative = UNSAFE.getByte(i) == '-';
+            var measurement = 0;
+            if (isNegative) {
+                i++;
+                character = UNSAFE.getByte(i);
+                while (character != '.') {
+                    measurement = measurement * 10 + character - '0';
+                    i++;
+                    character = UNSAFE.getByte(i);
+                }
+                measurement = (measurement * 10 + UNSAFE.getByte(i + 1) - '0') * -1;
+            }
+            else {
+                character = UNSAFE.getByte(i);
+                while (character != '.') {
+                    measurement = measurement * 10 + character - '0';
+                    i++;
+                    character = UNSAFE.getByte(i);
+                }
+                measurement = measurement * 10 + UNSAFE.getByte(i + 1) - '0';
+            }
+
+            fasterHashMap.addEntry(nameHash, nameLength, nameStartAddress, (short) measurement);
         }
 
-        return stationAggregates;
+        for (Station station : fasterHashMap.getEntries()) {
+            station.aggregateRemainingMeasurements();
+        }
+
+        return fasterHashMap;
     }
 
-    private static class PartitionAggregate {
-        final short[] lane = new short[SIMD_LANE_LENGTH * 2];
+    private static class Station {
+        final short[] measurements = new short[SIMD_LANE_LENGTH * 2];
         // Assume that we do not have more than Integer.MAX_VALUE measurements for the same station per partition
-        int count = 0;
+        int count = 1;
         long sum = 0;
         short min = Short.MAX_VALUE;
         short max = Short.MIN_VALUE;
+        final long nameAddress;
+        final int nameLength;
+        final int nameHash;
 
-        public void addMeasurementAndComputeAggregate(byte[] measurementBytes) {
-            // Parse measurement and exploit that we know the format of the floating-point values
-            var measurement = measurementBytes[measurementBytes.length - 1] - '0';
-            var digits = 1;
-            for (var i = measurementBytes.length - 3; i > 0; i--) {
-                var num = measurementBytes[i] - '0';
-                measurement = measurement + (num * (int) Math.pow(10, digits));
-                digits++;
-            }
+        public Station(int nameHash, int nameLength, long nameAddress, short measurement) {
+            this.nameHash = nameHash;
+            this.nameLength = nameLength;
+            this.nameAddress = nameAddress;
+            measurements[0] = measurement;
+        }
 
-            // Check if measurement is negative
-            if (measurementBytes[0] == '-') {
-                measurement = measurement * -1;
-            }
-            else {
-                var num = measurementBytes[0] - '0';
-                measurement = measurement + (num * (int) Math.pow(10, digits));
-            }
+        public String getName() {
+            byte[] name = new byte[nameLength];
+            UNSAFE.copyMemory(null, nameAddress, name, Unsafe.ARRAY_BYTE_BASE_OFFSET, nameLength);
+            return new String(name, StandardCharsets.UTF_8);
+        }
 
+        public void addMeasurementAndComputeAggregate(short measurement) {
             // Add measurement to buffer, which is later processed by SIMD instructions
-            lane[count % lane.length] = (short) measurement;
+            measurements[count % measurements.length] = measurement;
             count++;
 
             // Once lane is full, use SIMD instructions to calculate aggregates
-            if (count % lane.length == 0) {
-                var firstVector = ShortVector.fromArray(ShortVector.SPECIES_MAX, lane, 0);
-                var secondVector = ShortVector.fromArray(ShortVector.SPECIES_MAX, lane, SIMD_LANE_LENGTH);
+            if (count % measurements.length == 0) {
+                var firstVector = ShortVector.fromArray(ShortVector.SPECIES_MAX, measurements, 0);
+                var secondVector = ShortVector.fromArray(ShortVector.SPECIES_MAX, measurements, SIMD_LANE_LENGTH);
 
                 var simdMin = firstVector.min(secondVector).reduceLanes(VectorOperators.MIN);
                 min = (short) Math.min(min, simdMin);
@@ -184,19 +215,35 @@ public class CalculateAverage_flippingbits {
         }
 
         public void aggregateRemainingMeasurements() {
-            for (var i = 0; i < count % lane.length; i++) {
-                var measurement = lane[i];
+            for (var i = 0; i < count % measurements.length; i++) {
+                var measurement = measurements[i];
                 min = (short) Math.min(min, measurement);
                 max = (short) Math.max(max, measurement);
                 sum += measurement;
             }
         }
 
-        public void mergeWith(PartitionAggregate otherAggregate) {
-            min = (short) Math.min(min, otherAggregate.min);
-            max = (short) Math.max(max, otherAggregate.max);
-            count = count + otherAggregate.count;
-            sum = sum + otherAggregate.sum;
+        public void mergeWith(Station otherStation) {
+            min = (short) Math.min(min, otherStation.min);
+            max = (short) Math.max(max, otherStation.max);
+            count = count + otherStation.count;
+            sum = sum + otherStation.sum;
+        }
+
+        public boolean nameEquals(long otherNameAddress) {
+            var swarLimit = (nameLength / Long.BYTES) * Long.BYTES;
+            var i = 0;
+            for (; i < swarLimit; i += Long.BYTES) {
+                if (UNSAFE.getLong(nameAddress + i) != UNSAFE.getLong(otherNameAddress + i)) {
+                    return false;
+                }
+            }
+            for (; i < nameLength; i++) {
+                if (UNSAFE.getByte(nameAddress + i) != UNSAFE.getByte(otherNameAddress + i)) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         public String toString() {
@@ -204,8 +251,71 @@ public class CalculateAverage_flippingbits {
                     Locale.US,
                     "%.1f/%.1f/%.1f",
                     (min / 10.0),
-                    (sum / 10.0) / count,
+                    ((sum / 10.0) / count),
                     (max / 10.0));
+        }
+    }
+
+    /**
+     * Use two arrays for implementing the hash map:
+     * - The array `entries` holds the map values, in our case instances of the class Station.
+     * - The array `offsets` maps hashes of the keys to indexes in the `entries` array.
+     *
+     * We create `offsets` with a much larger capacity than `entries`, so we minimize collisions.
+     */
+    private static class FasterHashMap {
+        // Using 16-bit integers (shorts) for offsets supports up to 2^15 (=32,767) entries
+        // If you need to store more entries, consider replacing short with int
+        short[] offsets = new short[HASH_MAP_OFFSET_CAPACITY];
+        Station[] entries = new Station[NUM_STATIONS + 1];
+        int slotsInUse = 0;
+
+        private int getOffsetIdx(int nameHash, int nameLength, long nameAddress) {
+            var offsetIdx = nameHash & (offsets.length - 1);
+            var offset = offsets[offsetIdx];
+
+            while (offset != 0 &&
+                    (nameLength != entries[offset].nameLength || !entries[offset].nameEquals(nameAddress))) {
+                offsetIdx = (offsetIdx + 1) % offsets.length;
+                offset = offsets[offsetIdx];
+            }
+
+            return offsetIdx;
+        }
+
+        public void addEntry(int nameHash, int nameLength, long nameAddress, short measurement) {
+            var offsetIdx = getOffsetIdx(nameHash, nameLength, nameAddress);
+            var offset = offsets[offsetIdx];
+
+            if (offset == 0) {
+                slotsInUse++;
+                entries[slotsInUse] = new Station(nameHash, nameLength, nameAddress, measurement);
+                offsets[offsetIdx] = (short) slotsInUse;
+            }
+            else {
+                entries[offset].addMeasurementAndComputeAggregate(measurement);
+            }
+        }
+
+        public FasterHashMap mergeWith(FasterHashMap otherMap) {
+            for (Station station : otherMap.getEntries()) {
+                var offsetIdx = getOffsetIdx(station.nameHash, station.nameLength, station.nameAddress);
+                var offset = offsets[offsetIdx];
+
+                if (offset == 0) {
+                    slotsInUse++;
+                    entries[slotsInUse] = station;
+                    offsets[offsetIdx] = (short) slotsInUse;
+                }
+                else {
+                    entries[offset].mergeWith(station);
+                }
+            }
+            return this;
+        }
+
+        public List<Station> getEntries() {
+            return Arrays.asList(entries).subList(1, slotsInUse + 1);
         }
     }
 }
