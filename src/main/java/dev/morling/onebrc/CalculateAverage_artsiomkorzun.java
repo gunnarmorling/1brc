@@ -38,12 +38,14 @@ public class CalculateAverage_artsiomkorzun {
     private static final long MAGIC_MULTIPLIER = (100 * 0x1000000 + 10 * 0x10000 + 1);
 
     private static final Unsafe UNSAFE;
+    private static final int PAGE_SIZE;
 
     static {
         try {
             Field unsafe = Unsafe.class.getDeclaredField("theUnsafe");
             unsafe.setAccessible(true);
             UNSAFE = (Unsafe) unsafe.get(Unsafe.class);
+            PAGE_SIZE = UNSAFE.pageSize();
         }
         catch (Throwable e) {
             throw new RuntimeException(e);
@@ -142,7 +144,7 @@ public class CalculateAverage_artsiomkorzun {
         private final long pointer;
 
         public Aggregates() {
-            long address = UNSAFE.allocateMemory(SIZE + 8096);
+            long address = UNSAFE.allocateMemory(SIZE + 8192);
             pointer = (address + 4095) & (~4095);
             UNSAFE.setMemory(pointer, SIZE, (byte) 0);
         }
@@ -206,14 +208,8 @@ public class CalculateAverage_artsiomkorzun {
 
                 for (int offset = offset(hash);; offset = next(offset)) {
                     long address = pointer + offset;
-                    int len = UNSAFE.getInt(address);
 
-                    if (len == 0) {
-                        UNSAFE.copyMemory(rightAddress, address, 24 + length);
-                        break;
-                    }
-
-                    if (len == length && equal(address + 24, rightAddress + 24, length)) {
+                    if (equal(address + 24, rightAddress + 24, length)) {
                         long sum = UNSAFE.getLong(address + 8) + UNSAFE.getLong(rightAddress + 8);
                         int cnt = UNSAFE.getInt(address + 16) + UNSAFE.getInt(rightAddress + 16);
                         short min = (short) Math.min(UNSAFE.getShort(address + 20), UNSAFE.getShort(rightAddress + 20));
@@ -223,6 +219,13 @@ public class CalculateAverage_artsiomkorzun {
                         UNSAFE.putInt(address + 16, cnt);
                         UNSAFE.putShort(address + 20, min);
                         UNSAFE.putShort(address + 22, max);
+                        break;
+                    }
+
+                    int len = UNSAFE.getInt(address);
+
+                    if (len == 0) {
+                        UNSAFE.copyMemory(rightAddress, address, length + 24);
                         break;
                     }
                 }
@@ -237,8 +240,8 @@ public class CalculateAverage_artsiomkorzun {
                 int length = UNSAFE.getInt(address);
 
                 if (length != 0) {
-                    byte[] array = new byte[length];
-                    UNSAFE.copyMemory(null, address + 24, array, Unsafe.ARRAY_BYTE_BASE_OFFSET, length);
+                    byte[] array = new byte[length - 1];
+                    UNSAFE.copyMemory(null, address + 24, array, Unsafe.ARRAY_BYTE_BASE_OFFSET, array.length);
                     String key = new String(array);
 
                     long sum = UNSAFE.getLong(address + 8);
@@ -271,7 +274,7 @@ public class CalculateAverage_artsiomkorzun {
         }
 
         private static boolean equal(long leftAddress, long leftWord, long rightAddress, int length) {
-            while (length >= 8) {
+            while (length > 8) {
                 long left = UNSAFE.getLong(leftAddress);
                 long right = UNSAFE.getLong(rightAddress);
 
@@ -307,6 +310,8 @@ public class CalculateAverage_artsiomkorzun {
 
     private static class Aggregator extends Thread {
 
+        public static int DEAD;
+
         private final AtomicInteger counter;
         private final AtomicReference<Aggregates> result;
         private final long fileAddress;
@@ -333,6 +338,8 @@ public class CalculateAverage_artsiomkorzun {
                 long address = fileAddress + position;
                 long limit = address + Math.min(SEGMENT_SIZE, size - 1);
 
+                pretouch(address, limit);
+
                 if (segment > 0) {
                     address = next(address);
                 }
@@ -346,6 +353,18 @@ public class CalculateAverage_artsiomkorzun {
                 if (rights != null) {
                     aggregates.merge(rights);
                 }
+            }
+        }
+
+        private static void pretouch(long position, long limit) {
+            int sum = 0;
+
+            for (; position < limit; position += PAGE_SIZE) {
+                sum += UNSAFE.getByte(position);
+            }
+
+            if (sum == Integer.MAX_VALUE) {
+                DEAD = sum;
             }
         }
 
@@ -406,7 +425,7 @@ public class CalculateAverage_artsiomkorzun {
                     ptr = aggregates.put(position, word, length, hash);
                 }
 
-                position = update(ptr, position + length + 1);
+                position = update(ptr, position + length);
             }
         }
 
@@ -431,12 +450,12 @@ public class CalculateAverage_artsiomkorzun {
         }
 
         private static long mask(long word, long separator) {
-            long mask = ((separator - 1) ^ separator) >>> 8;
+            long mask = separator ^ (separator - 1);
             return word & mask;
         }
 
         private static int length(long separator) {
-            return Long.numberOfTrailingZeros(separator) >>> 3;
+            return (Long.numberOfTrailingZeros(separator) >>> 3) + 1;
         }
 
         private static long next(long position) {
