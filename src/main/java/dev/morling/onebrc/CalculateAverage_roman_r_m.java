@@ -33,37 +33,33 @@ public class CalculateAverage_roman_r_m {
 
     private static Unsafe UNSAFE;
 
-    // based on http://0x80.pl/notesen/2023-03-06-swar-find-any.html
-    static long hasZeroByte(long l) {
-        return ((l - 0x0101010101010101L) & ~(l) & 0x8080808080808080L);
-    }
-
-    static long firstSetByteIndex(long l) {
-        return ((((l - 1) & 0x101010101010101L) * 0x101010101010101L) >> 56) - 1;
-    }
-
-    static long broadcast(byte b) {
+    private static long broadcast(byte b) {
         return 0x101010101010101L * b;
     }
 
-    static long SEMICOLON_MASK = broadcast((byte) ';');
-    static long LINE_END_MASK = broadcast((byte) '\n');
+    private static final long SEMICOLON_MASK = broadcast((byte) ';');
+    private static final long LINE_END_MASK = broadcast((byte) '\n');
 
-    static long find(long l, long mask) {
-        long xor = l ^ mask;
-        long match = hasZeroByte(xor);
-        return match != 0 ? firstSetByteIndex(match) : -1;
+    // from netty
+    /**
+     * Applies a compiled pattern to given word.
+     * Returns a word where each byte that matches the pattern has the highest bit set.
+     */
+    private static long applyPattern(final long word, final long pattern) {
+        long input = word ^ pattern;
+        long tmp = (input & 0x7F7F7F7F7F7F7F7FL) + 0x7F7F7F7F7F7F7F7FL;
+        return ~(tmp | input | 0x7F7F7F7F7F7F7F7FL);
     }
 
     static long nextNewline(long from, MemorySegment ms) {
         long start = from;
         long i;
         long next = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, start);
-        while ((i = find(next, LINE_END_MASK)) < 0) {
+        while ((i = applyPattern(next, LINE_END_MASK)) == 0) {
             start += 8;
             next = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, start);
         }
-        return start + i;
+        return start + Long.numberOfTrailingZeros(i) / 8;
     }
 
     static class Worker {
@@ -84,24 +80,13 @@ public class CalculateAverage_roman_r_m {
 
         private void parseName(ByteString station) {
             long start = offset;
-            long pos = -1;
-
-            while (end - offset > 8) {
-                long next = UNSAFE.getLong(offset);
-                pos = find(next, SEMICOLON_MASK);
-                if (pos >= 0) {
-                    offset += pos;
-                    break;
-                }
-                else {
-                    offset += 8;
-                }
+            long pattern;
+            long next = UNSAFE.getLong(offset);
+            while ((pattern = applyPattern(next, SEMICOLON_MASK)) == 0) {
+                offset += 8;
+                next = UNSAFE.getLong(offset);
             }
-            if (pos < 0) {
-                while (UNSAFE.getByte(offset++) != ';') {
-                }
-                offset--;
-            }
+            offset += Long.numberOfTrailingZeros(pattern) / 8;
 
             int len = (int) (offset - start);
             station.offset = start;
@@ -114,7 +99,8 @@ public class CalculateAverage_roman_r_m {
         long parseNumberFast() {
             long encodedVal = UNSAFE.getLong(offset);
 
-            var len = find(encodedVal, LINE_END_MASK);
+            var len = applyPattern(encodedVal, LINE_END_MASK);
+            len = Long.numberOfTrailingZeros(len) / 8;
             offset += len + 1;
 
             encodedVal ^= broadcast((byte) 0x30);
