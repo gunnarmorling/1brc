@@ -57,10 +57,9 @@ import sun.misc.Unsafe;
  * More LOC now parallel:            1260 ms (moved more to processMemoryArea, recombining in ConcurrentHashMap)
  * Storing only the address:         1240 ms (this is now faster, tried before, was slower)
  * Unrolling scan-loop:              1200 ms (seems to help, perhaps even more on target machine)
+ * Adding more readable reader:      1300 ms (scores got worse on target machine anyway)
  *
- * I've tried making a version that scans in both directions; one starts at the beginning of a segment, the other at the end and processes backwards.
- * This has one big advantage: you can update the pivot if one thread is faster than the other, you'll get "free" work-sharing.
- * But I couldn't get the backwards logic to work reliably, so I ditched the idea for now.
+ * I've ditched my M2 for an older x86-64 MacBook, this allows me to run `perf` and I'm trying to get lower numbers by trail and error.
  *
  * Big thanks to Francesco Nigro, Thomas Wuerthinger, Quan Anh Mai and many others for ideas.
  *
@@ -93,6 +92,9 @@ public class CalculateAverage_royvanrijn {
     private static final int ENTRY_MAX = (ENTRY_MIN + Integer.BYTES);
     private static final int ENTRY_COUNT = (ENTRY_MAX + Integer.BYTES);
     private static final int ENTRY_NAME = (ENTRY_COUNT + Integer.BYTES);
+    private static final int ENTRY_NAME_8 = ENTRY_NAME + 8;
+    private static final int ENTRY_NAME_16 = ENTRY_NAME + 16;
+
     private static final int ENTRY_BASESIZE_WHITESPACE = ENTRY_NAME + 7; // with enough empty bytes to fill a long
     // ------------------------------------------------------------------------
     private static final int PREMADE_MAX_SIZE = 1 << 5; // pre-initialize some entries in memory, keep them close
@@ -170,10 +172,11 @@ public class CalculateAverage_royvanrijn {
         return entry;
     }
 
-    public static void updateExistingEntry(final byte[] entry, final int temp) {
+    public static void updateEntry(final byte[] entry, final int temp) {
 
         int entryMin = UNSAFE.getInt(entry, ENTRY_MIN);
         int entryMax = UNSAFE.getInt(entry, ENTRY_MAX);
+
         entryMin = Math.min(temp, entryMin);
         entryMax = Math.max(temp, entryMax);
 
@@ -238,105 +241,311 @@ public class CalculateAverage_royvanrijn {
         return result;
     }
 
+    // Print a piece of memory:
+    // For debug.
+    private static String printMemory(final long value, int length) {
+        String result = "";
+        for (int i = 0; i < length; i++) {
+            result += (char) ((value >> (i << 3)) & 0xFF);
+        }
+        return result;
+    }
+
     private static double round(final double value) {
         return Math.round(value) / 10.0;
     }
 
-    private static byte[][] processMemoryArea(final long startAddress, final long endAddress, boolean hasFileStart) {
+    private static final class Reader {
+
+        private long ptr;
+        private long delimiterMask;
+        private long lastRead;
+        private long lastReadMinOne;
+
+        private long hash;
+        private long entryStart;
+        private long entryDelimiter;
+
+        private final long endAddress;
+
+        Reader(final long startAddress, final long endAddress, final boolean isFileStart) {
+
+            this.ptr = startAddress;
+            this.endAddress = endAddress;
+
+            // Adjust start to next delimiter:
+            if (!isFileStart) {
+                ptr--;
+                while (ptr < endAddress) {
+                    if (UNSAFE.getByte(ptr++) == '\n') {
+                        break;
+                    }
+                }
+            }
+        }
+
+        private void processStart() {
+            hash = 0;
+            entryStart = ptr;
+        }
+
+        private boolean hasNext() {
+            return (ptr < endAddress);
+        }
+
+        private static final long DELIMITER_MASK = 0x3B3B3B3B3B3B3B3BL;
+
+        private boolean readFirst() {
+            lastRead = UNSAFE.getLong(ptr);
+
+            final long match = lastRead ^ DELIMITER_MASK;
+            delimiterMask = (match - 0x0101010101010101L) & (~match & 0x8080808080808080L);
+
+            return delimiterMask == 0;
+        }
+
+        private boolean readNext() {
+            lastReadMinOne = lastRead;
+            return readFirst();
+        }
+
+        private void processName() {
+            hash ^= lastRead;
+            ptr += 8;
+        }
+
+        private int processEndAndGetTemperature() {
+            processFinalBytes();
+
+            finalizeHash();
+            finalizeDelimiter();
+
+            return readTemperature();
+        }
+
+        private void processFinalBytes() {
+            // Shift and read the last bytes:
+            lastRead &= ((delimiterMask >>> 7) - 1);
+        }
+
+        private void finalizeHash() {
+            // Finalize hash:
+            hash ^= lastRead;
+            hash ^= hash >> 32;
+            hash ^= hash >> 17; // extra entropy
+        }
+
+        private void finalizeDelimiter() {
+            // Found delimiter:
+            entryDelimiter = ptr + (Long.numberOfTrailingZeros(delimiterMask) >> 3);
+        }
+
+        private static final long DOT_BITS = 0x10101000;
+        private static final long MAGIC_MULTIPLIER = (100 * 0x1000000 + 10 * 0x10000 + 1);
+
+        // Awesome idea of merykitty:
+        private int readTemperature() {
+            // This is the number part: X.X, -X.X, XX.x or -XX.X
+            long numberBytes = UNSAFE.getLong(entryDelimiter + 1);
+            long invNumberBytes = ~numberBytes;
+
+            int dotPosition = Long.numberOfTrailingZeros(invNumberBytes & DOT_BITS);
+
+            // Update the pointer here, bit awkward, but we have all the data
+            ptr = entryDelimiter + (dotPosition >> 3) + 4;
+
+            int min28 = (28 - dotPosition);
+            // Calculates the sign
+            final long signed = (invNumberBytes << 59) >> 63;
+            final long minusFilter = ~(signed & 0xFF);
+            // Use the pre-calculated decimal position to adjust the values
+            long digits = ((numberBytes & minusFilter) << min28) & 0x0F000F0F00L;
+            // Multiply by a magic (100 * 0x1000000 + 10 * 0x10000 + 1), to get the result
+            final long absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
+            // And perform abs()
+            return (int) ((absValue + signed) ^ signed); // non-patented method of doing the same trick
+        }
+
+        private boolean matchesEntryFull(final byte[] entry) {
+            int longs = (int) (entryDelimiter - entryStart) >> 3;
+            int step = 0;
+            for (int i = 0; i < longs - 2; i++) {
+                if (UNSAFE.getLong(entryStart + step) != UNSAFE.getLong(entry, ENTRY_NAME + step)) {
+                    return false;
+                }
+                step += 8;
+            }
+            if (lastReadMinOne != UNSAFE.getLong(entry, (ENTRY_NAME_8) + step)) {
+                return false;
+            }
+            if (lastRead != UNSAFE.getLong(entry, (ENTRY_NAME_16) + step)) {
+                return false;
+            }
+            return true;
+
+        }
+
+        private boolean matchesEntryMedium(final byte[] entry) {
+            if (UNSAFE.getLong(entryStart) != UNSAFE.getLong(entry, ENTRY_NAME)) {
+                return false;
+            }
+            if (lastReadMinOne != UNSAFE.getLong(entry, ENTRY_NAME_8)) {
+                return false;
+            }
+            if (lastRead != UNSAFE.getLong(entry, ENTRY_NAME_16)) {
+                return false;
+            }
+            return true;
+        }
+
+        private boolean matchesEntryShort(final byte[] entry) {
+            if (lastReadMinOne != UNSAFE.getLong(entry, ENTRY_NAME)) {
+                return false;
+            }
+            if (lastRead != UNSAFE.getLong(entry, ENTRY_NAME_8)) {
+                return false;
+            }
+            return true;
+        }
+
+        private boolean matchesEnding(final byte[] entry) {
+            return lastRead == UNSAFE.getLong(entry, ENTRY_NAME);
+        }
+
+        private int length() {
+            return (int) (entryDelimiter - entryStart);
+
+        }
+
+    }
+
+    private static byte[][] processMemoryArea(final long startAddress, final long endAddress, boolean isFileStart) {
 
         final byte[][] table = new byte[TABLE_SIZE][];
         final byte[][] preConstructedEntries = new byte[PREMADE_ENTRIES][ENTRY_BASESIZE_WHITESPACE + PREMADE_MAX_SIZE];
 
+        final Reader reader = new Reader(startAddress, endAddress, isFileStart);
+
         byte[] entry;
         int entryCount = 0;
-        int index;
-        int additionalLongs;
-        int dotPosition;
-        int temperature;
-        long numberBytes;
-        long invNumberBytes;
-        long hash;
-        long word;
-        long mask;
-        long ptr;
-        long delimiterAddress;
-        long partialWord;
-        long rowStartAddress;
 
         // Find the correct starting position
-        ptr = startAddress;
-        if (!hasFileStart) {
-            ptr--;
-            while (ptr < endAddress) {
-                if (UNSAFE.getByte(ptr++) == '\n') {
-                    break;
+        while (reader.hasNext()) {
+
+            reader.processStart();
+
+            if (!reader.readFirst()) {
+                int temperature = reader.processEndAndGetTemperature();
+
+                // Find or insert the entry:
+                int index = (int) (reader.hash & TABLE_MASK);
+                while (true) {
+                    entry = table[index];
+                    if (entry == null) {
+                        int length = reader.length();
+                        byte[] entryBytes = (entryCount < PREMADE_ENTRIES) ? preConstructedEntries[entryCount++]
+                                : new byte[ENTRY_BASESIZE_WHITESPACE + length];
+                        table[index] = fillEntry(entryBytes, reader.entryStart, length, temperature);
+                        break;
+                    }
+                    else if (reader.matchesEnding(entry)) {
+                        updateEntry(entry, temperature);
+                        break;
+                    }
+                    else {
+                        // Move to the next index
+                        index = (index + 1) & TABLE_MASK;
+                    }
                 }
             }
-            if (ptr >= endAddress) {
-                // Early escape for these small testcases
-                return table;
-            }
-        }
+            else {
+                reader.processName();
 
-        while (ptr < endAddress) {
+                if (!reader.readNext()) {
 
-            rowStartAddress = ptr;
+                    int temperature = reader.processEndAndGetTemperature();
 
-            additionalLongs = 0;
-            hash = 0;
-
-            word = UNSAFE.getLong(ptr);
-            mask = getMaskedByte(word, DELIMITER_MASK);
-
-            while (mask == 0) {
-                hash ^= word;
-                ptr += 8;
-
-                word = UNSAFE.getLong(ptr);
-                mask = getMaskedByte(word, DELIMITER_MASK);
-
-                additionalLongs++;
-            }
-
-            // Found delimiter:
-            delimiterAddress = ptr + (Long.numberOfTrailingZeros(mask) >> 3);
-
-            // Finish the masks and hash:
-            partialWord = word & ((mask >>> 7) - 1);
-            hash ^= partialWord;
-
-            // This is the number part: X.X, -X.X, XX.x or -XX.X
-            numberBytes = UNSAFE.getLong(delimiterAddress + 1);
-            invNumberBytes = ~numberBytes;
-
-            hash ^= hash >> 32;
-            hash ^= hash >> 17;
-            index = (int) (hash & TABLE_MASK);
-
-            // Adjust our pointer
-            dotPosition = Long.numberOfTrailingZeros(invNumberBytes & DOT_BITS);
-
-            // Read the temperature bytes and process this in a single go:
-            temperature = extractTemp(dotPosition, invNumberBytes, numberBytes);
-
-            // Find or insert the entry:
-            while (true) {
-                entry = table[index];
-                if (entry == null) {
-                    byte length = (byte) (delimiterAddress - rowStartAddress);
-                    byte[] entryBytes = (length < PREMADE_MAX_SIZE && entryCount < PREMADE_ENTRIES) ? preConstructedEntries[entryCount++]
-                            : new byte[ENTRY_BASESIZE_WHITESPACE + length];
-                    table[index] = fillEntry(entryBytes, rowStartAddress, length, temperature);
-                    break;
+                    // Find or insert the entry:
+                    int index = (int) (reader.hash & TABLE_MASK);
+                    while (true) {
+                        entry = table[index];
+                        if (entry == null) {
+                            int length = reader.length();
+                            byte[] entryBytes = (entryCount < PREMADE_ENTRIES) ? preConstructedEntries[entryCount++]
+                                    : new byte[ENTRY_BASESIZE_WHITESPACE + length];
+                            table[index] = fillEntry(entryBytes, reader.entryStart, length, temperature);
+                            break;
+                        }
+                        else if (reader.matchesEntryShort(entry)) {
+                            updateEntry(entry, temperature);
+                            break;
+                        }
+                        else {
+                            // Move to the next index
+                            index = (index + 1) & TABLE_MASK;
+                        }
+                    }
                 }
-                else if (addressEqualsStored(rowStartAddress, entry, partialWord, additionalLongs)) {
-                    updateExistingEntry(entry, temperature);
-                    break;
+                else {
+                    reader.processName();
+
+                    if (!reader.readNext()) {
+                        int temperature = reader.processEndAndGetTemperature();
+
+                        // Find or insert the entry:
+                        int index = (int) (reader.hash & TABLE_MASK);
+                        while (true) {
+                            entry = table[index];
+                            if (entry == null) {
+                                int length = reader.length();
+                                byte[] entryBytes = (entryCount < PREMADE_ENTRIES) ? preConstructedEntries[entryCount++]
+                                        : new byte[ENTRY_BASESIZE_WHITESPACE + length];
+                                table[index] = fillEntry(entryBytes, reader.entryStart, length, temperature);
+                                break;
+                            }
+                            else if (reader.matchesEntryMedium(entry)) {
+                                updateEntry(entry, temperature);
+                                break;
+                            }
+                            else {
+                                // Move to the next index
+                                index = (index + 1) & TABLE_MASK;
+                            }
+                        }
+
+                    }
+                    else {
+
+                        reader.processName();
+                        while (reader.readNext()) {
+                            reader.processName();
+                        }
+
+                        int temperature = reader.processEndAndGetTemperature();
+
+                        // Find or insert the entry:
+                        int index = (int) (reader.hash & TABLE_MASK);
+                        while (true) {
+                            entry = table[index];
+                            if (entry == null) {
+                                int length = reader.length();
+                                byte[] entryBytes = (length < PREMADE_MAX_SIZE && entryCount < PREMADE_ENTRIES) ? preConstructedEntries[entryCount++]
+                                        : new byte[ENTRY_BASESIZE_WHITESPACE + length]; // with enough room
+                                table[index] = fillEntry(entryBytes, reader.entryStart, length, temperature);
+                                break;
+                            }
+                            else if (reader.matchesEntryFull(entry)) {
+                                updateEntry(entry, temperature);
+                                break;
+                            }
+                            else {
+                                // Move to the next index
+                                index = (index + 1) & TABLE_MASK;
+                            }
+                        }
+                    }
                 }
-                // Move to the next index
-                index = (index + 1) & TABLE_MASK;
             }
-            ptr = delimiterAddress + (dotPosition >> 3) + 4;
 
         }
         return table;
@@ -351,46 +560,6 @@ public class CalculateAverage_royvanrijn {
      *
      * https://www.openvalue.eu/
      */
-
-    private static final long DOT_BITS = 0x10101000;
-    private static final long MAGIC_MULTIPLIER = (100 * 0x1000000 + 10 * 0x10000 + 1);
-
-    private static int extractTemp(final int decimalSepPos, final long invNumberBits, final long numberBits) {
-        // Awesome idea of merykitty:
-        int min28 = (28 - decimalSepPos);
-        // Calculates the sign
-        final long signed = (invNumberBits << 59) >> 63;
-        final long minusFilter = ~(signed & 0xFF);
-        // Use the pre-calculated decimal position to adjust the values
-        long digits = ((numberBits & minusFilter) << min28) & 0x0F000F0F00L;
-        // Multiply by a magic (100 * 0x1000000 + 10 * 0x10000 + 1), to get the result
-        final long absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
-        // And perform abs()
-        return (int) ((absValue + signed) ^ signed); // non-patented method of doing the same trick
-    }
-
-    private static final long DELIMITER_MASK = 0x3B3B3B3B3B3B3B3BL;
-
-    // Takes a long and finds the bytes where this exact pattern is present.
-    // Cool bit manipulation technique: SWAR (SIMD as a Register).
-    private static long getMaskedByte(final long word, final long separator) {
-        final long match = word ^ separator;
-        return (match - 0x0101010101010101L) & (~match & 0x8080808080808080L);
-        // I've put some brackets separating the first and second part, this is faster.
-        // Now they run simultaneous after 'match' is altered, instead of waiting on each other.
-    }
-
-    /**
-     * For case multiple hashes are equal (however unlikely) check the actual key (using longs)
-     */
-    static boolean addressEqualsStored(final long startAddress, final byte[] entry, final long partialWord, final long additionalLongs) {
-        for (int i = 0; i < additionalLongs; i++) {
-            int step = i << 3;
-            if (UNSAFE.getLong(startAddress + step) != UNSAFE.getLong(entry, ENTRY_NAME + step))
-                return false;
-        }
-        return partialWord == UNSAFE.getLong(entry, ENTRY_NAME + (additionalLongs << 3));
-    }
 
     private static Unsafe initUnsafe() {
         try {
