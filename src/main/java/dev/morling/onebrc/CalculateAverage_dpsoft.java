@@ -28,6 +28,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.Phaser;
+import java.util.stream.Collectors;
 
 /*
  * Credits to:
@@ -69,14 +70,12 @@ public class CalculateAverage_dpsoft {
                 sortedMeasurementsMap.put(station, allMeasurementsMap[i]);
         }
 
-        System.out.print('{');
-        String sep = "";
-        for (Map.Entry<String, Measurement> entry : sortedMeasurementsMap.entrySet()) {
-            System.out.print(sep);
-            System.out.print(entry);
-            sep = ", ";
-        }
-        System.out.println("}");
+        final var result = sortedMeasurementsMap.entrySet()
+                .stream()
+                .map(Map.Entry::toString)
+                .collect(Collectors.joining(", ", "{", "}"));
+
+        System.out.println(result);
 
         System.exit(0);
     }
@@ -222,8 +221,7 @@ public class CalculateAverage_dpsoft {
                 // Return the hash value, ensuring it is positive and within the range of the array
                 return (int) Math.abs(hash % ROWS_MASK);
             }
-            // If the key is 4 bytes long and starts with a semicolon
-            // Finalize the hash value
+            // If the key is 4 bytes long and starts with a semicolon, finalize the hash value
             hash += hash >>> 1;
             // Adjust the position in the buffer
             mbb.position(mbb.position() - rewind - 1);
