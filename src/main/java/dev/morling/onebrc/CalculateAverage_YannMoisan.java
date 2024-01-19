@@ -29,9 +29,6 @@ public class CalculateAverage_YannMoisan {
     private static final String FILE = "./measurements.txt";
 
     private static record Measurement(String station, double value) {
-        private Measurement(String[] parts) {
-            this(parts[0], Double.parseDouble(parts[1]));
-        }
     }
 
     private static record ResultRow(double min, double mean, double max) {
@@ -84,7 +81,11 @@ public class CalculateAverage_YannMoisan {
                 });
 
         Map<String, ResultRow> measurements = new TreeMap<>(Files.lines(Paths.get(FILE))
-                .map(l -> new Measurement(l.split(";")))
+                .map(line -> {
+                    var i = line.indexOf(';');
+                    return new Measurement(line.substring(0, i), Double.parseDouble(line.substring(i+1)));
+                }
+                )
                 .collect(groupingBy(m -> m.station(), collector)));
 
         System.out.println(measurements);
