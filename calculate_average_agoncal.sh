@@ -15,7 +15,7 @@
 #  limitations under the License.
 #
 
+# sdk use java 21.0.1-tem
 
-JAVA_OPTS="-Xms16G -Xmx32G --enable-preview"
-
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_kumarsaurav123
+JAVA_OPTS="--enable-preview -XX:+UseShenandoahGC -XX:+UseStringDeduplication -da"
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_agoncal
