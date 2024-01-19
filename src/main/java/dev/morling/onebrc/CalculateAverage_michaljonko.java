@@ -28,18 +28,15 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 public final class CalculateAverage_michaljonko {
@@ -52,33 +49,38 @@ public final class CalculateAverage_michaljonko {
     private static final int MAX_STATION_NAMES = 10_000;
 
     public static void main(String[] args) throws IOException {
-        var results = calculate(PATH, 2 * CPUs);
-        System.out.println(results.values().stream()
-                .sorted(Comparator.comparing(stationMeasurement -> stationMeasurement.station().value()))
-                .map(StationMeasurement::data)
-                .collect(Collectors.joining(", ", "{", "}")));
+        System.out.println(
+                sortedResults(
+                        calculate(PATH, 2 * CPUs)));
     }
 
-    static Map<Station, StationMeasurement> calculate(Path path, int partitionsAmount) {
+    private static String sortedResults(Collection<StationMeasurement> results) {
+        return results.stream()
+                .sorted(Comparator.comparing(stationMeasurement -> stationMeasurement.station.name))
+                .map(StationMeasurement::data)
+                .collect(Collectors.joining(", ", "{", "}"));
+    }
+
+    private static Collection<StationMeasurement> calculate(Path path, int partitionsAmount) {
         var memorySegments = FilePartitioner.createSegments(path, partitionsAmount);
 
         try (var executorService = Executors.newFixedThreadPool(CPUs)) {
             var futures = new ArrayList<Future<ConcurrentHashMap<Integer, StationMeasurement>>>(memorySegments.size());
             for (var memorySegment : memorySegments) {
-                futures.add(executorService.submit(() -> parseMemorySegment(memorySegment)));
+                futures.add(executorService.submit(() -> parse(memorySegment)));
             }
             final var finalMap = new HashMap<Station, StationMeasurement>();
             for (var future : futures) {
-                future.get().forEach((k, v) -> finalMap.merge(v.station(), v, StationMeasurement::update));
+                future.get().forEach((k, v) -> finalMap.merge(v.station, v, StationMeasurement::update));
             }
-            return finalMap;
+            return finalMap.values();
         }
         catch (InterruptedException | ExecutionException e) {
             throw new RuntimeException(e);
         }
     }
 
-    private static ConcurrentHashMap<Integer, StationMeasurement> parseMemorySegment(MemorySegment memorySegment) {
+    private static ConcurrentHashMap<Integer, StationMeasurement> parse(MemorySegment memorySegment) {
         final var stationName = new byte[MAX_STATION_NAME_LENGTH];
         final var temperature = new byte[MAX_TEMPERATURE_LENGTH];
         byte b;
@@ -113,7 +115,7 @@ public final class CalculateAverage_michaljonko {
 
     private static final class Station {
 
-        private static final ConcurrentHashMap<byte[], String> NAME_CACHE = new ConcurrentHashMap<>(MAX_STATION_NAMES);
+        private static final ConcurrentHashMap<byte[], String> NAME_CACHE = new ConcurrentHashMap<>(MAX_STATION_NAMES, 1);
         private final byte[] raw;
         private final String name;
 
@@ -121,14 +123,6 @@ public final class CalculateAverage_michaljonko {
             this.raw = new byte[length];
             System.arraycopy(_raw, 0, this.raw, 0, length);
             name = NAME_CACHE.compute(this.raw, (k, v) -> v == null ? new String(raw, 0, raw.length) : v);
-        }
-
-        private byte[] raw() {
-            return raw;
-        }
-
-        private String value() {
-            return name;
         }
 
         @Override
@@ -183,12 +177,8 @@ public final class CalculateAverage_michaljonko {
             return this;
         }
 
-        private Station station() {
-            return station;
-        }
-
         private String data() {
-            return String.format("%s=%.1f/%.1f/%.1f", station.value(), min / 10.0, (sum / count) / 10.0, max / 10.0);
+            return String.format("%s=%.1f/%.1f/%.1f", station.name, min / 10.0d, (1.0d * sum / count) / 10.0d, max / 10.0d);
         }
 
         @Override
