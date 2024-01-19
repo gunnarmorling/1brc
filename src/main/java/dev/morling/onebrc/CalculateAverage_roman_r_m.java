@@ -86,12 +86,14 @@ public class CalculateAverage_roman_r_m {
                 offset += 8;
                 next = UNSAFE.getLong(offset);
             }
-            offset += Long.numberOfTrailingZeros(pattern) / 8;
+            int bytes = Long.numberOfTrailingZeros(pattern) / 8;
+            offset += bytes;
 
             int len = (int) (offset - start);
             station.offset = start;
             station.len = len;
             station.hash = 0;
+            station.tail = next & ((1L << (8 * bytes)) - 1);
 
             offset++;
         }
@@ -204,6 +206,7 @@ public class CalculateAverage_roman_r_m {
         private long offset;
         private int len = 0;
         private int hash = 0;
+        private long tail = 0L;
 
         ByteString(MemorySegment ms) {
             this.ms = ms;
@@ -221,6 +224,7 @@ public class CalculateAverage_roman_r_m {
             copy.offset = this.offset;
             copy.len = this.len;
             copy.hash = this.hash;
+            copy.tail = this.tail;
             return copy;
         }
 
@@ -245,19 +249,7 @@ public class CalculateAverage_roman_r_m {
                     return false;
                 }
             }
-            if (len >= 8) {
-                long l1 = UNSAFE.getLong(offset + len - 8);
-                long l2 = UNSAFE.getLong(that.offset + len - 8);
-                return l1 == l2;
-            }
-            for (; i < len; i++) {
-                byte i1 = UNSAFE.getByte(offset + i);
-                byte i2 = UNSAFE.getByte(that.offset + i);
-                if (i1 != i2) {
-                    return false;
-                }
-            }
-            return true;
+            return this.tail == that.tail;
         }
 
         @Override
