@@ -26,7 +26,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -102,10 +101,8 @@ public final class CalculateAverage_michaljonko {
             }
 
             var finalStationNameIndex = stationNameIndex;
-            var parsedTemperature = TemperatureParser.parse(temperature, temperatureIndex);
-            stationsMap.compute(stationNameHash, (hash, stationMeasurement) -> stationMeasurement == null
-                    ? new StationMeasurement(new Station(stationName, finalStationNameIndex)).update(parsedTemperature)
-                    : stationMeasurement.update(parsedTemperature));
+            stationsMap.computeIfAbsent(stationNameHash, ignored -> new StationMeasurement(new Station(stationName, finalStationNameIndex)))
+                    .update(TemperatureParser.parse(temperature, temperatureIndex));
 
             stationNameIndex = 0;
             temperatureIndex = 0;
