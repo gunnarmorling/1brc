@@ -17,110 +17,132 @@ package dev.morling.onebrc;
 
 import java.io.File;
 import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.Charset;
-import java.time.Duration;
-import java.util.HashMap;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.TreeMap;
 
 public class CalculateAverage_yonatang {
     private static final String FILE = "./measurements.txt";
 
+    private static final int DICT_OFFSET_STATION = 2;
+    private static final int DICT_OFFSET_SUM = 1;
     private static final int DICT_SIZE = 15000;
-    private static final int DICT_RECORD_SIZE = 3;
+    private static final int DICT_STATION_RECORD_SIZE = 13;
+    private static final int DICT_RECORD_SIZE = DICT_OFFSET_STATION + DICT_STATION_RECORD_SIZE;
     private static final int DICT_SIZE_BYTES = DICT_SIZE * DICT_RECORD_SIZE;
-    private static final long DICT_NO_VALUE = Long.MIN_VALUE;
+    private static final long[] DICT_ZERO_RECORD = new long[DICT_RECORD_SIZE];
+    private static final long DICT_BASELINE_MEASURES = ((long) Short.MAX_VALUE & 0xFFFF) | (((long) Short.MIN_VALUE & 0xFFFF) << 16);
 
-    private static class HashTable {
+    public static class HashTable {
 
         // Continuous array of [key, min, max, count, sum], which will be more CPU cache friendly.
         private final long[] data = new long[DICT_SIZE_BYTES];
-        private int size = 0;
 
         public HashTable() {
-            long d1 = ((long) Short.MAX_VALUE & 0xFFFF) | (((long) Short.MIN_VALUE & 0xFFFF) << 16);
-            for (int i = 0; i < DICT_SIZE_BYTES; i += 3) {
-                data[i] = DICT_NO_VALUE;
-                data[i + 1] = d1;
-                data[i + 2] = 0;
+            for (int i = 0; i < DICT_SIZE_BYTES; i += DICT_RECORD_SIZE) {
+                data[i] = DICT_BASELINE_MEASURES;
             }
         }
 
-        public int size() {
-            return size;
-        }
-
-        private int getIndex(long key) {
+        private int getIndex(long[] station) {
+            long key = 0;
+            short len = (short) (station[0] & 0xFF);
+            int longs = ((len + 1) / 8) + 1;
+            for (int i = 0; i < longs; i++) {
+                key = key ^ station[i];
+            }
             int idx = Math.abs((int) (key % DICT_SIZE)) * DICT_RECORD_SIZE;
 
-            // data[idx]!=key should be first, it is more likely to stop there
-            while (data[idx] != key && data[idx] != DICT_NO_VALUE) {
-                idx += 3;
+            while (true) {
+                if (data[idx] == DICT_BASELINE_MEASURES) {
+                    break;
+                }
+                if (Arrays.equals(station, 0, longs,
+                        data,
+                        idx + DICT_OFFSET_STATION, idx + DICT_OFFSET_STATION + longs)) {
+                    break;
+                }
+                idx += DICT_RECORD_SIZE;
                 if (idx >= DICT_SIZE_BYTES) {
                     idx = 0;
                 }
             }
-            if (data[idx] == DICT_NO_VALUE) {
-                data[idx] = key;
-                size++;
-            }
             return idx;
         }
 
-        private void addRawMeasurementAgg(long key, long d1, long d2) {
-            int idx = getIndex(key);
-            short currentMin = (short) (data[idx + 1] & 0xFFFF);
-            short currentMax = (short) ((data[idx + 1] >> 16) & 0xFFFF);
-            int currentCount = (int) (data[idx + 1] >> 32);
+        private void addRawMeasurementAgg(long[] title, long measurements, long sum) {
+            int idx = getIndex(title);
+            short currentMin = (short) (data[idx] & 0xFFFF);
+            short currentMax = (short) ((data[idx] >> 16) & 0xFFFF);
+            int currentCount = (int) (data[idx] >> 32);
 
-            short thisMin = (short) (d1 & 0xFFFF);
-            short thisMax = (short) ((d1 >> 16) & 0xFFFF);
-            int thisCount = (int) (d1 >> 32);
+            short thisMin = (short) (measurements & 0xFFFF);
+            short thisMax = (short) ((measurements >> 16) & 0xFFFF);
+            int thisCount = (int) (measurements >> 32);
 
             thisMin = (short) Math.min(thisMin, currentMin);
             thisMax = (short) Math.max(thisMax, currentMax);
             thisCount += currentCount;
 
-            data[idx + 1] = ((long) thisMin & 0xFFFF) | (((long) thisMax & 0xFFFF) << 16) | (((long) thisCount & 0xFFFFFFFF) << 32);
+            data[idx] = ((long) thisMin & 0xFFFF) | (((long) thisMax & 0xFFFF) << 16) | (((long) thisCount) << 32);
 
-            data[idx + 2] += d2;
+            data[idx + DICT_OFFSET_SUM] += sum;
+            System.arraycopy(title, 0, data, idx + DICT_OFFSET_STATION, DICT_STATION_RECORD_SIZE);
         }
 
-        public TreeMap<String, ResultRow> toMap(HashMap<Long, String> nameDict) {
+        public TreeMap<String, ResultRow> toMap() {
             TreeMap<String, ResultRow> finalMap = new TreeMap<>();
+            byte[] bytes = new byte[128];
+            ByteBuffer bb = ByteBuffer.allocate(136);
+            bb.order(ByteOrder.nativeOrder());
             for (int i = 0; i < DICT_SIZE_BYTES; i += DICT_RECORD_SIZE) {
-                if (data[i] != DICT_NO_VALUE) {
-                    short min = (short) (data[i + 1] & 0xFFFF);
-                    short max = (short) ((data[i + 1] >> 16) & 0xFFFF);
-                    int count = (int) (data[i + 1] >> 32);
-                    long sum = data[i + 2];
-                    String station = nameDict.get(data[i]);
-                    finalMap.put(station, new ResultRow(min / 10.0, (sum / 10.0) / count, max / 10.0));
+                if (data[i] == DICT_BASELINE_MEASURES)
+                    continue;
+
+                short min = (short) (data[i] & 0xFFFF);
+                short max = (short) ((data[i] >> 16) & 0xFFFF);
+                int count = (int) (data[i] >> 32);
+                long sum = data[i + DICT_OFFSET_SUM];
+                for (int j = 0; j < DICT_STATION_RECORD_SIZE; j++) {
+                    bb.putLong(data[i + DICT_OFFSET_STATION + j]);
                 }
+                bb.flip();
+                byte len = bb.get();
+                bb.get(1, bytes, 0, len);
+                bb.clear();
+                String station = new String(bytes, 0, len, Charset.defaultCharset());
+                finalMap.put(station, new ResultRow(min / 10.0, (sum / 10.0) / count, max / 10.0));
+
             }
             return finalMap;
         }
 
-        public void addMeasurement(long key, short temp) {
-            int idx = getIndex(key);
-            short min = (short) (data[idx + 1] & 0xFFFF);
-            short max = (short) ((data[idx + 1] >> 16) & 0xFFFF);
-            int count = (int) (data[idx + 1] >> 32);
+        public void addMeasurement(long[] title, short temp) {
+            int idx = getIndex(title);
+            short min = (short) (data[idx] & 0xFFFF);
+            short max = (short) ((data[idx] >> 16) & 0xFFFF);
+            int count = (int) (data[idx] >> 32);
             min = (short) Math.min(min, temp);
             max = (short) Math.max(max, temp);
             count += 1;
 
-            data[idx + 1] = ((long) min & 0xFFFF) | (((long) max & 0xFFFF) << 16) | (((long) count & 0xFFFFFFFF) << 32);
-            data[idx + 2] += temp;
+            data[idx] = ((long) min & 0xFFFF) | (((long) max & 0xFFFF) << 16) | (((long) count) << 32);
+            data[idx + DICT_OFFSET_SUM] += temp;
+            System.arraycopy(title, 0, data, idx + DICT_OFFSET_STATION, DICT_STATION_RECORD_SIZE);
         }
 
         public void mergeInto(HashTable other) {
-            for (int i = 0; i < DICT_SIZE_BYTES; i += 3) {
-                if (data[i] != DICT_NO_VALUE) {
-                    other.addRawMeasurementAgg(data[i], data[i + 1], data[i + 2]);
-                }
+            long[] title = new long[DICT_STATION_RECORD_SIZE];
+            for (int i = 0; i < DICT_SIZE_BYTES; i += DICT_RECORD_SIZE) {
+                if (data[i] == DICT_BASELINE_MEASURES)
+                    continue;
+                System.arraycopy(data, i + DICT_OFFSET_STATION, title, 0, DICT_STATION_RECORD_SIZE);
+                other.addRawMeasurementAgg(title, data[i], data[i + DICT_OFFSET_SUM]);
             }
         }
 
@@ -146,20 +168,12 @@ public class CalculateAverage_yonatang {
         }
     }
 
-    private static class StationId {
-        final long stationId;
-        final int len;
-
-        public StationId(long stationId, int len) {
-            this.stationId = stationId;
-            this.len = len;
-        }
-    }
-
-    private static StationId parseStationId(MappedByteBuffer byteBuffer) {
-        long stationId = 0L;
+    public static boolean parseStation(MappedByteBuffer byteBuffer, ByteBuffer tempBb, long[] station) {
+        System.arraycopy(DICT_ZERO_RECORD, 0, station, 0, DICT_STATION_RECORD_SIZE);
+        byte len = 1;
         boolean valid = false;
-        int len = 0;
+        tempBb.clear();
+        tempBb.put((byte) 0);
         while (byteBuffer.hasRemaining()) {
             byte ch = byteBuffer.get();
             if (ch == '\n') {
@@ -169,17 +183,28 @@ public class CalculateAverage_yonatang {
                 valid = true;
                 break;
             }
-            long theNew = ((long) ch) << (len * 8);
-            stationId = stationId ^ theNew;
+            tempBb.put(ch);
+            // long theNew = ((long) ch) << (len * 8);
+            // stationId[0] = stationId[0] ^ theNew;
+            // int arrIdx = len / 8;
+            // station[arrIdx] = station[arrIdx] ^ theNew;
             len++;
         }
+        tempBb.put(0, (byte) (len - 1));
         if (!valid) {
-            return null;
+            return false;
         }
-        return new StationId(stationId, len);
+        tempBb.position(0);
+        tempBb.asLongBuffer().get(station);
+
+        int pivotIdx = (len) / 8;
+        long pivotBits = (len % 8) * 8;
+        long pivotMask = (1L << pivotBits) - 1;
+        station[pivotIdx] = station[pivotIdx] & pivotMask;
+        return true;
     }
 
-    private static short parseShort(MappedByteBuffer byteBuffer) {
+    public static short parseShort(MappedByteBuffer byteBuffer) {
         boolean valid = false;
         boolean negative = false;
         int num = 0;
@@ -191,11 +216,9 @@ public class CalculateAverage_yonatang {
             }
             if (ch == '-') {
                 negative = true;
-            }
-            else if (ch == '.') {
+            } else if (ch == '.') {
                 // noop
-            }
-            else {
+            } else {
                 num = (num * 10 + (ch - '0'));
             }
         }
@@ -212,14 +235,16 @@ public class CalculateAverage_yonatang {
         try {
             HashTable agg = new HashTable();
             maps[j] = agg;
+            long[] station = new long[DICT_STATION_RECORD_SIZE];
+            ByteBuffer tempBb = ByteBuffer.allocate((DICT_STATION_RECORD_SIZE + 1) * Long.BYTES);
+            tempBb.order(ByteOrder.nativeOrder());
 
             long startIdx = Math.max(j * chunkSize - MARGIN, 0);
             int padding;
             if (isLast) {
                 chunkSize = fc.size() - startIdx;
                 padding = 0;
-            }
-            else {
+            } else {
                 padding = j == 0 ? 0 : MARGIN;
             }
             if (chunkSize == 0) {
@@ -240,73 +265,26 @@ public class CalculateAverage_yonatang {
             }
 
             while (byteBuffer.hasRemaining()) {
-                StationId stationIdWrapper = parseStationId(byteBuffer);
-                if (stationIdWrapper == null) {
+                if (!parseStation(byteBuffer, tempBb, station)) {
                     continue;
                 }
-                long stationId = stationIdWrapper.stationId;
                 short value = parseShort(byteBuffer);
                 if (value == Short.MIN_VALUE) {
                     continue;
                 }
-                agg.addMeasurement(stationId, value);
+                agg.addMeasurement(station, value);
             }
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    private static String readStationName(MappedByteBuffer bb, int len) {
-        byte[] chars = new byte[len];
-        int firstPos = bb.position() - len - 1;
-        for (int i = 0; i < len; i++) {
-            chars[i] = bb.get(firstPos + i);
-        }
-        return new String(chars, Charset.defaultCharset());
-    }
-
-    private static HashMap<Long, String> createNameDict(int expected, FileChannel fc) throws Exception {
-        HashMap<Long, String> nameDict = new HashMap<>(expected);
-        // If one of the station appear only after 2gb of file, we're screwed.
-        // statistically impossible.
-        long size = Math.min(Integer.MAX_VALUE, fc.size());
-        MappedByteBuffer byteBuffer = fc.map(FileChannel.MapMode.READ_ONLY, 0, size);
-        while (byteBuffer.hasRemaining()) {
-            StationId stationIdWrapper = parseStationId(byteBuffer);
-            if (stationIdWrapper == null) {
-                throw new RuntimeException("Err");
-            }
-            int len = stationIdWrapper.len;
-            long stationId = stationIdWrapper.stationId;
-            if (!nameDict.containsKey(stationId)) {
-                String name = readStationName(byteBuffer, len);
-                nameDict.put(stationId, name);
-                if (nameDict.size() == expected) {
-                    return nameDict;
-                }
-            }
-            boolean valid = false;
-            while (byteBuffer.hasRemaining()) {
-                byte ch = byteBuffer.get();
-                if (ch == '\n') {
-                    valid = true;
-                    break;
-                }
-            }
-            if (!valid) {
-                throw new RuntimeException("Err");
-            }
-        }
-        throw new RuntimeException("Err");
-    }
-
     public static void main(String[] args) throws Exception {
-        // long start = System.nanoTime();
+//        long start = System.nanoTime();
 
         File f = new File(FILE);
         try (RandomAccessFile raf = new RandomAccessFile(f, "r");
-                FileChannel fc = raf.getChannel()) {
+             FileChannel fc = raf.getChannel()) {
 
             int chunks = f.length() < 1_048_576 ? 1 : (Runtime.getRuntime().availableProcessors());
 
@@ -327,12 +305,11 @@ public class CalculateAverage_yonatang {
                 maps[i].mergeInto(totalAgg);
             }
 
-            HashMap<Long, String> nameDict = createNameDict(totalAgg.size(), fc);
-            Map<String, ResultRow> finalMap = totalAgg.toMap(nameDict);
-            // long end = System.nanoTime();
+            Map<String, ResultRow> finalMap = totalAgg.toMap();
+//            long end = System.nanoTime();
 
             System.out.println(finalMap);
-            // System.out.println("Total time: " + Duration.ofNanos(end - start).toMillis() + "ms");
+//            System.err.println("Total time: " + java.time.Duration.ofNanos(end - start).toMillis() + "ms");
         }
 
     }
