@@ -51,12 +51,12 @@ public final class CalculateAverage_michaljonko {
     public static void main(String[] args) throws IOException {
         System.out.println(
                 sortedResults(
-                        calculate(PATH, CPUs + 1)));
+                        calculate(PATH, CPUs)));
     }
 
     private static String sortedResults(Collection<StationMeasurement> results) {
         return results.stream()
-                .sorted(Comparator.comparing(stationMeasurement -> stationMeasurement.station.name))
+                .sorted(Comparator.comparing(stationMeasurement -> stationMeasurement.station.name()))
                 .map(StationMeasurement::data)
                 .collect(Collectors.joining(", ", "{", "}"));
     }
@@ -64,16 +64,22 @@ public final class CalculateAverage_michaljonko {
     private static Collection<StationMeasurement> calculate(Path path, int partitionsAmount) {
         var memorySegments = FilePartitioner.createSegments(path, partitionsAmount);
 
-        try (var executorService = Executors.newFixedThreadPool(partitionsAmount)) {
-            var futures = new ArrayList<Future<HashMap<Integer, StationMeasurement>>>(memorySegments.size());
+        try (var parseExecutorService = Executors.newFixedThreadPool(partitionsAmount);
+                var mergeExecutorService = Executors.newSingleThreadExecutor()) {
+            var parseFutures = new ArrayList<Future<HashMap<Integer, StationMeasurement>>>(memorySegments.size());
+            var mergeFutures = new ArrayList<Future<?>>(memorySegments.size());
+            var results = new HashMap<Station, StationMeasurement>();
             for (var memorySegment : memorySegments) {
-                futures.add(executorService.submit(() -> parse(memorySegment)));
+                parseFutures.add(parseExecutorService.submit(() -> parse(memorySegment)));
             }
-            final var finalMap = new HashMap<Station, StationMeasurement>();
-            for (var future : futures) {
-                future.get().forEach((k, v) -> finalMap.merge(v.station, v, StationMeasurement::update));
+            for (var future : parseFutures) {
+                var futureResult = future.get();
+                mergeFutures.add(
+                        mergeExecutorService.submit(
+                                () -> futureResult.forEach((k, v) -> results.merge(v.station, v, StationMeasurement::update))));
             }
-            return finalMap.values();
+            mergeFutures.getLast().get();
+            return results.values();
         }
         catch (InterruptedException | ExecutionException e) {
             throw new RuntimeException(e);
@@ -81,8 +87,8 @@ public final class CalculateAverage_michaljonko {
     }
 
     private static HashMap<Integer, StationMeasurement> parse(MemorySegment memorySegment) {
-        final var stationName = new byte[MAX_STATION_NAME_LENGTH];
-        final var temperature = new byte[MAX_TEMPERATURE_LENGTH];
+        var stationName = new byte[MAX_STATION_NAME_LENGTH];
+        var temperature = new byte[MAX_TEMPERATURE_LENGTH];
         byte b;
         var stationNameIndex = 0;
         var stationNameHash = 0;
@@ -115,12 +121,16 @@ public final class CalculateAverage_michaljonko {
 
         private static final ConcurrentHashMap<byte[], String> NAME_CACHE = new ConcurrentHashMap<>(MAX_STATION_NAMES);
         private final byte[] raw;
-        private final String name;
+        // private final String name;
 
         private Station(byte[] _raw, int length) {
             this.raw = new byte[length];
             System.arraycopy(_raw, 0, this.raw, 0, length);
-            name = NAME_CACHE.compute(this.raw, (k, v) -> v == null ? new String(raw, 0, raw.length) : v);
+            // this.name = NAME_CACHE.computeIfAbsent(this.raw, k -> new String(k, 0, k.length));
+        }
+
+        public String name() {
+            return NAME_CACHE.computeIfAbsent(this.raw, k -> new String(k, 0, k.length));
         }
 
         @Override
@@ -155,14 +165,14 @@ public final class CalculateAverage_michaljonko {
             this.station = station;
         }
 
-        private StationMeasurement update(int value) {
-            if (value < min) {
-                min = value;
+        private StationMeasurement update(int temperature) {
+            if (temperature < min) {
+                min = temperature;
             }
-            if (value > max) {
-                max = value;
+            if (temperature > max) {
+                max = temperature;
             }
-            sum += value;
+            sum += temperature;
             count++;
             return this;
         }
@@ -176,7 +186,7 @@ public final class CalculateAverage_michaljonko {
         }
 
         private String data() {
-            return String.format("%s=%.1f/%.1f/%.1f", station.name, min / 10.0d, (1.0d * sum / count) / 10.0d, max / 10.0d);
+            return String.format("%s=%.1f/%.1f/%.1f", station.name(), min / 10.0d, (1.0d * sum / count) / 10.0d, max / 10.0d);
         }
 
         @Override
@@ -232,13 +242,13 @@ public final class CalculateAverage_michaljonko {
 
         private static List<MemorySegment> createSegments(Path path, int partitionsAmount) {
             try (var channel = FileChannel.open(PATH, StandardOpenOption.READ)) {
-                final var size = Files.size(path);
-                final var memorySegment = channel.map(MapMode.READ_ONLY, 0, size, Arena.global());
+                var size = Files.size(path);
+                var memorySegment = channel.map(MapMode.READ_ONLY, 0, size, Arena.global());
                 if (partitionsAmount < 2 || size < PARTITIONING_THRESHOLD) {
                     return List.of(memorySegment);
                 }
-                final var partitionSize = size / partitionsAmount;
-                final var partitions = new MemorySegment[partitionsAmount];
+                var partitionSize = size / partitionsAmount;
+                var partitions = new MemorySegment[partitionsAmount];
                 var startPosition = 0L;
                 var endPosition = partitionSize;
                 for (var partitionIndex = 0; partitionIndex < partitionsAmount; partitionIndex++) {
