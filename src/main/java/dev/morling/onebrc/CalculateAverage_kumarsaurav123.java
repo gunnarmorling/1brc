@@ -61,7 +61,7 @@ public class CalculateAverage_kumarsaurav123 {
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
         long start = System.currentTimeMillis();
         System.out.println(run(FILE));
-        System.out.println(System.currentTimeMillis() - start);
+        // System.out.println(System.currentTimeMillis() - start);
     }
 
     public static String run(String filePath) throws IOException, InterruptedException, ExecutionException {
