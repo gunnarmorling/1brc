@@ -49,7 +49,7 @@ public class CalculateAverage_tonivade {
         System.out.println(measurements);
     }
 
-    static record PartialResult(int end, Map<Name, Station> map) {
+    static record PartialResult(int consumed, Map<Name, Station> map) {
 
         void merge(Map<Name, Station> result) {
             map.forEach((name, station) -> result.merge(name, station, Station::merge));
@@ -73,8 +73,8 @@ public class CalculateAverage_tonivade {
                 if (buffer.remaining() <= 1024) {
                     var partialResult = readChunk(buffer, 0, buffer.remaining());
 
-                    consumed += partialResult.end();
-                    remaining -= partialResult.end();
+                    consumed += partialResult.consumed();
+                    remaining -= partialResult.consumed();
 
                     partialResult.merge(result);
                 }
@@ -87,18 +87,18 @@ public class CalculateAverage_tonivade {
                         var tasks = new ArrayList<Subtask<PartialResult>>(chunks);
                         for (int i = 0; i < chunks; i++) {
                             int start = i * chunksSize;
-                            int end = start + chunksSize + (i == chunks - 1 ? leftover : 0);
-                            tasks.add(scope.fork(() -> readChunk(buffer, start, end)));
+                            int length = chunksSize + (i < chunks ? leftover : 0);
+                            tasks.add(scope.fork(() -> readChunk(
+                                    buffer, findStart(buffer, start), start + length)));
                         }
                         scope.join();
                         scope.throwIfFailed();
 
-                        for (Subtask<PartialResult> subtask : tasks) {
+                        for (var subtask : tasks) {
                             subtask.get().merge(result);
+                            consumed += subtask.get().consumed();
+                            remaining -= subtask.get().consumed();
                         }
-
-                        consumed += tasks.getLast().get().end();
-                        remaining -= tasks.getLast().get().end();
                     }
                 }
             }
@@ -109,8 +109,8 @@ public class CalculateAverage_tonivade {
     private static PartialResult readChunk(ByteBuffer buffer, int start, int end) {
         final byte[] name = new byte[128];
         final byte[] temp = new byte[8];
-        int last = findStart(buffer, start);
-        Map<Name, Station> map = new HashMap<>(1000);
+        final Map<Name, Station> map = new HashMap<>(1000);
+        int last = start;
         while (last < end) {
             int semicolon = readName(buffer, last, end - last, name);
             if (semicolon < 0) {
@@ -128,7 +128,7 @@ public class CalculateAverage_tonivade {
             // skip end of line
             last = endOfLine + 1;
         }
-        return new PartialResult(last, map);
+        return new PartialResult(last - start, map);
     }
 
     private static int findStart(ByteBuffer buffer, int start) {
@@ -254,7 +254,7 @@ public class CalculateAverage_tonivade {
             return this;
         }
 
-        public String asString() {
+        String asString() {
             return name + "=" + round(min) + "/" + round(mean()) + "/" + round(max);
         }
 
