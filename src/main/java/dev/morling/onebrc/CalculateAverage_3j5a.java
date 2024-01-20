@@ -41,7 +41,7 @@ public class CalculateAverage_3j5a {
             slices.stream().parallel().map(slice -> {
                 MappedByteBuffer measurementsSlice = map(slice, measurementsChannel);
                 var measurementBuffer = new byte[rules.maxMeasurementLength];
-                var measurements = new HashMap<Station, StationMeasurementStatistics>(rules.uniqueStationsCount);
+                var measurements = HashMap.<Station, StationMeasurementStatistics> newHashMap(rules.uniqueStationsCount);
                 while (measurementsSlice.hasRemaining()) {
                     var a = nextStationMeasurement(measurementBuffer, measurementsSlice);
                     var stats = measurements.computeIfAbsent(a.station, k -> new StationMeasurementStatistics(a));
@@ -49,12 +49,21 @@ public class CalculateAverage_3j5a {
                 }
                 return measurements;
             }).reduce((aslice, bslice) -> {
-                aslice.forEach((astation, astats) -> bslice.merge(astation, astats, (k, bstats) -> bstats.merge(astats)));
+                aslice.forEach((astation, astats) -> {
+                    var bstats = bslice.putIfAbsent(astation, astats);
+                    if (bstats != null) {
+                        bstats.merge(astats);
+                    }
+                });
                 return bslice;
-            }).ifPresent(measurements -> out.printf("{%s}\n", measurements.values().stream()
-                    .sorted(comparing(a -> a.name))
-                    .map(StationMeasurementStatistics::toString)
-                    .collect(joining(", "))));
+            }).ifPresent(measurements -> {
+                var results = measurements.values().stream()
+                        .parallel()
+                        .sorted(comparing(StationMeasurementStatistics::getName))
+                        .map(StationMeasurementStatistics::toString)
+                        .collect(joining(", ", "{", "}"));
+                out.println(results);
+            });
         }
     }
 
@@ -81,7 +90,7 @@ public class CalculateAverage_3j5a {
 
         @Override
         public boolean equals(Object that) {
-            return this == that || Arrays.equals(this.name, ((Station) that).name);
+            return Arrays.equals(this.name, ((Station) that).name);
         }
 
         @Override
@@ -90,46 +99,57 @@ public class CalculateAverage_3j5a {
         }
     }
 
-    record StationMeasurement(Station station, float temperature) {
+    record StationMeasurement(Station station, int temperature) {
     }
 
     private static class StationMeasurementStatistics {
 
-        private final String name;
-        private float min;
-        private float max;
+        private final byte[] nameBytes;
+        private String name;
+        private int min;
+        private int max;
         private long sum;
-        private long count;
+        private int count;
 
         StationMeasurementStatistics(StationMeasurement stationMeasurement) {
-            this.name = new String(stationMeasurement.station.name, StandardCharsets.UTF_8);
+            this.nameBytes = stationMeasurement.station.name;
             this.min = stationMeasurement.temperature;
             this.max = stationMeasurement.temperature;
         }
 
-        StationMeasurementStatistics add(StationMeasurement measurement) {
+        public String getName() {
+            if (name == null) {
+                name = new String(nameBytes, StandardCharsets.UTF_8);
+            }
+            return name;
+        }
+
+        void add(StationMeasurement measurement) {
             var temperature = measurement.temperature;
-            return update(1, temperature, temperature, (long) temperature);
+            update(1, temperature, temperature, temperature);
         }
 
-        StationMeasurementStatistics merge(StationMeasurementStatistics other) {
-            return update(other.count, other.min, other.max, other.sum);
+        void merge(StationMeasurementStatistics other) {
+            update(other.count, other.min, other.max, other.sum);
         }
 
-        private StationMeasurementStatistics update(long count, float min, float max, long sum) {
+        private void update(int count, int min, int max, long sum) {
             this.count += count;
-            this.min = Math.min(this.min, min);
-            this.max = Math.max(this.max, max);
+            if (this.min > min) {
+                this.min = min;
+            }
+            if (this.max < max) {
+                this.max = max;
+            }
             this.sum += sum;
-            return this;
         }
 
         @Override
         public String toString() {
-            var min = this.min / 10;
-            var mean = Math.round((float) this.sum / this.count) / 10f;
-            var max = this.max / 10;
-            return name + "=" + min + "/" + mean + "/" + max;
+            var min = this.min / 10f;
+            var mean = Math.ceilDiv(this.sum, this.count) / 10f;
+            var max = this.max / 10f;
+            return getName() + "=" + min + "/" + mean + "/" + max;
         }
     }
 
@@ -140,15 +160,15 @@ public class CalculateAverage_3j5a {
             measurement[i] = b;
             i++;
         }
-        float temperature = measurement[--i] - '0';
+        int temperature = measurement[--i] - '0';
         i--; // skipping dot
-        var base = 10f;
+        var base = 10;
         while ((b = measurement[--i]) != ';') {
             if (b == '-') {
                 temperature *= -1;
             }
             else {
-                temperature = Math.fma(base, b - '0', temperature);
+                temperature = base * (b - '0') + temperature;
                 base *= base;
             }
         }
@@ -175,12 +195,15 @@ public class CalculateAverage_3j5a {
 
     private static List<MeasurementsSlice> slice(RandomAccessFile measurements, int chunks) throws IOException {
         long measurementsFileLength = measurements.length();
-        long chunkLength, remainder;
-        chunks--;
-        do {
-            chunkLength = measurementsFileLength / ++chunks;
-            remainder = measurementsFileLength % chunkLength;
-        } while (chunkLength + remainder > Integer.MAX_VALUE);
+        long chunkLength = 0;
+        long remainder;
+        if (chunks < measurementsFileLength) {
+            chunks--;
+            do {
+                chunkLength = measurementsFileLength / ++chunks;
+                remainder = measurementsFileLength % chunkLength;
+            } while (chunkLength + remainder > Integer.MAX_VALUE);
+        }
         if (chunkLength <= rules.maxMeasurementLength) {
             return List.of(new MeasurementsSlice(0, measurementsFileLength));
         }
