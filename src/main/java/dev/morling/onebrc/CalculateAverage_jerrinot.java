@@ -163,7 +163,7 @@ public class CalculateAverage_jerrinot {
         private static final long LEN_OFFSET = 20;
         private static final long NAME_OFFSET = 24;
 
-        private static final int MAP_ENTRY_SIZE_BYTES = +Integer.BYTES // count // 0
+        private static final int MAP_ENTRY_SIZE_BYTES = Integer.BYTES // count // 0
                 + Integer.BYTES // min // +4
                 + Integer.BYTES // max // +8
                 + Long.BYTES // sum // +12
@@ -173,10 +173,7 @@ public class CalculateAverage_jerrinot {
         private static final int MAP_SIZE_BYTES = MAP_SLOT_COUNT * MAP_ENTRY_SIZE_BYTES;
         private static final long MAP_MASK = MAP_SLOT_COUNT - 1;
 
-        // todo: some fields could probably be converted to locals
-
         private final long map;
-
         private long cursorA;
         private long endA;
         private long cursorB;
@@ -293,20 +290,20 @@ public class CalculateAverage_jerrinot {
             // System.out.println("done D");
         }
 
-        private void doOne(long cursorA, long endA) {
-            while (cursorA < endA) {
-                long startA = cursorA;
-                long delimiterWordA = UNSAFE.getLong(cursorA);
+        private void doOne(long cursor, long endA) {
+            while (cursor < endA) {
+                long startA = cursor;
+                long delimiterWordA = UNSAFE.getLong(cursor);
                 long hashA = 0;
                 long maskA = getDelimiterMask(delimiterWordA);
                 while (maskA == 0) {
                     hashA ^= delimiterWordA;
-                    cursorA += 8;
-                    delimiterWordA = UNSAFE.getLong(cursorA);
+                    cursor += 8;
+                    delimiterWordA = UNSAFE.getLong(cursor);
                     maskA = getDelimiterMask(delimiterWordA);
                 }
                 final int delimiterByteA = Long.numberOfTrailingZeros(maskA);
-                final long semicolonA = cursorA + (delimiterByteA >> 3);
+                final long semicolonA = cursor + (delimiterByteA >> 3);
                 final long maskedWordA = delimiterWordA & ((maskA - 1) ^ maskA) >>> 8;
                 hashA ^= maskedWordA;
                 int intHashA = (int) (hashA ^ (hashA >> 32));
@@ -314,27 +311,22 @@ public class CalculateAverage_jerrinot {
 
                 long baseEntryPtrA = getOrCreateEntryBaseOffset(semicolonA, startA, intHashA, maskedWordA);
                 long temperatureWordA = UNSAFE.getLong(semicolonA + 1);
-                cursorA = parseAndStoreTemperature(semicolonA + 1, baseEntryPtrA, temperatureWordA);
+                cursor = parseAndStoreTemperature(semicolonA + 1, baseEntryPtrA, temperatureWordA);
             }
         }
 
         @Override
         public void run() {
             while (cursorA < endA && cursorB < endB && cursorC < endC && cursorD < endD) {
-                // todo: experiment with different inter-leaving
                 long startA = cursorA;
                 long startB = cursorB;
                 long startC = cursorC;
                 long startD = cursorD;
 
                 long currentWordA = UNSAFE.getLong(startA);
-                // long delimiterWordA2 = UNSAFE.getLong(startA + 8);
                 long currentWordB = UNSAFE.getLong(startB);
-                // long delimiterWordB2 = UNSAFE.getLong(startB + 8);
                 long currentWordC = UNSAFE.getLong(startC);
-                // long delimiterWordCa = UNSAFE.getLong(startC + 8);
                 long currentWordD = UNSAFE.getLong(startD);
-                // long delimiterWordD2 = UNSAFE.getLong(startD + 8);
 
                 long hashA = 0;
                 long hashB = 0;
@@ -415,39 +407,24 @@ public class CalculateAverage_jerrinot {
             doTail();
         }
 
-        private long getOrCreateEntryBaseOffset(long semicolonA, long startA, int intHashA, long maskedWordA) {
-            // hashSet.add(intHashA);
-            long lenLong = semicolonA - startA;
+        private long getOrCreateEntryBaseOffset(long semicolonPtr, long startPtr, int hash, long maskedWord) {
+            long lenLong = semicolonPtr - startPtr;
             int lenA = (int) lenLong;
 
-            // assert lenA != 0;
-            // byte[] nameArr = new byte[lenA];
-            // for (int i = 0; i < lenA; i++) {
-            // nameArr[i] = UNSAFE.getByte(startA + i);
-            // }
-            // String nameStr = new String(nameArr);
-            // Integer oldHash = nameToHash.put(nameStr, intHashA);
-            // assert oldHash == null || oldHash == intHashA : "name: " + nameStr + ", old hash = " + oldHash + ", new hash = " + intHashA;
-
-            long mapIndexA = intHashA & MAP_MASK;
-            // long clusterLen = 0;
+            long mapIndexA = hash & MAP_MASK;
             for (;;) {
                 long basePtr = mapIndexA * MAP_ENTRY_SIZE_BYTES + map;
                 long lenPtr = basePtr + LEN_OFFSET;
                 int len = UNSAFE.getInt(lenPtr);
                 if (len == lenA) {
-                    if (nameMatch(startA, maskedWordA, basePtr, lenLong)) {
-                        // if (clusterLen > maxClusterLen) {
-                        // maxClusterLen = clusterLen;
-                        // System.out.println("max cluster len: " + clusterLen);
-                        // }
+                    if (nameMatch(startPtr, maskedWord, basePtr, lenLong)) {
                         return basePtr;
                     }
                 }
                 else if (len == 0) {
                     // todo: uncommon branch maybe?
                     // empty slot
-                    UNSAFE.copyMemory(semicolonA - lenA, basePtr + NAME_OFFSET, lenA);
+                    UNSAFE.copyMemory(semicolonPtr - lenA, basePtr + NAME_OFFSET, lenA);
                     UNSAFE.putInt(lenPtr, lenA);
                     // todo: this could be a single putLong()
                     UNSAFE.putInt(basePtr + MAX_OFFSET, Integer.MIN_VALUE);
@@ -455,7 +432,6 @@ public class CalculateAverage_jerrinot {
                     return basePtr;
                 }
                 mapIndexA = ++mapIndexA & MAP_MASK;
-                // clusterLen++;
             }
         }
 
