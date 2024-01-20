@@ -27,8 +27,8 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.StructuredTaskScope.Subtask;
@@ -42,21 +42,27 @@ public class CalculateAverage_tonivade {
     private static final int SEMICOLON = 59;
 
     public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
-        Map<Name, Station> map = new ConcurrentHashMap<>();
+        var result = readFile();
 
-        readFile((station, value) -> map.computeIfAbsent(station, Station::new).add(value));
-
-        var measurements = map.values().stream().sorted(comparing(Station::getName))
-                .map(Station::asString).collect(joining(", ", "{", "}"));
+        var measurements = getMeasurements(result);
 
         System.out.println(measurements);
     }
 
-    static interface Consumer {
-        void accept(Name station, double value);
+    static record PartialResult(int end, Map<Name, Station> map) {
+
+        void merge(Map<Name, Station> result) {
+            map.forEach((name, station) -> result.merge(name, station, Station::merge));
+        }
     }
 
-    private static void readFile(Consumer consumer) throws IOException, InterruptedException, ExecutionException {
+    private static String getMeasurements(Map<Name, Station> result) {
+        return result.values().stream().sorted(comparing(Station::getName))
+                .map(Station::asString).collect(joining(", ", "{", "}"));
+    }
+
+    private static Map<Name, Station> readFile() throws IOException, InterruptedException, ExecutionException {
+        Map<Name, Station> result = new HashMap<>(10_000);
         try (var channel = FileChannel.open(Paths.get(FILE), StandardOpenOption.READ)) {
             long consumed = 0;
             long remaining = channel.size();
@@ -65,10 +71,12 @@ public class CalculateAverage_tonivade {
                         MapMode.READ_ONLY, consumed, Math.min(remaining, Integer.MAX_VALUE));
 
                 if (buffer.remaining() <= 1024) {
-                    int last = readChunk(buffer, consumer, 0, buffer.remaining());
+                    var partialResult = readChunk(buffer, 0, buffer.remaining());
 
-                    consumed += last;
-                    remaining -= last;
+                    consumed += partialResult.end();
+                    remaining -= partialResult.end();
+
+                    partialResult.merge(result);
                 }
                 else {
                     var chunks = Runtime.getRuntime().availableProcessors();
@@ -76,27 +84,33 @@ public class CalculateAverage_tonivade {
                     var leftover = buffer.remaining() % chunks;
 
                     try (var scope = new StructuredTaskScope.ShutdownOnFailure()) {
-                        var tasks = new ArrayList<Subtask<Integer>>(chunks);
-                        for (int c = 0; c < chunks; c++) {
-                            int start = c * chunksSize;
-                            int end = start + chunksSize + (c == chunks - 1 ? leftover : 0);
-                            tasks.add(scope.fork(() -> readChunk(buffer, consumer, start, end)));
+                        var tasks = new ArrayList<Subtask<PartialResult>>(chunks);
+                        for (int i = 0; i < chunks; i++) {
+                            int start = i * chunksSize;
+                            int end = start + chunksSize + (i == chunks - 1 ? leftover : 0);
+                            tasks.add(scope.fork(() -> readChunk(buffer, start, end)));
                         }
                         scope.join();
                         scope.throwIfFailed();
 
-                        consumed += tasks.getLast().get();
-                        remaining -= tasks.getLast().get();
+                        for (Subtask<PartialResult> subtask : tasks) {
+                            subtask.get().merge(result);
+                        }
+
+                        consumed += tasks.getLast().get().end();
+                        remaining -= tasks.getLast().get().end();
                     }
                 }
             }
         }
+        return result;
     }
 
-    private static int readChunk(ByteBuffer buffer, Consumer consumer, int start, int end) {
+    private static PartialResult readChunk(ByteBuffer buffer, int start, int end) {
         final byte[] name = new byte[128];
         final byte[] temp = new byte[8];
         int last = findStart(buffer, start);
+        Map<Name, Station> map = new HashMap<>(1000);
         while (last < end) {
             int semicolon = readName(buffer, last, end - last, name);
             if (semicolon < 0) {
@@ -108,14 +122,13 @@ public class CalculateAverage_tonivade {
                 break;
             }
 
-            consumer.accept(
-                    new Name(name, semicolon - last),
-                    parseTemp(temp, endOfLine - semicolon - 1));
+            map.computeIfAbsent(new Name(name, semicolon - last), Station::new)
+                    .add(parseTemp(temp, endOfLine - semicolon - 1));
 
             // skip end of line
             last = endOfLine + 1;
         }
-        return last;
+        return new PartialResult(last, map);
     }
 
     private static int findStart(ByteBuffer buffer, int start) {
@@ -227,12 +240,18 @@ public class CalculateAverage_tonivade {
         }
 
         void add(double value) {
-            synchronized (this) {
-                min = Math.min(min, value);
-                max = Math.max(max, value);
-                sum += value;
-                count++;
-            }
+            min = Math.min(min, value);
+            max = Math.max(max, value);
+            sum += value;
+            count++;
+        }
+
+        Station merge(Station other) {
+            min = Math.min(min, other.min);
+            max = Math.max(max, other.max);
+            sum += other.sum;
+            count += other.count;
+            return this;
         }
 
         public String asString() {
