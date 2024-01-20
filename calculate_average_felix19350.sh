@@ -15,6 +15,16 @@
 #  limitations under the License.
 #
 
+# ParallelGC test - Time (measured by evaluate2.sh): 00:33.130
+# JAVA_OPTS="--enable-preview -XX:+UseParallelGC -XX:+UseTransparentHugePages"
 
-JAVA_OPTS="--enable-preview -XX:+UseParallelGC -Xms4g -Xmx4g"
+# G1GC test - Time (measured by evaluate2.sh):  00:26.447
+# JAVA_OPTS="--enable-preview -XX:+UseG1GC -XX:+UseTransparentHugePages"
+
+# ZGC test - Time (measured by evaluate2.sh): 00:22.813
+JAVA_OPTS="--enable-preview -XX:+UseZGC -XX:+UseTransparentHugePages"
+
+# EpsilonGC test - for now doesnt work because heap space gets exhausted
+#JAVA_OPTS="--enable-preview -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -XX:+AlwaysPreTouch"
+
 java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_felix19350

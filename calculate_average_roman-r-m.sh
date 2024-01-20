@@ -16,4 +16,10 @@
 #
 
 JAVA_OPTS="--enable-preview -XX:+UseTransparentHugePages"
+
+# epsilon GC needs enough memory or it makes things worse
+# see https://stackoverflow.com/questions/58087596/why-are-repeated-memory-allocations-observed-to-be-slower-using-epsilon-vs-g1
+# 2GB seems to be the sweet spot
+JAVA_OPTS="$JAVA_OPTS -XX:+UnlockExperimentalVMOptions -XX:-EnableJVMCI -XX:+UseEpsilonGC -Xmx2G -Xms2G -XX:+AlwaysPreTouch"
+
 java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_roman_r_m
