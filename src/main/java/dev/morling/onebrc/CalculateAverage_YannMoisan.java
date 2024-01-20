@@ -104,10 +104,7 @@ public class CalculateAverage_YannMoisan {
                     break;
                 field[fieldCurrentIndex++] = fieldByte;
             }
-            var dst = new byte[fieldCurrentIndex];
-            System.arraycopy(field, 0, dst, 0, fieldCurrentIndex);
-            var fieldStr = new Location(dst);
-            // System.arraycopy(field, 0, dst, 0, fieldCurrentIndex);
+            var fieldStr = new Location(Arrays.copyOfRange(field, 0, fieldCurrentIndex));
             var number = 0;
             var sign = 1;
             while (bb.position() < limit) {
