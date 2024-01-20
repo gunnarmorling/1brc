@@ -60,14 +60,15 @@ public class CalculateAverage_abeobk {
 
     static class Node {
         long addr;
+        long word0;
         long tail;
+        int keylen;
         int min, max;
         int count;
         long sum;
 
         String key() {
             byte[] sbuf = new byte[MAX_STR_LEN];
-            int keylen = (int) (tail >>> 56);
             UNSAFE.copyMemory(null, addr, sbuf, Unsafe.ARRAY_BYTE_BASE_OFFSET, keylen);
             return new String(sbuf, 0, keylen, StandardCharsets.UTF_8);
         }
@@ -76,18 +77,29 @@ public class CalculateAverage_abeobk {
             return String.format("%.1f/%.1f/%.1f", min * 0.1, sum * 0.1 / count, max * 0.1);
         }
 
-        Node(long a, long t, int val) {
+        Node(long a, long t, int val, int kl) {
             addr = a;
             tail = t;
+            keylen = kl;
             sum = min = max = val;
             count = 1;
         }
 
+        Node(long a, long t, int val, int kl, long w0) {
+            this(a, t, val, kl);
+            word0 = w0;
+        }
+
         void add(int val) {
-            min = Math.min(min, val);
-            max = Math.max(max, val);
             sum += val;
             count++;
+            if (val >= max) {
+                max = val;
+                return;
+            }
+            if (val < min) {
+                min = val;
+            }
         }
 
         void merge(Node other) {
@@ -102,7 +114,7 @@ public class CalculateAverage_abeobk {
                 return false;
             // this is faster than comparision if key is short
             long xsum = 0;
-            int n = ((int) (tail >>> 56)) & 0xF8;
+            int n = keylen & 0xF8;
             for (int i = 0; i < n; i += 8) {
                 xsum |= (UNSAFE.getLong(addr + i) ^ UNSAFE.getLong(other_addr + i));
             }
@@ -130,21 +142,13 @@ public class CalculateAverage_abeobk {
         return (xor_semi - 0x0101010101010101L) & (~xor_semi & 0x8080808080808080L);
     }
 
-    // very low collision mixer
-    // idea from https://github.com/Cyan4973/xxHash/tree/dev
-    // zero collision on test data
+    // speed/collision balance
     static final int xxh32(long hash) {
         final int p1 = 0x85EBCA77; // prime
-        final int p2 = 0x165667B1; // prime
         int low = (int) hash;
-        int high = (int) (hash >>> 31);
-        int h = low + high;
-        h ^= h >> 15;
-        h *= p1;
-        h ^= h >> 13;
-        h *= p2;
-        h ^= h >> 11;
-        return h;
+        int high = (int) (hash >>> 33);
+        int h = (low * p1) ^ high;
+        return h ^ (h >>> 17);
     }
 
     // great idea from merykitty (Quan Anh Mai)
@@ -172,26 +176,23 @@ public class CalculateAverage_abeobk {
             int val = 0;
             int bucket = 0;
 
-            long word = UNSAFE.getLong(addr);
-            long semipos_code = getSemiPosCode(word);
+            long word0 = UNSAFE.getLong(addr);
+            long semipos_code = getSemiPosCode(word0);
 
             // about 50% chance key < 8 chars
             if (semipos_code != 0) {
                 int semi_pos = Long.numberOfTrailingZeros(semipos_code) >>> 3;
                 addr += semi_pos;
-                tail = (word & HASH_MASKS[semi_pos]);
+                tail = (word0 & HASH_MASKS[semi_pos]);
                 bucket = xxh32(tail) & BUCKET_MASK;
-                long keylen = (addr - row_addr);
-                tail |= (keylen << 56);
                 long num_word = UNSAFE.getLong(++addr);
                 int dot_pos = Long.numberOfTrailingZeros(~num_word & 0x10101000);
                 val = parseNum(num_word, dot_pos);
                 addr += (dot_pos >>> 3) + 3;
-
                 while (true) {
                     var node = map[bucket];
                     if (node == null) {
-                        map[bucket] = new Node(row_addr, tail, val);
+                        map[bucket] = new Node(row_addr, tail, val, semi_pos);
                         break;
                     }
                     if (node.tail == tail) {
@@ -205,26 +206,30 @@ public class CalculateAverage_abeobk {
                 continue;
             }
 
-            hash ^= word;
+            hash ^= word0;
             addr += 8;
-            word = UNSAFE.getLong(addr);
+            long word = UNSAFE.getLong(addr);
             semipos_code = getSemiPosCode(word);
-            // frist byte semicolon ~13%
-            if (semipos_code == 0x80) {
+            // 43% chance
+            if (semipos_code != 0) {
+                int semi_pos = Long.numberOfTrailingZeros(semipos_code) >>> 3;
+                addr += semi_pos;
+                tail = (word & HASH_MASKS[semi_pos]);
+                hash ^= tail;
                 bucket = xxh32(hash) & BUCKET_MASK;
-                tail = 8L << 56;
-                long num_word = word >>> 8;
+                int keylen = (int) (addr - row_addr);
+                long num_word = UNSAFE.getLong(++addr);
                 int dot_pos = Long.numberOfTrailingZeros(~num_word & 0x10101000);
                 val = parseNum(num_word, dot_pos);
-                addr += (dot_pos >>> 3) + 4;
+                addr += (dot_pos >>> 3) + 3;
 
                 while (true) {
                     var node = map[bucket];
                     if (node == null) {
-                        map[bucket] = new Node(row_addr, tail, val);
+                        map[bucket] = new Node(row_addr, tail, val, keylen, word0);
                         break;
                     }
-                    if (UNSAFE.getLong(node.addr) == UNSAFE.getLong(row_addr)) {
+                    if (node.word0 == word0 && node.tail == tail) {
                         node.add(val);
                         break;
                     }
@@ -247,38 +252,18 @@ public class CalculateAverage_abeobk {
             tail = (word & HASH_MASKS[semi_pos]);
             hash ^= tail;
             bucket = xxh32(hash) & BUCKET_MASK;
-            long keylen = (addr - row_addr);
-            tail |= (keylen << 56);
+            int keylen = (int) (addr - row_addr);
 
-            ++addr;
-            long num_word = UNSAFE.getLong(addr);
+            long num_word = UNSAFE.getLong(++addr);
+
             int dot_pos = Long.numberOfTrailingZeros(~num_word & 0x10101000);
             val = parseNum(num_word, dot_pos);
             addr += (dot_pos >>> 3) + 3;
 
-            if (keylen < 16) {
-                while (true) {
-                    var node = map[bucket];
-                    if (node == null) {
-                        map[bucket] = new Node(row_addr, tail, val);
-                        break;
-                    }
-                    if (node.tail == tail && (UNSAFE.getLong(node.addr) == UNSAFE.getLong(row_addr))) {
-                        node.add(val);
-                        break;
-                    }
-                    bucket++;
-                    if (SHOW_ANALYSIS)
-                        cls[thread_id]++;
-                }
-                continue;
-            }
-
-            // longer key
             while (true) {
                 var node = map[bucket];
                 if (node == null) {
-                    map[bucket] = new Node(row_addr, tail, val);
+                    map[bucket] = new Node(row_addr, tail, val, keylen);
                     break;
                 }
                 if (node.contentEquals(row_addr, tail)) {
@@ -335,7 +320,7 @@ public class CalculateAverage_abeobk {
                     if (node == null)
                         continue;
                     if (SHOW_ANALYSIS) {
-                        int kl = (int) (node.tail >>> 56) & (lenhist.length - 1);
+                        int kl = node.keylen & (lenhist.length - 1);
                         lenhist[kl] += node.count;
                     }
                     var stat = ms.putIfAbsent(node.key(), node);
@@ -353,4 +338,5 @@ public class CalculateAverage_abeobk {
                 System.out.println(ms);
         }
     }
+
 }
