@@ -216,9 +216,11 @@ public class CalculateAverage_yonatang {
             }
             if (ch == '-') {
                 negative = true;
-            } else if (ch == '.') {
+            }
+            else if (ch == '.') {
                 // noop
-            } else {
+            }
+            else {
                 num = (num * 10 + (ch - '0'));
             }
         }
@@ -244,7 +246,8 @@ public class CalculateAverage_yonatang {
             if (isLast) {
                 chunkSize = fc.size() - startIdx;
                 padding = 0;
-            } else {
+            }
+            else {
                 padding = j == 0 ? 0 : MARGIN;
             }
             if (chunkSize == 0) {
@@ -274,17 +277,18 @@ public class CalculateAverage_yonatang {
                 }
                 agg.addMeasurement(station, value);
             }
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
             e.printStackTrace();
         }
     }
 
     public static void main(String[] args) throws Exception {
-//        long start = System.nanoTime();
+        // long start = System.nanoTime();
 
         File f = new File(FILE);
         try (RandomAccessFile raf = new RandomAccessFile(f, "r");
-             FileChannel fc = raf.getChannel()) {
+                FileChannel fc = raf.getChannel()) {
 
             int chunks = f.length() < 1_048_576 ? 1 : (Runtime.getRuntime().availableProcessors());
 
@@ -306,10 +310,10 @@ public class CalculateAverage_yonatang {
             }
 
             Map<String, ResultRow> finalMap = totalAgg.toMap();
-//            long end = System.nanoTime();
+            // long end = System.nanoTime();
 
             System.out.println(finalMap);
-//            System.err.println("Total time: " + java.time.Duration.ofNanos(end - start).toMillis() + "ms");
+            // System.err.println("Total time: " + java.time.Duration.ofNanos(end - start).toMillis() + "ms");
         }
 
     }
