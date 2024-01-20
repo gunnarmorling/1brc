@@ -39,8 +39,10 @@ public class CalculateAverage_roman_r_m {
 
     private static final long SEMICOLON_MASK = broadcast((byte) ';');
     private static final long LINE_END_MASK = broadcast((byte) '\n');
+    private static final long DOT_MASK = broadcast((byte) '.');
 
     // from netty
+
     /**
      * Applies a compiled pattern to given word.
      * Returns a word where each byte that matches the pattern has the highest bit set.
@@ -104,22 +106,22 @@ public class CalculateAverage_roman_r_m {
             int neg = 1 - Integer.bitCount((int) (encodedVal & 0x10));
             encodedVal >>>= 8 * neg;
 
-            var len = applyPattern(encodedVal, LINE_END_MASK);
+            var len = applyPattern(encodedVal, DOT_MASK);
             len = Long.numberOfTrailingZeros(len) / 8;
-            offset += len + 1 + neg;
 
             encodedVal ^= broadcast((byte) 0x30);
 
-            long c0 = len == 4 ? 100 : 10;
-            long c1 = 10 * (len - 3);
-            long c2 = 4 - len;
-            long c3 = len - 3;
-            long a = (encodedVal & 0xFF) * c0;
-            long b = ((encodedVal & 0xFF00) >>> 8) * c1;
-            long c = ((encodedVal & 0xFF0000L) >>> 16) * c2;
-            long d = ((encodedVal & 0xFF000000L) >>> 24) * c3;
+            int intPart = (int) (encodedVal & ((1 << (8 * len)) - 1));
+            intPart <<= 8 * (2 - len);
+            intPart *= (100 * 256 + 10);
+            intPart = (intPart & 0x3FF80) >>> 8;
 
-            return (int) (a + b + c + d) * (1 - 2 * neg);
+            int frac = (int) ((encodedVal >>> (8 * (len + 1))) & 0xFF);
+
+            offset += neg + len + 3; // 1 for . + 1 for fractional part + 1 for new line char
+            int sign = 1 - 2 * neg;
+            int val = intPart + frac;
+            return sign * val;
         }
 
         int parseNumberSlow() {
