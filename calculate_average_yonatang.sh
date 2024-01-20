@@ -15,5 +15,6 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="--enable-preview"
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_ebarlas
+# GC is overrated
+JAVA_OPTS="-XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -XX:+AlwaysPreTouch -Xms512m -Xmx512m"
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_yonatang
