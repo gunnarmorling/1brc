@@ -117,12 +117,20 @@ public class CalculateAverage_justplainlaake {
     public static void main(String[] args) throws IOException {
         int processors = Runtime.getRuntime().availableProcessors();
 
-        ExecutorService e = Executors.newFixedThreadPool(processors);// Create a ThreadPool based executor using the count of processors available
+        ExecutorService e = null;
 
         List<Future<OpenMap>> futures = new ArrayList<>();
         OpenMap mainMap = null;
         try (FileChannel channel = FileChannel.open(Path.of(FILE), StandardOpenOption.READ)) {
             long fileSize = channel.size();
+
+            if (fileSize < 10_000) {// File is smaller than 10,000 bytes, we will lose performance trying to multithread so just set processors to 1 which will skip the futures and only use main thread
+                processors = 1;
+            }
+            else {
+                e = Executors.newFixedThreadPool(processors);// Create a ThreadPool based executor using the count of processors available
+            }
+
             long chunkSize = fileSize / processors;// Determine approximate size of each chunk based on amount of processors available
 
             long startAddress = channel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, Arena.global())// Map the file channel into memory using the global arena (accessible by all threads)
@@ -160,24 +168,25 @@ public class CalculateAverage_justplainlaake {
 
         OpenMap merged = mainMap;// Set the main map created with the process called on main thread to make it effectively final
 
-        // The merging of processing takes ~10ms
-        for (Future<OpenMap> f : futures) {
-            try {
+        if (processors > 1) {// If there is only one processor then we only used the main thread so no point in merging the futures
+            // The merging of processing takes ~10ms
+            for (Future<OpenMap> f : futures) {
+                try {
 
-                OpenMap processed = f.get();// Waits until the process task is done but then returns the callable value from the process method
+                    OpenMap processed = f.get();// Waits until the process task is done but then returns the callable value from the process method
 
-                // Simple way to merge both lists, tried doing it more inline inside the map and ended up taking a 10ms longer
-                processed.forEach((i, s) -> {
-                    merged.merge(i, s);
-                });
+                    // Simple way to merge both lists, tried doing it more inline inside the map and ended up taking a 10ms longer
+                    processed.forEach((i, s) -> {
+                        merged.merge(i, s);
+                    });
+                }
+                catch (InterruptedException | ExecutionException e1) {
+                    e1.printStackTrace();
+                }
             }
-            catch (InterruptedException | ExecutionException e1) {
-                e1.printStackTrace();
-            }
+            // Mark threadpool to be shutdown, call it here to let the threadpool finish out while the rest of the processing occurs
+            e.shutdown();
         }
-
-        // Mark threadpool to be shutdown, call it here to let the threadpool finish out while the rest of the processing occurs
-        e.shutdown();
 
         // Ordering and printing takes 50ms
         Station[] nameOrdered = merged.toArray();// Turn the merged map into an array to quickly sort it
