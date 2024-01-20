@@ -119,9 +119,15 @@ public class CalculateAverage_YannMoisan {
                 else if (numberByte != '.')
                     number = number * 10 + (numberByte - '0');
             }
-            stats.computeIfAbsent(fieldStr,
-                    k -> new Stat())
-                    .update(sign * number);
+            var v = stats.get(fieldStr);
+            if (v == null) {
+                var vv = new Stat();
+                vv.update(sign * number);
+                stats.put(fieldStr, vv);
+            }
+            else {
+                v.update(sign * number);
+            }
         }
 
         return stats;
