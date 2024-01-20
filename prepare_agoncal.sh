@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 #  Copyright 2023 The original authors
 #
@@ -15,5 +15,5 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="--enable-preview --add-modules=jdk.incubator.vector"
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_ianopolousfast
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+sdk use java 21.0.1-tem 1>&2
