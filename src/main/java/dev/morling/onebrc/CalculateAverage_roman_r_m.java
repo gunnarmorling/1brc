@@ -99,14 +99,14 @@ public class CalculateAverage_roman_r_m {
         }
 
         int parseNumberFast() {
-            int neg = 1 - Integer.bitCount(UNSAFE.getByte(offset) & 0x10);
-            offset += neg;
-
             long encodedVal = UNSAFE.getLong(offset);
+
+            int neg = 1 - Integer.bitCount((int) (encodedVal & 0x10));
+            encodedVal >>>= 8 * neg;
 
             var len = applyPattern(encodedVal, LINE_END_MASK);
             len = Long.numberOfTrailingZeros(len) / 8;
-            offset += len + 1;
+            offset += len + 1 + neg;
 
             encodedVal ^= broadcast((byte) 0x30);
 
@@ -139,7 +139,7 @@ public class CalculateAverage_roman_r_m {
         }
 
         int parseNumber() {
-            if (end - offset > 8) {
+            if (end - offset >= 8) {
                 return parseNumberFast();
             }
             else {
