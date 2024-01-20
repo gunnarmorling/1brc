@@ -15,53 +15,28 @@
  */
 package dev.morling.onebrc;
 
+import static java.lang.foreign.ValueLayout.JAVA_BYTE;
+import static java.nio.file.StandardOpenOption.READ;
+
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.nio.channels.FileChannel;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
-
-import static java.nio.charset.StandardCharsets.UTF_8;
+import java.util.stream.IntStream;
 
 public class CalculateAverage_0xshivamagarwal {
-    private static final String FILE = "./measurements.txt";
+    private static final Path FILE = Path.of("./measurements.txt");
+    private static final byte COLON = ';';
+    private static final byte NEW_LINE = '\n';
+    private static final byte HYPHEN = '-';
+    private static final byte DOT = '.';
+    private static final int NO_OF_THREADS = Runtime.getRuntime().availableProcessors();
 
-    private static Map.Entry<String, long[]> parseLine(final String line) {
-        var n = line.length();
-
-        var pos = n - 4;
-        if (!(line.charAt(pos) == ';' || line.charAt(--pos) == ';' || line.charAt(--pos) == ';')) {
-            throw new UnsupportedOperationException("unable to find `;`");
-        }
-
-        var v = parseValue(line, pos + 1, n);
-        return Map.entry(line.substring(0, pos), new long[]{ v, v, v, 1L });
-    }
-
-    private static long parseValue(final String input, final int beginIndex, final int endIndex) {
-        long value = 0;
-
-        boolean isNegative = false;
-        int i = beginIndex;
-
-        if (input.charAt(i) == '-') {
-            ++i;
-            isNegative = true;
-        }
-
-        for (char c; i < endIndex; ++i) {
-            c = input.charAt(i);
-            if (c == '.') {
-                c = input.charAt(++i);
-            }
-            value = value * 10 + (c - 48);
-        }
-
-        return isNegative ? -value : value;
-    }
-
-    private static long[] mergeFunction(final long[] v1, final long[] v2) {
+    private static long[] mergeFn(final long[] v1, final long[] v2) {
         v1[0] = Math.min(v1[0], v2[0]);
         v1[1] = Math.max(v1[1], v2[1]);
         v1[2] += v2[2];
@@ -72,31 +47,89 @@ public class CalculateAverage_0xshivamagarwal {
     private static String toString(final Map.Entry<String, long[]> entry) {
         var m = entry.getValue();
 
-        return entry.getKey() +
-                '=' +
-                m[0] / 10.0 +
-                '/' +
-                Math.round(1.0 * m[2] / m[3]) / 10.0 +
-                '/' +
-                m[1] / 10.0;
+        return entry.getKey()
+                + '='
+                + m[0] / 10.0
+                + '/'
+                + Math.round(1.0 * m[2] / m[3]) / 10.0
+                + '/'
+                + m[1] / 10.0;
+    }
+
+    private static Map<String, long[]> parseData(
+                                                 final MemorySegment data, long offset, final long limit) {
+        var map = new HashMap<String, long[]>(10000, 1);
+        var sep = false;
+        var neg = false;
+        var key = new byte[100];
+        var len = 0;
+        var val = 0;
+
+        while (offset < limit) {
+            var b = data.get(JAVA_BYTE, offset++);
+            if (sep) {
+                if (b == NEW_LINE) {
+                    val = neg ? -val : val;
+                    map.merge(
+                            new String(key, 0, len),
+                            new long[]{ val, val, val, 1 },
+                            CalculateAverage_0xshivamagarwal::mergeFn);
+                    sep = false;
+                    neg = false;
+                    len = 0;
+                    val = 0;
+                }
+                else if (b == HYPHEN) {
+                    neg = true;
+                }
+                else if (b != DOT) {
+                    val = val * 10 + (b - 48);
+                }
+            }
+            else if (b == COLON) {
+                sep = true;
+            }
+            else {
+                key[len++] = b;
+            }
+        }
+
+        return map;
     }
 
     public static void main(String[] args) throws IOException {
         final String result;
 
-        try (var lines = Files.lines(Paths.get(FILE), UTF_8).parallel()) {
-            result = lines
-                    .map(CalculateAverage_0xshivamagarwal::parseLine)
+        try (var channel = FileChannel.open(FILE, READ);
+                var arena = Arena.ofShared()) {
+            var data = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size(), arena);
+            var chunkSize = data.byteSize() / NO_OF_THREADS;
+            var chunks = new long[NO_OF_THREADS + 1];
+            chunks[NO_OF_THREADS] = data.byteSize();
+
+            for (int i = 1; i < NO_OF_THREADS; ++i) {
+                var chunkPos = i * chunkSize;
+
+                while (data.get(JAVA_BYTE, chunkPos++) != NEW_LINE) {
+                }
+
+                chunks[i] = chunkPos;
+            }
+
+            result = IntStream.range(0, NO_OF_THREADS)
+                    .mapToObj(i -> parseData(data, chunks[i], chunks[i + 1]))
                     .parallel()
-                    .collect(
-                            () -> new HashMap<String, long[]>(10000, 1),
-                            (m, e) -> m.merge(e.getKey(), e.getValue(), CalculateAverage_0xshivamagarwal::mergeFunction),
-                            (m1, m2) -> m2.forEach((k, v) -> m1.merge(k, v, CalculateAverage_0xshivamagarwal::mergeFunction)))
-                    .entrySet()
-                    .parallelStream()
-                    .sorted(Map.Entry.comparingByKey())
-                    .map(CalculateAverage_0xshivamagarwal::toString)
-                    .collect(Collectors.joining(", ", "{", "}"));
+                    .reduce(
+                            (m1, m2) -> {
+                                m2.forEach((k, v) -> m1.merge(k, v, CalculateAverage_0xshivamagarwal::mergeFn));
+                                return m1;
+                            })
+                    .map(
+                            map -> map.entrySet().parallelStream()
+                                    .sorted(Map.Entry.comparingByKey())
+                                    .map(CalculateAverage_0xshivamagarwal::toString)
+                                    .collect(Collectors.joining(", ", "{", "}")))
+                    .orElse(null);
         }
 
         System.out.println(result);
