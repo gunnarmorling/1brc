@@ -32,8 +32,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.StructuredTaskScope.Subtask;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 public class CalculateAverage_tonivade {
 
@@ -220,8 +218,6 @@ public class CalculateAverage_tonivade {
         private double sum;
         private long count;
 
-        private final Lock lock = new ReentrantLock();
-
         Station(Name name) {
             this.name = name;
         }
@@ -231,15 +227,11 @@ public class CalculateAverage_tonivade {
         }
 
         void add(double value) {
-            lock.lock();
-            try {
+            synchronized (this) {
                 min = Math.min(min, value);
                 max = Math.max(max, value);
                 sum += value;
                 count++;
-            }
-            finally {
-                lock.unlock();
             }
         }
 
