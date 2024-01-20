@@ -98,7 +98,10 @@ public class CalculateAverage_roman_r_m {
             offset++;
         }
 
-        long parseNumberFast() {
+        int parseNumberFast() {
+            int neg = 1 - Integer.bitCount(UNSAFE.getByte(offset) & 0x10);
+            offset += neg;
+
             long encodedVal = UNSAFE.getLong(offset);
 
             var len = applyPattern(encodedVal, LINE_END_MASK);
@@ -116,11 +119,14 @@ public class CalculateAverage_roman_r_m {
             long c = ((encodedVal & 0xFF0000L) >>> 16) * c2;
             long d = ((encodedVal & 0xFF000000L) >>> 24) * c3;
 
-            return a + b + c + d;
+            return (int) (a + b + c + d) * (1 - 2 * neg);
         }
 
-        long parseNumberSlow() {
-            long val = UNSAFE.getByte(offset++) - '0';
+        int parseNumberSlow() {
+            int neg = 1 - Integer.bitCount(UNSAFE.getByte(offset) & 0x10);
+            offset += neg;
+
+            int val = UNSAFE.getByte(offset++) - '0';
             byte b;
             while ((b = UNSAFE.getByte(offset++)) != '.') {
                 val = val * 10 + (b - '0');
@@ -128,22 +134,17 @@ public class CalculateAverage_roman_r_m {
             b = UNSAFE.getByte(offset);
             val = val * 10 + (b - '0');
             offset += 2;
+            val *= 1 - 2 * neg;
             return val;
         }
 
-        long parseNumber() {
-            long val;
-            int neg = 1 - Integer.bitCount(UNSAFE.getByte(offset) & 0x10);
-            offset += neg;
-
+        int parseNumber() {
             if (end - offset > 8) {
-                val = parseNumberFast();
+                return parseNumberFast();
             }
             else {
-                val = parseNumberSlow();
+                return parseNumberSlow();
             }
-            val *= 1 - 2 * neg;
-            return val;
         }
 
         public TreeMap<String, ResultRow> run() {
