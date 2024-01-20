@@ -187,7 +187,7 @@ public class CalculateAverage_JamalMulla {
             slot = (int) (hash ^ hash >> 32) & 65535;
 
             // Linear probe for open slot
-            while (slots[slot] != null && !unsafeEquals(keys[slot], start, nameLength)) {
+            while (slots[slot] != null && nameLength != keys[slot].length && !unsafeEquals(keys[slot], start, nameLength)) {
                 slot = ++slot % MAPSIZE;
             }
             slotValue = slots[slot];
