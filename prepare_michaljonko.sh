@@ -16,8 +16,7 @@
 #
 
 source "$HOME/.sdkman/bin/sdkman-init.sh"
-#sdk use java 21.0.2-open 1>&2
+sdk use java 21.0.2-open 1>&2
 #sdk use java 21.0.2-oracle 1>&2
 #sdk use java 21.0.1-tem 1>&2
-sdk use java 21.0.2-graal 1>&2
 

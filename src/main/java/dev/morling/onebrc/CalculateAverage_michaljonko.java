@@ -39,6 +39,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
+import static java.util.FormatProcessor.FMT;
+
 public final class CalculateAverage_michaljonko {
 
     private static final int MAX_STATION_NAME_LENGTH = 100;
@@ -87,31 +89,40 @@ public final class CalculateAverage_michaljonko {
     }
 
     private static HashMap<Integer, StationMeasurement> parse(MemorySegment memorySegment) {
-        var stationName = new byte[MAX_STATION_NAME_LENGTH];
-        var temperature = new byte[MAX_TEMPERATURE_LENGTH];
-        byte b;
-        var stationNameIndex = 0;
+        final var stationNameRaw = new byte[MAX_STATION_NAME_LENGTH];
+        final var temperatureRaw = new byte[MAX_TEMPERATURE_LENGTH];
+        final var memorySegmentSize = memorySegment.byteSize();
+        final var stationsMap = new HashMap<Integer, StationMeasurement>(MAX_STATION_NAMES, 1f);
+
+        var stationNameRawIndex = 0;
         var stationNameHash = 0;
-        var temperatureIndex = 0;
-        var offset = 0L;
-        var memorySegmentSize = memorySegment.byteSize();
-        var stationsMap = new HashMap<Integer, StationMeasurement>(MAX_STATION_NAMES);
-        while (offset < memorySegmentSize) {
-            while ((b = memorySegment.get(ValueLayout.JAVA_BYTE, offset++)) != ';') {
-                stationName[stationNameIndex++] = b;
+        var temperatureRawIndex = 0;
+        var memorySegmentOffset = 0L;
+
+        byte b;
+        StationMeasurement stationMeasurement;
+
+        while (memorySegmentOffset < memorySegmentSize) {
+            while ((b = memorySegment.get(ValueLayout.JAVA_BYTE, memorySegmentOffset++)) != ';') {
+                stationNameRaw[stationNameRawIndex++] = b;
                 stationNameHash = 31 * stationNameHash + b;
             }
 
-            while (offset < memorySegmentSize && (b = memorySegment.get(ValueLayout.JAVA_BYTE, offset++)) != '\n') {
-                temperature[temperatureIndex++] = b;
+            while (memorySegmentOffset < memorySegmentSize && (b = memorySegment.get(ValueLayout.JAVA_BYTE, memorySegmentOffset++)) != '\n') {
+                temperatureRaw[temperatureRawIndex++] = b;
             }
 
-            var finalStationNameIndex = stationNameIndex;
-            stationsMap.computeIfAbsent(stationNameHash, ignored -> new StationMeasurement(new Station(stationName, finalStationNameIndex)))
-                    .update(TemperatureParser.parse(temperature, temperatureIndex));
+            final var temperature = TemperatureParser.parse(temperatureRaw, temperatureRawIndex);
+            stationMeasurement = stationsMap.get(stationNameHash);
+            if (stationMeasurement != null) {
+                stationMeasurement.update(temperature);
+            }
+            else {
+                stationsMap.put(stationNameHash, new StationMeasurement(new Station(stationNameRaw, stationNameRawIndex)).update(temperature));
+            }
 
-            stationNameIndex = 0;
-            temperatureIndex = 0;
+            stationNameRawIndex = 0;
+            temperatureRawIndex = 0;
             stationNameHash = 0;
         }
         return stationsMap;
@@ -121,12 +132,10 @@ public final class CalculateAverage_michaljonko {
 
         private static final ConcurrentHashMap<byte[], String> NAME_CACHE = new ConcurrentHashMap<>(MAX_STATION_NAMES);
         private final byte[] raw;
-        // private final String name;
 
         private Station(byte[] _raw, int length) {
             this.raw = new byte[length];
             System.arraycopy(_raw, 0, this.raw, 0, length);
-            // this.name = NAME_CACHE.computeIfAbsent(this.raw, k -> new String(k, 0, k.length));
         }
 
         public String name() {
@@ -186,7 +195,11 @@ public final class CalculateAverage_michaljonko {
         }
 
         private String data() {
-            return String.format("%s=%.1f/%.1f/%.1f", station.name(), min / 10.0d, (1.0d * sum / count) / 10.0d, max / 10.0d);
+            final var name = station.name();
+            final var min = this.min / 10.0d;
+            final var avg = (1.0d * sum / count) / 10.0d;
+            final var max = this.max / 10.0d;
+            return FMT. "\{name}=%.1f\{min}/%.1f\{avg}/%.1f\{max}";
         }
 
         @Override

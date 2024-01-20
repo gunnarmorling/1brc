@@ -15,14 +15,9 @@
 #  limitations under the License.
 #
 
-
 #JAVA_OPTS="--enable-preview \
 #-Xmx4g \
-#-agentpath:/usr/lib/async-profiler/build/libasyncProfiler.so=start,event=cpu,threads,ann,interval=1000000,file=/home/michaljonko/Desktop/profile.html"
-
-#JAVA_OPTS="--enable-preview \
-#-Xmx4g \
-#-XX:+AlwaysPreTouch"
+#-agentpath:/usr/lib/async-profiler/build/libasyncProfiler.so=start,event=cpu,threads,ann,interval=100000,file=/home/michaljonko/Desktop/profile.html"
 
 JAVA_OPTS="--enable-preview \
 -Xmx4g"
