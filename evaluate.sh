@@ -19,7 +19,7 @@ set -eo pipefail
 
 if [ -z "$1" ]
   then
-    echo "Usage: evaluate2.sh <fork name> (<fork name 2> ...)"
+    echo "Usage: evaluate.sh <fork name> (<fork name 2> ...)"
     echo " for each fork, there must be a 'calculate_average_<fork name>.sh' script and an optional 'prepare_<fork name>.sh'."
     exit 1
 fi
