@@ -140,6 +140,7 @@ public class CalculateAverage_artsiomkorzun {
 
         private static final int ENTRIES = 64 * 1024;
         private static final int SIZE = 128 * ENTRIES;
+        private static final int MASK = (ENTRIES - 1) << 7;
 
         private final ByteBuffer buffer = allocate(SIZE);
         private final long pointer = address(buffer);
@@ -261,7 +262,7 @@ public class CalculateAverage_artsiomkorzun {
         }
 
         private static int offset(int hash) {
-            return ((hash) & (ENTRIES - 1)) << 7;
+            return hash & MASK;
         }
 
         private static int next(int prev) {
@@ -361,7 +362,6 @@ public class CalculateAverage_artsiomkorzun {
                 int length;
                 int hash;
 
-                long ptr = 0;
                 long word = word(position);
                 long separator = separator(word);
 
@@ -369,7 +369,12 @@ public class CalculateAverage_artsiomkorzun {
                     length = length(separator);
                     word = mask(word, separator);
                     hash = mix(word);
-                    ptr = aggregates.find(word, hash);
+                    long ptr = aggregates.find(word, hash);
+
+                    if (ptr != 0) {
+                        position = update(ptr, position + length);
+                        continue;
+                    }
                 }
                 else {
                     long word0 = word;
@@ -380,7 +385,12 @@ public class CalculateAverage_artsiomkorzun {
                         length = length(separator) + 8;
                         word = mask(word, separator);
                         hash = mix(word ^ word0);
-                        ptr = aggregates.find(word0, word, hash);
+                        long ptr = aggregates.find(word0, word, hash);
+
+                        if (ptr != 0) {
+                            position = update(ptr, position + length);
+                            continue;
+                        }
                     }
                     else {
                         length = 16;
@@ -404,10 +414,7 @@ public class CalculateAverage_artsiomkorzun {
                     }
                 }
 
-                if (ptr == 0) {
-                    ptr = aggregates.put(position, word, length, hash);
-                }
-
+                long ptr = aggregates.put(position, word, length, hash);
                 position = update(ptr, position + length);
             }
         }
