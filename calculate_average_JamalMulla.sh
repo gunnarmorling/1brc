@@ -20,7 +20,6 @@
 if [ -f target/CalculateAverage_JamalMulla_image ]; then
     target/CalculateAverage_JamalMulla_image
 else
-    echo "JVM version"
     JAVA_OPTS="--enable-preview -XX:+UnlockExperimentalVMOptions -XX:+TrustFinalNonStaticFields -XX:+UseTransparentHugePages -XX:-TieredCompilation"
     java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_JamalMulla
 fi

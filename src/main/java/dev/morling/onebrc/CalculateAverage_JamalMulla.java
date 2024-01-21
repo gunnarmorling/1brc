@@ -23,8 +23,6 @@ import java.lang.foreign.Arena;
 import java.lang.reflect.Field;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.locks.Lock;
@@ -90,11 +88,10 @@ public class CalculateAverage_JamalMulla {
                 chunkLength++;
             }
 
-            chunks[i] = new Chunk(mappedAddress + chunkStart, chunkLength + 1);
+            chunks[i++] = new Chunk(mappedAddress + chunkStart, chunkLength + 1);
             // to skip the nl in the next chunk
             chunkStart += chunkLength + 1;
             chunkLength = Math.min(filebytes - chunkStart - 1, roughChunkSize);
-            i++;
         }
 
         return chunks;
@@ -107,7 +104,7 @@ public class CalculateAverage_JamalMulla {
         final ResultRow[] slots = new ResultRow[MAPSIZE];
         final byte[][] keys = new byte[MAPSIZE][];
 
-        byte nameLength;
+        int nameLength;
         int temp;
         long hash;
 
@@ -132,44 +129,18 @@ public class CalculateAverage_JamalMulla {
                 word = UNSAFE.getLong(i);
             }
 
-            if (hs == 0x8000L || hs == -0x7FFFFFFFFFFF8000L)
-                i++;
-            else if (hs == 0x800000L)
-                i += 2;
-            else if (hs == 0x80000000L)
-                i += 3;
-            else if (hs == 0x8000000000L)
-                i += 4;
-            else if (hs == 0x800000000000L)
-                i += 5;
-            else if (hs == 0x80000000000000L)
-                i += 6;
-            else if (hs == 0x8000000000000000L)
-                i += 7;
+            i += Long.numberOfTrailingZeros(hs) >> 3;
 
             // fxhash of what's left ((hs >>> 7) - 1) masks off the bytes from word that are before the semicolon
             hash = (Long.rotateLeft(hash, 5) ^ word & (hs >>> 7) - 1) * FXSEED;
-            nameLength = (byte) (i++ - start);
+            nameLength = (int) (i++ - start);
 
             // temperature value follows
             c = UNSAFE.getByte(i++);
             // we know the val has to be between -99.9 and 99.8
             // always with a single fractional digit
             // represented as a byte array of either 4 or 5 characters
-            if (c == 0x2D /* minus sign */) {
-                // could be either n.x or nn.x
-                if (UNSAFE.getByte(i + 3) == 0xA) {
-                    temp = (UNSAFE.getByte(i++) - 48) * 10; // char 1
-                }
-                else {
-                    temp = (UNSAFE.getByte(i++) - 48) * 100; // char 1
-                    temp += (UNSAFE.getByte(i++) - 48) * 10; // char 2
-                }
-                i++; // skip dot
-                temp += (UNSAFE.getByte(i++) - 48); // char 2
-                temp = -temp;
-            }
-            else {
+            if (c != 0x2D /* minus sign */) {
                 // could be either n.x or nn.x
                 if (UNSAFE.getByte(i + 2) == 0xA) {
                     temp = (c - 48) * 10; // char 1
@@ -178,16 +149,32 @@ public class CalculateAverage_JamalMulla {
                     temp = (c - 48) * 100; // char 1
                     temp += (UNSAFE.getByte(i++) - 48) * 10; // char 2
                 }
-                i++; // skip dot
-                temp += (UNSAFE.getByte(i++) - 48); // char 3
+                // i++; // skip dot
+                temp += (UNSAFE.getByte(++i) - 48); // char 3
             }
+            else {
+                // could be either n.x or nn.x
+                if (UNSAFE.getByte(i + 3) == 0xA) {
+                    temp = (UNSAFE.getByte(i) - 48) * 10; // char 1
+                    i += 2;
+                }
+                else {
+                    temp = (UNSAFE.getByte(i) - 48) * 100; // char 1
+                    temp += (UNSAFE.getByte(i + 1) - 48) * 10; // char 2
+                    i += 3;
+                }
+                // i++; // skip dot
+                temp += (UNSAFE.getByte(i) - 48); // char 2
+                temp = -temp;
+            }
+            i += 2;
 
-            i++;// nl
+            // i++;// nl
             // xor folding
             slot = (int) (hash ^ hash >> 32) & 65535;
 
             // Linear probe for open slot
-            while (slots[slot] != null && nameLength != keys[slot].length && !unsafeEquals(keys[slot], start, nameLength)) {
+            while (slots[slot] != null && !unsafeEquals(keys[slot], start, nameLength)) {
                 slot = ++slot % MAPSIZE;
             }
             slotValue = slots[slot];
@@ -210,28 +197,23 @@ public class CalculateAverage_JamalMulla {
         }
 
         // merge results with overall results
-        final List<MapEntry> result = new ArrayList<>();
-        for (int j = 0; j < slots.length; j++) {
-            slotValue = slots[j];
-            if (slotValue != null) {
-                result.add(new MapEntry(new String(keys[j], StandardCharsets.UTF_8), slotValue));
-            }
-        }
-
+        ResultRow rr;
+        String key;
         lock.lock();
         try {
-            ResultRow rr;
-            ResultRow lr;
-            for (MapEntry me : result) {
-                lr = me.row;
-                if ((rr = global.get(me.key)) != null) {
-                    rr.min = Math.min(rr.min, lr.min);
-                    rr.max = Math.max(rr.max, lr.max);
-                    rr.count += lr.count;
-                    rr.sum += lr.sum;
-                }
-                else {
-                    global.put(me.key, lr);
+            for (int j = 0; j < slots.length; j++) {
+                slotValue = slots[j];
+                if (slotValue != null) {
+                    key = new String(keys[j], StandardCharsets.UTF_8);
+                    if ((rr = global.get(key)) != null) {
+                        rr.min = Math.min(rr.min, slotValue.min);
+                        rr.max = Math.max(rr.max, slotValue.max);
+                        rr.count += slotValue.count;
+                        rr.sum += slotValue.sum;
+                    }
+                    else {
+                        global.put(key, slotValue);
+                    }
                 }
             }
         }
@@ -241,11 +223,11 @@ public class CalculateAverage_JamalMulla {
 
     }
 
-    static boolean unsafeEquals(final byte[] a, final long b_address, final short length) {
+    static boolean unsafeEquals(final byte[] a, final long b_address, final int length) {
         // byte by byte comparisons are slow, so do as big chunks as possible
         final int baseOffset = Unsafe.ARRAY_BYTE_BASE_OFFSET;
 
-        short i = 0;
+        int i = 0;
         // round down to nearest power of 8
         for (; i < (length & -8); i += 8) {
             if (UNSAFE.getLong(a, i + baseOffset) != UNSAFE.getLong(b_address + i)) {
@@ -277,7 +259,7 @@ public class CalculateAverage_JamalMulla {
     private static long hasSemiColon(final long n) {
         // long filled just with semicolon
         // taken from https://graphics.stanford.edu/~seander/bithacks.html#ValueInWord
-        final long v = n ^ ALL_SEMIS;
+        long v = n ^ ALL_SEMIS;
         return (v - 0x0101010101010101L) & (~v & 0x8080808080808080L);
     }
 
@@ -293,15 +275,12 @@ public class CalculateAverage_JamalMulla {
             int finalI = i;
             Thread thread = new Thread(() -> run(chunks[finalI]));
             thread.setPriority(Thread.MAX_PRIORITY);
-            threads[i] = thread;
             thread.start();
+            threads[i] = thread;
         }
         for (Thread t : threads) {
             t.join();
         }
         System.out.println(global);
-    }
-
-    record MapEntry(String key, ResultRow row) {
     }
 }
