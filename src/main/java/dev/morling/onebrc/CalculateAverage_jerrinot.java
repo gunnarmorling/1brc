@@ -143,7 +143,7 @@ public class CalculateAverage_jerrinot {
             sb.append(String.format("%s=%.1f/%.1f/%.1f", name, min / 10.0, Math.round((double) sum2 / count) / 10.0, max / 10.0));
         }
         sb.append('}');
-        System.out.print(sb);
+        System.out.println(sb);
     }
 
     public static int ceilPow2(int i) {
@@ -306,7 +306,8 @@ public class CalculateAverage_jerrinot {
                 long start = cursor;
                 long currentWord = UNSAFE.getLong(cursor);
                 long mask = getDelimiterMask(currentWord);
-                long maskedFirstWord = currentWord & ((mask - 1) ^ mask) >>> 8;
+                long firstWordMask = ((mask - 1) ^ mask) >>> 8;
+                long maskedFirstWord = currentWord & firstWordMask;
                 long hash = hash(maskedFirstWord);
                 while (mask == 0) {
                     cursor += 8;
@@ -316,7 +317,7 @@ public class CalculateAverage_jerrinot {
                 final int delimiterByte = Long.numberOfTrailingZeros(mask);
                 final long semicolon = cursor + (delimiterByte >> 3);
                 final long maskedWord = currentWord & ((mask - 1) ^ mask) >>> 8;
-                long baseEntryPtr = getOrCreateEntryBaseOffset(semicolon, start, (int) hash, maskedWord);
+                long baseEntryPtr = getOrCreateEntryBaseOffset(semicolon, start, (int) hash, maskedWord, maskedFirstWord);
                 long temperatureWord = UNSAFE.getLong(semicolon + 1);
                 cursor = parseAndStoreTemperature(semicolon + 1, baseEntryPtr, temperatureWord);
             }
@@ -346,10 +347,16 @@ public class CalculateAverage_jerrinot {
                 long currentWordC = UNSAFE.getLong(startC);
                 long currentWordD = UNSAFE.getLong(startD);
 
-                // credits for the hashing idea: mtopolnik
                 long maskA = getDelimiterMask(currentWordA);
-                long maskedFirstWordA = currentWordA & ((maskA - 1) ^ maskA) >>> 8;
+                long isMaskZeroA = ((maskA | (~maskA + 1)) >>> 63) ^ 1;
+                long firstWordMaskA = ((maskA - 1) ^ maskA) >>> 8;
+                long maskedFirstWordA = currentWordA & firstWordMaskA;
                 long hashA = hash(maskedFirstWordA);
+
+                cursorA += isMaskZeroA * 8;
+                currentWordA = UNSAFE.getLong(cursorA);
+                maskA = getDelimiterMask(currentWordA);
+
                 while (maskA == 0) {
                     cursorA += 8;
                     currentWordA = UNSAFE.getLong(cursorA);
@@ -361,8 +368,15 @@ public class CalculateAverage_jerrinot {
                 final long maskedWordA = currentWordA & ((maskA - 1) ^ maskA) >>> 8;
 
                 long maskB = getDelimiterMask(currentWordB);
-                long maskedFirstWordB = currentWordB & ((maskB - 1) ^ maskB) >>> 8;
+                long firstWordMaskB = ((maskB - 1) ^ maskB) >>> 8;
+                long maskedFirstWordB = currentWordB & firstWordMaskB;
                 long hashB = hash(maskedFirstWordB);
+
+                long isMaskZeroB = ((maskB | (~maskB + 1)) >>> 63) ^ 1;
+                cursorB += isMaskZeroB * 8;
+                currentWordB = UNSAFE.getLong(cursorB);
+                maskB = getDelimiterMask(currentWordB);
+
                 while (maskB == 0) {
                     cursorB += 8;
                     currentWordB = UNSAFE.getLong(cursorB);
@@ -374,8 +388,15 @@ public class CalculateAverage_jerrinot {
                 final long maskedWordB = currentWordB & ((maskB - 1) ^ maskB) >>> 8;
 
                 long maskC = getDelimiterMask(currentWordC);
-                long maskedFirstWordC = currentWordC & ((maskC - 1) ^ maskC) >>> 8;
+                long firstWordMaskC = ((maskC - 1) ^ maskC) >>> 8;
+                long maskedFirstWordC = currentWordC & firstWordMaskC;
                 long hashC = hash(maskedFirstWordC);
+
+                long isMaskZeroC = ((maskC | (~maskC + 1)) >>> 63) ^ 1;
+                cursorC += isMaskZeroC * 8;
+                currentWordC = UNSAFE.getLong(cursorC);
+                maskC = getDelimiterMask(currentWordC);
+
                 while (maskC == 0) {
                     cursorC += 8;
                     currentWordC = UNSAFE.getLong(cursorC);
@@ -387,8 +408,15 @@ public class CalculateAverage_jerrinot {
                 final long maskedWordC = currentWordC & ((maskC - 1) ^ maskC) >>> 8;
 
                 long maskD = getDelimiterMask(currentWordD);
-                long maskedFirstWordD = currentWordD & ((maskD - 1) ^ maskD) >>> 8;
+                long firstWordMaskD = ((maskD - 1) ^ maskD) >>> 8;
+                long maskedFirstWordD = currentWordD & firstWordMaskD;
                 long hashD = hash(maskedFirstWordD);
+
+                long isMaskZeroD = ((maskD | (~maskD + 1)) >>> 63) ^ 1;
+                cursorD += isMaskZeroD * 8;
+                currentWordD = UNSAFE.getLong(cursorD);
+                maskD = getDelimiterMask(currentWordD);
+
                 while (maskD == 0) {
                     cursorD += 8;
                     currentWordD = UNSAFE.getLong(cursorD);
@@ -399,10 +427,10 @@ public class CalculateAverage_jerrinot {
                 long temperatureWordD = UNSAFE.getLong(semicolonD + 1);
                 final long maskedWordD = currentWordD & ((maskD - 1) ^ maskD) >>> 8;
 
-                long baseEntryPtrA = getOrCreateEntryBaseOffset(semicolonA, startA, (int) hashA, maskedWordA);
-                long baseEntryPtrB = getOrCreateEntryBaseOffset(semicolonB, startB, (int) hashB, maskedWordB);
-                long baseEntryPtrC = getOrCreateEntryBaseOffset(semicolonC, startC, (int) hashC, maskedWordC);
-                long baseEntryPtrD = getOrCreateEntryBaseOffset(semicolonD, startD, (int) hashD, maskedWordD);
+                long baseEntryPtrA = getOrCreateEntryBaseOffset(semicolonA, startA, (int) hashA, maskedWordA, maskedFirstWordA);
+                long baseEntryPtrB = getOrCreateEntryBaseOffset(semicolonB, startB, (int) hashB, maskedWordB, maskedFirstWordB);
+                long baseEntryPtrC = getOrCreateEntryBaseOffset(semicolonC, startC, (int) hashC, maskedWordC, maskedFirstWordC);
+                long baseEntryPtrD = getOrCreateEntryBaseOffset(semicolonD, startD, (int) hashD, maskedWordD, maskedFirstWordD);
 
                 cursorA = parseAndStoreTemperature(semicolonA + 1, baseEntryPtrA, temperatureWordA);
                 cursorB = parseAndStoreTemperature(semicolonB + 1, baseEntryPtrB, temperatureWordB);
@@ -412,7 +440,7 @@ public class CalculateAverage_jerrinot {
             doTail();
         }
 
-        private long getOrCreateEntryBaseOffset(long semicolonPtr, long startPtr, int hash, long maskedWord) {
+        private long getOrCreateEntryBaseOffset(long semicolonPtr, long startPtr, int hash, long maskedLastWord, long maskedFirstWord) {
             long lenLong = semicolonPtr - startPtr;
             int lenA = (int) lenLong;
 
@@ -424,7 +452,7 @@ public class CalculateAverage_jerrinot {
                 int len = UNSAFE.getInt(lenPtr);
                 if (len == lenA) {
                     namePtr = UNSAFE.getLong(basePtr + NAME_OFFSET);
-                    if (nameMatch(startPtr, maskedWord, namePtr, lenLong)) {
+                    if (nameMatch(startPtr, maskedLastWord, namePtr, lenLong, maskedFirstWord)) {
                         return basePtr;
                     }
                 }
@@ -446,22 +474,30 @@ public class CalculateAverage_jerrinot {
             }
         }
 
-        private static boolean nameMatch(long startA, long maskedWordA, long namePtr, long len) {
-            // long namePtr = basePtr + NAME_OFFSET;
+        private static boolean nameMatch(long start, long maskedLastWord, long namePtr, long len, long maskedFirstWord) {
             long fullLen = len & ~7L;
-            long offset;
+            if (len <= 16) {
+                return nameMatchFast(maskedLastWord, namePtr, maskedFirstWord, fullLen);
+            }
+            return nameMatchSlow(start, namePtr, fullLen, maskedLastWord);
+        }
 
-            // todo: this is worth exploring further.
-            // @mtopolnik has an interesting algo with 2 unconditioned long loads: this is sufficient
-            // for majority of names. so we would be left with just a single branch which is almost never taken?
+        private static boolean nameMatchFast(long maskedLastWord, long namePtr, long maskedFirstWord, long fullLen) {
+            boolean firstWordMatch = (UNSAFE.getLong(namePtr)) == maskedFirstWord;
+            boolean lastWordMatch = UNSAFE.getLong(namePtr + fullLen) == maskedLastWord;
+            boolean match = firstWordMatch || lastWordMatch;
+            return match;
+        }
+
+        private static boolean nameMatchSlow(long start, long namePtr, long fullLen, long maskedLastWord) {
+            long offset;
             for (offset = 0; offset < fullLen; offset += 8) {
-                if (UNSAFE.getLong(startA + offset) != UNSAFE.getLong(namePtr + offset)) {
+                if (UNSAFE.getLong(start + offset) != UNSAFE.getLong(namePtr + offset)) {
                     return false;
                 }
             }
-
             long maskedWordInMap = UNSAFE.getLong(namePtr + fullLen);
-            return (maskedWordInMap == maskedWordA);
+            return (maskedWordInMap == maskedLastWord);
         }
     }
 
