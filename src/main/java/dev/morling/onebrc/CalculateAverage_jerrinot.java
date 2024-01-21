@@ -38,7 +38,7 @@ public class CalculateAverage_jerrinot {
     // todo: with hyper-threading enable we would be better of with availableProcessors / 2;
     // todo: validate the testing env. params.
     private static final int THREAD_COUNT = Runtime.getRuntime().availableProcessors();
-    // private static final int THREAD_COUNT = 1;
+    // private static final int THREAD_COUNT = 4;
 
     private static final long SEPARATOR_PATTERN = 0x3B3B3B3B3B3B3B3BL;
 
@@ -61,7 +61,7 @@ public class CalculateAverage_jerrinot {
         final File file = new File(MEASUREMENTS_TXT);
         final long length = file.length();
         // final int chunkCount = Runtime.getRuntime().availableProcessors();
-        int chunkPerThread = 4;
+        int chunkPerThread = 3;
         final int chunkCount = THREAD_COUNT * chunkPerThread;
         final var chunkStartOffsets = new long[chunkCount + 1];
         try (var raf = new RandomAccessFile(file, "r")) {
@@ -88,10 +88,8 @@ public class CalculateAverage_jerrinot {
                 long endB = chunkStartOffsets[i * chunkPerThread + 2];
                 long startC = chunkStartOffsets[i * chunkPerThread + 2];
                 long endC = chunkStartOffsets[i * chunkPerThread + 3];
-                long startD = chunkStartOffsets[i * chunkPerThread + 3];
-                long endD = chunkStartOffsets[i * chunkPerThread + 4];
 
-                Processor processor = new Processor(startA, endA, startB, endB, startC, endC, startD, endD);
+                Processor processor = new Processor(startA, endA, startB, endB, startC, endC);
                 processors[i] = processor;
                 Thread thread = new Thread(processor);
                 threads[i] = thread;
@@ -105,9 +103,7 @@ public class CalculateAverage_jerrinot {
             long endB = chunkStartOffsets[ownIndex * chunkPerThread + 2];
             long startC = chunkStartOffsets[ownIndex * chunkPerThread + 2];
             long endC = chunkStartOffsets[ownIndex * chunkPerThread + 3];
-            long startD = chunkStartOffsets[ownIndex * chunkPerThread + 3];
-            long endD = chunkStartOffsets[ownIndex * chunkPerThread + 4];
-            Processor processor = new Processor(startA, endA, startB, endB, startC, endC, startD, endD);
+            Processor processor = new Processor(startA, endA, startB, endB, startC, endC);
             processor.run();
 
             var accumulator = new TreeMap<String, Processor.StationStats>();
@@ -203,8 +199,6 @@ public class CalculateAverage_jerrinot {
         private long endB;
         private long cursorC;
         private long endC;
-        private long cursorD;
-        private long endD;
         private HashMap<String, StationStats> stats = new HashMap<>(1000);
 
         // private long maxClusterLen;
@@ -272,22 +266,19 @@ public class CalculateAverage_jerrinot {
             }
         }
 
-        Processor(long startA, long endA, long startB, long endB, long startC, long endC, long startD, long endD) {
+        Processor(long startA, long endA, long startB, long endB, long startC, long endC) {
             this.cursorA = startA;
             this.cursorB = startB;
             this.cursorC = startC;
-            this.cursorD = startD;
             this.endA = endA;
             this.endB = endB;
             this.endC = endC;
-            this.endD = endD;
         }
 
         private void doTail() {
             doOne(cursorA, endA);
             doOne(cursorB, endB);
             doOne(cursorC, endC);
-            doOne(cursorD, endD);
 
             transferToHeap();
             UNSAFE.freeMemory(fastMap);
@@ -312,13 +303,7 @@ public class CalculateAverage_jerrinot {
                 int count = UNSAFE.getInt(baseAddress + MAP_COUNT_OFFSET);
                 long sum = UNSAFE.getLong(baseAddress + MAP_SUM_OFFSET);
 
-                var v = stats.get(name);
-                if (v == null) {
-                    stats.put(name, new StationStats(min, max, count, sum));
-                }
-                else {
-                    stats.put(name, new StationStats(Math.min(v.min, min), Math.max(v.max, max), v.count + count, v.sum + sum));
-                }
+                stats.put(name, new StationStats(min, max, count, sum));
             }
 
             for (long baseAddress = fastMap; baseAddress < fastMap + FAST_MAP_SIZE_BYTES; baseAddress += FAST_MAP_ENTRY_SIZE_BYTES) {
@@ -396,63 +381,52 @@ public class CalculateAverage_jerrinot {
             UNSAFE.setMemory(fastMap, FAST_MAP_SIZE_BYTES, (byte) 0);
             UNSAFE.setMemory(slowMapNamesPtr, SLOW_MAP_MAP_NAMES_BYTES, (byte) 0);
 
-            while (cursorA < endA && cursorB < endB && cursorC < endC && cursorD < endD) {
+            while (cursorA < endA && cursorB < endB && cursorC < endC) {
                 long startA = cursorA;
                 long startB = cursorB;
                 long startC = cursorC;
-                long startD = cursorD;
 
                 long currentWordA = UNSAFE.getLong(startA);
                 long currentWordB = UNSAFE.getLong(startB);
                 long currentWordC = UNSAFE.getLong(startC);
-                long currentWordD = UNSAFE.getLong(startD);
 
                 long maskA = getDelimiterMask(currentWordA);
                 long maskB = getDelimiterMask(currentWordB);
                 long maskC = getDelimiterMask(currentWordC);
-                long maskD = getDelimiterMask(currentWordD);
 
                 long firstWordMaskA = (maskA ^ (maskA - 1)) >>> 8;
                 long firstWordMaskB = (maskB ^ (maskB - 1)) >>> 8;
                 long firstWordMaskC = (maskC ^ (maskC - 1)) >>> 8;
-                long firstWordMaskD = (maskD ^ (maskD - 1)) >>> 8;
 
                 final long isMaskZeroA = ((maskA | -maskA) >>> 63) ^ 1;
                 final long isMaskZeroB = ((maskB | -maskB) >>> 63) ^ 1;
                 final long isMaskZeroC = ((maskC | -maskC) >>> 63) ^ 1;
-                final long isMaskZeroD = ((maskD | -maskD) >>> 63) ^ 1;
 
                 long extA = -isMaskZeroA & 0xFF00_0000_0000_0000L;
                 long extB = -isMaskZeroB & 0xFF00_0000_0000_0000L;
                 long extC = -isMaskZeroC & 0xFF00_0000_0000_0000L;
-                long extD = -isMaskZeroD & 0xFF00_0000_0000_0000L;
 
                 firstWordMaskA |= extA;
                 firstWordMaskB |= extB;
                 firstWordMaskC |= extC;
-                firstWordMaskD |= extD;
 
                 long maskedFirstWordA = currentWordA & firstWordMaskA;
                 long maskedFirstWordB = currentWordB & firstWordMaskB;
                 long maskedFirstWordC = currentWordC & firstWordMaskC;
-                long maskedFirstWordD = currentWordD & firstWordMaskD;
 
                 // assertMasks(isMaskZeroA, maskA);
 
                 long hashA = hash(maskedFirstWordA);
                 long hashB = hash(maskedFirstWordB);
                 long hashC = hash(maskedFirstWordC);
-                long hashD = hash(maskedFirstWordD);
 
                 cursorA += isMaskZeroA * 8;
                 cursorB += isMaskZeroB * 8;
                 cursorC += isMaskZeroC * 8;
-                cursorD += isMaskZeroD * 8;
 
                 currentWordA = UNSAFE.getLong(cursorA);
                 currentWordB = UNSAFE.getLong(cursorB);
                 currentWordC = UNSAFE.getLong(cursorC);
-                currentWordD = UNSAFE.getLong(cursorD);
 
                 maskA = getDelimiterMask(currentWordA);
                 while (maskA == 0) {
@@ -473,41 +447,28 @@ public class CalculateAverage_jerrinot {
                     maskC = getDelimiterMask(currentWordC);
                 }
 
-                maskD = getDelimiterMask(currentWordD);
-                while (maskD == 0) {
-                    cursorD += 8;
-                    currentWordD = UNSAFE.getLong(cursorD);
-                    maskD = getDelimiterMask(currentWordD);
-                }
-
                 final int delimiterByteA = Long.numberOfTrailingZeros(maskA);
                 final int delimiterByteB = Long.numberOfTrailingZeros(maskB);
                 final int delimiterByteC = Long.numberOfTrailingZeros(maskC);
-                final int delimiterByteD = Long.numberOfTrailingZeros(maskD);
 
                 final long semicolonA = cursorA + (delimiterByteA >> 3);
                 final long semicolonB = cursorB + (delimiterByteB >> 3);
                 final long semicolonC = cursorC + (delimiterByteC >> 3);
-                final long semicolonD = cursorD + (delimiterByteD >> 3);
 
                 long digitStartA = semicolonA + 1;
                 long digitStartB = semicolonB + 1;
                 long digitStartC = semicolonC + 1;
-                long digitStartD = semicolonD + 1;
                 long temperatureWordA = UNSAFE.getLong(digitStartA);
                 long temperatureWordB = UNSAFE.getLong(digitStartB);
                 long temperatureWordC = UNSAFE.getLong(digitStartC);
-                long temperatureWordD = UNSAFE.getLong(digitStartD);
 
                 final long maskedWordA = currentWordA & ((maskA - 1) ^ maskA) >>> 8;
                 final long maskedWordB = currentWordB & ((maskB - 1) ^ maskB) >>> 8;
                 final long maskedWordC = currentWordC & ((maskC - 1) ^ maskC) >>> 8;
-                final long maskedWordD = currentWordD & ((maskD - 1) ^ maskD) >>> 8;
 
                 long lenA = semicolonA - startA;
                 long lenB = semicolonB - startB;
                 long lenC = semicolonC - startC;
-                long lenD = semicolonD - startD;
 
                 long baseEntryPtrA;
                 if (lenA > 15) {
@@ -533,18 +494,9 @@ public class CalculateAverage_jerrinot {
                     baseEntryPtrC = getOrCreateEntryBaseOffsetFast(lenC, (int) hashC, maskedWordC, maskedFirstWordC);
                 }
 
-                long baseEntryPtrD;
-                if (lenD > 15) {
-                    baseEntryPtrD = getOrCreateEntryBaseOffsetSlow(lenD, startD, (int) hashD, maskedWordD);
-                }
-                else {
-                    baseEntryPtrD = getOrCreateEntryBaseOffsetFast(lenD, (int) hashD, maskedWordD, maskedFirstWordD);
-                }
-
                 cursorA = parseAndStoreTemperature(digitStartA, baseEntryPtrA, temperatureWordA);
                 cursorB = parseAndStoreTemperature(digitStartB, baseEntryPtrB, temperatureWordB);
                 cursorC = parseAndStoreTemperature(digitStartC, baseEntryPtrC, temperatureWordC);
-                cursorD = parseAndStoreTemperature(digitStartD, baseEntryPtrD, temperatureWordD);
             }
             doTail();
             // System.out.println("Longest chain: " + longestChain);
