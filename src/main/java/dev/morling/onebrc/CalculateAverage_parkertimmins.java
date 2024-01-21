@@ -187,11 +187,11 @@ public class CalculateAverage_parkertimmins {
         return hash;
     }
 
-    static void processRangeSIMD(MemorySegment ms, boolean frontPad, boolean backPad, long start, long end, final OpenHashTable localAgg) {
+    static void processRangeSIMD(MemorySegment ms, boolean isFirst, boolean isLast, long start, long end, final OpenHashTable localAgg) {
         byte[] buf = new byte[128];
 
-        long curr = frontPad ? findNextEntryStart(ms, start) : start;
-        long limit = end - padding;
+        long curr = isFirst ? start : findNextEntryStart(ms, start);
+        long limit = isLast ? end - padding : end;
 
         while (curr < limit) {
             int nl = 0;
@@ -221,7 +221,7 @@ public class CalculateAverage_parkertimmins {
         }
 
         // last batch is near end of file, process without SIMD to avoid out-of-bounds
-        if (!backPad) {
+        if (isLast) {
             processRangeScalar(ms, curr, end, localAgg);
         }
     }
@@ -282,11 +282,9 @@ public class CalculateAverage_parkertimmins {
                         break;
                     }
                     final long endBatch = Math.min(startBatch + batchSize, fileSize);
-                    final boolean first = startBatch == 0;
-                    final boolean frontPad = !first;
-                    final boolean last = endBatch == fileSize;
-                    final boolean backPad = !last;
-                    processRangeSIMD(ms, frontPad, backPad, startBatch, endBatch, localAgg);
+                    final boolean isFirstBatch = startBatch == 0;
+                    final boolean isLastBatch = endBatch == fileSize;
+                    processRangeSIMD(ms, isFirstBatch, isLastBatch, startBatch, endBatch, localAgg);
                 }
             }
         }
