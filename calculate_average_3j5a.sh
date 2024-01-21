@@ -15,5 +15,5 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS=""
+JAVA_OPTS="--add-exports=java.base/jdk.internal.util=ALL-UNNAMED"
 java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_3j5a

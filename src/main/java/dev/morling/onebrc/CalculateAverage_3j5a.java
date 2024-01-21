@@ -15,6 +15,8 @@
  */
 package dev.morling.onebrc;
 
+import jdk.internal.util.ArraysSupport;
+
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.MappedByteBuffer;
@@ -26,7 +28,6 @@ import java.util.HashMap;
 import java.util.List;
 
 import static java.lang.System.out;
-import static java.util.Arrays.copyOfRange;
 import static java.util.Comparator.comparing;
 import static java.util.stream.Collectors.joining;
 
@@ -44,8 +45,15 @@ public class CalculateAverage_3j5a {
                 var measurements = HashMap.<Station, StationMeasurementStatistics> newHashMap(rules.uniqueStationsCount);
                 while (measurementsSlice.hasRemaining()) {
                     var a = nextStationMeasurement(measurementBuffer, measurementsSlice);
-                    var stats = measurements.computeIfAbsent(a.station, k -> new StationMeasurementStatistics(a));
-                    stats.add(a);
+                    var stats = measurements.get(a.station);
+                    if (stats == null) {
+                        a.station.detachFromMeasurementBuffer();
+                        stats = new StationMeasurementStatistics(a);
+                        measurements.put(a.station, stats);
+                    }
+                    else {
+                        stats.add(a);
+                    }
                 }
                 return measurements;
             }).reduce((aslice, bslice) -> {
@@ -58,7 +66,6 @@ public class CalculateAverage_3j5a {
                 return bslice;
             }).ifPresent(measurements -> {
                 var results = measurements.values().stream()
-                        .parallel()
                         .sorted(comparing(StationMeasurementStatistics::getName))
                         .map(StationMeasurementStatistics::toString)
                         .collect(joining(", ", "{", "}"));
@@ -80,23 +87,34 @@ public class CalculateAverage_3j5a {
 
     static class Station {
 
-        final byte[] name;
-        private final int hash;
+        private byte[] name;
+        final int length;
+        private int hash;
 
-        Station(byte[] name) {
+        Station(byte[] name, int length) {
             this.name = name;
-            hash = Arrays.hashCode(name);
+            this.length = length;
+        }
+
+        public void detachFromMeasurementBuffer() {
+            var n = new byte[length];
+            System.arraycopy(name, 0, n, 0, length);
+            this.name = n;
         }
 
         @Override
         public boolean equals(Object that) {
-            return Arrays.equals(this.name, ((Station) that).name);
+            return Arrays.mismatch(this.name, 0, length, ((Station) that).name, 0, length) < 0;
         }
 
         @Override
         public int hashCode() {
+            if (hash == 0) {
+                hash = ArraysSupport.vectorizedHashCode(name, 0, length, 1, ArraysSupport.T_BYTE);
+            }
             return hash;
         }
+
     }
 
     record StationMeasurement(Station station, int temperature) {
@@ -104,22 +122,23 @@ public class CalculateAverage_3j5a {
 
     private static class StationMeasurementStatistics {
 
-        private final byte[] nameBytes;
+        private final byte[] bname;
         private String name;
         private int min;
         private int max;
         private long sum;
-        private int count;
+        private int count = 1;
 
         StationMeasurementStatistics(StationMeasurement stationMeasurement) {
-            this.nameBytes = stationMeasurement.station.name;
+            this.bname = stationMeasurement.station.name;
             this.min = stationMeasurement.temperature;
             this.max = stationMeasurement.temperature;
+            this.sum = stationMeasurement.temperature;
         }
 
         public String getName() {
             if (name == null) {
-                name = new String(nameBytes, StandardCharsets.UTF_8);
+                name = new String(bname, StandardCharsets.UTF_8);
             }
             return name;
         }
@@ -147,7 +166,7 @@ public class CalculateAverage_3j5a {
         @Override
         public String toString() {
             var min = this.min / 10f;
-            var mean = Math.ceilDiv(this.sum, this.count) / 10f;
+            var mean = Math.round(this.sum / (float) this.count) / 10f;
             var max = this.max / 10f;
             return getName() + "=" + min + "/" + mean + "/" + max;
         }
@@ -155,7 +174,7 @@ public class CalculateAverage_3j5a {
 
     private static StationMeasurement nextStationMeasurement(byte[] measurement, MappedByteBuffer memoryMappedSlice) {
         byte b;
-        var i = 0;
+        int i = 0;
         while ((b = memoryMappedSlice.get()) != '\n') {
             measurement[i] = b;
             i++;
@@ -172,7 +191,7 @@ public class CalculateAverage_3j5a {
                 base *= base;
             }
         }
-        return new StationMeasurement(new Station(copyOfRange(measurement, 0, i)), temperature);
+        return new StationMeasurement(new Station(measurement, i), temperature);
     }
 
     private static MappedByteBuffer map(MeasurementsSlice slice, FileChannel measurements) {
