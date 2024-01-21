@@ -74,11 +74,20 @@ public class CalculateAverage_bytesfellow {
                 leftToExecute.incrementAndGet();
                 executor.execute(
                         () -> {
-                            for (byte[] line : lines) {
+                            for (int i = 0; i < lines.size(); i++) {
+                                var line = lines.get(i);
 
                                 Measurement measurement = getMeasurement(line);
-                                partitionResult.compute(measurement.station,
-                                        (k, v) -> v == null ? new MeasurementAggregator().withMeasurement(measurement) : v.withMeasurement(measurement));
+
+                                MeasurementAggregator measurementAggregator = partitionResult.get(measurement.station);
+                                if (measurementAggregator == null) {
+                                    partitionResult.put(measurement.station, new MeasurementAggregator().withMeasurement(measurement));
+                                }
+                                else {
+                                    measurementAggregator.withMeasurement(measurement);
+                                }
+                                // partitionResult.compute(measurement.station,
+                                // (k, v) -> v == null ? new MeasurementAggregator().withMeasurement(measurement) : v.withMeasurement(measurement));
 
                             }
                             leftToExecute.decrementAndGet();
@@ -245,8 +254,18 @@ public class CalculateAverage_bytesfellow {
                 return true;
             if (o == null || getClass() != o.getClass())
                 return false;
+
             Station station = (Station) o;
-            return Arrays.equals(name, station.name);
+            if (name.length != station.name.length) {
+                return false;
+            }
+            for (int i = 0; i < name.length; i++) {
+                if (name[i] != station.name[i]) {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         @Override
