@@ -271,6 +271,12 @@ for fork in "$@"; do
     fi
   fi
 
+  # check if Java source file uses Unsafe
+  if grep -F "theUnsafe" -q ./src/main/java/dev/morling/onebrc/CalculateAverage_$fork.java ; then
+    # if notes is not empty, append a comma and space before the unsafe note
+    notes="${notes:+$notes, }uses Unsafe"
+  fi
+
   echo -n "$trimmed_mean;" >> $leaderboard_temp_file # for sorting
   echo -n "| # " >> $leaderboard_temp_file
   echo -n "| $trimmed_mean_formatted " >> $leaderboard_temp_file
