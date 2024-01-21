@@ -166,7 +166,7 @@ public class CalculateAverage_tonivade {
     private static int parseTemp(byte[] value, int length) {
         int period = length - 2;
         if (value[0] == MINUS) {
-            int left = parseLeft(value, 1, period);
+            int left = parseLeft(value, 1, period - 1);
             int right = toInt(value[period + 1]);
             return -(left + right);
         }
@@ -175,8 +175,8 @@ public class CalculateAverage_tonivade {
         return left + right;
     }
 
-    private static int parseLeft(byte[] value, int start, int end) {
-        if (end - start == 1) {
+    private static int parseLeft(byte[] value, int start, int length) {
+        if (length == 1) {
             return toInt(value[start]) * 10;
         }
         // two chars
