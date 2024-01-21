@@ -84,6 +84,10 @@ public class CalculateAverage_thomaswue {
     }
 
     public static void main(String[] args) throws IOException {
+        if (args.length == 0 || !("--worker".equals(args[0]))) {
+            spawnWorker();
+            return;
+        }
         // Calculate input segments.
         int numberOfChunks = Runtime.getRuntime().availableProcessors();
         long[] chunks = getSegments(numberOfChunks);
@@ -102,6 +106,22 @@ public class CalculateAverage_thomaswue {
 
         // Final output.
         System.out.println(accumulateResults(allResults));
+        System.out.close();
+    }
+
+    private static void spawnWorker() throws IOException {
+        ProcessHandle.Info info = ProcessHandle.current().info();
+        ArrayList<String> workerCommand = new ArrayList<>();
+        info.command().ifPresent(workerCommand::add);
+        info.arguments().ifPresent(args -> workerCommand.addAll(Arrays.asList(args)));
+        workerCommand.add("--worker");
+        new ProcessBuilder()
+                .command(workerCommand)
+                .inheritIO()
+                .redirectOutput(ProcessBuilder.Redirect.PIPE)
+                .start()
+                .getInputStream()
+                .transferTo(System.out);
     }
 
     // Accumulate results sequentially for simplicity.
