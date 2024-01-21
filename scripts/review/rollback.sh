@@ -24,7 +24,7 @@ pr="${1}"
 author="$(gh pr view "${pr}" --json author -q .author.login)"
 
 review_branch="review/${author}"
-if git branch -v | egrep -s "^\s+${review_branch}\s+"; then
+if git branch -v | grep -E -s "^\s+${review_branch}\s+"; then
   git branch -d "${review_branch}"
 fi
 
