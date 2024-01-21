@@ -45,5 +45,21 @@ jobs:
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2
 
+      #- name: Cache SDKMan
+      #  id: cache-sdkman
+      #  uses: actions/cache@v4
+      #  with:
+      #    path: ~/.sdkman
+      #    key: ${{ runner.os }}-sdkman
+
       - name: 'Build project'
         run: mvn -B clean verify -Pci
+
+      - name: 'Setup SDKMAN'
+        uses: sdkman/sdkman-action@b1f9b696c79148b66d3d3a06f7ea801820318d0f
+        id: sdkman
+        if: github.event_name == 'pull_request'
+
+      - name: 'Test submission'
+        run: ./test_ci.sh ${{ github.event.pull_request.user.login }}
+        if: github.event_name == 'pull_request'
