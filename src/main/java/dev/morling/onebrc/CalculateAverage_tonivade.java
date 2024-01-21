@@ -110,9 +110,9 @@ public class CalculateAverage_tonivade {
         final byte[] name = new byte[128];
         final byte[] temp = new byte[8];
         final Map<Name, Station> map = HashMap.newHashMap(1000);
-        int last = start;
-        while (last < end) {
-            int semicolon = readName(buffer, last, end - last, name);
+        int position = start;
+        while (position < end) {
+            int semicolon = readName(buffer, position, end - position, name);
             if (semicolon < 0) {
                 break;
             }
@@ -122,13 +122,13 @@ public class CalculateAverage_tonivade {
                 break;
             }
 
-            map.computeIfAbsent(new Name(name, semicolon - last), Station::new)
+            map.computeIfAbsent(new Name(name, semicolon - position), Station::new)
                     .add(parseTemp(temp, endOfLine - semicolon - 1));
 
             // skip end of line
-            last = endOfLine + 1;
+            position = endOfLine + 1;
         }
-        return new PartialResult(last - start, map);
+        return new PartialResult(position - start, map);
     }
 
     private static int findStart(ByteBuffer buffer, int start) {
@@ -163,35 +163,30 @@ public class CalculateAverage_tonivade {
     }
 
     // non null double between -99.9 (inclusive) and 99.9 (inclusive), always with one fractional digit
-    private static double parseTemp(byte[] value, int length) {
+    private static int parseTemp(byte[] value, int length) {
         int period = length - 2;
         if (value[0] == MINUS) {
-            double left = parseLeft(value, 1, period);
-            double right = parseRight(value[period + 1]);
+            int left = parseLeft(value, 1, period);
+            int right = toInt(value[period + 1]);
             return -(left + right);
         }
-        double left = parseLeft(value, 0, period);
-        double right = parseRight(value[period + 1]);
+        int left = parseLeft(value, 0, period);
+        int right = toInt(value[period + 1]);
         return left + right;
     }
 
-    private static double parseLeft(byte[] value, int start, int end) {
+    private static int parseLeft(byte[] value, int start, int end) {
         if (end - start == 1) {
-            return charToDouble(value[start]);
+            return toInt(value[start]) * 10;
         }
         // two chars
-        double a = charToDouble(value[start]) * 10.;
-        double b = charToDouble(value[start + 1]);
+        int a = toInt(value[start]) * 100;
+        int b = toInt(value[start + 1]) * 10;
         return a + b;
     }
 
-    private static double parseRight(byte right) {
-        double a = charToDouble(right);
-        return a / 10.;
-    }
-
-    private static double charToDouble(byte c) {
-        return (double) c - 48;
+    private static int toInt(byte c) {
+        return c - 48;
     }
 
     static final class Name {
@@ -226,9 +221,9 @@ public class CalculateAverage_tonivade {
 
         private final Name name;
 
-        private double min = Double.POSITIVE_INFINITY;
-        private double max = Double.NEGATIVE_INFINITY;
-        private double sum;
+        private int min = Integer.MAX_VALUE;
+        private int max = Integer.MIN_VALUE;
+        private int sum;
         private long count;
 
         Station(Name name) {
@@ -239,7 +234,7 @@ public class CalculateAverage_tonivade {
             return name.toString();
         }
 
-        void add(double value) {
+        void add(int value) {
             min = Math.min(min, value);
             max = Math.max(max, value);
             sum += value;
@@ -255,11 +250,15 @@ public class CalculateAverage_tonivade {
         }
 
         String asString() {
-            return name + "=" + round(min) + "/" + round(mean()) + "/" + round(max);
+            return name + "=" + toDouble(min) + "/" + round(mean()) + "/" + toDouble(max);
         }
 
         private double mean() {
-            return round(sum) / count;
+            return toDouble(sum) / count;
+        }
+
+        private double toDouble(int value) {
+            return value / 10.;
         }
 
         private double round(double value) {
