@@ -92,7 +92,7 @@ public class CalculateAverage_roman_r_m {
                 station.hash = (int) (h ^ (h >>> 32));
             }
             else {
-                long h = Long.reverseBytes(next);
+                long h = next;
                 station.hash = (int) (h ^ (h >>> 32));
                 while (pattern == 0) {
                     offset += 8;
