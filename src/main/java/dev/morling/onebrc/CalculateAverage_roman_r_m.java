@@ -215,11 +215,9 @@ public class CalculateAverage_roman_r_m {
             this.ms = ms;
         }
 
-        @Override
-        public String toString() {
-            var bytes = new byte[len];
-            UNSAFE.copyMemory(null, offset, bytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, len);
-            return new String(bytes, 0, len);
+        public String asString(byte[] reusable) {
+            UNSAFE.copyMemory(null, offset, reusable, Unsafe.ARRAY_BYTE_BASE_OFFSET, len);
+            return new String(reusable, 0, len);
         }
 
         public ByteString copy() {
@@ -318,10 +316,11 @@ public class CalculateAverage_roman_r_m {
         }
 
         TreeMap<String, ResultRow> toMap() {
+            byte[] buf = new byte[100];
             var result = new TreeMap<String, ResultRow>();
             for (int i = 0; i < SIZE; i++) {
                 if (keys[i] != null) {
-                    result.put(keys[i].toString(), values[i]);
+                    result.put(keys[i].asString(buf), values[i]);
                 }
             }
             return result;
