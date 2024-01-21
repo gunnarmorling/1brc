@@ -16,7 +16,7 @@ pr="${1}"
 
 author="$(gh pr view "${pr}" --json author -q .author.login)"
 repository="$(gh pr view "${pr}" --json headRepository -q .headRepository.name)"
-branch="$(gh pr view "${pr}" --json baseRefName -q .baseRefName)"
+branch="$(gh pr view "${pr}" --json headRefName -q .headRefName)"
 
 remote="review-${author}"
 if ! git remote | grep -s "${remote}"; then
