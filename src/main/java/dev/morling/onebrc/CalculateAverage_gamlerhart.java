@@ -164,7 +164,22 @@ public class CalculateAverage_gamlerhart {
         // - max: double
         // - sum: double
         // - double: double
-        final long[] keyValues = new long[SIZE * 5];
+        final long[] keys = new long[SIZE];
+        final Value[] values = new Value[SIZE];
+
+        private class Value {
+            public Value(double min, double max, double sum, long count) {
+                this.min = min;
+                this.max = max;
+                this.sum = sum;
+                this.count = count;
+            }
+
+            public double min;
+            public double max;
+            public double sum;
+            public long count;
+        }
 
         // int debug_size = 0;
 
@@ -196,26 +211,23 @@ public class CalculateAverage_gamlerhart {
         private void doAdd(MemorySegment file, int hash, long pos, int len, double val) {
             int slot = hash & MASK;
             for (var probe = 0; probe < 20000; probe++) {
-                var iSl = ((slot + probe) & MASK) * 5;
-                var slotEntry = keyValues[iSl];
+                var iSl = ((slot + probe) & MASK);
+                var slotEntry = keys[iSl];
 
                 var emtpy = slotEntry == 0;
                 if (emtpy) {
                     long keyInfo = pos << SHIFT_POS | len;
-                    long valueBits = doubleToRawLongBits(val);
-                    keyValues[iSl] = keyInfo;
-                    keyValues[iSl + 1] = valueBits;
-                    keyValues[iSl + 2] = valueBits;
-                    keyValues[iSl + 3] = valueBits;
-                    keyValues[iSl + 4] = 1;
+                    keys[iSl] = keyInfo;
+                    values[iSl] = new Value(val, val, val, 1);
                     // debug_size++;
                     return;
                 }
                 else if (isSameEntry(file, slotEntry, pos, len)) {
-                    keyValues[iSl + 1] = doubleToRawLongBits(Math.min(longBitsToDouble(keyValues[iSl + 1]), val));
-                    keyValues[iSl + 2] = doubleToRawLongBits(Math.max(longBitsToDouble(keyValues[iSl + 2]), val));
-                    keyValues[iSl + 3] = doubleToRawLongBits(longBitsToDouble(keyValues[iSl + 3]) + val);
-                    keyValues[iSl + 4] = keyValues[iSl + 4] + 1;
+                    var vE = values[iSl];
+                    vE.min = Math.min(vE.min, val);
+                    vE.max = Math.max(vE.max, val);
+                    vE.sum = vE.sum + val;
+                    vE.count++;
                     return;
                 }
                 else {
@@ -269,19 +281,20 @@ public class CalculateAverage_gamlerhart {
         }
 
         public void fillMerge(MemorySegment file, TreeMap<String, ResultRow> treeMap) {
-            for (int i = 0; i < keyValues.length / 5; i++) {
-                var ji = i * 5;
-                long keyE = keyValues[ji];
+            for (int i = 0; i < keys.length; i++) {
+                var ji = i;
+                long keyE = keys[ji];
                 if (keyE != 0) {
                     long keyPos = (keyE & MASK_POS) >> SHIFT_POS;
                     int keyLen = (int) (keyE & MASK_LEN);
                     byte[] keyBytes = new byte[keyLen];
                     MemorySegment.copy(file, JAVA_BYTE, keyPos, keyBytes, 0, keyLen);
                     var key = new String(keyBytes);
-                    var min = longBitsToDouble(keyValues[ji + 1]);
-                    var max = longBitsToDouble(keyValues[ji + 2]);
-                    var sum = longBitsToDouble(keyValues[ji + 3]);
-                    var count = keyValues[ji + 4];
+                    var vE = values[ji];
+                    var min = vE.min;
+                    var max = vE.max;
+                    var sum = vE.sum;
+                    var count = vE.count;
                     treeMap.compute(key, (k, e) -> {
                         if (e == null) {
                             return new ResultRow(min, max, sum, count);
@@ -294,30 +307,30 @@ public class CalculateAverage_gamlerhart {
             }
         }
 
-        public String debugPrint(MemorySegment file) {
-            StringBuilder b = new StringBuilder();
-            for (int i = 0; i < keyValues.length / 5; i++) {
-                var ji = i * 5;
-                long keyE = keyValues[ji];
-                if (keyE != 0) {
-                    long keyPos = (keyE & MASK_POS) >> SHIFT_POS;
-                    int keyLen = (int) (keyE & MASK_LEN);
-                    byte[] keyBytes = new byte[keyLen];
-                    MemorySegment.copy(file, JAVA_BYTE, keyPos, keyBytes, 0, keyLen);
-                    var key = new String(keyBytes);
-                    var min = longBitsToDouble(keyValues[ji + 1]);
-                    var max = longBitsToDouble(keyValues[ji + 2]);
-                    var sum = longBitsToDouble(keyValues[ji + 3]);
-                    var count = keyValues[ji + 4];
-                    b.append("{").append(key).append("@").append(ji)
-                            .append(",").append(min)
-                            .append(",").append(max)
-                            .append(",").append(sum)
-                            .append(",").append(count).append("},");
-                }
-            }
-            return b.toString();
-        }
+        // public String debugPrint(MemorySegment file) {
+        // StringBuilder b = new StringBuilder();
+        // for (int i = 0; i < keyValues.length / 5; i++) {
+        // var ji = i * 5;
+        // long keyE = keyValues[ji];
+        // if (keyE != 0) {
+        // long keyPos = (keyE & MASK_POS) >> SHIFT_POS;
+        // int keyLen = (int) (keyE & MASK_LEN);
+        // byte[] keyBytes = new byte[keyLen];
+        // MemorySegment.copy(file, JAVA_BYTE, keyPos, keyBytes, 0, keyLen);
+        // var key = new String(keyBytes);
+        // var min = longBitsToDouble(keyValues[ji + 1]);
+        // var max = longBitsToDouble(keyValues[ji + 2]);
+        // var sum = longBitsToDouble(keyValues[ji + 3]);
+        // var count = keyValues[ji + 4];
+        // b.append("{").append(key).append("@").append(ji)
+        // .append(",").append(min)
+        // .append(",").append(max)
+        // .append(",").append(sum)
+        // .append(",").append(count).append("},");
+        // }
+        // }
+        // return b.toString();
+        // }
     }
 
     record Section(long start, long end) {
