@@ -343,7 +343,7 @@ public class CalculateAverage_gamlerhart {
                     var max = longBitsToDouble(keyValues[ji + 2]);
                     var sum = longBitsToDouble(keyValues[ji + 3]);
                     var count = keyValues[ji + 4];
-                    treeMap.put(key, new ResultRow(min, sum / count, max));
+                    treeMap.put(key, new ResultRow(min, (Math.round(sum * 10.0) / 10.0) / count, max));
                 }
             }
         }
