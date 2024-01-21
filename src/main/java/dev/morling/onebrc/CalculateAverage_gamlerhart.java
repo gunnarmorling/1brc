@@ -24,7 +24,10 @@ import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.TreeMap;
+import java.util.stream.Collector;
+import java.util.stream.Collectors;
 
 import static java.lang.Double.doubleToRawLongBits;
 import static java.lang.Double.longBitsToDouble;
@@ -69,19 +72,16 @@ public class CalculateAverage_gamlerhart {
             ArrayList<Section> sections = splitFileIntoSections(fileSize, fileContent);
 
             var loopBound = byteVec.loopBound(fileSize) - vecLen;
-            PrivateHashMap result = sections.stream()
+            var result = sections.stream()
                     .parallel()
                     .map(s -> {
                         return parseSection(s.start, s.end, loopBound, fileContent);
-                    }).reduce((mine, other) -> {
-                        assert mine != other;
-                        mine.mergeFrom(fileContent, other);
-                        return mine;
-                    })
-                    .get();
+                    });
 
             var measurements = new TreeMap<String, ResultRow>();
-            result.fill(fileContent, measurements);
+            result.forEachOrdered(m -> {
+                m.fillMerge(fileContent, measurements);
+            });
             System.out.println(measurements);
         }
     }
@@ -268,68 +268,7 @@ public class CalculateAverage_gamlerhart {
             return true;
         }
 
-        public PrivateHashMap mergeFrom(MemorySegment file, PrivateHashMap other) {
-            for (int slot = 0; slot < other.keyValues.length / 5; slot++) {
-                int srcI = slot * 5;
-                long keyE = other.keyValues[srcI];
-                if (keyE != 0) {
-                    long oPos = (keyE & MASK_POS) >> SHIFT_POS;
-                    int oLen = (int) (keyE & MASK_LEN);
-                    addMerge(file, other, srcI, oPos, oLen);
-                }
-            }
-            return this;
-        }
-
-        private void addMerge(MemorySegment file, PrivateHashMap other, int srcI, long oPos, int oLen) {
-            int slot = calculateHash(file, oPos, oLen) & MASK;
-            for (var probe = 0; probe < 20000; probe++) {
-                var iSl = ((slot + probe) & MASK) * 5;
-                var slotEntry = keyValues[iSl];
-
-                var emtpy = slotEntry == 0;
-                // var debugKey = new String(file.asSlice(oPos, oLen).toArray(JAVA_BYTE));
-                if (emtpy) {
-                    // if (debugKey.equals("Cabo San Lucas")) {
-                    // System.out.println("=> VALUES (init) " + debugKey + "@" + iSl + " max: " + longBitsToDouble(other.keyValues[srcI + 2]) + "," + longBitsToDouble(keyValues[iSl + 2]));
-                    // }
-                    keyValues[iSl] = other.keyValues[srcI];
-                    keyValues[iSl + 1] = other.keyValues[srcI + 1];
-                    keyValues[iSl + 2] = other.keyValues[srcI + 2];
-                    keyValues[iSl + 3] = other.keyValues[srcI + 3];
-                    keyValues[iSl + 4] = other.keyValues[srcI + 4];
-                    // debug_size++;
-                    return;
-                }
-                else if (isSameEntry(file, slotEntry, oPos, oLen)) {
-                    // if (debugKey.equals("Cabo San Lucas")) {
-                    // System.out.println("=> VALUES (merge) " + "@" + iSl + debugKey + " max: " + longBitsToDouble(other.keyValues[srcI + 2]) + ","
-                    // + longBitsToDouble(keyValues[iSl + 2]) + "=> "
-                    // + Math.max(longBitsToDouble(keyValues[iSl + 2]), longBitsToDouble(other.keyValues[srcI + 2])));
-                    // }
-                    keyValues[iSl + 1] = doubleToRawLongBits(Math.min(longBitsToDouble(keyValues[iSl + 1]), longBitsToDouble(other.keyValues[srcI + 1])));
-                    keyValues[iSl + 2] = doubleToRawLongBits(Math.max(longBitsToDouble(keyValues[iSl + 2]), longBitsToDouble(other.keyValues[srcI + 2])));
-                    keyValues[iSl + 3] = doubleToRawLongBits(longBitsToDouble(keyValues[iSl + 3]) + longBitsToDouble(other.keyValues[srcI + 3]));
-                    keyValues[iSl + 4] = keyValues[iSl + 4] + other.keyValues[srcI + 4];
-                    // if (debugKey.equals("Cabo San Lucas")) {
-                    // System.out.println("=> VALUES (after-merge) self: "+ "@" + iSl + System.identityHashCode(this) + ":"+ debugKey + " max: " +
-                    // + longBitsToDouble(keyValues[iSl + 2]) + "=> ");
-                    // }
-                    return;
-                }
-                else {
-                    // long keyPos = (slotEntry & MASK_POS) >> SHIFT_POS;
-                    // int keyLen = (int) (slotEntry & MASK_LEN);
-                    // System.out.println("Colliding " + new String(file.asSlice(pos,len).toArray(ValueLayout.JAVA_BYTE)) +
-                    // " with key" + new String(file.asSlice(keyPos,keyLen).toArray(ValueLayout.JAVA_BYTE)) +
-                    // " hash " + hash + " slot " + slot + "+" + probe + " at " + iSl);
-                    // debug_reprobeMax = Math.max(debug_reprobeMax, probe);
-                }
-            }
-            throw new IllegalStateException("More than 20000 reprobes");
-        }
-
-        public void fill(MemorySegment file, TreeMap<String, ResultRow> treeMap) {
+        public void fillMerge(MemorySegment file, TreeMap<String, ResultRow> treeMap) {
             for (int i = 0; i < keyValues.length / 5; i++) {
                 var ji = i * 5;
                 long keyE = keyValues[ji];
@@ -343,7 +282,14 @@ public class CalculateAverage_gamlerhart {
                     var max = longBitsToDouble(keyValues[ji + 2]);
                     var sum = longBitsToDouble(keyValues[ji + 3]);
                     var count = keyValues[ji + 4];
-                    treeMap.put(key, new ResultRow(min, (Math.round(sum * 10.0) / 10.0) / count, max));
+                    treeMap.compute(key, (k, e) -> {
+                        if (e == null) {
+                            return new ResultRow(min, max, sum, count);
+                        }
+                        else {
+                            return new ResultRow(Math.min(e.min, min), Math.max(e.max, max), e.sum + sum, e.count + count);
+                        }
+                    });
                 }
             }
         }
@@ -377,9 +323,9 @@ public class CalculateAverage_gamlerhart {
     record Section(long start, long end) {
     }
 
-    private static record ResultRow(double min, double mean, double max) {
+    private static record ResultRow(double min, double max, double sum, long count) {
         public String toString() {
-            return round(min) + "/" + round(mean) + "/" + round(max);
+            return round(min) + "/" + round(((Math.round(sum * 10.0) / 10.0) / count)) + "/" + round(max);
         }
 
         private double round(double value) {
