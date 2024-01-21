@@ -22,7 +22,7 @@ sdk use java 21.0.1-graal 1>&2
 if [ ! -f target/CalculateAverage_royvanrijn_image ]; then
 
     JAVA_OPTS="--enable-preview -dsa"
-    NATIVE_IMAGE_OPTS="--gc=epsilon -Ob -O3 -march=native --strict-image-heap $JAVA_OPTS"
+    NATIVE_IMAGE_OPTS="--initialize-at-build-time=dev.morling.onebrc.CalculateAverage_royvanrijn --gc=epsilon -Ob -O3 -march=native --strict-image-heap $JAVA_OPTS"
 
     native-image $NATIVE_IMAGE_OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o target/CalculateAverage_royvanrijn_image dev.morling.onebrc.CalculateAverage_royvanrijn
 fi
