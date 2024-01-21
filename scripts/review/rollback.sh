@@ -2,10 +2,12 @@
 
 : "${REVIEW_BASE_BRANCH:=main}"
 
-git merge --abort
-git checkout "${REVIEW_BASE_BRANCH}"
-
 set -euo pipefail
+
+git merge --abort || echo "Skipping merge rollback"
+git stash save
+git checkout "${REVIEW_BASE_BRANCH}"
+git stash pop
 
 if ! type -p gh >/dev/null; then
   echo "Please install the 'gh' tool, e.g., via Homebrew: brew install gh" >&2
