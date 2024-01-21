@@ -27,13 +27,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.TreeMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class CalculateAverage_artsiomkorzun {
 
     private static final Path FILE = Path.of("./measurements.txt");
-    private static final long SEGMENT_SIZE = 4 * 1024 * 1024;
     private static final long SEGMENT_OVERLAP = 128;
     private static final long COMMA_PATTERN = 0x3B3B3B3B3B3B3B3BL;
     private static final long DOT_BITS = 0x10101000;
@@ -93,20 +91,25 @@ public class CalculateAverage_artsiomkorzun {
     }
 
     private static void execute() throws Exception {
-        MemorySegment fileMemory = map(FILE);
-        long fileAddress = fileMemory.address();
-        long fileSize = fileMemory.byteSize();
-        int segmentCount = (int) ((fileSize + SEGMENT_SIZE - 1) / SEGMENT_SIZE);
-
-        AtomicInteger counter = new AtomicInteger();
-        AtomicReference<Aggregates> result = new AtomicReference<>();
+        MemorySegment memory = map(FILE);
+        long size = memory.byteSize();
 
         int parallelism = Runtime.getRuntime().availableProcessors();
+        long segment = ((size + parallelism - 1) / parallelism);
+
+        AtomicReference<Aggregates> result = new AtomicReference<>();
         Aggregator[] aggregators = new Aggregator[parallelism];
 
+        long start = memory.address();
+        long limit = start + size;
+
         for (int i = 0; i < aggregators.length; i++) {
-            aggregators[i] = new Aggregator(counter, result, fileAddress, fileSize, segmentCount);
+            long end = Math.min(start + segment, limit);
+            end = next(end, limit);
+
+            aggregators[i] = new Aggregator(result, start, end);
             aggregators[i].start();
+            start = end;
         }
 
         for (int i = 0; i < aggregators.length; i++) {
@@ -126,6 +129,13 @@ public class CalculateAverage_artsiomkorzun {
         catch (Throwable e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private static long next(long start, long end) {
+        while (start < end && UNSAFE.getByte(start++) != '\n') {
+            // continue
+        }
+        return start;
     }
 
     private static long word(long address) {
@@ -341,38 +351,21 @@ public class CalculateAverage_artsiomkorzun {
 
     private static class Aggregator extends Thread {
 
-        private final AtomicInteger counter;
         private final AtomicReference<Aggregates> result;
-        private final long fileAddress;
-        private final long fileSize;
-        private final int segmentCount;
+        private final long start;
+        private final long end;
 
-        public Aggregator(AtomicInteger counter, AtomicReference<Aggregates> result,
-                          long fileAddress, long fileSize, int segmentCount) {
+        public Aggregator(AtomicReference<Aggregates> result, long start, long end) {
             super("aggregator");
-            this.counter = counter;
             this.result = result;
-            this.fileAddress = fileAddress;
-            this.fileSize = fileSize;
-            this.segmentCount = segmentCount;
+            this.start = start;
+            this.end = end;
         }
 
         @Override
         public void run() {
             Aggregates aggregates = new Aggregates();
-
-            for (int segment; (segment = counter.getAndIncrement()) < segmentCount;) {
-                long position = SEGMENT_SIZE * segment;
-                long size = Math.min(SEGMENT_SIZE + SEGMENT_OVERLAP, fileSize - position);
-                long address = fileAddress + position;
-                long limit = address + Math.min(SEGMENT_SIZE, size - 1);
-
-                if (segment > 0) {
-                    address = next(address);
-                }
-
-                aggregate(aggregates, address, limit);
-            }
+            aggregate(aggregates, start, end);
 
             while (!result.compareAndSet(null, aggregates)) {
                 Aggregates rights = result.getAndSet(null);
@@ -389,7 +382,7 @@ public class CalculateAverage_artsiomkorzun {
             // as a result a read will be split across pages, where one of them is not mapped
             // but for some reason it works on my machine, leaving to investigate
 
-            while (position <= limit) { // branchy version, credit: thomaswue
+            while (position < limit) { // branchy version, credit: thomaswue
                 int length;
                 int hash;
 
@@ -477,13 +470,6 @@ public class CalculateAverage_artsiomkorzun {
 
         private static int length(long separator) {
             return (Long.numberOfTrailingZeros(separator) >>> 3) + 1;
-        }
-
-        private static long next(long position) {
-            while (UNSAFE.getByte(position++) != '\n') {
-                // continue
-            }
-            return position;
         }
 
         private static int mix(long x) {
