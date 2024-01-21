@@ -16,4 +16,15 @@
 #
 
 JAVA_OPTS=""
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_kaufco
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_kaufco > java_output.log 2>&1 &
+
+# Capture the PID of the Java process
+JAVA_PID=$!
+
+# Monitor the output file for the desired character
+tail -f java_output.log | {
+    read -r line
+    echo "$line"
+    kill -9 $JAVA_PID
+}
+
