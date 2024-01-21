@@ -229,19 +229,21 @@ public class CalculateAverage_bytesfellow {
         private final byte[] name;
         private final int hash;
 
+        private final int len;
+
         private volatile String nameAsString;
 
-        public Station(byte[] inputLine, int len) {
-            this.name = new byte[len];
-            System.arraycopy(inputLine, 0, name, 0, len);
-            this.hash = hashCode109(name);
+        public Station(byte[] inputLine, int lenOfStationInInputLine) {
+            this.name = inputLine;
+            this.len = lenOfStationInInputLine;
+            this.hash = hashCode109(name, lenOfStationInInputLine);
         }
 
-        int hashCode109(byte[] value) {
-            if (value.length == 0)
+        int hashCode109(byte[] value, int len) {
+            if (len == 0 || value.length == 0)
                 return 0;
             int h = value[0];
-            for (int i = 1; i < value.length; i++) {
+            for (int i = 1; i < len; i++) {
                 h = h * 109 + value[i];
             }
             h *= 109;
@@ -256,10 +258,11 @@ public class CalculateAverage_bytesfellow {
                 return false;
 
             Station station = (Station) o;
-            if (name.length != station.name.length) {
+
+            if (len != station.len) {
                 return false;
             }
-            for (int i = 0; i < name.length; i++) {
+            for (int i = 0; i < len; i++) {
                 if (name[i] != station.name[i]) {
                     return false;
                 }
@@ -270,7 +273,6 @@ public class CalculateAverage_bytesfellow {
 
         @Override
         public int hashCode() {
-
             return hash;
         }
 
@@ -282,7 +284,9 @@ public class CalculateAverage_bytesfellow {
 
         public String materializeName() {
             if (nameAsString == null) {
-                nameAsString = new String(name, StandardCharsets.UTF_8);
+                byte[] nameForMaterialization = new byte[len];
+                System.arraycopy(name, 0, nameForMaterialization, 0, len);
+                nameAsString = new String(nameForMaterialization, StandardCharsets.UTF_8);
             }
 
             return nameAsString;
@@ -357,12 +361,12 @@ public class CalculateAverage_bytesfellow {
             if (i > 0) {
                 value = (value << 3) + (value << 1); // *= 10;
             }
-            value += asLong(lineWithDigits, i);
+            value += digitAsLong(lineWithDigits, i);
         }
         return start > startIndex ? -value : value;
     }
 
-    private static long asLong(byte[] digits, int position) {
+    private static long digitAsLong(byte[] digits, int position) {
         return (digits[position] - 48);
     }
 

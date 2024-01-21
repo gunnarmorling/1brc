@@ -15,5 +15,5 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="-Xms8g -Xmx8g -XX:+AlwaysPreTouch -XX:+UseZGC -XX:+ZGenerational -XX:-OmitStackTraceInFastThrow"
+JAVA_OPTS="-Xms8g -Xmx8g -XX:+AlwaysPreTouch -XX:+UseParallelGC -XX:-OmitStackTraceInFastThrow"
 java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_bytesfellow
