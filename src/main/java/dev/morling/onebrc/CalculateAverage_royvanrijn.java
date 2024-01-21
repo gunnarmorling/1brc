@@ -15,12 +15,15 @@
  */
 package dev.morling.onebrc;
 
+import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.reflect.Field;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -102,8 +105,27 @@ public class CalculateAverage_royvanrijn {
     private static final int TABLE_SIZE = 1 << 19; // large enough for the contest.
     private static final int TABLE_MASK = (TABLE_SIZE - 1);
 
-    public static void main(String[] args) throws Exception {
+    // Idea of thomaswue, don't wait for slow unmap:
+    private static void spawnWorker() throws IOException {
+        ProcessHandle.Info info = ProcessHandle.current().info();
+        ArrayList<String> workerCommand = new ArrayList<>();
+        info.command().ifPresent(workerCommand::add);
+        info.arguments().ifPresent(args -> workerCommand.addAll(Arrays.asList(args)));
+        workerCommand.add("--worker");
+        new ProcessBuilder()
+                .command(workerCommand)
+                .inheritIO()
+                .redirectOutput(ProcessBuilder.Redirect.PIPE)
+                .start()
+                .getInputStream()
+                .transferTo(System.out);
+    }
 
+    public static void main(String[] args) throws Exception {
+        if (args.length == 0 || !("--worker".equals(args[0]))) {
+            spawnWorker();
+            return;
+        }
         // Calculate input segments.
         final FileChannel fileChannel = FileChannel.open(Path.of(FILE), StandardOpenOption.READ);
         final long fileSize = fileChannel.size();
@@ -159,7 +181,7 @@ public class CalculateAverage_royvanrijn {
                         .collect(Collectors.joining(", ")));
         System.out.println("}");
 
-        // System.out.println(measurements.entrySet().stream().mapToLong(e -> UNSAFE.getInt(e.getValue(), ENTRY_COUNT + Unsafe.ARRAY_BYTE_BASE_OFFSET)).sum());
+        System.out.close(); // close the stream to stop
     }
 
     private static byte[] fillEntry(final byte[] entry, final long fromAddress, final int length, final int temp) {
@@ -176,15 +198,15 @@ public class CalculateAverage_royvanrijn {
 
         int entryMin = UNSAFE.getInt(entry, ENTRY_MIN);
         int entryMax = UNSAFE.getInt(entry, ENTRY_MAX);
-
-        entryMin = Math.min(temp, entryMin);
-        entryMax = Math.max(temp, entryMax);
-
         long entrySum = UNSAFE.getLong(entry, ENTRY_SUM) + temp;
         int entryCount = UNSAFE.getInt(entry, ENTRY_COUNT) + 1;
 
-        UNSAFE.putInt(entry, ENTRY_MIN, entryMin);
-        UNSAFE.putInt(entry, ENTRY_MAX, entryMax);
+        if (temp < entryMin) {
+            UNSAFE.putInt(entry, ENTRY_MIN, temp);
+        }
+        else if (temp > entryMax) {
+            UNSAFE.putInt(entry, ENTRY_MAX, temp);
+        }
         UNSAFE.putInt(entry, ENTRY_COUNT, entryCount);
         UNSAFE.putLong(entry, ENTRY_SUM, entrySum);
     }
@@ -435,6 +457,8 @@ public class CalculateAverage_royvanrijn {
             reader.processStart();
 
             if (!reader.readFirst()) {
+                // Found delimiter in first 8 bytes:
+
                 int temperature = reader.processEndAndGetTemperature();
 
                 // Find or insert the entry:
@@ -462,6 +486,7 @@ public class CalculateAverage_royvanrijn {
                 reader.processName();
 
                 if (!reader.readNext()) {
+                    // Found delimiter in 8-16 bytes:
 
                     int temperature = reader.processEndAndGetTemperature();
 
@@ -490,6 +515,8 @@ public class CalculateAverage_royvanrijn {
                     reader.processName();
 
                     if (!reader.readNext()) {
+                        // Found delimiter in 16-24 bytes:
+
                         int temperature = reader.processEndAndGetTemperature();
 
                         // Find or insert the entry:
@@ -515,6 +542,7 @@ public class CalculateAverage_royvanrijn {
 
                     }
                     else {
+                        // Need more than 24 bytes:
 
                         reader.processName();
                         while (reader.readNext()) {
