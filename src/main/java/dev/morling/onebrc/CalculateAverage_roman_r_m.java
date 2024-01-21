@@ -82,19 +82,30 @@ public class CalculateAverage_roman_r_m {
 
         private void parseName(ByteString station) {
             long start = offset;
-            long pattern;
             long next = UNSAFE.getLong(offset);
-            while ((pattern = applyPattern(next, SEMICOLON_MASK)) == 0) {
-                offset += 8;
-                next = UNSAFE.getLong(offset);
+            long pattern = applyPattern(next, SEMICOLON_MASK);
+            int bytes;
+            if (pattern != 0) {
+                bytes = Long.numberOfTrailingZeros(pattern) / 8;
+                offset += bytes;
+                long h = Long.reverseBytes(next) >>> (8 * (8 - bytes));
+                station.hash = (int) (h ^ (h >>> 32));
             }
-            int bytes = Long.numberOfTrailingZeros(pattern) / 8;
-            offset += bytes;
+            else {
+                long h = Long.reverseBytes(next);
+                station.hash = (int) (h ^ (h >>> 32));
+                while (pattern == 0) {
+                    offset += 8;
+                    next = UNSAFE.getLong(offset);
+                    pattern = applyPattern(next, SEMICOLON_MASK);
+                }
+                bytes = Long.numberOfTrailingZeros(pattern) / 8;
+                offset += bytes;
+            }
 
             int len = (int) (offset - start);
             station.offset = start;
             station.len = len;
-            station.hash = 0;
             station.tail = next & ((1L << (8 * bytes)) - 1);
 
             offset++;
@@ -241,9 +252,7 @@ public class CalculateAverage_roman_r_m {
             if (len != that.len)
                 return false;
 
-            int i = 0;
-
-            for (; i + 7 < len; i += 8) {
+            for (int i = 0; i + 7 < len; i += 8) {
                 long l1 = UNSAFE.getLong(offset + i);
                 long l2 = UNSAFE.getLong(that.offset + i);
                 if (l1 != l2) {
@@ -255,12 +264,13 @@ public class CalculateAverage_roman_r_m {
 
         @Override
         public int hashCode() {
-            if (hash == 0) {
-                long h = UNSAFE.getLong(offset);
-                h = Long.reverseBytes(h) >>> (8 * Math.max(0, 8 - len));
-                hash = (int) (h ^ (h >>> 32));
-            }
             return hash;
+        }
+
+        @Override
+        public String toString() {
+            byte[] buf = new byte[100];
+            return asString(buf);
         }
     }
 
