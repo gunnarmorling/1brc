@@ -510,7 +510,7 @@ public class CalculateAverage_jerrinot {
                 long lenD = semicolonD - startD;
 
                 long baseEntryPtrA;
-                if (lenA > 16) {
+                if (lenA > 15) {
                     baseEntryPtrA = getOrCreateEntryBaseOffsetSlow(lenA, startA, (int) hashA, maskedWordA);
                 }
                 else {
@@ -518,7 +518,7 @@ public class CalculateAverage_jerrinot {
                 }
 
                 long baseEntryPtrB;
-                if (lenB > 16) {
+                if (lenB > 15) {
                     baseEntryPtrB = getOrCreateEntryBaseOffsetSlow(lenB, startB, (int) hashB, maskedWordB);
                 }
                 else {
@@ -526,7 +526,7 @@ public class CalculateAverage_jerrinot {
                 }
 
                 long baseEntryPtrC;
-                if (lenC > 16) {
+                if (lenC > 15) {
                     baseEntryPtrC = getOrCreateEntryBaseOffsetSlow(lenC, startC, (int) hashC, maskedWordC);
                 }
                 else {
@@ -534,7 +534,7 @@ public class CalculateAverage_jerrinot {
                 }
 
                 long baseEntryPtrD;
-                if (lenD > 16) {
+                if (lenD > 15) {
                     baseEntryPtrD = getOrCreateEntryBaseOffsetSlow(lenD, startD, (int) hashD, maskedWordD);
                 }
                 else {
