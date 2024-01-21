@@ -10,7 +10,7 @@ import java.util.*;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
-public class CalculateAverage_pdrakatos {
+public class CalculateAverage_PanagiotisDrakatos {
     private static final String FILE = "./measurements.txt";
     private static TreeMap<String, MeasurementObject> sortedCities;
 
@@ -24,8 +24,8 @@ public class CalculateAverage_pdrakatos {
         FileChannel fileChannel = fileInputStream.getChannel();
         Optional<Map<String, MeasurementObject>> optimistic = SplitSeekableByteChannel(fileChannel)
                 .parallel()
-                .map(CalculateAverage_pdrakatos::MappingByteBufferToData)
-                .reduce(CalculateAverage_pdrakatos::combineMaps);
+                .map(CalculateAverage_PanagiotisDrakatos::MappingByteBufferToData)
+                .reduce(CalculateAverage_PanagiotisDrakatos::combineMaps);
         fileChannel.close();
         sortedCities = new TreeMap<>(optimistic.orElseThrow());
 
