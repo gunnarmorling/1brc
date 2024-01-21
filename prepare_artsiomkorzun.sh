@@ -16,7 +16,7 @@
 #
 
 source "$HOME/.sdkman/bin/sdkman-init.sh"
-sdk use java 21.0.1-graal 1>&2
+sdk use java 21.0.2-graal 1>&2
 
 if [ ! -f target/CalculateAverage_artsiomkorzun_image ]; then
     NATIVE_IMAGE_OPTS="--gc=epsilon -O3 -march=native -R:MaxHeapSize=64m --enable-preview --initialize-at-build-time=dev.morling.onebrc.CalculateAverage_artsiomkorzun"
