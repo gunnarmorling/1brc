@@ -119,27 +119,31 @@ public class CalculateAverage_jerrinot {
                 processors[i].accumulateStatus(accumulator);
             }
 
-            var sb = new StringBuilder();
-            boolean first = true;
-            for (Map.Entry<String, Processor.StationStats> statsEntry : accumulator.entrySet()) {
-                if (first) {
-                    sb.append("{");
-                    first = false;
-                }
-                else {
-                    sb.append(", ");
-                }
-                var value = statsEntry.getValue();
-                var name = statsEntry.getKey();
-                int min = value.min;
-                int max = value.max;
-                int count = value.count;
-                long sum2 = value.sum;
-                sb.append(String.format("%s=%.1f/%.1f/%.1f", name, min / 10.0, Math.round((double) sum2 / count) / 10.0, max / 10.0));
-            }
-            System.out.print(sb);
-            System.out.println('}');
+            printResults(accumulator);
         }
+    }
+
+    private static void printResults(TreeMap<String, Processor.StationStats> accumulator) {
+        var sb = new StringBuilder(10000);
+        boolean first = true;
+        for (Map.Entry<String, Processor.StationStats> statsEntry : accumulator.entrySet()) {
+            if (first) {
+                sb.append("{");
+                first = false;
+            }
+            else {
+                sb.append(", ");
+            }
+            var value = statsEntry.getValue();
+            var name = statsEntry.getKey();
+            int min = value.min;
+            int max = value.max;
+            int count = value.count;
+            long sum2 = value.sum;
+            sb.append(String.format("%s=%.1f/%.1f/%.1f", name, min / 10.0, Math.round((double) sum2 / count) / 10.0, max / 10.0));
+        }
+        sb.append('}');
+        System.out.print(sb);
     }
 
     public static int ceilPow2(int i) {
