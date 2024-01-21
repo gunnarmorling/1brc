@@ -31,7 +31,7 @@ public class CalculateAverage_PanagiotisDrakatos {
 
     public static void main(String[] args) throws IOException {
         SeekableByteRead(FILE);
-        Boolean DEBUG=true;
+        Boolean DEBUG = true;
     }
 
     private static void SeekableByteRead(String path) throws IOException {
@@ -68,7 +68,7 @@ public class CalculateAverage_PanagiotisDrakatos {
                     long bytestomap = (long) Math.min(MAP_SIZE, remaining);
                     MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_ONLY, position, bytestomap);
                     if (buffer_tmp != null) {
-                        ByteBuffer[] s = new ByteBuffer[]{buffer_tmp, buffer};
+                        ByteBuffer[] s = new ByteBuffer[]{ buffer_tmp, buffer };
                         buffer = (MappedByteBuffer) concat(s);
                     }
                     int end = buffer.limit() - 1;
@@ -79,7 +79,8 @@ public class CalculateAverage_PanagiotisDrakatos {
                     buffer.position(0);
                     position += bytestomap;
                     return buffer.slice(0, end + 1);
-                } catch (IOException e) {
+                }
+                catch (IOException e) {
                     throw new RuntimeException(e);
                 }
             }
@@ -136,10 +137,10 @@ public class CalculateAverage_PanagiotisDrakatos {
             int measuredValue;
             if (temp.get(tempPointer + 1) == '.') {
                 measuredValue = abs * ((temp.get(tempPointer)) * 10 + (temp.get(tempPointer + 2)) - 528);
-            } else {
+            }
+            else {
                 measuredValue = abs * (temp.get(tempPointer) * 100 + temp.get(tempPointer + 1) * 10 + temp.get(tempPointer + 3) - 5328);
             }
-
 
             byte[] citybytes = new byte[city.limit()];
             city.get(citybytes);
@@ -149,7 +150,8 @@ public class CalculateAverage_PanagiotisDrakatos {
             MeasurementObject agg = cities.get(cityName);
             if (agg == null) {
                 cities.put(cityName, new MeasurementObject(measuredValue, measuredValue, 0, 0).updateWith(measuredValue));
-            } else {
+            }
+            else {
                 cities.put(cityName, agg.updateWith(measuredValue));
             }
             start = temp_end + 1;
@@ -157,7 +159,6 @@ public class CalculateAverage_PanagiotisDrakatos {
         }
         return cities;
     }
-
 
     private static final class MeasurementObject {
 
@@ -167,7 +168,6 @@ public class CalculateAverage_PanagiotisDrakatos {
         private long SUM;
 
         private int REPEAT;
-
 
         public MeasurementObject(int MAX, int MIN, long SUM, int REPEAT) {
             this.MAX = MAX;
