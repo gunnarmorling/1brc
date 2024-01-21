@@ -26,16 +26,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
 import static java.util.FormatProcessor.FMT;
@@ -48,6 +45,9 @@ public final class CalculateAverage_michaljonko {
     private static final String FILE = "./measurements.txt";
     private static final Path PATH = Paths.get(FILE);
     private static final int MAX_STATION_NAMES = 10_000;
+    private static final int STATION_NAME_HASH_HIGH_INITIAL_VALUE = 97;
+    private static final int STATION_NAME_HASH_LOW_FACTOR = 31;
+    private static final int STATION_NAME_HASH_HIGH_FACTOR = 998551;
 
     public static void main(String[] args) throws IOException {
         System.out.println(
@@ -56,7 +56,7 @@ public final class CalculateAverage_michaljonko {
     }
 
     private static String sortedResults(Collection<StationMeasurement> results) {
-        return results.stream()
+        return results.parallelStream()
                 .sorted(Comparator.comparing(stationMeasurement -> stationMeasurement.station.name))
                 .map(StationMeasurement::data)
                 .collect(Collectors.joining(", ", "{", "}"));
@@ -66,21 +66,22 @@ public final class CalculateAverage_michaljonko {
         try (var parseExecutorService = Executors.newFixedThreadPool(partitionsAmount);
                 var mergeExecutorService = Executors.newSingleThreadExecutor()) {
             final var memorySegments = FilePartitioner.createSegments(path, partitionsAmount);
-            final var parseFutures = new ArrayList<Future<Collection<StationMeasurement>>>(memorySegments.size());
             final var results = new HashMap<Station, StationMeasurement>();
+            final var latch = new java.util.concurrent.CountDownLatch(memorySegments.size());
             for (var memorySegment : memorySegments) {
-                parseFutures.add(parseExecutorService.submit(() -> parse(memorySegment)));
+                parseExecutorService.submit(() -> {
+                    var stationMeasurements = parse(memorySegment);
+                    mergeExecutorService.submit(() -> {
+                        stationMeasurements.forEach(v -> results.merge(v.station, v, StationMeasurement::update));
+                        latch.countDown();
+                    });
+                });
             }
-            Future<?> lastFuture = null;
-            for (var future : parseFutures) {
-                final var futureResult = future.get();
-                lastFuture = mergeExecutorService.submit(
-                        () -> futureResult.forEach(v -> results.merge(v.station, v, StationMeasurement::update)));
-            }
-            lastFuture.get();
+            latch.await();
+
             return results.values();
         }
-        catch (InterruptedException | ExecutionException e) {
+        catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
     }
@@ -89,11 +90,11 @@ public final class CalculateAverage_michaljonko {
         final var stationNameRaw = new byte[MAX_STATION_NAME_LENGTH];
         final var temperatureRaw = new byte[MAX_TEMPERATURE_LENGTH];
         final var memorySegmentSize = memorySegment.byteSize();
-        final var stationsMap = new HashMap<StationHash, StationMeasurement>(2 * MAX_STATION_NAMES);
+        final var stationsMap = new HashMap<StationHash, StationMeasurement>(MAX_STATION_NAMES + 1, 1f);
 
         var stationNameRawIndex = 0;
         var stationNameHashLow = 0;
-        var stationNameHashHigh = 97;
+        var stationNameHashHigh = STATION_NAME_HASH_HIGH_INITIAL_VALUE;
         var temperatureRawIndex = 0;
         var memorySegmentOffset = 0L;
 
@@ -105,8 +106,8 @@ public final class CalculateAverage_michaljonko {
         while (memorySegmentOffset < memorySegmentSize) {
             while ((b = memorySegment.get(ValueLayout.JAVA_BYTE, memorySegmentOffset++)) != ';') {
                 stationNameRaw[stationNameRawIndex++] = b;
-                stationNameHashLow = (31 * stationNameHashLow + b);
-                stationNameHashHigh = (998551 * stationNameHashHigh + b);
+                stationNameHashLow = (STATION_NAME_HASH_LOW_FACTOR * stationNameHashLow + b);
+                stationNameHashHigh = (STATION_NAME_HASH_HIGH_FACTOR * stationNameHashHigh + b);
             }
 
             while (memorySegmentOffset < memorySegmentSize && (b = memorySegment.get(ValueLayout.JAVA_BYTE, memorySegmentOffset++)) != '\n') {
@@ -126,7 +127,7 @@ public final class CalculateAverage_michaljonko {
             stationNameRawIndex = 0;
             temperatureRawIndex = 0;
             stationNameHashLow = 0;
-            stationNameHashHigh = 97;
+            stationNameHashHigh = STATION_NAME_HASH_HIGH_INITIAL_VALUE;
         }
         return stationsMap.values();
     }
