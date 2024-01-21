@@ -64,23 +64,21 @@ public final class CalculateAverage_michaljonko {
     }
 
     private static Collection<StationMeasurement> calculate(Path path, int partitionsAmount) {
-        var memorySegments = FilePartitioner.createSegments(path, partitionsAmount);
-
         try (var parseExecutorService = Executors.newFixedThreadPool(partitionsAmount);
                 var mergeExecutorService = Executors.newSingleThreadExecutor()) {
-            var parseFutures = new ArrayList<Future<HashMap<Integer, StationMeasurement>>>(memorySegments.size());
-            var mergeFutures = new ArrayList<Future<?>>(memorySegments.size());
-            var results = new HashMap<Station, StationMeasurement>();
+            final var memorySegments = FilePartitioner.createSegments(path, partitionsAmount);
+            final var parseFutures = new ArrayList<Future<HashMap<Integer, StationMeasurement>>>(memorySegments.size());
+            final var results = new HashMap<Station, StationMeasurement>();
             for (var memorySegment : memorySegments) {
                 parseFutures.add(parseExecutorService.submit(() -> parse(memorySegment)));
             }
+            Future<?> lastFuture = null;
             for (var future : parseFutures) {
-                var futureResult = future.get();
-                mergeFutures.add(
-                        mergeExecutorService.submit(
-                                () -> futureResult.forEach((k, v) -> results.merge(v.station, v, StationMeasurement::update))));
+                final var futureResult = future.get();
+                lastFuture = mergeExecutorService.submit(
+                        () -> futureResult.forEach((k, v) -> results.merge(v.station, v, StationMeasurement::update)));
             }
-            mergeFutures.getLast().get();
+            lastFuture.get();
             return results.values();
         }
         catch (InterruptedException | ExecutionException e) {
