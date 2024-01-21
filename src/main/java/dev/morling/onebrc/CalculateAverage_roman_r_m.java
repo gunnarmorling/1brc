@@ -82,19 +82,30 @@ public class CalculateAverage_roman_r_m {
 
         private void parseName(ByteString station) {
             long start = offset;
-            long pattern;
             long next = UNSAFE.getLong(offset);
-            while ((pattern = applyPattern(next, SEMICOLON_MASK)) == 0) {
-                offset += 8;
-                next = UNSAFE.getLong(offset);
+            long pattern = applyPattern(next, SEMICOLON_MASK);
+            int bytes;
+            if (pattern != 0) {
+                bytes = Long.numberOfTrailingZeros(pattern) / 8;
+                offset += bytes;
+                long h = Long.reverseBytes(next) >>> (8 * (8 - bytes));
+                station.hash = (int) (h ^ (h >>> 32));
             }
-            int bytes = Long.numberOfTrailingZeros(pattern) / 8;
-            offset += bytes;
+            else {
+                long h = next;
+                station.hash = (int) (h ^ (h >>> 32));
+                while (pattern == 0) {
+                    offset += 8;
+                    next = UNSAFE.getLong(offset);
+                    pattern = applyPattern(next, SEMICOLON_MASK);
+                }
+                bytes = Long.numberOfTrailingZeros(pattern) / 8;
+                offset += bytes;
+            }
 
             int len = (int) (offset - start);
             station.offset = start;
             station.len = len;
-            station.hash = 0;
             station.tail = next & ((1L << (8 * bytes)) - 1);
 
             offset++;
@@ -215,11 +226,9 @@ public class CalculateAverage_roman_r_m {
             this.ms = ms;
         }
 
-        @Override
-        public String toString() {
-            var bytes = new byte[len];
-            UNSAFE.copyMemory(null, offset, bytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, len);
-            return new String(bytes, 0, len);
+        public String asString(byte[] reusable) {
+            UNSAFE.copyMemory(null, offset, reusable, Unsafe.ARRAY_BYTE_BASE_OFFSET, len);
+            return new String(reusable, 0, len);
         }
 
         public ByteString copy() {
@@ -243,9 +252,7 @@ public class CalculateAverage_roman_r_m {
             if (len != that.len)
                 return false;
 
-            int i = 0;
-
-            for (; i + 7 < len; i += 8) {
+            for (int i = 0; i + 7 < len; i += 8) {
                 long l1 = UNSAFE.getLong(offset + i);
                 long l2 = UNSAFE.getLong(that.offset + i);
                 if (l1 != l2) {
@@ -257,12 +264,13 @@ public class CalculateAverage_roman_r_m {
 
         @Override
         public int hashCode() {
-            if (hash == 0) {
-                long h = UNSAFE.getLong(offset);
-                h = Long.reverseBytes(h) >>> (8 * Math.max(0, 8 - len));
-                hash = (int) (h ^ (h >>> 32));
-            }
             return hash;
+        }
+
+        @Override
+        public String toString() {
+            byte[] buf = new byte[100];
+            return asString(buf);
         }
     }
 
@@ -318,10 +326,11 @@ public class CalculateAverage_roman_r_m {
         }
 
         TreeMap<String, ResultRow> toMap() {
+            byte[] buf = new byte[100];
             var result = new TreeMap<String, ResultRow>();
             for (int i = 0; i < SIZE; i++) {
                 if (keys[i] != null) {
-                    result.put(keys[i].toString(), values[i]);
+                    result.put(keys[i].asString(buf), values[i]);
                 }
             }
             return result;
