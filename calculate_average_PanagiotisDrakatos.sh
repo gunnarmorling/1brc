@@ -1,3 +1,4 @@
+
 #
 #  Copyright 2023 The original authors
 #
@@ -13,7 +14,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
 source "$HOME/.sdkman/bin/sdkman-init.sh"
 sdk use java 21.0.1-graal 1>&2
 JAVA_OPTS="--gc=epsilon -O3 -march=native -R:MaxHeapSize=64m --enable-preview -XX:+UnlockExperimentalVMOptions -XX:+TrustFinalNonStaticFields -dsa -XX:+UseNUMA"
