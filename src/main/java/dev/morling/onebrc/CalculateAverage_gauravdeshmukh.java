@@ -181,7 +181,6 @@ public class CalculateAverage_gauravdeshmukh {
     private static int findPositionInLong(long word, long searchMask) {
         long maskedWord = word ^ searchMask;
         long tmp = (maskedWord - 0x0101010101010101L) & ~maskedWord & 0x8080808080808080L;
-        // return 8 - (Long.numberOfTrailingZeros(tmp) >>> 3) - 1;
         return tmp == 0 ? -1 : (Long.numberOfLeadingZeros(tmp) >>> 3);
     }
 
@@ -220,9 +219,6 @@ public class CalculateAverage_gauravdeshmukh {
                             mbf.get(bytesReadTillNow, remainingBytes, 0, remainingBytesCount);
                             currentWord = ByteBuffer.wrap(remainingBytes).getLong();
                         }
-                        // System.out.println("Current word: " + new String(
-                        // ByteBuffer.allocate(8).putLong(currentWord).array(),
-                        // StandardCharsets.UTF_8));
                         semiColonIndex = findSemiColonInLong(currentWord);
                         if (semiColonIndex > -1) {
                             endOfStation = bytesReadTillNow + semiColonIndex;
@@ -252,9 +248,6 @@ public class CalculateAverage_gauravdeshmukh {
                             currentWord = ByteBuffer.wrap(remainingBytes).getLong();
                             isLastRead = true;
                         }
-                        // System.out.println("Current word: " + new String(
-                        // ByteBuffer.allocate(8).putLong(currentWord).array(),
-                        // StandardCharsets.UTF_8));
                         eolIndex = findEolInLong(currentWord);
                         if (eolIndex > -1) {
                             endOfNumber = bytesReadTillNow + eolIndex;
@@ -279,7 +272,6 @@ public class CalculateAverage_gauravdeshmukh {
 
                     Measurement measurement = new Measurement(new ByteString(stationBytes),
                             getIntegerFromTemperatureBytes(numberBytes));
-                    // System.out.println("Individual line: " + measurement);
                     MeasurementAggregator aggregator = this.map.get(measurement.station);
                     if (aggregator == null) {
                         aggregator = new MeasurementAggregator();
