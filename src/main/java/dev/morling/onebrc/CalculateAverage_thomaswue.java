@@ -144,21 +144,21 @@ public class CalculateAverage_thomaswue {
         Result[] results = new Result[1 << 17];
         Scanner scanner = new Scanner(chunkStart, chunkEnd);
         long word = scanner.getLong();
-        int pos = findDelimiter(word);
+        long pos = findDelimiter(word);
         while (scanner.hasNext()) {
             long nameAddress = scanner.pos();
             long hash = 0;
 
             // Search for ';', one long at a time.
-            if (pos != 64) {
-                pos = pos >>> 3;
+            if (pos != 0) {
+                pos = Long.numberOfTrailingZeros(pos) >>> 3;
                 scanner.add(pos);
                 word = mask(word, pos);
                 hash = word;
 
                 int number = scanNumber(scanner);
                 long nextWord = scanner.getLong();
-                int nextPos = findDelimiter(nextWord);
+                long nextPos = findDelimiter(nextWord);
 
                 Result existingResult = results[hashToIndex(hash, results)];
                 if (existingResult != null && existingResult.lastNameLong == word) {
@@ -176,8 +176,8 @@ public class CalculateAverage_thomaswue {
                 long prevWord = word;
                 word = scanner.getLong();
                 pos = findDelimiter(word);
-                if (pos != 64) {
-                    pos = pos >>> 3;
+                if (pos != 0) {
+                    pos = Long.numberOfTrailingZeros(pos) >>> 3;
                     scanner.add(pos);
                     word = mask(word, pos);
                     hash ^= word;
@@ -197,8 +197,8 @@ public class CalculateAverage_thomaswue {
                     while (true) {
                         word = scanner.getLong();
                         pos = findDelimiter(word);
-                        if (pos != 64) {
-                            pos = pos >>> 3;
+                        if (pos != 0) {
+                            pos = Long.numberOfTrailingZeros(pos) >>> 3;
                             scanner.add(pos);
                             word = mask(word, pos);
                             hash ^= word;
@@ -276,7 +276,7 @@ public class CalculateAverage_thomaswue {
         return (finalHash & (results.length - 1));
     }
 
-    private static long mask(long word, int pos) {
+    private static long mask(long word, long pos) {
         return (word << ((7 - pos) << 3));
     }
 
@@ -296,10 +296,10 @@ public class CalculateAverage_thomaswue {
         return (int) value;
     }
 
-    private static int findDelimiter(long word) {
+    private static long findDelimiter(long word) {
         long input = word ^ 0x3B3B3B3B3B3B3B3BL;
         long tmp = (input - 0x0101010101010101L) & ~input & 0x8080808080808080L;
-        return Long.numberOfTrailingZeros(tmp);
+        return tmp;
     }
 
     private static Result newEntry(Result[] results, long nameAddress, int hash, int nameLength, Scanner scanner) {
@@ -375,7 +375,7 @@ public class CalculateAverage_thomaswue {
             return pos;
         }
 
-        void add(int delta) {
+        void add(long delta) {
             pos += delta;
         }
 
