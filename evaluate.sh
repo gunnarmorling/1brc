@@ -36,7 +36,7 @@ RESET='\033[0m' # No Color
 MEASUREMENTS_FILE="measurements_1B.txt"
 RUNS=5
 DEFAULT_JAVA_VERSION="21.0.1-open"
-BUILD_JAVA_VERSION="21.0.1-open"
+: "${BUILD_JAVA_VERSION:=21.0.1-open}"
 RUN_TIME_LIMIT=300 # seconds
 
 TIMEOUT=""
