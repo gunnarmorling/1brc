@@ -62,7 +62,7 @@ public class CalculateAverage_tonivade {
     }
 
     private static Map<Name, Station> readFile() throws IOException, InterruptedException, ExecutionException {
-        Map<Name, Station> result = new HashMap<>(10_000);
+        Map<Name, Station> result = HashMap.newHashMap(10_000);
         try (var channel = FileChannel.open(Paths.get(FILE), StandardOpenOption.READ)) {
             long consumed = 0;
             long remaining = channel.size();
@@ -109,7 +109,7 @@ public class CalculateAverage_tonivade {
     private static PartialResult readChunk(ByteBuffer buffer, int start, int end) {
         final byte[] name = new byte[128];
         final byte[] temp = new byte[8];
-        final Map<Name, Station> map = new HashMap<>(1000);
+        final Map<Name, Station> map = HashMap.newHashMap(1000);
         int last = start;
         while (last < end) {
             int semicolon = readName(buffer, last, end - last, name);
