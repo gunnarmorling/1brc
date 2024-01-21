@@ -211,6 +211,7 @@
                 <exclude>github_users.txt</exclude>
                 <!-- Cliff asked to be named as the copyright holder for his entry; -->
                 <exclude>src/main/java/dev/morling/onebrc/CalculateAverage_cliffclick.java</exclude>
+                <exclude>.sdkmanrc</exclude>
               </excludes>
             </configuration>
             <executions>
