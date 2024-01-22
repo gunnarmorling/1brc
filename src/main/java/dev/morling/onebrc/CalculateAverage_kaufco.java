@@ -31,6 +31,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -169,7 +170,7 @@ public class CalculateAverage_kaufco {
      * @return updated hash
      */
     private static int updateHash(long stringChunk, int hash) {
-        return hash * 63 + ((int) (stringChunk >>> 32)) * 17 + (int) stringChunk;
+        return hash * 31 + ((int) (stringChunk >>> 32)) * 57 + (int) stringChunk;
     }
 
     public static void main(String[] args) throws IOException {
@@ -196,17 +197,11 @@ public class CalculateAverage_kaufco {
             executor.awaitTermination(Integer.MAX_VALUE, TimeUnit.SECONDS);
         }
         catch (InterruptedException e) {
-            abortRun = true;
-        }
-        if (abortRun) {
-            // In case of hash collision: slooow fallback
-            CalculateAverage_baseline.main(new String[0]);
-            return;
+            // Do nothing
         }
 
         postProcess();
         printResults();
-        System.exit(0);
     }
 
     private static void processChunk(
@@ -371,9 +366,10 @@ public class CalculateAverage_kaufco {
         long hi = weatherData.getLong(ofs + 8);
 
         int prevHash = (int) (lo >> 32);
-        if ((prevHash != hash) && (prevHash != 0))
-            throw new HashCollisionException();
-
+        if ((prevHash != hash) && (prevHash != 0)) {
+            aggregateCollision(buf, nameStart, nameEnd, hash, temperature);
+            return;
+        }
         lo = (((long) hash) << 32) | ((lo + 1) & 0xffffffffL);
 
         // Note: for tempMin, we use negated max instead of min, se we can use 0 as the neutral element
@@ -388,6 +384,24 @@ public class CalculateAverage_kaufco {
         if (prevHash == 0) {
             recordStationName(buf, nameStart, nameEnd, stationNames, hash);
         }
+    }
+
+    private static ConcurrentHashMap<Integer, SampleAggregator> aggregatedCollisions = new ConcurrentHashMap<>();
+
+    private static void aggregateCollision(
+                                           ByteBuffer buf,
+                                           int nameStart,
+                                           int nameEnd,
+                                           int hash,
+                                           int temperature) {
+        var sample = aggregatedCollisions.computeIfAbsent(hash, _ -> {
+            var bytes = new byte[nameEnd - nameStart];
+            buf.get(nameStart, bytes);
+            var aggregator = new SampleAggregator();
+            aggregator.stationName = new String(bytes);
+            return aggregator;
+        });
+        sample.aggregateThreadSample(1, temperature, temperature, temperature);
     }
 
     /**
@@ -448,6 +462,9 @@ public class CalculateAverage_kaufco {
 
     static void printResults() {
         var aggregated = new HashMap<Integer, SampleAggregator>();
+        if (!aggregatedCollisions.isEmpty()) {
+            aggregated.putAll(aggregatedCollisions);
+        }
         for (var threadResult : resultQueue) {
             var names = threadResult.stationNames;
             int endOfs = 4;
@@ -482,17 +499,19 @@ public class CalculateAverage_kaufco {
         }
 
         var first = true;
-        out.print("{");
+        StringBuilder b = new StringBuilder();
+        b.append("{");
         for (var e : sorted.entrySet()) {
             if (!first)
-                out.print(", ");
+                b.append(", ");
             first = false;
             var ag = e.getValue();
             String s = e.getKey() + "=" + tempToString((double) ag.min) + "/" + tempToString((double) ag.sum / ag.count) + "/" + tempToString((double) ag.max);
-            out.print(s);
+            b.append(s);
 
         }
-        out.println("}");
+        b.append("}");
+        out.println(b);
     }
 
     private static final String tempToString(Double temp) {
@@ -603,26 +622,16 @@ public class CalculateAverage_kaufco {
             try {
                 processFile();
             }
-            catch (IOException | HashCollisionException e) {
-                abortRun = true;
+            catch (IOException e) {
+                System.err.println("Could not read from file");
             }
         }
 
         private void processFile() throws IOException {
             MappedByteBuffer buf = inputFile.getChannel().map(FileChannel.MapMode.READ_ONLY, chunkStart, chunkSize);
             buf.order(ByteOrder.LITTLE_ENDIAN);
-            if (!abortRun) {
-                processChunk(chunkStart, buf, chunkSize);
-            }
+            processChunk(chunkStart, buf, chunkSize);
         }
-    }
-
-    private static boolean abortRun = false;
-
-    /**
-     * Raised in case of a hash collision in the weather data table.
-     */
-    static class HashCollisionException extends RuntimeException {
     }
 
     private static final class SampleAggregator {
@@ -633,7 +642,7 @@ public class CalculateAverage_kaufco {
         long sum;
         long count;
 
-        public void aggregateThreadSample(int sampleCount, long tempSum, int tempMin, int tempMax) {
+        public synchronized void aggregateThreadSample(int sampleCount, long tempSum, int tempMin, int tempMax) {
             count += sampleCount;
             sum += tempSum;
             min = min(min, tempMin);
