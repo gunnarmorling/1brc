@@ -42,21 +42,21 @@ public class CalculateAverage_gauravdeshmukh {
     private static final long EOL_MASK = 0x0A0A0A0A0A0A0A0AL;
 
     private static class ByteString {
-        final private String stringBytes;
+        final private String string;
         final private int staticHashCode;
 
         public ByteString(byte[] bytes) {
-            this.stringBytes = new String(bytes, StandardCharsets.UTF_8);
-            this.staticHashCode = this.stringBytes.hashCode();
+            this.string = new String(bytes, StandardCharsets.UTF_8);
+            this.staticHashCode = this.string.hashCode();
         }
 
         public byte[] getBytes() {
-            return stringBytes.getBytes(StandardCharsets.UTF_8);
+            return string.getBytes(StandardCharsets.UTF_8);
         }
 
         @Override
         public boolean equals(Object bs) {
-            return bs.hashCode() == this.staticHashCode;
+            return this.string.equals(bs.toString());
         }
 
         @Override
@@ -66,7 +66,7 @@ public class CalculateAverage_gauravdeshmukh {
 
         @Override
         public String toString() {
-            return this.stringBytes;
+            return this.string;
         }
     }
 
@@ -81,7 +81,11 @@ public class CalculateAverage_gauravdeshmukh {
 
         @Override
         public String toString() {
-            return station.toString() + ";" + value;
+            StringBuffer sb = new StringBuffer();
+            sb.append(station.toString());
+            sb.append(";");
+            sb.append(value);
+            return sb.toString();
         }
     }
 
