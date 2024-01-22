@@ -168,11 +168,7 @@ public class CalculateAverage_roman_r_m {
                                 val *= 1 - (2L * neg);
                             }
 
-                            var a = resultStore.get(station);
-                            a.min = Math.min(a.min, val);
-                            a.max = Math.max(a.max, val);
-                            a.sum += val;
-                            a.count++;
+                            resultStore.update(station, (int) val);
                         }
 
                         segment.unload();
@@ -251,10 +247,17 @@ public class CalculateAverage_roman_r_m {
     }
 
     private static final class ResultRow {
-        long min = 1000;
-        long sum = 0;
-        long max = -1000;
-        int count = 0;
+        long min;
+        long sum;
+        long max;
+        int count;
+
+        public ResultRow(int[] values) {
+            min = values[0];
+            max = values[1];
+            sum = values[2];
+            count = values[3];
+        }
 
         public String toString() {
             return round(min / 10.0) + "/" + round(sum / 10.0 / count) + "/" + round(max / 10.0);
@@ -276,9 +279,9 @@ public class CalculateAverage_roman_r_m {
     static class ResultStore {
         private static final int SIZE = 16384;
         private final ByteString[] keys = new ByteString[SIZE];
-        private final ResultRow[] values = new ResultRow[SIZE];
+        private final int[][] values = new int[SIZE][];
 
-        ResultRow get(ByteString s) {
+        void update(ByteString s, int value) {
             int h = s.hashCode();
             int idx = (SIZE - 1) & h;
 
@@ -287,18 +290,20 @@ public class CalculateAverage_roman_r_m {
                 i++;
                 idx = (idx + i * i) % SIZE;
             }
-            ResultRow result;
             if (keys[idx] == null) {
                 keys[idx] = s.copy();
-                result = new ResultRow();
-                values[idx] = result;
+                values[idx] = new int[4];
+                values[idx][0] = value;
+                values[idx][1] = value;
+                values[idx][2] = value;
+                values[idx][3] = 1;
             }
             else {
-                result = values[idx];
-                // TODO see it it makes any difference
-                // keys[idx].offset = s.offset;
+                values[idx][0] = Math.min(values[idx][0], value);
+                values[idx][1] = Math.max(values[idx][1], value);
+                values[idx][2] += value;
+                values[idx][3] += 1;
             }
-            return result;
         }
 
         TreeMap<String, ResultRow> toMap() {
@@ -306,7 +311,7 @@ public class CalculateAverage_roman_r_m {
             var result = new TreeMap<String, ResultRow>();
             for (int i = 0; i < SIZE; i++) {
                 if (keys[i] != null) {
-                    result.put(keys[i].asString(buf), values[i]);
+                    result.put(keys[i].asString(buf), new ResultRow(values[i]));
                 }
             }
             return result;
