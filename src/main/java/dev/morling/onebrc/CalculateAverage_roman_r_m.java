@@ -64,112 +64,6 @@ public class CalculateAverage_roman_r_m {
         return start + Long.numberOfTrailingZeros(i) / 8;
     }
 
-    static class Worker {
-        private final MemorySegment ms;
-        private final long end;
-        private long offset;
-
-        public Worker(FileChannel channel, long start, long end) {
-            try {
-                this.ms = channel.map(FileChannel.MapMode.READ_ONLY, start, end - start, Arena.ofConfined());
-                this.offset = ms.address();
-                this.end = ms.address() + end - start;
-            }
-            catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        public TreeMap<String, ResultRow> run() {
-            var resultStore = new ResultStore();
-            var station = new ByteString(ms);
-
-            while (offset < end) {
-                long offset = this.offset; // local copy to avoid updating the field until the end of the iteration
-
-                // parsing station name
-                long start = offset;
-                long next = UNSAFE.getLong(offset);
-                long pattern = applyPattern(next, SEMICOLON_MASK);
-                int bytes;
-                if (pattern != 0) {
-                    bytes = Long.numberOfTrailingZeros(pattern) / 8;
-                    offset += bytes;
-                    long h = Long.reverseBytes(next) >>> (8 * (8 - bytes));
-                    station.hash = (int) (h ^ (h >>> 32));
-                }
-                else {
-                    long h = next;
-                    station.hash = (int) (h ^ (h >>> 32));
-                    while (pattern == 0) {
-                        offset += 8;
-                        next = UNSAFE.getLong(offset);
-                        pattern = applyPattern(next, SEMICOLON_MASK);
-                    }
-                    bytes = Long.numberOfTrailingZeros(pattern) / 8;
-                    offset += bytes;
-                }
-
-                int len = (int) (offset - start);
-                station.offset = start;
-                station.len = len;
-                station.tail = next & ((1L << (8 * bytes)) - 1);
-
-                offset++;
-
-                // parsing temperature
-                // TODO next may contain temperature as well, maybe try using it if we know the full number is there
-                // 8 - bytes >= 5 -> bytes <= 3
-                long val;
-                if (end - offset >= 8) {
-                    long encodedVal = UNSAFE.getLong(offset);
-
-                    int neg = 1 - Integer.bitCount((int) (encodedVal & 0x10));
-                    encodedVal >>>= 8 * neg;
-
-                    long numLen = applyPattern(encodedVal, DOT_MASK);
-                    numLen = Long.numberOfTrailingZeros(numLen) / 8;
-
-                    encodedVal ^= broadcast((byte) 0x30);
-
-                    int intPart = (int) (encodedVal & ((1 << (8 * numLen)) - 1));
-                    intPart <<= 8 * (2 - numLen);
-                    intPart *= (100 * 256 + 10);
-                    intPart = (intPart & 0x3FF80) >>> 8;
-
-                    int frac = (int) ((encodedVal >>> (8 * (numLen + 1))) & 0xFF);
-
-                    offset += neg + numLen + 3; // 1 for . + 1 for fractional part + 1 for new line char
-                    int sign = 1 - 2 * neg;
-                    val = sign * (intPart + frac);
-                }
-                else {
-                    int neg = 1 - Integer.bitCount(UNSAFE.getByte(offset) & 0x10);
-                    offset += neg;
-
-                    val = UNSAFE.getByte(offset++) - '0';
-                    byte b;
-                    while ((b = UNSAFE.getByte(offset++)) != '.') {
-                        val = val * 10 + (b - '0');
-                    }
-                    b = UNSAFE.getByte(offset);
-                    val = val * 10 + (b - '0');
-                    offset += 2;
-                    val *= 1 - (2L * neg);
-                }
-
-                var a = resultStore.get(station);
-                a.min = Math.min(a.min, val);
-                a.max = Math.max(a.max, val);
-                a.sum += val;
-                a.count++;
-
-                this.offset = offset;
-            }
-            return resultStore.toMap();
-        }
-    }
-
     public static void main(String[] args) throws Exception {
         Field f = Unsafe.class.getDeclaredField("theUnsafe");
         f.setAccessible(true);
@@ -193,12 +87,101 @@ public class CalculateAverage_roman_r_m {
         var result = IntStream.range(0, numThreads)
                 .parallel()
                 .mapToObj(i -> {
-                    long start = i == 0 ? 0 : bounds[i - 1] + 1;
-                    long end = bounds[i];
-                    Worker worker = new Worker(channel, start, end);
-                    var res = worker.run();
-                    worker.ms.unload();
-                    return res;
+                    try {
+                        long segmentStart = i == 0 ? 0 : bounds[i - 1] + 1;
+                        long segmentEnd = bounds[i];
+                        var segment = channel.map(FileChannel.MapMode.READ_ONLY, segmentStart, segmentEnd - segmentStart, Arena.ofConfined());
+
+                        var resultStore = new ResultStore();
+                        var station = new ByteString(segment);
+                        long offset = segment.address();
+                        long end = offset + segment.byteSize();
+                        while (offset < end) {
+                            // parsing station name
+                            long start = offset;
+                            long next = UNSAFE.getLong(offset);
+                            long pattern = applyPattern(next, SEMICOLON_MASK);
+                            int bytes;
+                            if (pattern != 0) {
+                                bytes = Long.numberOfTrailingZeros(pattern) / 8;
+                                offset += bytes;
+                                long h = Long.reverseBytes(next) >>> (8 * (8 - bytes));
+                                station.hash = (int) (h ^ (h >>> 32));
+                            }
+                            else {
+                                long h = next;
+                                station.hash = (int) (h ^ (h >>> 32));
+                                while (pattern == 0) {
+                                    offset += 8;
+                                    next = UNSAFE.getLong(offset);
+                                    pattern = applyPattern(next, SEMICOLON_MASK);
+                                }
+                                bytes = Long.numberOfTrailingZeros(pattern) / 8;
+                                offset += bytes;
+                            }
+
+                            int len = (int) (offset - start);
+                            station.offset = start;
+                            station.len = len;
+                            station.tail = next & ((1L << (8 * bytes)) - 1);
+
+                            offset++;
+
+                            // parsing temperature
+                            // TODO next may contain temperature as well, maybe try using it if we know the full number is there
+                            // 8 - bytes >= 5 -> bytes <= 3
+                            long val;
+                            if (end - offset >= 8) {
+                                long encodedVal = UNSAFE.getLong(offset);
+
+                                int neg = 1 - Integer.bitCount((int) (encodedVal & 0x10));
+                                encodedVal >>>= 8 * neg;
+
+                                long numLen = applyPattern(encodedVal, DOT_MASK);
+                                numLen = Long.numberOfTrailingZeros(numLen) / 8;
+
+                                encodedVal ^= broadcast((byte) 0x30);
+
+                                int intPart = (int) (encodedVal & ((1 << (8 * numLen)) - 1));
+                                intPart <<= 8 * (2 - numLen);
+                                intPart *= (100 * 256 + 10);
+                                intPart = (intPart & 0x3FF80) >>> 8;
+
+                                int frac = (int) ((encodedVal >>> (8 * (numLen + 1))) & 0xFF);
+
+                                offset += neg + numLen + 3; // 1 for . + 1 for fractional part + 1 for new line char
+                                int sign = 1 - 2 * neg;
+                                val = sign * (intPart + frac);
+                            }
+                            else {
+                                int neg = 1 - Integer.bitCount(UNSAFE.getByte(offset) & 0x10);
+                                offset += neg;
+
+                                val = UNSAFE.getByte(offset++) - '0';
+                                byte b;
+                                while ((b = UNSAFE.getByte(offset++)) != '.') {
+                                    val = val * 10 + (b - '0');
+                                }
+                                b = UNSAFE.getByte(offset);
+                                val = val * 10 + (b - '0');
+                                offset += 2;
+                                val *= 1 - (2L * neg);
+                            }
+
+                            var a = resultStore.get(station);
+                            a.min = Math.min(a.min, val);
+                            a.max = Math.max(a.max, val);
+                            a.sum += val;
+                            a.count++;
+                        }
+
+                        segment.unload();
+
+                        return resultStore.toMap();
+                    }
+                    catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
                 }).reduce((m1, m2) -> {
                     m2.forEach((k, v) -> m1.merge(k, v, ResultRow::merge));
                     return m1;
