@@ -49,7 +49,7 @@ public class CalculateAverage_tonivade {
         System.out.println(measurements);
     }
 
-    static record PartialResult(int consumed, Map<Name, Station> map) {
+    static record PartialResult(int end, Map<Name, Station> map) {
 
         void merge(Map<Name, Station> result) {
             map.forEach((name, station) -> result.merge(name, station, Station::merge));
@@ -73,8 +73,8 @@ public class CalculateAverage_tonivade {
                 if (buffer.remaining() <= 1024) {
                     var partialResult = readChunk(buffer, 0, buffer.remaining());
 
-                    consumed += partialResult.consumed();
-                    remaining -= partialResult.consumed();
+                    consumed += partialResult.end();
+                    remaining -= partialResult.end();
 
                     partialResult.merge(result);
                 }
@@ -96,9 +96,9 @@ public class CalculateAverage_tonivade {
 
                         for (var subtask : tasks) {
                             subtask.get().merge(result);
-                            consumed += subtask.get().consumed();
-                            remaining -= subtask.get().consumed();
                         }
+                        consumed += tasks.getLast().get().end();
+                        remaining -= tasks.getLast().get().end();
                     }
                 }
             }
@@ -128,7 +128,7 @@ public class CalculateAverage_tonivade {
             // skip end of line
             position = endOfLine + 1;
         }
-        return new PartialResult(position - start, map);
+        return new PartialResult(position, map);
     }
 
     private static int findStart(ByteBuffer buffer, int start) {
