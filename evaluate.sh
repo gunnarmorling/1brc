@@ -272,7 +272,7 @@ for fork in "$@"; do
   fi
 
   # check if Java source file uses Unsafe
-  if grep -F "theUnsafe" -q ./src/main/java/dev/morling/onebrc/CalculateAverage_$fork.java ; then
+  if grep -F "theUnsafe" -q ./src/main/java*/dev/morling/onebrc/CalculateAverage_$fork.java ; then
     # if notes is not empty, append a comma and space before the unsafe note
     notes="${notes:+$notes, }uses Unsafe"
   fi
