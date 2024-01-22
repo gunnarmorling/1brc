@@ -26,6 +26,7 @@ import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -174,6 +175,13 @@ public class CalculateAverage_kaufco {
     }
 
     public static void main(String[] args) throws IOException {
+        if (args.length == 0 || !("--worker".equals(args[0]))) {
+            // Using thomaswue's method to spawn a subprocess and return this process as soon as the output is finished.
+            // Replacing my old method of doing that in the calculate_average shell script.
+            spawnWorker();
+            return;
+        }
+
         var inputFile = new RandomAccessFile(FILE, "r");
         var len = inputFile.length();
 
@@ -202,6 +210,22 @@ public class CalculateAverage_kaufco {
 
         postProcess();
         printResults();
+        System.out.close();
+    }
+
+    private static void spawnWorker() throws IOException {
+        ProcessHandle.Info info = ProcessHandle.current().info();
+        ArrayList<String> workerCommand = new ArrayList<>();
+        info.command().ifPresent(workerCommand::add);
+        info.arguments().ifPresent(args -> workerCommand.addAll(Arrays.asList(args)));
+        workerCommand.add("--worker");
+        new ProcessBuilder()
+                .command(workerCommand)
+                .inheritIO()
+                .redirectOutput(ProcessBuilder.Redirect.PIPE)
+                .start()
+                .getInputStream()
+                .transferTo(System.out);
     }
 
     private static void processChunk(
@@ -401,7 +425,7 @@ public class CalculateAverage_kaufco {
             aggregator.stationName = new String(bytes);
             return aggregator;
         });
-        sample.aggregateThreadSample(1, temperature, temperature, temperature);
+        sample.aggregateThreadSampleSynced(1, temperature, temperature, temperature);
     }
 
     /**
@@ -642,7 +666,11 @@ public class CalculateAverage_kaufco {
         long sum;
         long count;
 
-        public synchronized void aggregateThreadSample(int sampleCount, long tempSum, int tempMin, int tempMax) {
+        public synchronized void aggregateThreadSampleSynced(int sampleCount, long tempSum, int tempMin, int tempMax) {
+            aggregateThreadSample(sampleCount, tempSum, tempMin, tempMax);
+        }
+
+        public void aggregateThreadSample(int sampleCount, long tempSum, int tempMin, int tempMax) {
             count += sampleCount;
             sum += tempSum;
             min = min(min, tempMin);
