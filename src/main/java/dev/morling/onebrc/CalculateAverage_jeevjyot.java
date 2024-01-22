@@ -71,6 +71,10 @@ public class CalculateAverage_jeevjyot {
         return negative ? -result : result;
     }
 
+    private static double round(double value) {
+        return Math.round(value * 10.0) / 10.0;
+    }
+
     public static class tempMeasurement {
         double minTemp;
         double maxTemp;
@@ -92,12 +96,12 @@ public class CalculateAverage_jeevjyot {
         }
 
         double getAverage() {
-            return (double) round(sum) / count;
+            return round(sum) / count;
         }
 
         @Override
         public String toString() {
-            return String.format("%.1f/%.1f/%.1f", this.minTemp, getAverage(), this.maxTemp);
+            return String.format("%.1f/%.1f/%.1f", round(minTemp), round(getAverage()), round(maxTemp));
         }
     }
 }
