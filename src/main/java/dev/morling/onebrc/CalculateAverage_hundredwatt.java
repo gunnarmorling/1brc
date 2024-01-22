@@ -257,7 +257,7 @@ public class CalculateAverage_hundredwatt {
 
             position = position + newlinePos / 8 + 2; // +1 for \n
 
-            hashInt = (int) (hash ^ (hash >> 32));
+            hashInt = (int) (hash ^ (hash >> 32) ^ (hash >> 17));
 
             hashTable.putOrMerge(hashInt, offset + 1, key, temperature_value);
         }
