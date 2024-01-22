@@ -77,33 +77,47 @@ public class CalculateAverage_yavuztas {
             return equals(record.start, record.length);
         }
 
-        /**
-         * Used to get extract value in the last remaining longs
-         */
-        static long partial(long word, int step, int length) {
-            final long mask = ~0L << ((length - step) << 3);
+        private static long partial(long word, int length) {
+            final long mask = ~0L << (length << 3);
             return word & ~mask;
         }
 
-        /**
-         * Record equals, unsafe version
-         */
-        boolean equals(long start, int length) {
-            // equals check is done by comparing longs instead of byte by byte check
-            // this is slightly faster
-            int step;
+        private static boolean equalsFor8Bytes(long start1, long start2, byte length) {
+            return partial(UNSAFE.getLong(start1), length) == partial(UNSAFE.getLong(start2), length);
+        }
+
+        private static boolean equalsFor16Bytes(long start1, long start2, byte length) {
+            return UNSAFE.getLong(start1) == UNSAFE.getLong(start2) &&
+                    partial(UNSAFE.getLong(start1 + 8), length - 8) == partial(UNSAFE.getLong(start2 + 8), length - 8);
+        }
+
+        private static boolean equalsForBiggerThan16Bytes(long start1, long start2, byte length) {
             int i = 0;
-            final int dataLength = length >> 3;
-            while (i < dataLength) {
+            int step = 0;
+            while (length > 8) { // scan bytes
+                length -= 8;
                 step = i++ << 3; // 8 bytes
-                if (UNSAFE.getLong(this.start + step) != UNSAFE.getLong(start + step)) {
+                if (UNSAFE.getLong(start1 + step) != UNSAFE.getLong(start2 + step)) {
                     return false;
                 }
             }
+            // check the last part
+            return equalsFor8Bytes(start1 + step, start2 + step, length);
+        }
 
-            // when left, check the remaining bytes partially
-            step = dataLength << 3; // * 8
-            return partial(UNSAFE.getLong(this.start + step), step, this.length) == partial(UNSAFE.getLong(start + step), step, length);
+        public boolean equals(long start, byte length) {
+            // equals check is done by comparing longs instead of byte by byte check
+            // this is slightly faster
+            if (length <= 8) {
+                // smaller than long, check special
+                return equalsFor8Bytes(this.start, start, length);
+            }
+            if (length <= 16) {
+                // smaller than two longs, check special
+                return equalsFor16Bytes(this.start, start, length);
+            }
+            // check the bigger ones via traverse
+            return equalsForBiggerThan16Bytes(this.start, start, length);
         }
 
         @Override
@@ -446,7 +460,6 @@ public class CalculateAverage_yavuztas {
         final TreeMap<String, String> sorted = new TreeMap<>();
         output.forEach(key -> sorted.put(key.toString(), key.measurements()));
         System.out.println(sorted);
-
     }
 
 }
