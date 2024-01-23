@@ -98,9 +98,10 @@ public class CalculateAverage_3j5a {
 
         static {
             try {
-                Class<?> arraysSupport = forName("jdk.internal.util.ArraysSupport");
-                var hashCode = arraysSupport.getDeclaredMethod("vectorizedHashCode", Object.class, int.class, int.class, int.class, int.class);
-                vectorizedHashCode = lookup().unreflect(hashCode);
+                var arraysSupport = forName("jdk.internal.util.ArraysSupport");
+                Class<?>[] vectorizedHashCodeSignature = { Object.class, int.class, int.class, int.class, int.class };
+                var vectorizedHashCodeMethod = arraysSupport.getDeclaredMethod("vectorizedHashCode", vectorizedHashCodeSignature);
+                vectorizedHashCode = lookup().unreflect(vectorizedHashCodeMethod);
             }
             catch (NoSuchMethodException | IllegalAccessException | ClassNotFoundException e) {
                 throw new RuntimeException(e);
