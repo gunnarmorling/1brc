@@ -107,7 +107,9 @@ public class CalculateAverage_jgrateron {
                         var medicion = totalMediciones.computeIfAbsent(entry.getKey(), k -> entry.getValue());
                         synchronized (medicion) {
                             var otraMed = entry.getValue();
-                            medicion.update(otraMed.count, otraMed.tempMin, otraMed.tempMax, otraMed.tempSum);
+                            if (otraMed.hashCode() != medicion.hashCode()) {
+                                medicion.update(otraMed.count, otraMed.tempMin, otraMed.tempMax, otraMed.tempSum);
+                            }
                         }
                     }
                 }
