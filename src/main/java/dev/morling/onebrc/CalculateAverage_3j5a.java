@@ -15,10 +15,9 @@
  */
 package dev.morling.onebrc;
 
-import jdk.internal.util.ArraysSupport;
-
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.lang.invoke.MethodHandle;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
@@ -27,9 +26,10 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 
+import static java.lang.Class.forName;
 import static java.lang.System.out;
+import static java.lang.invoke.MethodHandles.lookup;
 import static java.util.Comparator.comparing;
-import static java.util.stream.Collectors.joining;
 
 public class CalculateAverage_3j5a {
 
@@ -65,22 +65,24 @@ public class CalculateAverage_3j5a {
                 });
                 return bslice;
             }).ifPresent(measurements -> {
-                var results = measurements.values().stream()
+                var results = new StringBuilder(measurements.size() * (rules.maxStationNameLength + rules.maxStationStatisticsOutputLength));
+                measurements.values().stream()
                         .sorted(comparing(StationMeasurementStatistics::getName))
-                        .map(StationMeasurementStatistics::toString)
-                        .collect(joining(", ", "{", "}"));
-                out.println(results);
+                        .forEach(stationStats -> results.append(stationStats).append(", "));
+                out.println("{" + results.substring(0, results.length() - 2) + "}");
             });
         }
     }
 
-    record Rules(int maxMeasurementLength, int uniqueStationsCount) {
+    record Rules(int minMeasurementLength, int maxStationNameLength,
+                 int maxMeasurementLength, int maxStationStatisticsOutputLength,
+                 int uniqueStationsCount) {
         Rules() {
-            this(106, 10_000);
+            this(5, 100, 106, 18, 10_000);
         }
     }
 
-    static Rules rules = new Rules();
+    private static final Rules rules = new Rules();
 
     record MeasurementsSlice(long start, long length) {
     }
@@ -90,6 +92,19 @@ public class CalculateAverage_3j5a {
         private byte[] name;
         final int length;
         private int hash;
+        private static final MethodHandle arraysSupportHashCode;
+
+        static {
+            try {
+                Class<?> arraysSupport = forName("jdk.internal.util.ArraysSupport");
+                var hashCode = arraysSupport.getDeclaredMethod("hashCode", int.class, byte[].class, int.class, int.class);
+                hashCode.setAccessible(true);
+                arraysSupportHashCode = lookup().unreflect(hashCode);
+            }
+            catch (NoSuchMethodException | IllegalAccessException | ClassNotFoundException e) {
+                throw new RuntimeException(e);
+            }
+        }
 
         Station(byte[] name, int length) {
             this.name = name;
@@ -110,7 +125,12 @@ public class CalculateAverage_3j5a {
         @Override
         public int hashCode() {
             if (hash == 0) {
-                hash = ArraysSupport.vectorizedHashCode(name, 0, length, 1, ArraysSupport.T_BYTE);
+                try {
+                    hash = (int) arraysSupportHashCode.invokeExact(1, name, 0, length);
+                }
+                catch (Throwable e) {
+                    throw new RuntimeException(e);
+                }
             }
             return hash;
         }
@@ -165,29 +185,34 @@ public class CalculateAverage_3j5a {
 
         @Override
         public String toString() {
+            var name = getName();
             var min = this.min / 10f;
             var mean = Math.round(this.sum / (float) this.count) / 10f;
             var max = this.max / 10f;
-            return getName() + "=" + min + "/" + mean + "/" + max;
+            return new StringBuilder(name.length() + rules.maxStationStatisticsOutputLength)
+                    .append(name).append("=").append(min).append("/").append(mean).append("/").append(max)
+                    .toString();
         }
     }
 
     private static StationMeasurement nextStationMeasurement(byte[] measurement, MappedByteBuffer memoryMappedSlice) {
         byte b;
-        int i = 0;
+        int i = rules.minMeasurementLength;
+        memoryMappedSlice.get(measurement, 0, i);
         while ((b = memoryMappedSlice.get()) != '\n') {
             measurement[i] = b;
             i++;
         }
-        int temperature = measurement[--i] - '0';
+        var zeroOffset = '0';
+        int temperature = measurement[--i] - zeroOffset;
         i--; // skipping dot
         var base = 10;
         while ((b = measurement[--i]) != ';') {
             if (b == '-') {
-                temperature *= -1;
+                temperature = -temperature;
             }
             else {
-                temperature = base * (b - '0') + temperature;
+                temperature = base * (b - zeroOffset) + temperature;
                 base *= base;
             }
         }
