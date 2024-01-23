@@ -25,9 +25,7 @@
   
   <properties>
     <maven.compiler.parameters>true</maven.compiler.parameters>
-    <maven.compiler.source>21</maven.compiler.source>
-    <maven.compiler.target>21</maven.compiler.target>
-    <maven.compiler.release></maven.compiler.release>
+    <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
   </properties>
@@ -119,7 +117,6 @@
               <compilerArg>java.base,jdk.incubator.vector</compilerArg>
               <compilerArg>--add-opens=java.base/java.lang=ALL-UNNAMED</compilerArg>
               <compilerArg>--add-opens=java.base/jdk.internal.util=ALL-UNNAMED</compilerArg>
-              <compilerArg>--add-exports=java.base/jdk.internal.util=ALL-UNNAMED</compilerArg>
             </compilerArgs>
           </configuration>
         </plugin>
@@ -267,7 +264,7 @@
                 <configuration>
                   <rules>
                     <requireJavaVersion>
-                      <version>21</version>
+                      <version>${maven.compiler.release}</version>
                     </requireJavaVersion>
                     <requirePluginVersions>
                        <banLatest>true</banLatest>
