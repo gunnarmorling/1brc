@@ -383,6 +383,13 @@ public class CalculateAverage_artsiomkorzun {
             }
         }
 
+        private static long next(long position) {
+            while (UNSAFE.getByte(position++) != '\n') {
+                // continue
+            }
+            return position;
+        }
+
         private static void aggregate(Aggregates aggregates, long position, long limit) {
             // this parsing can produce seg fault at page boundaries
             // e.g. file size is 4096 and the last entry is X=0.0, which is less than 8 bytes
@@ -392,18 +399,27 @@ public class CalculateAverage_artsiomkorzun {
             while (position <= limit) { // branchy version, credit: thomaswue
                 int length;
                 int hash;
+                int value;
 
                 long word = word(position);
                 long separator = separator(word);
+                long end = position;
 
                 if (separator != 0) {
                     length = length(separator);
                     word = mask(word, separator);
                     hash = mix(word);
+                    end += length;
+
+                    long num = word(end);
+                    int dot = dot(num);
+                    value = value(num, dot);
+                    end += (dot >> 3) + 3;
                     long ptr = aggregates.find(word, hash);
 
                     if (ptr != 0) {
-                        position = update(ptr, position + length);
+                        Aggregates.update(ptr, value);
+                        position = end;
                         continue;
                     }
                 }
@@ -416,10 +432,17 @@ public class CalculateAverage_artsiomkorzun {
                         length = length(separator) + 8;
                         word = mask(word, separator);
                         hash = mix(word ^ word0);
+                        end += length;
+
+                        long num = word(end);
+                        int dot = dot(num);
+                        value = value(num, dot);
+                        end += (dot >> 3) + 3;
                         long ptr = aggregates.find(word0, word, hash);
 
                         if (ptr != 0) {
-                            position = update(ptr, position + length);
+                            Aggregates.update(ptr, value);
+                            position = end;
                             continue;
                         }
                     }
@@ -440,29 +463,21 @@ public class CalculateAverage_artsiomkorzun {
                             length += length(separator);
                             word = mask(word, separator);
                             hash = mix(h ^ word);
+                            end += length;
+
+                            long num = word(end);
+                            int dot = dot(num);
+                            value = value(num, dot);
+                            end += (dot >> 3) + 3;
                             break;
                         }
                     }
                 }
 
                 long ptr = aggregates.put(position, word, length, hash);
-                position = update(ptr, position + length);
+                Aggregates.update(ptr, value);
+                position = end;
             }
-        }
-
-        private static long update(long ptr, long position) {
-            // idea: merykitty
-            long word = word(position);
-            long inverted = ~word;
-            int dot = Long.numberOfTrailingZeros(inverted & DOT_BITS);
-            long signed = (inverted << 59) >> 63;
-            long mask = ~(signed & 0xFF);
-            long digits = ((word & mask) << (28 - dot)) & 0x0F000F0F00L;
-            long abs = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
-            int value = (int) ((abs ^ signed) - signed);
-
-            Aggregates.update(ptr, value);
-            return position + (dot >> 3) + 3;
         }
 
         private static long separator(long word) {
@@ -479,17 +494,24 @@ public class CalculateAverage_artsiomkorzun {
             return (Long.numberOfTrailingZeros(separator) >>> 3) + 1;
         }
 
-        private static long next(long position) {
-            while (UNSAFE.getByte(position++) != '\n') {
-                // continue
-            }
-            return position;
-        }
-
         private static int mix(long x) {
             long h = x * -7046029254386353131L;
-            h ^= h >>> 32;
-            return (int) (h ^ h >>> 16);
+            h ^= h >>> 35;
+            return (int) h;
+            // h ^= h >>> 32;
+            // return (int) (h ^ h >>> 16);
+        }
+
+        private static int dot(long num) {
+            return Long.numberOfTrailingZeros(~num & DOT_BITS);
+        }
+
+        private static int value(long w, int dot) {
+            long signed = (~w << 59) >> 63;
+            long mask = ~(signed & 0xFF);
+            long digits = ((w & mask) << (28 - dot)) & 0x0F000F0F00L;
+            long abs = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
+            return (int) ((abs ^ signed) - signed);
         }
     }
 }
