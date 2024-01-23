@@ -55,7 +55,7 @@ public class CalculateAverage_mattiz {
 
         var fileSize = fileChannel.size();
 
-        if(fileSize < (1024*1024)) { // Only one core for small files
+        if (fileSize < (1024 * 1024)) { // Only one core for small files
             numParts = 1;
         }
 
@@ -126,13 +126,13 @@ public class CalculateAverage_mattiz {
      * Read decimal number from ascii characters (copied from arjenw)
      *
      * Example:
-     *   If you have the decimal number 1.4,
-     *   then byte 1 contain 49 (ascii code for '1')
-     *   and byte 3 contain 52 (ascii code for '4')
-     *   Subtract 480 + 48 (48 is the ASCII code for '0')
-     *   to move number from ascii number to int
+     * If you have the decimal number 1.4,
+     * then byte 1 contain 49 (ascii code for '1')
+     * and byte 3 contain 52 (ascii code for '4')
+     * Subtract 480 + 48 (48 is the ASCII code for '0')
+     * to move number from ascii number to int
      *
-     *   49 * 10 + 52 - 528 = 14
+     * 49 * 10 + 52 - 528 = 14
      */
     private static int readValue(ByteBuffer buffer) {
         int value;
@@ -171,14 +171,14 @@ class CustomMap {
         while (station != null
                 && station.getHash() != hash
                 && !Arrays.equals(
-                station.getName(), 0, station.getName().length,
-                stationName, 0, length)) {
+                        station.getName(), 0, station.getName().length,
+                        stationName, 0, length)) {
 
             slot = (slot + 1) & (SIZE - 1);
             station = stationList[slot];
         }
 
-        if(station == null) {
+        if (station == null) {
             stationList[slot] = new Station(stationName, hash);
         }
 
@@ -224,10 +224,10 @@ class CustomMap {
     }
 
     public Set<Map.Entry<byte[], Station>> entrySet() {
-        var sorted = new HashMap<byte[],Station>();
+        var sorted = new HashMap<byte[], Station>();
 
         for (var s : stationList) {
-            if(s != null) {
+            if (s != null) {
                 sorted.put(s.getName(), s);
             }
         }
@@ -235,11 +235,11 @@ class CustomMap {
         return sorted.entrySet();
     }
 
-    public Map<String,Station> sorted() {
-        var sorted = new TreeMap<String,Station>();
+    public Map<String, Station> sorted() {
+        var sorted = new TreeMap<String, Station>();
 
         for (var s : stationList) {
-            if(s != null) {
+            if (s != null) {
                 sorted.put(new String(s.getName(), StandardCharsets.UTF_8), s);
             }
         }
@@ -256,12 +256,13 @@ class StationList {
     }
 
     public StationList merge(StationList other) {
-        for(var aggregator : other.stations.entrySet()) {
+        for (var aggregator : other.stations.entrySet()) {
             var agg = stations.get(aggregator.getKey());
 
-            if(agg == null) {
+            if (agg == null) {
                 stations.put(aggregator.getKey(), aggregator.getValue());
-            } else {
+            }
+            else {
                 agg.merge(aggregator.getValue());
             }
         }
@@ -282,7 +283,6 @@ class Station {
     private int max = Integer.MIN_VALUE;
     private int sum;
     private int count;
-
 
     public Station(byte[] name, int hash) {
         this.name = name;
@@ -311,7 +311,7 @@ class Station {
     }
 
     public String toString() {
-        return (min / 10.0) + "/" + (Math.round(((double)sum) / count)) / 10.0 + "/" + (max / 10.0);
+        return (min / 10.0) + "/" + (Math.round(((double) sum) / count)) / 10.0 + "/" + (max / 10.0);
     }
 
     public byte[] getName() {
