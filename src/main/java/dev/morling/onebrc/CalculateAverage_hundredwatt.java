@@ -31,7 +31,7 @@ import java.util.stream.IntStream;
 public class CalculateAverage_hundredwatt {
     private static final String FILE = "./measurements.txt";
     private static final int MAX_ROW_SIZE = 100 + 1 + 5 + 1; // 100 for city name, 1 for ;, 5 for temperature, 1 for \n
-    private static final int THREAD_COUNT = Math.min(8, Runtime.getRuntime().availableProcessors());
+    private static final int THREAD_COUNT = Runtime.getRuntime().availableProcessors();
     private static final long BUFFER_SIZE = 128 * 1024 * 1024; // 128MB
     private static final long CHUNK_SIZE = BUFFER_SIZE / THREAD_COUNT;
     private static final long FILE_CHUNK_SIZE = CHUNK_SIZE - MAX_ROW_SIZE;
