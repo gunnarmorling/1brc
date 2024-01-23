@@ -47,6 +47,10 @@ public class CalculateAverage_abeobk {
             0xffffffffffffffL,
             0xffffffffffffffffL, };
 
+    private static final void debug(String s, Object... args) {
+        System.out.println(String.format(s, args));
+    }
+
     private static Unsafe initUnsafe() {
         try {
             Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
@@ -110,7 +114,7 @@ public class CalculateAverage_abeobk {
         }
 
         boolean contentEquals(long other_addr, long other_tail) {
-            if (tail != other_tail) // compare tail & length at the same time
+            if (tail != other_tail)
                 return false;
             // this is faster than comparision if key is short
             long xsum = 0;
@@ -182,13 +186,15 @@ public class CalculateAverage_abeobk {
             // about 50% chance key < 8 chars
             if (semipos_code != 0) {
                 int semi_pos = Long.numberOfTrailingZeros(semipos_code) >>> 3;
-                addr += semi_pos;
+                addr += semi_pos + 1;
+                long num_word = UNSAFE.getLong(addr);
+                int dot_pos = Long.numberOfTrailingZeros(~num_word & 0x10101000);
+                addr += (dot_pos >>> 3) + 3;
+
                 tail = (word0 & HASH_MASKS[semi_pos]);
                 bucket = xxh32(tail) & BUCKET_MASK;
-                long num_word = UNSAFE.getLong(++addr);
-                int dot_pos = Long.numberOfTrailingZeros(~num_word & 0x10101000);
                 val = parseNum(num_word, dot_pos);
-                addr += (dot_pos >>> 3) + 3;
+
                 while (true) {
                     var node = map[bucket];
                     if (node == null) {
@@ -214,14 +220,15 @@ public class CalculateAverage_abeobk {
             if (semipos_code != 0) {
                 int semi_pos = Long.numberOfTrailingZeros(semipos_code) >>> 3;
                 addr += semi_pos;
+                int keylen = (int) (addr - row_addr);
+                long num_word = UNSAFE.getLong(addr + 1);
+                int dot_pos = Long.numberOfTrailingZeros(~num_word & 0x10101000);
+                addr += (dot_pos >>> 3) + 4;
+
                 tail = (word & HASH_MASKS[semi_pos]);
                 hash ^= tail;
                 bucket = xxh32(hash) & BUCKET_MASK;
-                int keylen = (int) (addr - row_addr);
-                long num_word = UNSAFE.getLong(++addr);
-                int dot_pos = Long.numberOfTrailingZeros(~num_word & 0x10101000);
                 val = parseNum(num_word, dot_pos);
-                addr += (dot_pos >>> 3) + 3;
 
                 while (true) {
                     var node = map[bucket];
@@ -249,16 +256,15 @@ public class CalculateAverage_abeobk {
 
             int semi_pos = Long.numberOfTrailingZeros(semipos_code) >>> 3;
             addr += semi_pos;
+            int keylen = (int) (addr - row_addr);
+            long num_word = UNSAFE.getLong(addr + 1);
+            int dot_pos = Long.numberOfTrailingZeros(~num_word & 0x10101000);
+            addr += (dot_pos >>> 3) + 4;
+
             tail = (word & HASH_MASKS[semi_pos]);
             hash ^= tail;
             bucket = xxh32(hash) & BUCKET_MASK;
-            int keylen = (int) (addr - row_addr);
-
-            long num_word = UNSAFE.getLong(++addr);
-
-            int dot_pos = Long.numberOfTrailingZeros(~num_word & 0x10101000);
             val = parseNum(num_word, dot_pos);
-            addr += (dot_pos >>> 3) + 3;
 
             while (true) {
                 var node = map[bucket];
@@ -307,12 +313,6 @@ public class CalculateAverage_abeobk {
             for (var thread : threads)
                 thread.join();
 
-            if (SHOW_ANALYSIS) {
-                for (int i = 0; i < cpu_cnt; i++) {
-                    System.out.println("thread-" + i + " collision = " + cls[i]);
-                }
-            }
-
             // collect results
             TreeMap<String, Node> ms = new TreeMap<>();
             for (var map : maps) {
@@ -330,13 +330,16 @@ public class CalculateAverage_abeobk {
             }
 
             if (SHOW_ANALYSIS) {
-                System.out.println("total=" + Arrays.stream(lenhist).sum());
-                System.out.println("length_histogram = "
+                debug("Collision stat: ");
+                for (int i = 0; i < cpu_cnt; i++) {
+                    debug("thread-" + i + " collision = " + cls[i]);
+                }
+                debug("Total = " + Arrays.stream(lenhist).sum());
+                debug("Length_histogram = "
                         + Arrays.toString(Arrays.stream(lenhist).map(x -> (int) (x * 1.0e-7)).toArray()));
             }
             else
                 System.out.println(ms);
         }
     }
-
 }
