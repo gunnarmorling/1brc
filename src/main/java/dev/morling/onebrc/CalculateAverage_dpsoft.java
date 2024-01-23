@@ -28,24 +28,15 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.Phaser;
-import java.util.stream.Collectors;
 
-/*
- * Credits to:
- *
- *  - @lawrey (Peter Lawrey), used his idea for generating a unique hash for each station.
- *  - @spullara, used his idea for splitting the file into segments.
- *
- */
 public class CalculateAverage_dpsoft {
     private static final String FILE = "./measurements.txt";
-    private static final int MAX_ROWS = 1 << 18;
+    private static final int MAX_ROWS = 1 << 15;
     private static final int ROWS_MASK = MAX_ROWS - 1;
-    private static final String[] stations = new String[MAX_ROWS];
 
     public static void main(String[] args) throws IOException {
-        final var fileMemorySegment = getFileMemorySegment();
-        final var segments = getMemorySegments(fileMemorySegment);
+        final var cpus = Runtime.getRuntime().availableProcessors();
+        final var segments = getMemorySegments(cpus);
         final var tasks = new MeasurementExtractor[segments.size()];
         final var phaser = new Phaser(segments.size());
 
@@ -56,59 +47,49 @@ public class CalculateAverage_dpsoft {
 
         phaser.awaitAdvance(phaser.getPhase());
 
-        final var allMeasurementsMap = Arrays.stream(tasks)
-                .parallel()
-                .map(MeasurementExtractor::getMeasurements)
-                .reduce(Measurement::mergeMeasurementMaps)
-                .orElseThrow();
+        final var allMeasurements = Arrays.stream(tasks)
+                 .parallel()
+                 .map(MeasurementExtractor::getMeasurements)
+                 .reduce(MeasurementMap::merge)
+                 .orElseThrow();
 
-        final Map<String, Measurement> sortedMeasurementsMap = new TreeMap<>();
 
-        for (int i = 0; i < stations.length; i++) {
-            String station = stations[i];
-            if (station != null)
-                sortedMeasurementsMap.put(station, allMeasurementsMap[i]);
-        }
+         final Map<String, Measurement> sorted = new TreeMap<>();
+         for (Measurement m : allMeasurements.measurements) {
+             if (m != null) {
+                 sorted.put(new String(m.name, StandardCharsets.UTF_8), m);
+             }
+         }
 
-        final var result = sortedMeasurementsMap.entrySet()
-                .stream()
-                .map(Map.Entry::toString)
-                .collect(Collectors.joining(", ", "{", "}"));
-
-        System.out.println(result);
+        System.out.println(sorted);
 
         System.exit(0);
     }
 
-    private static MemorySegment getFileMemorySegment() throws IOException {
+    // Credits to @spullara
+    private static List<FileSegment> getMemorySegments(int numberOfSegments) throws IOException {
         try (var fileChannel = FileChannel.open(Path.of(FILE), StandardOpenOption.READ)) {
-            // Map the entire file to memory using MemorySegment
-            return fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size(), Arena.global());
-        }
-    }
+            var memorySegment = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size(), Arena.global());
+            long fileSize = memorySegment.byteSize();
+            long segmentSize = fileSize / numberOfSegments;
 
-    // Credits to @spullara for the idea of splitting the file into segments
-    private static List<FileSegment> getMemorySegments(MemorySegment memorySegment) {
-        int numberOfSegments = Runtime.getRuntime().availableProcessors();
-        long fileSize = memorySegment.byteSize();
-        long segmentSize = fileSize / numberOfSegments;
+            List<FileSegment> segments = new ArrayList<>(numberOfSegments);
 
-        List<FileSegment> segments = new ArrayList<>(numberOfSegments);
+            if (segmentSize < 1_000_000) {
+                segments.add(new FileSegment(0, fileSize));
+                return segments;
+            }
 
-        if (segmentSize < 1_000_000) {
-            segments.add(new FileSegment(0, fileSize));
+            for (int i = 0; i < numberOfSegments; i++) {
+                long segStart = i * segmentSize;
+                long segEnd = (i == numberOfSegments - 1) ? fileSize : segStart + segmentSize;
+                segStart = findSegment(i, 0, memorySegment, segStart, segEnd);
+                segEnd = findSegment(i, numberOfSegments - 1, memorySegment, segEnd, fileSize);
+                segments.add(new FileSegment(segStart, segEnd));
+            }
+
             return segments;
         }
-
-        for (int i = 0; i < numberOfSegments; i++) {
-            long segStart = i * segmentSize;
-            long segEnd = (i == numberOfSegments - 1) ? fileSize : segStart + segmentSize;
-            segStart = findSegment(i, 0, memorySegment, segStart, segEnd);
-            segEnd = findSegment(i, numberOfSegments - 1, memorySegment, segEnd, fileSize);
-            segments.add(new FileSegment(segStart, segEnd));
-        }
-
-        return segments;
     }
 
     record FileSegment(long start, long end) {
@@ -129,10 +110,9 @@ public class CalculateAverage_dpsoft {
     }
 
     static final class MeasurementExtractor implements Runnable {
-        final static int SEMI_PATTERN = compilePattern((byte) ';');
-        private final Measurement[] measurements = new Measurement[MAX_ROWS];
         private final FileSegment segment;
         private final Phaser phaser;
+        private final MeasurementMap measurements = new MeasurementMap();
 
         MeasurementExtractor(FileSegment memorySegment, Phaser phaser) {
             this.segment = memorySegment;
@@ -153,21 +133,11 @@ public class CalculateAverage_dpsoft {
 
                 while (mbb.remaining() > 0 && mbb.position() <= segmentEnd) {
                     int pos = mbb.position();
-                    int key = readKey(mbb);
-                    Measurement m = measurements[key];
-                    if (m == null) {
-                        m = measurements[key] = new Measurement();
-                        if (stations[key] == null) {
-                            int len = mbb.position() - pos - 1;
-                            byte[] bytes = new byte[len];
-                            mbb.position(pos);
-                            mbb.get(bytes, 0, len);
-                            mbb.get();
-                            stations[key] = new String(bytes, StandardCharsets.UTF_8);
-                        }
-                    }
+                    int nameHash = hashAndRewind(mbb);
+                    var m = measurements.getOrCompute(nameHash, mbb, pos);
                     int temp = readTemperatureFromBuffer(mbb);
-                    m.sample(temp / 10.0);
+
+                    m.sample(temp);
                 }
             }
             catch (IOException e) {
@@ -178,58 +148,28 @@ public class CalculateAverage_dpsoft {
             }
         }
 
-        public Measurement[] getMeasurements() {
-            return measurements;
-        }
-
-        // Credits to @lawrey for the initial idea.
-        private static int readKey(MappedByteBuffer mbb) {
-            // Get the first integer from the buffer and treat it as the initial hash
-            long hash = mbb.getInt();
-            int rewind = -1;
-
-            // If the hash does not contain a semicolon
-            if (hasNotSemi(hash)) {
-                do {
-                    // Get the next integer from the buffer
-                    int word = mbb.getInt();
-                    // Find the position of the first occurrence of the semicolon in the word
-                    var position = firstInstance(word, SEMI_PATTERN);
-                    // Depending on the position of the semicolon, adjust the word and the rewind value
-                    if (position == 3) {
-                        rewind = 3;
-                        word = ';';
+        static int hashAndRewind(MappedByteBuffer mbb) {
+            int hash = 0;
+            int idx = mbb.position();
+            outer: while (true) {
+                int name = mbb.getInt();
+                for (int c = 0; c < 4; c++) {
+                    int b = (name >> (c << 3)) & 0xFF;
+                    if (b == ';') {
+                        idx += c + 1;
+                        break outer;
                     }
-                    else if (position == 2) {
-                        rewind = 2;
-                        word &= 0xFFFF;
-                    }
-                    else if (position == 1) {
-                        rewind = 1;
-                        word &= 0xFFFFFF;
-                    }
-                    else if (position == 0) {
-                        rewind = 0;
-                    }
-                    // Update the hash value
-                    hash = hash * 21503 + word;
-                } while (rewind == -1);
-                // Finalize the hash value
-                hash += hash >>> 1;
-                // Adjust the position in the buffer
-                mbb.position(mbb.position() - rewind);
-                // Return the hash value, ensuring it is positive and within the range of the array
-                return (int) Math.abs(hash % ROWS_MASK);
+                    hash ^= b * 82805;
+                }
+                idx += 4;
             }
-            // If the key is 4 bytes long and starts with a semicolon, finalize the hash value
-            hash += hash >>> 1;
-            // Adjust the position in the buffer
-            mbb.position(mbb.position() - rewind - 1);
-            // Return the hash value, ensuring it is positive and within the range of the array
-            return (int) Math.abs(hash % ROWS_MASK);
+
+            var rewind = mbb.position() - idx;
+            mbb.position(mbb.position() - rewind);
+            return hash;
         }
 
-        // Reads a temperature value from the buffer.
+        // Credits to @lawrey
         private static int readTemperatureFromBuffer(MappedByteBuffer mbb) {
             int temp = 0;
             boolean negative = false;
@@ -257,11 +197,8 @@ public class CalculateAverage_dpsoft {
             return temp;
         }
 
-        // This method checks if a given hash does not contain a semicolon (';').
-        // The hash is a long integer, and the method treats it as a sequence of bytes.
-        private static boolean hasNotSemi(long hash) {
-            return (hash & 0xFF000000) != (';' << 24);
-
+        public MeasurementMap getMeasurements() {
+            return measurements;
         }
 
         // Skips to the first line in the buffer, used for chunk processing.
@@ -270,54 +207,96 @@ public class CalculateAverage_dpsoft {
                 // Skip bytes until reaching the start of a line.
             }
         }
+    }
 
-        // It takes a byte as an argument and creates a pattern that consists of four copies of the byte.
-        // This pattern is stored in an integer and can be used to find the first occurrence of the byte in another integer.
-        private static int compilePattern(byte byteToFind) {
-            int pattern = byteToFind & 0xFF;
-            return pattern | (pattern << 8) | (pattern << 16) | (pattern << 24);
+    // open addressing map with linear probing
+    static class MeasurementMap {
+        private final Measurement[] measurements = new Measurement[MAX_ROWS];
+
+        public Measurement getOrCompute(int hash, MappedByteBuffer mbb, int position) {
+            int index = hash & ROWS_MASK;
+            var measurement = measurements[index];
+            if (measurement != null && hash == measurement.nameHash && Measurement.equalsTo(measurement.name, mbb, position)) {
+                return measurement;
+            }
+            else {
+                return compute(hash, mbb, position);
+            }
         }
 
-        // This method uses the SWAR (SIMD Within A Register) technique to find the first occurrence of a semicolon in an integer.
-        // The integer is treated as four bytes, and the method checks each byte to see if it is a semicolon.
-        private static int firstInstance(int bytes, int pattern) {
-            int masked = bytes ^ pattern;
-            int underflow = masked - 0x01010101;
-            int clearHighBits = underflow & ~masked;
-            int highBitOfSeparator = clearHighBits & 0x80808080;
-            return Integer.numberOfLeadingZeros(highBitOfSeparator) / 8;
+        private Measurement compute(int hash, MappedByteBuffer mbb, int position) {
+            var index = hash & ROWS_MASK;
+            Measurement m;
+
+            while (true) {
+                m = measurements[index];
+                if (m == null || (hash == m.nameHash && Measurement.equalsTo(m.name, mbb, position))) {
+                    break;
+                }
+                index = (index + 1) & ROWS_MASK;
+            }
+
+            if (m == null) {
+                int len = mbb.position() - position - 1;
+                byte[] bytes = new byte[len];
+                mbb.position(position);
+                mbb.get(bytes, 0, len);
+                mbb.get();
+                measurements[index] = m = new Measurement(bytes, hash);
+            }
+
+            return m;
+        }
+
+        public MeasurementMap merge(MeasurementMap otherMap) {
+            for (Measurement other : otherMap.measurements) {
+                if (other != null) {
+                    int index = other.nameHash & ROWS_MASK;
+                    Measurement m = measurements[index];
+                    if (m == null || Arrays.equals(m.name, other.name)) {
+                        measurements[index] = (m == null) ? other : m.merge(other);
+                    }
+                    else {
+                        measurements[(index + 1) & ROWS_MASK] = other;
+                    }
+                }
+            }
+            return this;
         }
     }
 
     static final class Measurement {
-        double sum = 0.0;
-        long count = 0;
-        double min = Double.POSITIVE_INFINITY;
-        double max = Double.NEGATIVE_INFINITY;
+        public final int nameHash;
+        public final byte[] name;
+        long sum = 0;
+        int count = 0;
+        long min = Integer.MAX_VALUE;
+        long max = Integer.MIN_VALUE;
 
         // Default constructor for Measurement.
-        public Measurement() {
+        public Measurement(byte[] name, int nameHash) {
+            this.name = name;
+            this.nameHash = nameHash;
         }
 
-        // Adds a new temperature sample and updates min, max, and average.
-        public void sample(double temp) {
+        public static boolean equalsTo(byte[] name, MappedByteBuffer mbb, int position) {
+            int len = mbb.position() - position - 1;
+            if (len != name.length)
+                return false;
+            for (int i = 0; i < len; i++) {
+                if (name[i] != mbb.get(position + i))
+                    return false;
+            }
+            return true;
+        }
+
+        public void sample(int temp) {
             min = Math.min(min, temp);
             max = Math.max(max, temp);
             sum += temp;
             count++;
         }
 
-        // Returns a formatted string representing min, average, and max.
-        public String toString() {
-            return STR."\{round(min)}/\{round(sum / count)}/\{round(max)}";
-        }
-
-        // Helper method to round a double value to one decimal place.
-        private double round(double value) {
-            return Math.round(value * 10.0) / 10.0;
-        }
-
-        // Merges this Measurement with another Measurement.
         public Measurement merge(Measurement m2) {
             if (m2 == null) {
                 return this;
@@ -329,14 +308,12 @@ public class CalculateAverage_dpsoft {
             return this;
         }
 
-        public static Measurement[] mergeMeasurementMaps(Measurement[] a, Measurement[] b) {
-            for (int i = 0; i < a.length; i++) {
-                if (a[i] != null)
-                    a[i].merge(b[i]);
-                else
-                    a[i] = b[i];
-            }
-            return a;
+        public String toString() {
+            var min = String.format("%.1f", (double) this.min / 10.0);
+            var avg = String.format("%.1f", ((double) this.sum / (double) this.count) / 10.0);
+            var max = String.format("%.1f", (double) this.max / 10.0);
+
+            return STR."\{min}/\{avg}/\{max}";
         }
     }
 }
