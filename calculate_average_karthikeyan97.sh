@@ -16,4 +16,14 @@
 #
 
 JAVA_OPTS="-Xms20480m -Xmx40960m "
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_karthikeyan97
+
+if [ -f target/CalculateAverage_karthikeyan97_image ]; then
+    #echo "Picking up existing native image 'target/CalculateAverage_karthikeyan97_image', delete the file to select JVM mode." 1>&2
+    target/CalculateAverage_karthikeyan97_image -Xms20480m -Xmx32768m
+else
+    JAVA_OPTS="--enable-preview"
+    #echo "Chosing to run the app in JVM mode as no native image was found, use prepare_karthikeyan97.sh to generate." 1>&2
+    java -Xms20480m -Xmx32768m --enable-preview --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_karthikeyan97
+fi
+
+
