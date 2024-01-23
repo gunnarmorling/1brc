@@ -272,7 +272,7 @@ public class CalculateAverage_jgrateron {
          * Busca una medicion por su hash y crea o actualiza la temperatura
          */
         public void updateMediciones(byte data[], int pos, int semicolon) {
-            var hashEstacion = calcHashCode(1, data, pos, semicolon);
+            var hashEstacion = calcHashCode(semicolon, data, pos, semicolon);
             var temp = strToInt(data, pos, semicolon);
             index.setHash(hashEstacion);
             var medicion = mediciones.get(index);
