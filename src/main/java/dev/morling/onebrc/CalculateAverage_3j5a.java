@@ -92,14 +92,15 @@ public class CalculateAverage_3j5a {
         private byte[] name;
         final int length;
         private int hash;
-        private static final MethodHandle arraysSupportHashCode;
+
+        private static final MethodHandle vectorizedHashCode;
+        private static final int T_BYTE = 8;
 
         static {
             try {
                 Class<?> arraysSupport = forName("jdk.internal.util.ArraysSupport");
-                var hashCode = arraysSupport.getDeclaredMethod("hashCode", int.class, byte[].class, int.class, int.class);
-                hashCode.setAccessible(true);
-                arraysSupportHashCode = lookup().unreflect(hashCode);
+                var hashCode = arraysSupport.getDeclaredMethod("vectorizedHashCode", Object.class, int.class, int.class, int.class, int.class);
+                vectorizedHashCode = lookup().unreflect(hashCode);
             }
             catch (NoSuchMethodException | IllegalAccessException | ClassNotFoundException e) {
                 throw new RuntimeException(e);
@@ -126,7 +127,7 @@ public class CalculateAverage_3j5a {
         public int hashCode() {
             if (hash == 0) {
                 try {
-                    hash = (int) arraysSupportHashCode.invokeExact(1, name, 0, length);
+                    hash = (int) vectorizedHashCode.invokeExact((Object) name, 0, length, 1, T_BYTE);
                 }
                 catch (Throwable e) {
                     throw new RuntimeException(e);
