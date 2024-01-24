@@ -20,17 +20,16 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Map.Entry;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 public class CalculateAverage_jgrateron {
     private static final String FILE = "./measurements.txt";
-    private static final int MAX_LENGTH_LINE = 115;
+    private static final int MAX_LENGTH_LINE = 255;
     private static final int MAX_BUFFER = 1024 * 8;
     private static boolean DEBUG = false;
 
@@ -93,7 +92,7 @@ public class CalculateAverage_jgrateron {
         Locale.setDefault(Locale.US);
         var startTime = System.nanoTime();
         var archivo = new File(FILE);
-        var totalMediciones = new HashMap<String, Medicion>();
+        var totalMediciones = new TreeMap<String, Medicion>();
         var tareas = new ArrayList<Thread>();
         var particiones = dividirArchivo(archivo);
 
@@ -124,11 +123,7 @@ public class CalculateAverage_jgrateron {
             hilo.join();
         }
 
-        Comparator<Entry<String, Medicion>> comparar = (a, b) -> {
-            return a.getKey().compareTo(b.getKey());
-        };
         var result = totalMediciones.entrySet().stream()//
-                .sorted(comparar)//
                 .map(e -> e.getKey() + "=" + e.getValue().toString())//
                 .collect(Collectors.joining(", "));
 
@@ -276,7 +271,7 @@ public class CalculateAverage_jgrateron {
          */
         public void updateMediciones(byte data[], int pos, int semicolon) {
             var hashEstacion = calcHashCode(0, data, pos, semicolon);
-            var temp = strToDouble(data, pos, semicolon);
+            var temp = strToInt(data, pos, semicolon);
             index.setHash(hashEstacion);
             var estacion = estaciones.get(index);
             if (estacion == null) {
@@ -321,11 +316,11 @@ public class CalculateAverage_jgrateron {
         /*
          * convierte de un arreglo de bytes a double
          */
-        public double strToDouble(byte linea[], int idx, int posSeparator) {
-            double number = 0;
+        public int strToInt(byte linea[], int idx, int posSeparator) {
+            int number = 0;
             int pos = idx + posSeparator + 1;
-            int esNegativo = linea[pos] == '-' ? -1 : 1;
-            if (esNegativo == -1) {
+            boolean esNegativo = linea[pos] == '-';
+            if (esNegativo) {
                 pos++;
             }
             int digit1 = linea[pos] - 48;
@@ -339,7 +334,7 @@ public class CalculateAverage_jgrateron {
                 pos += 2;
                 number = (digit1 * 100) + (digit2 * 10) + (linea[pos] - 48);
             }
-            return number / 10 * esNegativo;
+            return esNegativo ? -number : number;
         }
     }
 
@@ -348,11 +343,11 @@ public class CalculateAverage_jgrateron {
      */
     static class Medicion {
         private int count;
-        private double tempMin;
-        private double tempMax;
-        private double tempSum;
+        private int tempMin;
+        private int tempMax;
+        private int tempSum;
 
-        public Medicion(int count, double tempMin, double tempMax, double tempSum) {
+        public Medicion(int count, int tempMin, int tempMax, int tempSum) {
             super();
             this.count = count;
             this.tempMin = tempMin;
@@ -360,7 +355,7 @@ public class CalculateAverage_jgrateron {
             this.tempSum = tempSum;
         }
 
-        public void update(int count, double tempMin, double tempMax, double tempSum) {
+        public void update(int count, int tempMin, int tempMax, int tempSum) {
             this.count += count;
             if (tempMin < this.tempMin) {
                 this.tempMin = tempMin;
@@ -371,11 +366,16 @@ public class CalculateAverage_jgrateron {
             this.tempSum += tempSum;
         }
 
+        public double round(double number) {
+            return Math.round(number) / 10.0;
+        }
+
         @Override
         public String toString() {
-            double tempPro = (double) tempSum;
-            tempPro = tempPro / count;
-            return "%.1f/%.1f/%.1f".formatted(tempMin, tempPro, tempMax);
+            var min = round(tempMin);
+            var mid = round(1.0 * tempSum / count);
+            var max = round(tempMax);
+            return "%.1f/%.1f/%.1f".formatted(min, mid, max);
         }
     }
 }
