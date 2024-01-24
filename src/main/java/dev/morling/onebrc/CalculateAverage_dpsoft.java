@@ -48,18 +48,17 @@ public class CalculateAverage_dpsoft {
         phaser.awaitAdvance(phaser.getPhase());
 
         final var allMeasurements = Arrays.stream(tasks)
-                 .parallel()
-                 .map(MeasurementExtractor::getMeasurements)
-                 .reduce(MeasurementMap::merge)
-                 .orElseThrow();
+                .parallel()
+                .map(MeasurementExtractor::getMeasurements)
+                .reduce(MeasurementMap::merge)
+                .orElseThrow();
 
-
-         final Map<String, Measurement> sorted = new TreeMap<>();
-         for (Measurement m : allMeasurements.measurements) {
-             if (m != null) {
-                 sorted.put(new String(m.name, StandardCharsets.UTF_8), m);
-             }
-         }
+        final Map<String, Measurement> sorted = new TreeMap<>();
+        for (Measurement m : allMeasurements.measurements) {
+            if (m != null) {
+                sorted.put(new String(m.name, StandardCharsets.UTF_8), m);
+            }
+        }
 
         System.out.println(sorted);
 
@@ -133,7 +132,7 @@ public class CalculateAverage_dpsoft {
 
                 while (mbb.remaining() > 0 && mbb.position() <= segmentEnd) {
                     int pos = mbb.position();
-                    int nameHash = hashAndRewind(mbb);
+                    int nameHash = hashName(mbb);
                     var m = measurements.getOrCompute(nameHash, mbb, pos);
                     int temp = readTemperatureFromBuffer(mbb);
 
@@ -148,7 +147,8 @@ public class CalculateAverage_dpsoft {
             }
         }
 
-        static int hashAndRewind(MappedByteBuffer mbb) {
+        // inspired by @lawrey and @shipilev
+        private static int hashName(MappedByteBuffer mbb) {
             int hash = 0;
             int idx = mbb.position();
             outer: while (true) {
@@ -169,7 +169,6 @@ public class CalculateAverage_dpsoft {
             return hash;
         }
 
-        // Credits to @lawrey
         private static int readTemperatureFromBuffer(MappedByteBuffer mbb) {
             int temp = 0;
             boolean negative = false;
