@@ -120,8 +120,8 @@ public class CalculateAverage_tonivade {
                 break;
             }
 
-            var t = parseTemp(temp, endOfLine - semicolon - 1);
-            findStation(name, semicolon - position, array, hash[0]).add(t);
+            findStation(name, semicolon - position, array, hash[0])
+                    .add(parseTemp(temp, endOfLine - semicolon - 1));
 
             // skip end of line
             position = endOfLine + 1;
