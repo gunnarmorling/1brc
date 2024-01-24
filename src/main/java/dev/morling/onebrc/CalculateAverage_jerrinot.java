@@ -187,7 +187,7 @@ public class CalculateAverage_jerrinot {
         private static final int SLOW_MAP_SIZE_BYTES = MAPS_SLOT_COUNT * SLOW_MAP_ENTRY_SIZE_BYTES;
         private static final int FAST_MAP_SIZE_BYTES = MAPS_SLOT_COUNT * FAST_MAP_ENTRY_SIZE_BYTES;
         private static final int SLOW_MAP_MAP_NAMES_BYTES = MAX_UNIQUE_KEYS * STATION_MAX_NAME_BYTES;
-        private static final long MAP_MASK = MAPS_SLOT_COUNT - 1;
+        private static final int MAP_MASK = MAPS_SLOT_COUNT - 1;
 
         private long slowMap;
         private long slowMapNamesPtr;
@@ -353,7 +353,7 @@ public class CalculateAverage_jerrinot {
                 final long semicolon = cursor + (delimiterByte >> 3);
                 final long maskedWord = currentWord & ((mask - 1) ^ mask) >>> 8;
 
-                long len = semicolon - start;
+                int len = (int) (semicolon - start);
                 long baseEntryPtr = getOrCreateEntryBaseOffsetSlow(len, start, (int) hash, maskedWord);
                 long temperatureWord = UNSAFE.getLong(semicolon + 1);
                 cursor = parseAndStoreTemperature(semicolon + 1, baseEntryPtr, temperatureWord);
@@ -458,6 +458,7 @@ public class CalculateAverage_jerrinot {
                 long digitStartA = semicolonA + 1;
                 long digitStartB = semicolonB + 1;
                 long digitStartC = semicolonC + 1;
+
                 long temperatureWordA = UNSAFE.getLong(digitStartA);
                 long temperatureWordB = UNSAFE.getLong(digitStartB);
                 long temperatureWordC = UNSAFE.getLong(digitStartC);
@@ -466,32 +467,37 @@ public class CalculateAverage_jerrinot {
                 final long maskedWordB = currentWordB & ((maskB - 1) ^ maskB) >>> 8;
                 final long maskedWordC = currentWordC & ((maskC - 1) ^ maskC) >>> 8;
 
-                long lenA = semicolonA - startA;
-                long lenB = semicolonB - startB;
-                long lenC = semicolonC - startC;
+                int lenA = (int) (semicolonA - startA);
+                int lenB = (int) (semicolonB - startB);
+                int lenC = (int) (semicolonC - startC);
+
+                int mapIndexA = ((int) hashA) & MAP_MASK;
+                int mapIndexB = ((int) hashB) & MAP_MASK;
+                int mapIndexC = ((int) hashC) & MAP_MASK;
 
                 long baseEntryPtrA;
-                if (lenA > 15) {
+                long baseEntryPtrB;
+                long baseEntryPtrC;
+
+                if (lenA < 16) {
+                    baseEntryPtrA = getOrCreateEntryBaseOffsetFast(mapIndexA, lenA, maskedWordA, maskedFirstWordA);
+                }
+                else {
                     baseEntryPtrA = getOrCreateEntryBaseOffsetSlow(lenA, startA, (int) hashA, maskedWordA);
                 }
-                else {
-                    baseEntryPtrA = getOrCreateEntryBaseOffsetFast(lenA, (int) hashA, maskedWordA, maskedFirstWordA);
-                }
 
-                long baseEntryPtrB;
-                if (lenB > 15) {
+                if (lenB < 16) {
+                    baseEntryPtrB = getOrCreateEntryBaseOffsetFast(mapIndexB, lenB, maskedWordB, maskedFirstWordB);
+                }
+                else {
                     baseEntryPtrB = getOrCreateEntryBaseOffsetSlow(lenB, startB, (int) hashB, maskedWordB);
                 }
-                else {
-                    baseEntryPtrB = getOrCreateEntryBaseOffsetFast(lenB, (int) hashB, maskedWordB, maskedFirstWordB);
-                }
 
-                long baseEntryPtrC;
-                if (lenC > 15) {
-                    baseEntryPtrC = getOrCreateEntryBaseOffsetSlow(lenC, startC, (int) hashC, maskedWordC);
+                if (lenC < 16) {
+                    baseEntryPtrC = getOrCreateEntryBaseOffsetFast(mapIndexC, lenC, maskedWordC, maskedFirstWordC);
                 }
                 else {
-                    baseEntryPtrC = getOrCreateEntryBaseOffsetFast(lenC, (int) hashC, maskedWordC, maskedFirstWordC);
+                    baseEntryPtrC = getOrCreateEntryBaseOffsetSlow(lenC, startC, (int) hashC, maskedWordC);
                 }
 
                 cursorA = parseAndStoreTemperature(digitStartA, baseEntryPtrA, temperatureWordA);
@@ -502,36 +508,35 @@ public class CalculateAverage_jerrinot {
             // System.out.println("Longest chain: " + longestChain);
         }
 
-        private long getOrCreateEntryBaseOffsetFast(long lenLong, int hash, long maskedLastWord, long maskedFirstWord) {
-            int lenA = (int) lenLong;
-            long mapIndexA = hash & MAP_MASK;
+        private long getOrCreateEntryBaseOffsetFast(int mapIndexA, int lenA, long maskedLastWord, long maskedFirstWord) {
             for (;;) {
                 long basePtr = mapIndexA * FAST_MAP_ENTRY_SIZE_BYTES + fastMap;
+                long namePart1 = UNSAFE.getLong(basePtr + FAST_MAP_NAME_PART1);
+                long namePart2 = UNSAFE.getLong(basePtr + FAST_MAP_NAME_PART2);
+                if (namePart1 == maskedFirstWord && namePart2 == maskedLastWord) {
+                    return basePtr;
+                }
                 long lenPtr = basePtr + MAP_LEN_OFFSET;
                 int len = UNSAFE.getInt(lenPtr);
-                if (len == lenA) {
-                    long namePart1 = UNSAFE.getLong(basePtr + FAST_MAP_NAME_PART1);
-                    long namePart2 = UNSAFE.getLong(basePtr + FAST_MAP_NAME_PART2);
-                    if (namePart1 == maskedFirstWord && namePart2 == maskedLastWord) {
-                        return basePtr;
-                    }
-                }
-                else if (len == 0) {
-                    UNSAFE.putInt(lenPtr, lenA);
-                    // todo: this could be a single putLong()
-                    UNSAFE.putInt(basePtr + MAP_MAX_OFFSET, Integer.MIN_VALUE);
-                    UNSAFE.putInt(basePtr + MAP_MIN_OFFSET, Integer.MAX_VALUE);
-                    UNSAFE.putLong(basePtr + FAST_MAP_NAME_PART1, maskedFirstWord);
-                    UNSAFE.putLong(basePtr + FAST_MAP_NAME_PART2, maskedLastWord);
-                    return basePtr;
+                if (len == 0) {
+                    return newEntryFast(lenA, maskedLastWord, maskedFirstWord, lenPtr, basePtr);
                 }
                 mapIndexA = ++mapIndexA & MAP_MASK;
             }
         }
 
-        private long getOrCreateEntryBaseOffsetSlow(long lenLong, long startPtr, int hash, long maskedLastWord) {
-            long fullLen = lenLong & ~7L;
-            int lenA = (int) lenLong;
+        private static long newEntryFast(int lenA, long maskedLastWord, long maskedFirstWord, long lenPtr, long basePtr) {
+            UNSAFE.putInt(lenPtr, lenA);
+            // todo: this could be a single putLong()
+            UNSAFE.putInt(basePtr + MAP_MAX_OFFSET, Integer.MIN_VALUE);
+            UNSAFE.putInt(basePtr + MAP_MIN_OFFSET, Integer.MAX_VALUE);
+            UNSAFE.putLong(basePtr + FAST_MAP_NAME_PART1, maskedFirstWord);
+            UNSAFE.putLong(basePtr + FAST_MAP_NAME_PART2, maskedLastWord);
+            return basePtr;
+        }
+
+        private long getOrCreateEntryBaseOffsetSlow(int lenA, long startPtr, int hash, long maskedLastWord) {
+            long fullLen = lenA & ~7L;
             long mapIndexA = hash & MAP_MASK;
             for (;;) {
                 long basePtr = mapIndexA * SLOW_MAP_ENTRY_SIZE_BYTES + slowMap;
@@ -550,7 +555,7 @@ public class CalculateAverage_jerrinot {
                     UNSAFE.putInt(basePtr + MAP_MAX_OFFSET, Integer.MIN_VALUE);
                     UNSAFE.putInt(basePtr + MAP_MIN_OFFSET, Integer.MAX_VALUE);
                     UNSAFE.copyMemory(startPtr, slowMapNamesPtr, lenA);
-                    long alignedLen = (lenLong & ~7L) + 8;
+                    long alignedLen = (lenA & ~7L) + 8;
                     slowMapNamesPtr += alignedLen;
                     return basePtr;
                 }
