@@ -15,9 +15,6 @@
  */
 package dev.morling.onebrc;
 
-import static java.util.Comparator.comparing;
-import static java.util.stream.Collectors.joining;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
@@ -26,9 +23,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.StructuredTaskScope.Subtask;
@@ -44,25 +40,26 @@ public class CalculateAverage_tonivade {
     public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
         var result = readFile();
 
-        var measurements = getMeasurements(result);
-
-        System.out.println(measurements);
+        System.out.println(result);
     }
 
-    static record PartialResult(int end, Map<Name, Station> map) {
+    static record PartialResult(int end, Station[][] array) {
 
-        void merge(Map<Name, Station> result) {
-            map.forEach((name, station) -> result.merge(name, station, Station::merge));
+        void merge(Map<String, Station> result) {
+            for (Station[] bucket : array) {
+                if (bucket != null) {
+                    for (Station station : bucket) {
+                        if (station != null) {
+                            result.merge(station.getName(), station, Station::merge);
+                        }
+                    }
+                }
+            }
         }
     }
 
-    private static String getMeasurements(Map<Name, Station> result) {
-        return result.values().stream().sorted(comparing(Station::getName))
-                .map(Station::asString).collect(joining(", ", "{", "}"));
-    }
-
-    private static Map<Name, Station> readFile() throws IOException, InterruptedException, ExecutionException {
-        Map<Name, Station> result = HashMap.newHashMap(10_000);
+    private static Map<String, Station> readFile() throws IOException, InterruptedException, ExecutionException {
+        Map<String, Station> result = new TreeMap<>();
         try (var channel = FileChannel.open(Paths.get(FILE), StandardOpenOption.READ)) {
             long consumed = 0;
             long remaining = channel.size();
@@ -107,12 +104,13 @@ public class CalculateAverage_tonivade {
     }
 
     private static PartialResult readChunk(ByteBuffer buffer, int start, int end) {
-        final byte[] name = new byte[128];
-        final byte[] temp = new byte[8];
-        final Map<Name, Station> map = HashMap.newHashMap(1000);
+        final var name = new byte[128];
+        final var temp = new byte[8];
+        final var hash = new int[1];
+        final var array = new Station[1000][10];
         int position = start;
         while (position < end) {
-            int semicolon = readName(buffer, position, end - position, name);
+            int semicolon = readName(buffer, position, end - position, name, hash);
             if (semicolon < 0) {
                 break;
             }
@@ -122,13 +120,27 @@ public class CalculateAverage_tonivade {
                 break;
             }
 
-            map.computeIfAbsent(new Name(name, semicolon - position), Station::new)
-                    .add(parseTemp(temp, endOfLine - semicolon - 1));
+            var t = parseTemp(temp, endOfLine - semicolon - 1);
+            findStation(name, semicolon - position, array, hash[0]).add(t);
 
             // skip end of line
             position = endOfLine + 1;
         }
-        return new PartialResult(position, map);
+        return new PartialResult(position, array);
+    }
+
+    private static Station findStation(byte[] name, int length, Station[][] array, int hash) {
+        var bucket = array[Math.abs(hash % array.length)];
+        for (int i = 0; i < bucket.length; i++) {
+            if (bucket[i] == null) {
+                bucket[i] = new Station(name, length, hash);
+                return bucket[i];
+            }
+            else if (bucket[i].sameName(name, length, hash)) {
+                return bucket[i];
+            }
+        }
+        throw new IllegalStateException();
     }
 
     private static int findStart(ByteBuffer buffer, int start) {
@@ -143,21 +155,26 @@ public class CalculateAverage_tonivade {
         return start;
     }
 
-    private static int readName(ByteBuffer buffer, int offset, int length, byte[] name) {
-        return readUntil(buffer, offset, length, name, SEMICOLON);
-    }
-
-    private static int readTemp(ByteBuffer buffer, int offset, int length, byte[] percentage) {
-        return readUntil(buffer, offset, length, percentage, EOL);
-    }
-
-    private static int readUntil(ByteBuffer buffer, int offset, int length, byte[] array, int target) {
+    private static int readName(ByteBuffer buffer, int offset, int length, byte[] name, int[] hash) {
+        hash[0] = 1;
         for (int i = 0; i < length; i++) {
             byte b = buffer.get(i + offset);
-            if (b == target) {
+            if (b == SEMICOLON) {
                 return i + offset;
             }
-            array[i] = b;
+            name[i] = b;
+            hash[0] = 31 * hash[0] + b;
+        }
+        return -1;
+    }
+
+    private static int readTemp(ByteBuffer buffer, int offset, int length, byte[] temp) {
+        for (int i = 0; i < length; i++) {
+            byte b = buffer.get(i + offset);
+            if (b == EOL) {
+                return i + offset;
+            }
+            temp[i] = b;
         }
         return -1;
     }
@@ -189,49 +206,24 @@ public class CalculateAverage_tonivade {
         return c - 48;
     }
 
-    static final class Name {
-
-        private final byte[] value;
-
-        Name(byte[] source, int length) {
-            value = new byte[length];
-            System.arraycopy(source, 0, value, 0, length);
-        }
-
-        @Override
-        public int hashCode() {
-            return Arrays.hashCode(value);
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (obj instanceof Name other) {
-                return Arrays.equals(value, other.value);
-            }
-            return false;
-        }
-
-        @Override
-        public String toString() {
-            return new String(value, StandardCharsets.UTF_8);
-        }
-    }
-
     static final class Station {
 
-        private final Name name;
+        private final byte[] name;
+        private final int hash;
 
-        private int min = Integer.MAX_VALUE;
-        private int max = Integer.MIN_VALUE;
+        private int min = 1000;
+        private int max = -1000;
         private int sum;
         private long count;
 
-        Station(Name name) {
-            this.name = name;
+        Station(byte[] source, int length, int hash) {
+            name = new byte[length];
+            System.arraycopy(source, 0, name, 0, length);
+            this.hash = hash;
         }
 
         String getName() {
-            return name.toString();
+            return new String(name, StandardCharsets.UTF_8);
         }
 
         void add(int value) {
@@ -249,8 +241,24 @@ public class CalculateAverage_tonivade {
             return this;
         }
 
-        String asString() {
-            return name + "=" + toDouble(min) + "/" + round(mean()) + "/" + toDouble(max);
+        @Override
+        public String toString() {
+            return toDouble(min) + "/" + round(mean()) + "/" + toDouble(max);
+        }
+
+        boolean sameName(byte[] array, int length, int hash) {
+            if (name.length != length) {
+                return false;
+            }
+            if (this.hash != hash) {
+                return false;
+            }
+            for (int i = 0; i < length; i++) {
+                if (name[i] != array[i]) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         private double mean() {
