@@ -177,7 +177,15 @@ public class CalculateAverage_artsiomkorzun {
         public Aggregates() {
             long address = UNSAFE.allocateMemory(SIZE + 4096);
             pointer = (address + 4095) & (~4095);
-            UNSAFE.setMemory(pointer, SIZE, (byte) 0);
+
+            // UNSAFE.setMemory(pointer, SIZE, (byte) 0);
+            // jdk.internal.foreign.NativeMemorySegmentImpl.SKIP_ZERO_MEMORY
+            // it needs to be checked but ...
+
+            // pretouching
+            for (int i = 0; i < SIZE; i += 4096) {
+                UNSAFE.putLong(pointer + i, 0);
+            }
         }
 
         public long find(long word, int hash) {
@@ -190,25 +198,26 @@ public class CalculateAverage_artsiomkorzun {
             long address = pointer + offset(hash);
             long w1 = word(address + 24);
             long w2 = word(address + 32);
-            return (word1 == w1) && (word2 == w2) ? address : 0;
+            return (word1 == w1) & (word2 == w2) ? address : 0;
         }
 
-        public long put(long reference, long word, int length, int hash) {
+        public void add(long reference, long word, int length, int hash, short value) {
             for (int offset = offset(hash);; offset = next(offset)) {
                 long address = pointer + offset;
                 if (equal(reference, word, address + 24, length)) {
-                    return address;
+                    update(address, value);
+                    break;
                 }
 
                 int len = UNSAFE.getInt(address);
                 if (len == 0) {
-                    alloc(reference, length, hash, address);
-                    return address;
+                    alloc(reference, length, hash, value, address);
+                    break;
                 }
             }
         }
 
-        public static void update(long address, int value) {
+        public static void update(long address, short value) {
             long sum = UNSAFE.getLong(address + 8) + value;
             int cnt = UNSAFE.getInt(address + 16) + 1;
             short min = UNSAFE.getShort(address + 20);
@@ -218,11 +227,10 @@ public class CalculateAverage_artsiomkorzun {
             UNSAFE.putInt(address + 16, cnt);
 
             if (value < min) {
-                UNSAFE.putShort(address + 20, (short) value);
+                UNSAFE.putShort(address + 20, value);
             }
-
-            if (value > max) {
-                UNSAFE.putShort(address + 22, (short) value);
+            else if (value > max) {
+                UNSAFE.putShort(address + 22, value);
             }
         }
 
@@ -288,11 +296,13 @@ public class CalculateAverage_artsiomkorzun {
             return set;
         }
 
-        private static void alloc(long reference, int length, int hash, long address) {
+        private static void alloc(long reference, int length, int hash, short value, long address) {
             UNSAFE.putInt(address, length);
             UNSAFE.putInt(address + 4, hash);
-            UNSAFE.putShort(address + 20, Short.MAX_VALUE);
-            UNSAFE.putShort(address + 22, Short.MIN_VALUE);
+            UNSAFE.putLong(address + 8, value);
+            UNSAFE.putInt(address + 16, 1);
+            UNSAFE.putShort(address + 20, value);
+            UNSAFE.putShort(address + 22, value);
             UNSAFE.copyMemory(reference, address + 24, length);
         }
 
@@ -399,7 +409,7 @@ public class CalculateAverage_artsiomkorzun {
             while (position <= limit) { // branchy version, credit: thomaswue
                 int length;
                 int hash;
-                int value;
+                short value;
 
                 long word = word(position);
                 long separator = separator(word);
@@ -474,8 +484,7 @@ public class CalculateAverage_artsiomkorzun {
                     }
                 }
 
-                long ptr = aggregates.put(position, word, length, hash);
-                Aggregates.update(ptr, value);
+                aggregates.add(position, word, length, hash, value);
                 position = end;
             }
         }
@@ -506,12 +515,12 @@ public class CalculateAverage_artsiomkorzun {
             return Long.numberOfTrailingZeros(~num & DOT_BITS);
         }
 
-        private static int value(long w, int dot) {
+        private static short value(long w, int dot) {
             long signed = (~w << 59) >> 63;
             long mask = ~(signed & 0xFF);
             long digits = ((w & mask) << (28 - dot)) & 0x0F000F0F00L;
             long abs = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
-            return (int) ((abs ^ signed) - signed);
+            return (short) ((abs ^ signed) - signed);
         }
     }
 }
