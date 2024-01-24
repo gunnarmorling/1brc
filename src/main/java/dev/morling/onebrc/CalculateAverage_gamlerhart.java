@@ -194,18 +194,18 @@ public class CalculateAverage_gamlerhart {
         }
 
         private static int calculateHash(MemorySegment file, long pos, int len) {
-            int hashCode = 1;
-            int i = 0;
-            int intBound = (len / 4) * 4;
-            for (; i < intBound; i += 4) {
-                int v = file.get(INT_UNALIGNED_BIG_ENDIAN, pos + i);
-                hashCode = 31 * hashCode + v;
+            if (len > 4) {
+                return file.get(INT_UNALIGNED_BIG_ENDIAN, pos) + 31 * len;
             }
-            for (; i < len; i++) {
-                int v = file.get(JAVA_BYTE, pos + i);
-                hashCode = 31 * hashCode + v;
+            else {
+                int hashCode = len;
+                int i = 0;
+                for (; i < len; i++) {
+                    int v = file.get(JAVA_BYTE, pos + i);
+                    hashCode = 31 * hashCode + v;
+                }
+                return hashCode;
             }
-            return hashCode;
         }
 
         private void doAdd(MemorySegment file, int hash, long pos, int len, double val) {
