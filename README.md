@@ -42,8 +42,7 @@ These are the results from running all entries into the challenge on eight cores
 | # | Result (m:s.ms) | Implementation     | JDK | Submitter     | Notes     |
 |---|-----------------|--------------------|-----|---------------|-----------|
 | 1 | 00:02.019 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_artsiomkorzun.java)| 21.0.2-graal | [Artsiom Korzun](https://github.com/artsiomkorzun) | GraalVM native binary, uses Unsafe |
-| 2* | 00:02.195 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_thomaswue.java)| 21.0.1-graal | [Thomas Wuerthinger](https://github.com/thomaswue), [Quan Anh Mai](https://github.com/merykitty), [Alfonso² Peterssen]
-(https://github.com/mukel) | GraalVM native binary, uses Unsafe |
+| 2* | 00:02.195 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_thomaswue.java)| 21.0.1-graal | [Thomas Wuerthinger](https://github.com/thomaswue), [Quan Anh Mai](https://github.com/merykitty), [Alfonso² Peterssen](https://github.com/mukel) | GraalVM native binary, uses Unsafe |
 | 2* | 00:02.196 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_royvanrijn.java)| 21.0.2-graal | [Roy van Rijn](https://github.com/royvanrijn) | GraalVM native binary, uses Unsafe |
 | 3 | 00:02.305 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_abeobk.java)| 21.0.2-graal | [Van Phu DO](https://github.com/abeobk) | GraalVM native binary, uses Unsafe |
 |   | 00:02.374 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_jerrinot.java)| 21.0.1-graal | [Jaromir Hamala](https://github.com/jerrinot) | uses Unsafe |
