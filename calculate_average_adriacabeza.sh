@@ -16,6 +16,6 @@
 #
 
 
-JAVA_OPTS="-XX:+UseStringDeduplication -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC"
+JAVA_OPTS="-XX:+UseStringDeduplication -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -XX:+AlwaysPreTouch"
 java --enable-preview  -classpath target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_adriacabeza
 
