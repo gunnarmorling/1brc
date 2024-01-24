@@ -33,16 +33,9 @@ public class CalculateAverage_tonivade {
 
     private static final String FILE = "./measurements.txt";
 
-    private static final int EOL = 10;
-    private static final int MINUS = 45;
-    private static final int SEMICOLON = 59;
-
     private static final int MIN_CHUNK_SIZE = 1024;
     private static final int MAX_NAME_LENGTH = 128;
     private static final int MAX_TEMP_LENGTH = 8;
-
-    private static final int NUMBER_OF_BUCKETS = 1000;
-    private static final int BUCKET_SIZE = 50;
 
     public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
         System.out.println(readFile());
@@ -74,8 +67,7 @@ public class CalculateAverage_tonivade {
                         for (int i = 0; i < chunks; i++) {
                             int start = i * chunkSize;
                             int length = chunkSize + (i < chunks ? leftover : 0);
-                            var chunk = new Chunk(buffer, findStart(buffer, start), start + length);
-                            tasks.add(scope.fork(chunk::read));
+                            tasks.add(scope.fork(new Chunk(buffer, start, length)::read));
                         }
                         scope.join();
                         scope.throwIfFailed();
@@ -92,19 +84,11 @@ public class CalculateAverage_tonivade {
         return result;
     }
 
-    private static int findStart(ByteBuffer buffer, int start) {
-        if (start > 0 && buffer.get(start - 1) != EOL) {
-            for (int i = start - 2; i > 0; i--) {
-                byte b = buffer.get(i);
-                if (b == EOL) {
-                    return i + 1;
-                }
-            }
-        }
-        return start;
-    }
-
     static final class Chunk {
+
+        private static final int EOL = 10;
+        private static final int MINUS = 45;
+        private static final int SEMICOLON = 59;
 
         final ByteBuffer buffer;
         final int start;
@@ -116,10 +100,22 @@ public class CalculateAverage_tonivade {
 
         int hash;
 
-        Chunk(ByteBuffer buffer, int start, int end) {
+        Chunk(ByteBuffer buffer, int start, int length) {
             this.buffer = buffer;
-            this.start = start;
-            this.end = end;
+            this.start = findStart(buffer, start);
+            this.end = start + length;
+        }
+
+        private static int findStart(ByteBuffer buffer, int start) {
+            if (start > 0 && buffer.get(start - 1) != EOL) {
+                for (int i = start - 2; i > 0; i--) {
+                    byte b = buffer.get(i);
+                    if (b == EOL) {
+                        return i + 1;
+                    }
+                }
+            }
+            return start;
         }
 
         PartialResult read() {
@@ -197,6 +193,9 @@ public class CalculateAverage_tonivade {
     }
 
     static final class Stations {
+
+        private static final int NUMBER_OF_BUCKETS = 1000;
+        private static final int BUCKET_SIZE = 50;
 
         final Station[][] buckets = new Station[NUMBER_OF_BUCKETS][BUCKET_SIZE];
 
