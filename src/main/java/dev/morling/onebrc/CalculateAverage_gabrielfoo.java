@@ -26,7 +26,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 
-
 public class CalculateAverage_gabrielfoo {
     private static final String FILE = "./measurements.txt";
     private static final int UTF8_MAX_LEN_100_BYTES = 400;
