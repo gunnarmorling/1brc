@@ -160,10 +160,6 @@ public class CalculateAverage_gamlerhart {
         // Encoding:
         // - Key: long
         // - 48 bits index, 16 bits length
-        // - min: double
-        // - max: double
-        // - sum: double
-        // - double: double
         final long[] keys = new long[SIZE];
         final Value[] values = new Value[SIZE];
 
