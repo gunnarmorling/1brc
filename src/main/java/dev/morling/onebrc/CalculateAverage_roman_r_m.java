@@ -107,8 +107,7 @@ public class CalculateAverage_roman_r_m {
                                 offset += bytes;
                                 long h = Long.reverseBytes(next) >>> (8 * (8 - bytes));
                                 station.hash = (int) (h ^ (h >>> 32));
-                            }
-                            else {
+                            } else {
                                 long h = next;
                                 station.hash = (int) (h ^ (h >>> 32));
                                 while (pattern == 0) {
@@ -152,8 +151,7 @@ public class CalculateAverage_roman_r_m {
                                 offset += neg + numLen + 3; // 1 for . + 1 for fractional part + 1 for new line char
                                 int sign = 1 - 2 * neg;
                                 val = sign * (intPart + frac);
-                            }
-                            else {
+                            } else {
                                 int neg = 1 - Integer.bitCount(UNSAFE.getByte(offset) & 0x10);
                                 offset += neg;
 
@@ -174,8 +172,7 @@ public class CalculateAverage_roman_r_m {
                         segment.unload();
 
                         return resultStore.toMap();
-                    }
-                    catch (Exception e) {
+                    } catch (Exception e) {
                         throw new RuntimeException(e);
                     }
                 }).reduce((m1, m2) -> {
@@ -285,10 +282,13 @@ public class CalculateAverage_roman_r_m {
             int h = s.hashCode();
             int idx = (SIZE - 1) & h;
 
+            var keys = this.keys;
+
+            int idx0 = idx;
             int i = 0;
             while (keys[idx] != null && !keys[idx].equals(s)) {
                 i++;
-                idx = (idx + i * i) % SIZE;
+                idx = (idx0 + i * i) % SIZE;
             }
             if (keys[idx] == null) {
                 keys[idx] = s.copy();
@@ -297,8 +297,7 @@ public class CalculateAverage_roman_r_m {
                 values[idx][1] = value;
                 values[idx][2] = value;
                 values[idx][3] = 1;
-            }
-            else {
+            } else {
                 values[idx][0] = Math.min(values[idx][0], value);
                 values[idx][1] = Math.max(values[idx][1], value);
                 values[idx][2] += value;
