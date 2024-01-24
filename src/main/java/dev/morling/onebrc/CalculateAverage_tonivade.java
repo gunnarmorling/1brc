@@ -132,7 +132,7 @@ public class CalculateAverage_tonivade {
                 bucket[i] = new Station(name, length, hash);
                 return bucket[i];
             }
-            else if (bucket[i].sameName(hash)) {
+            else if (bucket[i].sameName(length, hash)) {
                 return bucket[i];
             }
         }
@@ -242,8 +242,8 @@ public class CalculateAverage_tonivade {
             return toDouble(min) + "/" + round(mean()) + "/" + toDouble(max);
         }
 
-        boolean sameName(int hash) {
-            return this.hash == hash;
+        boolean sameName(int length, int hash) {
+            return name.length == length && this.hash == hash;
         }
 
         private double mean() {
