@@ -38,20 +38,16 @@ public class CalculateAverage_tonivade {
     private static final int SEMICOLON = 59;
 
     public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
-        var result = readFile();
-
-        System.out.println(result);
+        System.out.println(readFile());
     }
 
-    static record PartialResult(int end, Station[][] array) {
+    static record PartialResult(int end, Station[][] stations) {
 
         void merge(Map<String, Station> result) {
-            for (Station[] bucket : array) {
-                if (bucket != null) {
-                    for (Station station : bucket) {
-                        if (station != null) {
-                            result.merge(station.getName(), station, Station::merge);
-                        }
+            for (Station[] bucket : stations) {
+                for (Station station : bucket) {
+                    if (station != null) {
+                        result.merge(station.getName(), station, Station::merge);
                     }
                 }
             }
@@ -107,7 +103,7 @@ public class CalculateAverage_tonivade {
         final var name = new byte[128];
         final var temp = new byte[8];
         final var hash = new int[1];
-        final var array = new Station[1000][10];
+        final var stations = new Station[1000][10];
         int position = start;
         while (position < end) {
             int semicolon = readName(buffer, position, end - position, name, hash);
@@ -120,13 +116,13 @@ public class CalculateAverage_tonivade {
                 break;
             }
 
-            findStation(name, semicolon - position, array, hash[0])
+            findStation(name, semicolon - position, stations, hash[0])
                     .add(parseTemp(temp, endOfLine - semicolon - 1));
 
             // skip end of line
             position = endOfLine + 1;
         }
-        return new PartialResult(position, array);
+        return new PartialResult(position, stations);
     }
 
     private static Station findStation(byte[] name, int length, Station[][] array, int hash) {
@@ -250,15 +246,7 @@ public class CalculateAverage_tonivade {
             if (name.length != length) {
                 return false;
             }
-            if (this.hash != hash) {
-                return false;
-            }
-            for (int i = 0; i < length; i++) {
-                if (name[i] != array[i]) {
-                    return false;
-                }
-            }
-            return true;
+            return this.hash == hash;
         }
 
         private double mean() {
