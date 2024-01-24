@@ -37,21 +37,15 @@ public class CalculateAverage_tonivade {
     private static final int MINUS = 45;
     private static final int SEMICOLON = 59;
 
+    private static final int MIN_CHUNK_SIZE = 1024;
+    private static final int MAX_NAME_LENGTH = 128;
+    private static final int MAX_TEMP_LENGTH = 8;
+
+    private static final int NUMBER_OF_BUCKETS = 1000;
+    private static final int BUCKET_SIZE = 50;
+
     public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
         System.out.println(readFile());
-    }
-
-    static record PartialResult(int end, Station[][] stations) {
-
-        void merge(Map<String, Station> result) {
-            for (Station[] bucket : stations) {
-                for (Station station : bucket) {
-                    if (station != null) {
-                        result.merge(station.getName(), station, Station::merge);
-                    }
-                }
-            }
-        }
     }
 
     private static Map<String, Station> readFile() throws IOException, InterruptedException, ExecutionException {
@@ -63,7 +57,10 @@ public class CalculateAverage_tonivade {
                 var buffer = channel.map(
                         MapMode.READ_ONLY, consumed, Math.min(remaining, Integer.MAX_VALUE));
 
-                if (buffer.remaining() <= 1024) {
+                int chunks = Runtime.getRuntime().availableProcessors();
+                int chunkSize = buffer.remaining() / chunks;
+                int leftover = buffer.remaining() % chunks;
+                if (chunkSize < MIN_CHUNK_SIZE) {
                     var partialResult = readChunk(buffer, 0, buffer.remaining());
 
                     consumed += partialResult.end();
@@ -72,15 +69,11 @@ public class CalculateAverage_tonivade {
                     partialResult.merge(result);
                 }
                 else {
-                    var chunks = Runtime.getRuntime().availableProcessors();
-                    var chunksSize = buffer.remaining() / chunks;
-                    var leftover = buffer.remaining() % chunks;
-
                     try (var scope = new StructuredTaskScope.ShutdownOnFailure()) {
                         var tasks = new ArrayList<Subtask<PartialResult>>(chunks);
                         for (int i = 0; i < chunks; i++) {
-                            int start = i * chunksSize;
-                            int length = chunksSize + (i < chunks ? leftover : 0);
+                            int start = i * chunkSize;
+                            int length = chunkSize + (i < chunks ? leftover : 0);
                             tasks.add(scope.fork(() -> readChunk(
                                     buffer, findStart(buffer, start), start + length)));
                         }
@@ -100,10 +93,10 @@ public class CalculateAverage_tonivade {
     }
 
     private static PartialResult readChunk(ByteBuffer buffer, int start, int end) {
-        final var name = new byte[128];
-        final var temp = new byte[8];
+        final var name = new byte[MAX_NAME_LENGTH];
+        final var temp = new byte[MAX_TEMP_LENGTH];
         final var hash = new int[1];
-        final var stations = new Station[1000][10];
+        final var stations = new Station[NUMBER_OF_BUCKETS][BUCKET_SIZE];
         int position = start;
         while (position < end) {
             int semicolon = readName(buffer, position, end - position, name, hash);
@@ -126,8 +119,8 @@ public class CalculateAverage_tonivade {
     }
 
     private static Station findStation(byte[] name, int length, Station[][] stations, int hash) {
-        var bucket = stations[Math.abs(hash % stations.length)];
-        for (int i = 0; i < bucket.length; i++) {
+        var bucket = stations[Math.abs(hash % NUMBER_OF_BUCKETS)];
+        for (int i = 0; i < BUCKET_SIZE; i++) {
             if (bucket[i] == null) {
                 bucket[i] = new Station(name, length, hash);
                 return bucket[i];
@@ -136,7 +129,7 @@ public class CalculateAverage_tonivade {
                 return bucket[i];
             }
         }
-        throw new IllegalStateException();
+        throw new IllegalStateException("no more space left");
     }
 
     private static int findStart(ByteBuffer buffer, int start) {
@@ -256,6 +249,19 @@ public class CalculateAverage_tonivade {
 
         private double round(double value) {
             return Math.round(value * 10.) / 10.;
+        }
+    }
+
+    static record PartialResult(int end, Station[][] stations) {
+
+        void merge(Map<String, Station> result) {
+            for (Station[] bucket : stations) {
+                for (Station station : bucket) {
+                    if (station != null) {
+                        result.merge(station.getName(), station, Station::merge);
+                    }
+                }
+            }
         }
     }
 }
