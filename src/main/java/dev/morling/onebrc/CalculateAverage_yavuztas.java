@@ -78,20 +78,23 @@ public class CalculateAverage_yavuztas {
         }
 
         private static long partial(long word, int length) {
-            final long mask = ~0L << (length << 3);
-            return word & ~mask;
+            final long mask = (~0L) << (length << 3);
+            return word & (~mask);
         }
 
-        private static boolean equalsFor8Bytes(long start1, long start2, byte length) {
+        private static boolean equalsFor8Bytes(long start1, long start2, int length) {
             return partial(UNSAFE.getLong(start1), length) == partial(UNSAFE.getLong(start2), length);
         }
 
-        private static boolean equalsFor16Bytes(long start1, long start2, byte length) {
-            return UNSAFE.getLong(start1) == UNSAFE.getLong(start2) &&
-                    partial(UNSAFE.getLong(start1 + 8), length - 8) == partial(UNSAFE.getLong(start2 + 8), length - 8);
+        private static boolean equalsFor16Bytes(long start1, long start2, int length) {
+            return UNSAFE.getLong(start1) == UNSAFE.getLong(start2) && equalsFor8Bytes(start1 + 8, start2 + 8, length - 8);
         }
 
-        private static boolean equalsForBiggerThan16Bytes(long start1, long start2, byte length) {
+        private static boolean equalsFor24Bytes(long start1, long start2, int length) {
+            return UNSAFE.getLong(start1) == UNSAFE.getLong(start2) && equalsFor16Bytes(start1 + 8, start2 + 8, length - 8);
+        }
+
+        private static boolean equalsForBigger(long start1, long start2, byte length) {
             int i = 0;
             int step = 0;
             while (length > 8) { // scan bytes
@@ -110,14 +113,18 @@ public class CalculateAverage_yavuztas {
             // this is slightly faster
             if (length <= 8) {
                 // smaller than long, check special
-                return equalsFor8Bytes(this.start, start, length);
+                return equalsFor8Bytes(this.start, start, length) && (this.length == length);
             }
             if (length <= 16) {
                 // smaller than two longs, check special
-                return equalsFor16Bytes(this.start, start, length);
+                return equalsFor16Bytes(this.start, start, length) && (this.length == length);
+            }
+            if (length <= 24) {
+                // smaller than three longs, check special
+                return equalsFor24Bytes(this.start, start, length) && (this.length == length);
             }
             // check the bigger ones via traverse
-            return equalsForBiggerThan16Bytes(this.start, start, length);
+            return equalsForBigger(this.start, start, length) && (this.length == length);
         }
 
         @Override
@@ -341,29 +348,27 @@ public class CalculateAverage_yavuztas {
         }
 
         static int calculateHash(int hash, int b1, int b2) {
-            return (31 * 31 * hash) + (31 * b1) + b2;
+            return (31 * 31 * hash) + calculateHash(b1, b2);
         }
 
         static int calculateHash(int hash, int b1, int b2, int b3) {
-            return (31 * 31 * 31 * hash) + (31 * 31 * b1) + (31 * b2) + b3;
+            return (31 * 31 * 31 * hash) + calculateHash(b1, b2, b3);
         }
 
         static int calculateHash(int hash, int b1, int b2, int b3, int b4) {
-            return (31 * 31 * 31 * 31 * hash) + (31 * 31 * 31 * b1) + (31 * 31 * b2) + (31 * b3) + b4;
+            return (31 * 31 * 31 * 31 * hash) + calculateHash(b1, b2, b3, b4);
         }
 
         static int calculateHash(int hash, int b1, int b2, int b3, int b4, int b5) {
-            return (31 * 31 * 31 * 31 * 31 * hash) + (31 * 31 * 31 * 31 * b1) + (31 * 31 * 31 * b2) + (31 * 31 * b3) + (31 * b4) + b5;
+            return (31 * 31 * 31 * 31 * 31 * hash) + calculateHash(b1, b2, b3, b4, b5);
         }
 
         static int calculateHash(int hash, int b1, int b2, int b3, int b4, int b5, int b6) {
-            return (31 * 31 * 31 * 31 * 31 * 31 * hash) + (31 * 31 * 31 * 31 * 31 * b1) + (31 * 31 * 31 * 31 * b2) + (31 * 31 * 31 * b3) + (31 * 31 * b4) + (31 * b5)
-                    + b6;
+            return (31 * 31 * 31 * 31 * 31 * 31 * hash) + calculateHash(b1, b2, b3, b4, b5, b6);
         }
 
         static int calculateHash(int hash, int b1, int b2, int b3, int b4, int b5, int b6, int b7) {
-            return (31 * 31 * 31 * 31 * 31 * 31 * 31 * hash) + (31 * 31 * 31 * 31 * 31 * 31 * b1) + (31 * 31 * 31 * 31 * 31 * b2) + (31 * 31 * 31 * 31 * b3)
-                    + (31 * 31 * 31 * b4) + (31 * 31 * b5) + (31 * b6) + b7;
+            return (31 * 31 * 31 * 31 * 31 * 31 * 31 * hash) + calculateHash(b1, b2, b3, b4, b5, b6, b7);
         }
 
         // Credits to @merrykitty. Magical solution to parse temparature values branchless!
