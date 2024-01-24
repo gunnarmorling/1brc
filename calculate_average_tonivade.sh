@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 #
 #  Copyright 2023 The original authors
 #
@@ -15,14 +15,5 @@
 #  limitations under the License.
 #
 
-source "$HOME/.sdkman/bin/sdkman-init.sh"
-sdk use java 21.0.1-graal 1>&2
-
-# ./mvnw clean verify removes target/ and will re-trigger native image creation.
-if [ ! -f target/CalculateAverage_roman_r_m_image ]; then
-
-    JAVA_OPTS="--enable-preview -dsa"
-    NATIVE_IMAGE_OPTS="--initialize-at-build-time=dev.morling.onebrc.CalculateAverage_roman_r_m --gc=epsilon -Ob -O3 -march=native --strict-image-heap $JAVA_OPTS"
-
-    native-image $NATIVE_IMAGE_OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o target/CalculateAverage_roman_r_m_image dev.morling.onebrc.CalculateAverage_roman_r_m
-fi
+JAVA_OPTS="-Xmx1G -Xms1G -XX:+AlwaysPreTouch --enable-preview"
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_tonivade

@@ -1,4 +1,3 @@
-#!/bin/bash
 #
 #  Copyright 2023 The original authors
 #
@@ -15,14 +14,9 @@
 #  limitations under the License.
 #
 
-source "$HOME/.sdkman/bin/sdkman-init.sh"
-sdk use java 21.0.1-graal 1>&2
+FROM golang AS build-stage
+COPY . src/
+RUN cd src && go build .
 
-# ./mvnw clean verify removes target/ and will re-trigger native image creation.
-if [ ! -f target/CalculateAverage_roman_r_m_image ]; then
-
-    JAVA_OPTS="--enable-preview -dsa"
-    NATIVE_IMAGE_OPTS="--initialize-at-build-time=dev.morling.onebrc.CalculateAverage_roman_r_m --gc=epsilon -Ob -O3 -march=native --strict-image-heap $JAVA_OPTS"
-
-    native-image $NATIVE_IMAGE_OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o target/CalculateAverage_roman_r_m_image dev.morling.onebrc.CalculateAverage_roman_r_m
-fi
+FROM scratch AS export-stage
+COPY --from=build-stage /go/src/1brc /
