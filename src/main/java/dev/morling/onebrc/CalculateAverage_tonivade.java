@@ -61,7 +61,7 @@ public class CalculateAverage_tonivade {
                 int chunkSize = buffer.remaining() / chunks;
                 int leftover = buffer.remaining() % chunks;
                 if (chunkSize < MIN_CHUNK_SIZE) {
-                    var partialResult = readChunk(buffer, 0, buffer.remaining());
+                    var partialResult = new Chunk(buffer, 0, buffer.remaining()).read();
 
                     consumed += partialResult.end();
                     remaining -= partialResult.end();
@@ -74,8 +74,8 @@ public class CalculateAverage_tonivade {
                         for (int i = 0; i < chunks; i++) {
                             int start = i * chunkSize;
                             int length = chunkSize + (i < chunks ? leftover : 0);
-                            tasks.add(scope.fork(() -> readChunk(
-                                    buffer, findStart(buffer, start), start + length)));
+                            var chunk = new Chunk(buffer, findStart(buffer, start), start + length);
+                            tasks.add(scope.fork(chunk::read));
                         }
                         scope.join();
                         scope.throwIfFailed();
@@ -92,46 +92,6 @@ public class CalculateAverage_tonivade {
         return result;
     }
 
-    private static PartialResult readChunk(ByteBuffer buffer, int start, int end) {
-        final var name = new byte[MAX_NAME_LENGTH];
-        final var temp = new byte[MAX_TEMP_LENGTH];
-        final var hash = new int[1];
-        final var stations = new Station[NUMBER_OF_BUCKETS][BUCKET_SIZE];
-        int position = start;
-        while (position < end) {
-            int semicolon = readName(buffer, position, end - position, name, hash);
-            if (semicolon < 0) {
-                break;
-            }
-
-            int endOfLine = readTemp(buffer, semicolon + 1, end - semicolon - 1, temp);
-            if (endOfLine < 0) {
-                break;
-            }
-
-            findStation(name, semicolon - position, stations, hash[0])
-                    .add(parseTemp(temp, endOfLine - semicolon - 1));
-
-            // skip end of line
-            position = endOfLine + 1;
-        }
-        return new PartialResult(position, stations);
-    }
-
-    private static Station findStation(byte[] name, int length, Station[][] stations, int hash) {
-        var bucket = stations[Math.abs(hash % NUMBER_OF_BUCKETS)];
-        for (int i = 0; i < BUCKET_SIZE; i++) {
-            if (bucket[i] == null) {
-                bucket[i] = new Station(name, length, hash);
-                return bucket[i];
-            }
-            else if (bucket[i].sameName(length, hash)) {
-                return bucket[i];
-            }
-        }
-        throw new IllegalStateException("no more space left");
-    }
-
     private static int findStart(ByteBuffer buffer, int start) {
         if (start > 0 && buffer.get(start - 1) != EOL) {
             for (int i = start - 2; i > 0; i--) {
@@ -144,55 +104,115 @@ public class CalculateAverage_tonivade {
         return start;
     }
 
-    private static int readName(ByteBuffer buffer, int offset, int length, byte[] name, int[] hash) {
-        hash[0] = 1;
-        for (int i = 0; i < length; i++) {
-            byte b = buffer.get(i + offset);
-            if (b == SEMICOLON) {
-                return i + offset;
-            }
-            name[i] = b;
-            hash[0] = 31 * hash[0] + b;
-        }
-        return -1;
-    }
+    static final class Chunk {
 
-    private static int readTemp(ByteBuffer buffer, int offset, int length, byte[] temp) {
-        for (int i = 0; i < length; i++) {
-            byte b = buffer.get(i + offset);
-            if (b == EOL) {
-                return i + offset;
-            }
-            temp[i] = b;
-        }
-        return -1;
-    }
+        final ByteBuffer buffer;
+        final int start;
+        final int end;
 
-    // non null double between -99.9 (inclusive) and 99.9 (inclusive), always with one fractional digit
-    private static int parseTemp(byte[] value, int length) {
-        int period = length - 2;
-        if (value[0] == MINUS) {
-            int left = parseLeft(value, 1, period - 1);
+        final byte[] name = new byte[MAX_NAME_LENGTH];
+        final byte[] temp = new byte[MAX_TEMP_LENGTH];
+        final Stations stations = new Stations();
+
+        int hash;
+
+        Chunk(ByteBuffer buffer, int start, int end) {
+            this.buffer = buffer;
+            this.start = start;
+            this.end = end;
+        }
+
+        PartialResult read() {
+            int position = start;
+            while (position < end) {
+                int semicolon = readName(position, end - position);
+                if (semicolon < 0) {
+                    break;
+                }
+
+                int endOfLine = readTemp(semicolon + 1, end - semicolon - 1);
+                if (endOfLine < 0) {
+                    break;
+                }
+
+                stations.find(name, semicolon - position, hash)
+                        .add(parseTemp(temp, endOfLine - semicolon - 1));
+
+                // skip end of line
+                position = endOfLine + 1;
+            }
+            return new PartialResult(position, stations.buckets);
+        }
+
+        private int readName(int offset, int length) {
+            hash = 1;
+            for (int i = 0; i < length; i++) {
+                byte b = buffer.get(i + offset);
+                if (b == SEMICOLON) {
+                    return i + offset;
+                }
+                name[i] = b;
+                hash = 31 * hash + b;
+            }
+            return -1;
+        }
+
+        private int readTemp(int offset, int length) {
+            for (int i = 0; i < length; i++) {
+                byte b = buffer.get(i + offset);
+                if (b == EOL) {
+                    return i + offset;
+                }
+                temp[i] = b;
+            }
+            return -1;
+        }
+
+        // non null double between -99.9 (inclusive) and 99.9 (inclusive), always with one fractional digit
+        private static int parseTemp(byte[] value, int length) {
+            int period = length - 2;
+            if (value[0] == MINUS) {
+                int left = parseLeft(value, 1, period - 1);
+                int right = toInt(value[period + 1]);
+                return -(left + right);
+            }
+            int left = parseLeft(value, 0, period);
             int right = toInt(value[period + 1]);
-            return -(left + right);
+            return left + right;
         }
-        int left = parseLeft(value, 0, period);
-        int right = toInt(value[period + 1]);
-        return left + right;
+
+        private static int parseLeft(byte[] value, int start, int length) {
+            if (length == 1) {
+                return toInt(value[start]) * 10;
+            }
+            // two chars
+            int a = toInt(value[start]) * 100;
+            int b = toInt(value[start + 1]) * 10;
+            return a + b;
+        }
+
+        private static int toInt(byte c) {
+            return c - 48;
+        }
     }
 
-    private static int parseLeft(byte[] value, int start, int length) {
-        if (length == 1) {
-            return toInt(value[start]) * 10;
-        }
-        // two chars
-        int a = toInt(value[start]) * 100;
-        int b = toInt(value[start + 1]) * 10;
-        return a + b;
-    }
+    static final class Stations {
 
-    private static int toInt(byte c) {
-        return c - 48;
+        final Station[][] buckets = new Station[NUMBER_OF_BUCKETS][BUCKET_SIZE];
+
+        Station find(byte[] name, int length, int hash) {
+            var bucket = buckets[Math.abs(hash % NUMBER_OF_BUCKETS)];
+            for (int i = 0; i < BUCKET_SIZE; i++) {
+                if (bucket[i] == null) {
+                    bucket[i] = new Station(name, length, hash);
+                    return bucket[i];
+                }
+                else if (bucket[i].sameName(length, hash)) {
+                    return bucket[i];
+                }
+            }
+            throw new IllegalStateException("no more space left");
+        }
     }
 
     static final class Station {
