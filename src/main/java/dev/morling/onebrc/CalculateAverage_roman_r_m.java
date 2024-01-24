@@ -96,6 +96,7 @@ public class CalculateAverage_roman_r_m {
                         var station = new ByteString(segment);
                         long offset = segment.address();
                         long end = offset + segment.byteSize();
+                        long tailMask;
                         while (offset < end) {
                             // parsing station name
                             long start = offset;
@@ -105,9 +106,12 @@ public class CalculateAverage_roman_r_m {
                             if (pattern != 0) {
                                 bytes = Long.numberOfTrailingZeros(pattern) / 8;
                                 offset += bytes;
+                                tailMask = ((1L << (8 * bytes)) - 1);
+
                                 long h = Long.reverseBytes(next) >>> (8 * (8 - bytes));
                                 station.hash = (int) (h ^ (h >>> 32));
-                            } else {
+                            }
+                            else {
                                 long h = next;
                                 station.hash = (int) (h ^ (h >>> 32));
                                 while (pattern == 0) {
@@ -117,12 +121,13 @@ public class CalculateAverage_roman_r_m {
                                 }
                                 bytes = Long.numberOfTrailingZeros(pattern) / 8;
                                 offset += bytes;
+                                tailMask = ((1L << (8 * bytes)) - 1);
                             }
 
                             int len = (int) (offset - start);
                             station.offset = start;
                             station.len = len;
-                            station.tail = next & ((1L << (8 * bytes)) - 1);
+                            station.tail = next & tailMask;
 
                             offset++;
 
@@ -151,7 +156,8 @@ public class CalculateAverage_roman_r_m {
                                 offset += neg + numLen + 3; // 1 for . + 1 for fractional part + 1 for new line char
                                 int sign = 1 - 2 * neg;
                                 val = sign * (intPart + frac);
-                            } else {
+                            }
+                            else {
                                 int neg = 1 - Integer.bitCount(UNSAFE.getByte(offset) & 0x10);
                                 offset += neg;
 
@@ -172,7 +178,8 @@ public class CalculateAverage_roman_r_m {
                         segment.unload();
 
                         return resultStore.toMap();
-                    } catch (Exception e) {
+                    }
+                    catch (Exception e) {
                         throw new RuntimeException(e);
                     }
                 }).reduce((m1, m2) -> {
@@ -297,7 +304,8 @@ public class CalculateAverage_roman_r_m {
                 values[idx][1] = value;
                 values[idx][2] = value;
                 values[idx][3] = 1;
-            } else {
+            }
+            else {
                 values[idx][0] = Math.min(values[idx][0], value);
                 values[idx][1] = Math.max(values[idx][1], value);
                 values[idx][2] += value;
