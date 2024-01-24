@@ -125,14 +125,14 @@ public class CalculateAverage_tonivade {
         return new PartialResult(position, stations);
     }
 
-    private static Station findStation(byte[] name, int length, Station[][] array, int hash) {
-        var bucket = array[Math.abs(hash % array.length)];
+    private static Station findStation(byte[] name, int length, Station[][] stations, int hash) {
+        var bucket = stations[Math.abs(hash % stations.length)];
         for (int i = 0; i < bucket.length; i++) {
             if (bucket[i] == null) {
                 bucket[i] = new Station(name, length, hash);
                 return bucket[i];
             }
-            else if (bucket[i].sameName(name, length, hash)) {
+            else if (bucket[i].sameName(hash)) {
                 return bucket[i];
             }
         }
@@ -242,10 +242,7 @@ public class CalculateAverage_tonivade {
             return toDouble(min) + "/" + round(mean()) + "/" + toDouble(max);
         }
 
-        boolean sameName(byte[] array, int length, int hash) {
-            if (name.length != length) {
-                return false;
-            }
+        boolean sameName(int hash) {
             return this.hash == hash;
         }
 
