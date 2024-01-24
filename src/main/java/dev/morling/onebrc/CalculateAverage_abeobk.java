@@ -174,9 +174,8 @@ public class CalculateAverage_abeobk {
 
     // speed/collision balance
     static final int xxh32(long hash) {
-        final long p1 = 0x85EBCA77; // prime
-        int h = (int) ((hash * p1) ^ (hash >>> 33));
-        return h ^ (h >>> 17);
+        long h = hash * 37;
+        return (int) (h ^ (h >>> 29));
     }
 
     // great idea from merykitty (Quan Anh Mai)
@@ -241,10 +240,10 @@ public class CalculateAverage_abeobk {
             // 43% chance
             if (semipos_code != 0) {
                 int semi_pos = Long.numberOfTrailingZeros(semipos_code) >>> 3;
-                addr += semi_pos;
-                long num_word = UNSAFE.getLong(addr + 1);
+                addr += semi_pos + 1;
+                long num_word = UNSAFE.getLong(addr);
                 int dot_pos = Long.numberOfTrailingZeros(~num_word & 0x10101000);
-                addr += (dot_pos >>> 3) + 4;
+                addr += (dot_pos >>> 3) + 3;
 
                 long tail = (word & HASH_MASKS[semi_pos]);
                 hash ^= tail;
@@ -318,8 +317,6 @@ public class CalculateAverage_abeobk {
         workerCommand.add("--worker");
         new ProcessBuilder()
                 .command(workerCommand)
-                .inheritIO()
-                .redirectOutput(ProcessBuilder.Redirect.PIPE)
                 .start()
                 .getInputStream()
                 .transferTo(System.out);
