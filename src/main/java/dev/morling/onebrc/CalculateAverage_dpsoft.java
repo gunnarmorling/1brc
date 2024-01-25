@@ -149,7 +149,7 @@ public class CalculateAverage_dpsoft {
             }
         }
 
-        // inspired by @lawrey and @shipilev
+        // inspired by @lawrey
         private static int hashAndRewind(MappedByteBuffer mbb) {
             int hash = 0;
             int idx = mbb.position();
@@ -210,7 +210,7 @@ public class CalculateAverage_dpsoft {
         }
     }
 
-    // open addressing map with linear probing
+    //  credits to @shipilev
     static class MeasurementMap {
         private final Measurement[] measurements = new Measurement[MAX_ROWS];
 
