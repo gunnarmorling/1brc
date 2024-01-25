@@ -264,7 +264,7 @@ public class CalculateAverage_albertoventurini {
     private static void processWithChunkReaders() throws Exception {
         final var randomAccessFile = new RandomAccessFile(FILE, "r");
 
-        final int nThreads = Runtime.getRuntime().availableProcessors() - 1;
+        final int nThreads = Runtime.getRuntime().availableProcessors();
 
         final CountDownLatch latch = new CountDownLatch(nThreads);
 
