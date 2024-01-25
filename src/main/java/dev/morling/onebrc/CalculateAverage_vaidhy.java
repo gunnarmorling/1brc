@@ -446,7 +446,7 @@ public class CalculateAverage_vaidhy<I, T> {
                         hash = simpleHash(hash, toHash);
 
                         int newPrevBits = prevBits + (semiPositionBits - nextReadOffsetBits);
-                        if (newPrevBits > 64) {
+                        if (newPrevBits >= 64) {
                             suffix = currRelevant >>> (64 - prevBits);
                             hash = simpleHash(hash, suffix);
                         }
