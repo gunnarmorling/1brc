@@ -73,16 +73,14 @@ public class CalculateAverage_vaidhy<I, T> {
                     return entry;
                 }
                 if (entry.hash == hash) {
-                    return entry;
-                    // long entryLength = entry.endAddress - entry.startAddress;
-                    // long lookupLength = endAddress - startAddress;
-                    // if ((entryLength == lookupLength)) {
-                    // boolean found = compareEntryKeys(startAddress, endAddress, entry);
-                    //
-                    // if (found) {
-                    // return entry;
-                    // }
-                    // }
+                    long entryLength = entry.endAddress - entry.startAddress;
+                    long lookupLength = endAddress - startAddress;
+                    if ((entryLength == lookupLength)) {
+                        boolean found = compareEntryKeys(startAddress, endAddress, entry);
+                        if (found) {
+                            return entry;
+                        }
+                    }
                 }
                 i++;
                 if (i == len) {
@@ -102,6 +100,13 @@ public class CalculateAverage_vaidhy<I, T> {
                 }
                 entryIndex += 8;
             }
+            for (; lookupIndex < endAddress; lookupIndex++) {
+                if (UNSAFE.getByte(entryIndex) != UNSAFE.getByte(lookupIndex)) {
+                    return false;
+                }
+                entryIndex++;
+            }
+
             return true;
         }
     }
