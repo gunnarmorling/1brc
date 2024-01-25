@@ -150,7 +150,7 @@ public class CalculateAverage_jonathanaotearoa {
 
             // We've found the separator.
             // The following operations assume little endianness, i.e. the UTF-8 bytes are ordered from right to left.
-            // We therefore uses *trailing* number of zeros to get the number of name bits.
+            // We therefore use the *trailing* number of zeros to get the number of name bits.
             final int numberOfNameBits = Long.numberOfTrailingZeros(separatorMask) & ~7;
             final int numberOfNameBytes = numberOfNameBits >> 3;
             final long separatorAddress = address + numberOfNameBytes;
@@ -202,7 +202,7 @@ public class CalculateAverage_jonathanaotearoa {
             final byte nameSize = (byte) (separatorAddress - nameAddress);
             repo.put(nameAddress, nameSize, nameHash, temp);
 
-            // Can calculate the address of the next line.
+            // Calculate the address of the next line.
             address = tempAddress + decimalPointIndex + 3;
         }
 
