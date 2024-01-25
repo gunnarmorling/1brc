@@ -46,11 +46,13 @@ public class CalculateAverage_vikasmb {
         String[] stations = stationStats.keySet().toArray(new String[0]);
         Arrays.sort(stations);
         System.out.print("{");
-        for (var name : stations) {
-            System.out.print(name);
+        for (int i = 0; i < stations.length; i++) {
+            System.out.print(stations[i]);
             System.out.print("=");
-            System.out.print(stationStats.get(name));
-            System.out.print(", ");
+            System.out.print(stationStats.get(stations[i]));
+            if (i != stations.length - 1) {
+                System.out.print(", ");
+            }
         }
         System.out.print("}");
         System.out.println();
