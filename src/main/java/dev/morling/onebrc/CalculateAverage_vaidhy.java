@@ -309,7 +309,8 @@ public class CalculateAverage_vaidhy<I, T> {
         }
         else {
             // Found
-            return readOffsetBits + Long.numberOfTrailingZeros(mask);
+            int trailingZeroes = Long.numberOfTrailingZeros(mask) - 7;
+            return readOffsetBits + trailingZeroes;
         }
     }
 
