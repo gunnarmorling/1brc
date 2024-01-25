@@ -40,7 +40,6 @@ public class CalculateAverage_vaidhy<I, T> {
         private long startAddress;
         private long endAddress;
         private long hash;
-
         private int next;
         IntSummaryStatistics value;
     }
@@ -48,7 +47,6 @@ public class CalculateAverage_vaidhy<I, T> {
     private static class PrimitiveHashMap {
         private final HashEntry[] entries;
         private final int twoPow;
-
         private int next = -1;
 
         PrimitiveHashMap(int twoPow) {
@@ -136,53 +134,7 @@ public class CalculateAverage_vaidhy<I, T> {
     private static final long C1 = 0x87c37b91114253d5L;
     private static final long C2 = 0x4cf5ad432745937fL;
     private static final int R1 = 31;
-    private static final int R2 = 27;
-    private static final int R3 = 33;
-    private static final int M = 5;
-    private static final int N1 = 0x52dce729;
-
     private static final long DEFAULT_SEED = 104729;
-
-    /*
-     * @vaidhy
-     *
-     * Powerful Murmur Hash:
-     *
-     * To use full MurMur strength:
-     *
-     * long hash = DEFAULT_SEED
-     * for (long value : list) {
-     * hash = murmurHash(hash, value);
-     * }
-     * hash = murmurHashFinalize(hash, list.size())
-     *
-     * To use a faster hash inspired by murmur:
-     *
-     * long hash = DEFAULT_SEED
-     * for (long value : list) {
-     * hash = simpleHash(hash, value);
-     * }
-     *
-     */
-    private static long murmurMix64(long hash) {
-        hash ^= (hash >>> 33);
-        hash *= 0xff51afd7ed558ccdL;
-        hash ^= (hash >>> 33);
-        hash *= 0xc4ceb9fe1a85ec53L;
-        hash ^= (hash >>> 33);
-        return hash;
-    }
-
-    private static long murmurHash(long hash, long nextData) {
-        hash = hash ^ Long.rotateLeft((nextData * C1), R1) * C2;
-        return Long.rotateLeft(hash, R2) * M + N1;
-    }
-
-    private static long murmurHashFinalize(long hash, int length) {
-        hash ^= length;
-        hash = murmurMix64(hash);
-        return hash;
-    }
 
     private static long simpleHash(long hash, long nextData) {
         // return hash ^ nextData;
@@ -344,8 +296,8 @@ public class CalculateAverage_vaidhy<I, T> {
 
     private static final long ALL_ONES = 0xffff_ffff_ffff_ffffL;
 
-    private int findByte(long data, long pattern, int readOffset) {
-        data >>>= (readOffset << 3);
+    private int findByte(long data, long pattern, int readOffsetBits) {
+        data >>>= readOffsetBits;
         long match = data ^ pattern;
         long mask = (match - START_BYTE_INDICATOR) & ((~match) & END_BYTE_INDICATOR);
 
@@ -355,17 +307,17 @@ public class CalculateAverage_vaidhy<I, T> {
         }
         else {
             // Found
-            return readOffset + (Long.numberOfTrailingZeros(mask) >>> 3);
+            int trailingZeroes = Long.numberOfTrailingZeros(mask) - 7;
+            return readOffsetBits + trailingZeroes;
         }
-
     }
 
-    private int findSemi(long data, int readOffset) {
-        return findByte(data, SEMI_DETECTION, readOffset);
+    private int findSemi(long data, int readOffsetBits) {
+        return findByte(data, SEMI_DETECTION, readOffsetBits);
     }
 
-    private int findNewLine(long data, int readOffset) {
-        return findByte(data, NEW_LINE_DETECTION, readOffset);
+    private int findNewLine(long data, int readOffsetBits) {
+        return findByte(data, NEW_LINE_DETECTION, readOffsetBits);
     }
 
     private void bigWorker(long offset, long chunkSize, MapReduce<I> lineConsumer) {
@@ -375,7 +327,7 @@ public class CalculateAverage_vaidhy<I, T> {
         long position = fileStart + offset;
         long fileEnd = fileStart + fileService.length();
 
-        int nextReadOffset = 0;
+        int nextReadOffsetBits = 0;
 
         long data = UNSAFE.getLong(position);
 
@@ -383,14 +335,14 @@ public class CalculateAverage_vaidhy<I, T> {
             boolean foundNewLine = false;
             for (; position < chunkEnd; position += 8) {
                 data = UNSAFE.getLong(position);
-                int newLinePosition = findNewLine(data, nextReadOffset);
-                if (newLinePosition != -1) {
-                    newRecordStart = position + newLinePosition + 1;
-                    nextReadOffset = newLinePosition + 1;
+                int newLinePositionBits = findNewLine(data, nextReadOffsetBits);
+                if (newLinePositionBits != -1) {
+                    nextReadOffsetBits = newLinePositionBits + 8;
+                    newRecordStart = position + (nextReadOffsetBits >>> 3);
 
-                    if (nextReadOffset == 8) {
+                    if (nextReadOffsetBits == 64) {
                         position += 8;
-                        nextReadOffset = 0;
+                        nextReadOffsetBits = 0;
                         data = UNSAFE.getLong(position);
                     }
                     foundNewLine = true;
@@ -410,26 +362,25 @@ public class CalculateAverage_vaidhy<I, T> {
 
         long hash = DEFAULT_SEED;
         long prevRelevant = 0;
-        int prevBytes = 0;
+        int prevBits = 0;
 
         long crossPoint = Math.min(chunkEnd + 1, fileEnd);
 
         while (true) {
             if (newLineToken) {
-                int newLinePosition = findNewLine(data, nextReadOffset);
-                if (newLinePosition == -1) {
-                    nextReadOffset = 0;
+                int newLinePositionBits = findNewLine(data, nextReadOffsetBits);
+                if (newLinePositionBits == -1) {
+                    nextReadOffsetBits = 0;
                     position += 8;
                     data = UNSAFE.getLong(position);
                 }
                 else {
-                    long temperatureEnd = position + newLinePosition;
+                    long temperatureEnd = position + (newLinePositionBits >>> 3);
                     int temperature = parseDouble(stationEnd + 1, temperatureEnd);
-                    // System.out.println("Big worker!");
                     lineConsumer.process(newRecordStart, stationEnd, hash, temperature);
                     newLineToken = false;
 
-                    nextReadOffset = newLinePosition + 1;
+                    nextReadOffsetBits = newLinePositionBits + 8;
                     newRecordStart = temperatureEnd + 1;
 
                     if (newRecordStart >= crossPoint) {
@@ -438,68 +389,58 @@ public class CalculateAverage_vaidhy<I, T> {
 
                     hash = DEFAULT_SEED;
 
-                    if (nextReadOffset == 8) {
-                        nextReadOffset = 0;
+                    if (nextReadOffsetBits == 64) {
+                        nextReadOffsetBits = 0;
                         position += 8;
                         data = UNSAFE.getLong(position);
                     }
                 }
             }
             else {
-                int semiPosition = findSemi(data, nextReadOffset);
+                int semiPositionBits = findSemi(data, nextReadOffsetBits);
 
-                if (semiPosition == -1) {
-                    long currRelevant = data >>> (nextReadOffset << 3);
-                    currRelevant <<= (prevBytes << 3);
+                if (semiPositionBits == -1) {
+                    long currRelevant = data >>> nextReadOffsetBits;
+                    currRelevant <<= prevBits;
 
                     prevRelevant = prevRelevant | currRelevant;
-                    int newPrevBytes = prevBytes + (8 - nextReadOffset);
+                    int newPrevBits = prevBits + (64 - nextReadOffsetBits);
 
-                    if (newPrevBytes >= 8) {
-                        // System.out.println(unsafeToString(position - prevBytes, position + 8 - prevBytes));
-                        // System.out.println(Long.toHexString(prevRelevant));
+                    if (newPrevBits >= 64) {
                         hash = simpleHash(hash, prevRelevant);
 
-                        prevBytes = (newPrevBytes - 8);
-                        if (prevBytes != 0) {
-                            prevRelevant = (data >>> ((8 - prevBytes) << 3));
+                        prevBits = (newPrevBits - 64);
+                        if (prevBits != 0) {
+                            prevRelevant = (data >>> (64 - prevBits));
                         }
                         else {
                             prevRelevant = 0;
                         }
                     }
                     else {
-                        prevBytes = newPrevBytes;
+                        prevBits = newPrevBits;
                     }
 
-                    nextReadOffset = 0;
+                    nextReadOffsetBits = 0;
                     position += 8;
                     data = UNSAFE.getLong(position);
                 }
                 else {
                     // currentData = xxxx_x;aaN
-                    if (semiPosition != 0) {
-                        long currRelevant = (data & (ALL_ONES >>> ((8 - semiPosition) << 3))) >>> (nextReadOffset << 3);
+                    if (semiPositionBits != 0) {
+                        long currRelevant = (data & (ALL_ONES >>> (64 - semiPositionBits))) >>> nextReadOffsetBits;
                         // 0000_00aa
 
                         // 0aaa_0000;
-                        long currUsable = currRelevant << (prevBytes << 3);
+                        long currUsable = currRelevant << prevBits;
 
                         long toHash = prevRelevant | currUsable;
 
-                        // System.out.println(unsafeToString(position - prevBytes, position + 8 - prevBytes));
-                        // System.out.println(Long.toHexString(toHash));
-                        //
-                        // 0aaa_bbbb;
-
                         hash = simpleHash(hash, toHash);
-                        // if (toHash == 0x6f506b696e7661a0L) {
-                        // System.out.println("Debug");
-                        // }
 
-                        int newPrevBytes = prevBytes + (semiPosition - nextReadOffset);
-                        if (newPrevBytes > 8) {
-                            long remaining = currRelevant >>> ((8 - prevBytes) << 3);
+                        int newPrevBits = prevBits + (semiPositionBits - nextReadOffsetBits);
+                        if (newPrevBits > 64) {
+                            long remaining = currRelevant >>> (64 - prevBits);
                             hash = simpleHash(hash, remaining);
                         }
                     }
@@ -508,56 +449,20 @@ public class CalculateAverage_vaidhy<I, T> {
                     }
 
                     prevRelevant = 0;
-                    prevBytes = 0;
+                    prevBits = 0;
 
-                    stationEnd = position + semiPosition;
-                    nextReadOffset = semiPosition + 1;
+                    stationEnd = position + (semiPositionBits >>> 3);
+                    nextReadOffsetBits = semiPositionBits + 8;
                     newLineToken = true;
 
-                    // String key = unsafeToString(newRecordStart, stationEnd);
-                    // if (key.equals("id4058")) {
-                    // System.out.println(key + " hash: " + hash);
-                    // }
-
-                    if (nextReadOffset == 8) {
-                        nextReadOffset = 0;
+                    if (nextReadOffsetBits == 64) {
+                        nextReadOffsetBits = 0;
                         position += 8;
                         data = UNSAFE.getLong(position);
                     }
-
                 }
             }
-            //
-            // long semiPosition = findSemi(data, newLinePosition);
-            // if (semiPosition != 0) {
-            // pointerEnd = position + semiPosition;
-            //
-            // newLinePosition = findNewLine(data, semiPosition);
-            //
-            // }
         }
-
-        // if (offset != 0) {
-        // if (lineStream.hasNext()) {
-        // // Skip the first line.
-        // lineStream.skipLine();
-        // }
-        // else {
-        // // No lines then do nothing.
-        // return;
-        // }
-        // }
-        // while (lineStream.hasNext()) {
-        // long keyStartAddress = lineStream.position;
-        // long keyEndAddress = lineStream.findSemi();
-        // long keySuffix = lineStream.suffix;
-        // int keyHash = lineStream.hash;
-        // long valueStartAddress = lineStream.position;
-        // long valueEndAddress = lineStream.findTemperature();
-        // int temperature = parseDouble(valueStartAddress, valueEndAddress);
-        // lineConsumer.process(keyStartAddress, keyEndAddress, keyHash, temperature, keySuffix);
-        // }
-
     }
 
     private void smallWorker(long offset, long chunkSize, MapReduce<I> lineConsumer) {
@@ -670,7 +575,6 @@ public class CalculateAverage_vaidhy<I, T> {
 
         @Override
         public void process(long keyStartAddress, long keyEndAddress, long hash, int temperature) {
-            // System.out.println(unsafeToString(keyStartAddress, keyEndAddress) + " --> " + temperature + " hash: " + hash);
             HashEntry entry = statistics.find(keyStartAddress, keyEndAddress, hash);
             if (entry == null) {
                 throw new IllegalStateException("Hash table too small :(");
@@ -679,12 +583,6 @@ public class CalculateAverage_vaidhy<I, T> {
                 entry.value = new IntSummaryStatistics();
             }
             entry.value.accept(temperature);
-
-            // IntSummaryStatistics stats = verify.computeIfAbsent(key, ignore -> new IntSummaryStatistics());
-            // stats.accept(temperature);
-            // if (stats.getCount() != entry.value.getCount()) {
-            // System.out.println("Trouble");
-            // }
         }
 
         @Override
