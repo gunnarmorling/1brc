@@ -209,10 +209,10 @@ public class CalculateAverage_hundredwatt {
         short temperature_value;
         int hashInt;
 
-        int i = 0;
+        int rc = 0;
         int end = (int) (size - MAX_ROW_SIZE);
-        while (position < end) {
-            i++;
+        while (position <= end) {
+            // rc++;
             offset = -1;
 
             // Parse city name
@@ -261,7 +261,7 @@ public class CalculateAverage_hundredwatt {
 
             hashTable.putOrMerge(hashInt, offset + 1, key, temperature_value);
         }
-        return i;
+        return rc;
     }
 
     public static void main(String[] args) throws IOException {
@@ -282,7 +282,7 @@ public class CalculateAverage_hundredwatt {
                         byte[] trailing = new byte[MAX_ROW_SIZE * 2];
                         fileChannel.read(ByteBuffer.wrap(trailing), Math.max(0, fileSize - MAX_ROW_SIZE));
                         var rc = processChunk(ByteBuffer.wrap(trailing), hashTable, Math.max(0, fileSize - MAX_ROW_SIZE),
-                                MAX_ROW_SIZE + Math.min(fileSize, MAX_ROW_SIZE));
+                                MAX_ROW_SIZE + Math.min(fileSize, MAX_ROW_SIZE) - 1);
                         // rowCount.addAndGet(rc);
                         return hashTable;
 
@@ -290,6 +290,11 @@ public class CalculateAverage_hundredwatt {
                     catch (IOException e) {
                         throw new RuntimeException(e);
                     }
+                }
+
+                // if file is smaller than max row size, we're done b/c the trailing bytes handler processed the whole file
+                if (fileSize <= MAX_ROW_SIZE) {
+                    return hashTable;
                 }
 
                 while (start < fileSize) {
