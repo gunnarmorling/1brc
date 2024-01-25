@@ -40,6 +40,7 @@ public class CalculateAverage_vaidhy<I, T> {
         private long startAddress;
         private long endAddress;
         private long hash;
+        private long suffix;
         private int next;
         IntSummaryStatistics value;
     }
@@ -57,7 +58,7 @@ public class CalculateAverage_vaidhy<I, T> {
             }
         }
 
-        public HashEntry find(long startAddress, long endAddress, long hash) {
+        public HashEntry find(long startAddress, long endAddress, long hash, long suffix) {
             int len = entries.length;
             int h = Long.hashCode(hash);
             int i = (h ^ (h >> twoPow)) & (len - 1);
@@ -69,13 +70,14 @@ public class CalculateAverage_vaidhy<I, T> {
                     entry.endAddress = endAddress;
                     entry.hash = hash;
                     entry.next = next;
+                    entry.suffix = suffix;
                     this.next = i;
                     return entry;
                 }
-                if (entry.hash == hash) {
+                if (entry.hash == hash && entry.suffix == suffix) {
                     long entryLength = entry.endAddress - entry.startAddress;
                     long lookupLength = endAddress - startAddress;
-                    if ((entryLength == lookupLength)) {
+                    if (entryLength == lookupLength) {
                         boolean found = compareEntryKeys(startAddress, endAddress, entry);
                         if (found) {
                             return entry;
@@ -100,12 +102,12 @@ public class CalculateAverage_vaidhy<I, T> {
                 }
                 entryIndex += 8;
             }
-            for (; lookupIndex < endAddress; lookupIndex++) {
-                if (UNSAFE.getByte(entryIndex) != UNSAFE.getByte(lookupIndex)) {
-                    return false;
-                }
-                entryIndex++;
-            }
+            // for (; lookupIndex < endAddress; lookupIndex++) {
+            // if (UNSAFE.getByte(entryIndex) != UNSAFE.getByte(lookupIndex)) {
+            // return false;
+            // }
+            // entryIndex++;
+            // }
 
             return true;
         }
@@ -186,7 +188,7 @@ public class CalculateAverage_vaidhy<I, T> {
 
     interface MapReduce<I> {
 
-        void process(long keyStartAddress, long keyEndAddress, long hash, int temperature);
+        void process(long keyStartAddress, long keyEndAddress, long hash, long suffix, int temperature);
 
         I result();
     }
@@ -216,6 +218,8 @@ public class CalculateAverage_vaidhy<I, T> {
         private long position;
         private long hash;
 
+        private long suffix;
+
         private final ByteBuffer buf = ByteBuffer
                 .allocate(8)
                 .order(ByteOrder.LITTLE_ENDIAN);
@@ -242,7 +246,8 @@ public class CalculateAverage_vaidhy<I, T> {
                     int discard = buf.remaining();
                     buf.rewind();
                     long nextData = (buf.getLong() << discard) >>> discard;
-                    hash = simpleHash(h, nextData);
+                    this.suffix = nextData;
+                    this.hash = simpleHash(h, nextData);
                     position = i + 1;
                     return i;
                 }
@@ -256,7 +261,8 @@ public class CalculateAverage_vaidhy<I, T> {
                     buf.rewind();
                 }
             }
-            hash = h;
+            this.hash = h;
+            this.suffix = buf.getLong();
             position = fileEnd;
             return fileEnd;
         }
@@ -363,6 +369,7 @@ public class CalculateAverage_vaidhy<I, T> {
         long hash = DEFAULT_SEED;
         long prevRelevant = 0;
         int prevBits = 0;
+        long suffix = 0;
 
         long crossPoint = Math.min(chunkEnd + 1, fileEnd);
 
@@ -377,7 +384,7 @@ public class CalculateAverage_vaidhy<I, T> {
                 else {
                     long temperatureEnd = position + (newLinePositionBits >>> 3);
                     int temperature = parseDouble(stationEnd + 1, temperatureEnd);
-                    lineConsumer.process(newRecordStart, stationEnd, hash, temperature);
+                    lineConsumer.process(newRecordStart, stationEnd, hash, suffix, temperature);
                     newLineToken = false;
 
                     nextReadOffsetBits = newLinePositionBits + 8;
@@ -440,11 +447,15 @@ public class CalculateAverage_vaidhy<I, T> {
 
                         int newPrevBits = prevBits + (semiPositionBits - nextReadOffsetBits);
                         if (newPrevBits > 64) {
-                            long remaining = currRelevant >>> (64 - prevBits);
-                            hash = simpleHash(hash, remaining);
+                            suffix = currRelevant >>> (64 - prevBits);
+                            hash = simpleHash(hash, suffix);
+                        }
+                        else {
+                            suffix = toHash;
                         }
                     }
                     else {
+                        suffix = prevRelevant;
                         hash = simpleHash(hash, prevRelevant);
                     }
 
@@ -482,11 +493,12 @@ public class CalculateAverage_vaidhy<I, T> {
             long keyStartAddress = lineStream.position;
             long keyEndAddress = lineStream.findSemi();
             long keyHash = lineStream.hash;
+            long suffix = lineStream.suffix;
             long valueStartAddress = lineStream.position;
             long valueEndAddress = lineStream.findTemperature();
             int temperature = parseDouble(valueStartAddress, valueEndAddress);
             // System.out.println("Small worker!");
-            lineConsumer.process(keyStartAddress, keyEndAddress, keyHash, temperature);
+            lineConsumer.process(keyStartAddress, keyEndAddress, keyHash, suffix, temperature);
         }
     }
 
@@ -574,8 +586,8 @@ public class CalculateAverage_vaidhy<I, T> {
         private final PrimitiveHashMap statistics = new PrimitiveHashMap(14);
 
         @Override
-        public void process(long keyStartAddress, long keyEndAddress, long hash, int temperature) {
-            HashEntry entry = statistics.find(keyStartAddress, keyEndAddress, hash);
+        public void process(long keyStartAddress, long keyEndAddress, long hash, long suffix, int temperature) {
+            HashEntry entry = statistics.find(keyStartAddress, keyEndAddress, hash, suffix);
             if (entry == null) {
                 throw new IllegalStateException("Hash table too small :(");
             }
