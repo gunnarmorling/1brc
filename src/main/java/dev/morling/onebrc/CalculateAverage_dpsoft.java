@@ -41,8 +41,7 @@ public class CalculateAverage_dpsoft {
         final var phaser = new Phaser(segments.size());
 
         for (int i = 0; i < segments.size(); i++) {
-            final var task = new MeasurementExtractor(segments.get(i), phaser);
-            tasks[i] = task;
+           tasks[i] = new MeasurementExtractor(segments.get(i), phaser);
         }
 
         phaser.awaitAdvance(phaser.getPhase());
@@ -53,16 +52,19 @@ public class CalculateAverage_dpsoft {
                 .reduce(MeasurementMap::merge)
                 .orElseThrow();
 
+        System.out.println(sortSequentially(allMeasurements));
+
+        System.exit(0);
+    }
+
+    private static Map<String, Measurement> sortSequentially(MeasurementMap allMeasurements) {
         final Map<String, Measurement> sorted = new TreeMap<>();
         for (Measurement m : allMeasurements.measurements) {
             if (m != null) {
                 sorted.put(new String(m.name, StandardCharsets.UTF_8), m);
             }
         }
-
-        System.out.println(sorted);
-
-        System.exit(0);
+        return sorted;
     }
 
     // Credits to @spullara
@@ -132,7 +134,7 @@ public class CalculateAverage_dpsoft {
 
                 while (mbb.remaining() > 0 && mbb.position() <= segmentEnd) {
                     int pos = mbb.position();
-                    int nameHash = hashName(mbb);
+                    int nameHash = hashAndRewind(mbb);
                     var m = measurements.getOrCompute(nameHash, mbb, pos);
                     int temp = readTemperatureFromBuffer(mbb);
 
@@ -148,7 +150,7 @@ public class CalculateAverage_dpsoft {
         }
 
         // inspired by @lawrey and @shipilev
-        private static int hashName(MappedByteBuffer mbb) {
+        private static int hashAndRewind(MappedByteBuffer mbb) {
             int hash = 0;
             int idx = mbb.position();
             outer: while (true) {
