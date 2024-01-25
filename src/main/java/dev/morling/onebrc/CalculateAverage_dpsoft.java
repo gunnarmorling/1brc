@@ -41,7 +41,7 @@ public class CalculateAverage_dpsoft {
         final var phaser = new Phaser(segments.size());
 
         for (int i = 0; i < segments.size(); i++) {
-           tasks[i] = new MeasurementExtractor(segments.get(i), phaser);
+            tasks[i] = new MeasurementExtractor(segments.get(i), phaser);
         }
 
         phaser.awaitAdvance(phaser.getPhase());
@@ -310,11 +310,11 @@ public class CalculateAverage_dpsoft {
         }
 
         public String toString() {
-            var min = String.format("%.1f", (double) this.min / 10.0);
-            var avg = String.format("%.1f", ((double) this.sum / (double) this.count) / 10.0);
-            var max = String.format("%.1f", (double) this.max / 10.0);
+            return round(((double) min) / 10.0) + "/" + round((((double) sum) / 10.0) / count) + "/" + round(((double) max) / 10.0);
+        }
 
-            return STR."\{min}/\{avg}/\{max}";
+        private static double round(double value) {
+            return Math.round(value * 10.0) / 10.0;
         }
     }
 }
