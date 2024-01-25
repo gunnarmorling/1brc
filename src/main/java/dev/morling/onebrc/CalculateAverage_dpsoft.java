@@ -210,7 +210,7 @@ public class CalculateAverage_dpsoft {
         }
     }
 
-    //  credits to @shipilev
+    // credits to @shipilev
     static class MeasurementMap {
         private final Measurement[] measurements = new Measurement[MAX_ROWS];
 
