@@ -40,7 +40,6 @@ public class CalculateAverage_vaidhy<I, T> {
         private long startAddress;
         private long endAddress;
         private long hash;
-
         private int next;
         IntSummaryStatistics value;
     }
@@ -48,7 +47,6 @@ public class CalculateAverage_vaidhy<I, T> {
     private static class PrimitiveHashMap {
         private final HashEntry[] entries;
         private final int twoPow;
-
         private int next = -1;
 
         PrimitiveHashMap(int twoPow) {
@@ -379,7 +377,6 @@ public class CalculateAverage_vaidhy<I, T> {
                 else {
                     long temperatureEnd = position + (newLinePositionBits >>> 3);
                     int temperature = parseDouble(stationEnd + 1, temperatureEnd);
-                    // System.out.println("Big worker!");
                     lineConsumer.process(newRecordStart, stationEnd, hash, temperature);
                     newLineToken = false;
 
@@ -410,8 +407,6 @@ public class CalculateAverage_vaidhy<I, T> {
                     int newPrevBits = prevBits + (64 - nextReadOffsetBits);
 
                     if (newPrevBits >= 64) {
-                        // System.out.println(unsafeToString(position - prevBytes, position + 8 - prevBytes));
-                        // System.out.println(Long.toHexString(prevRelevant));
                         hash = simpleHash(hash, prevRelevant);
 
                         prevBits = (newPrevBits - 64);
@@ -441,15 +436,7 @@ public class CalculateAverage_vaidhy<I, T> {
 
                         long toHash = prevRelevant | currUsable;
 
-                        // System.out.println(unsafeToString(position - prevBytes, position + 8 - prevBytes));
-                        // System.out.println(Long.toHexString(toHash));
-                        //
-                        // 0aaa_bbbb;
-
                         hash = simpleHash(hash, toHash);
-                        // if (toHash == 0x6f506b696e7661a0L) {
-                        // System.out.println("Debug");
-                        // }
 
                         int newPrevBits = prevBits + (semiPositionBits - nextReadOffsetBits);
                         if (newPrevBits > 64) {
@@ -468,11 +455,6 @@ public class CalculateAverage_vaidhy<I, T> {
                     nextReadOffsetBits = semiPositionBits + 8;
                     newLineToken = true;
 
-                    // String key = unsafeToString(newRecordStart, stationEnd);
-                    // if (key.equals("id4058")) {
-                    // System.out.println(key + " hash: " + hash);
-                    // }
-
                     if (nextReadOffsetBits == 64) {
                         nextReadOffsetBits = 0;
                         position += 8;
@@ -480,37 +462,7 @@ public class CalculateAverage_vaidhy<I, T> {
                     }
                 }
             }
-            //
-            // long semiPosition = findSemi(data, newLinePosition);
-            // if (semiPosition != 0) {
-            // pointerEnd = position + semiPosition;
-            //
-            // newLinePosition = findNewLine(data, semiPosition);
-            //
-            // }
         }
-
-        // if (offset != 0) {
-        // if (lineStream.hasNext()) {
-        // // Skip the first line.
-        // lineStream.skipLine();
-        // }
-        // else {
-        // // No lines then do nothing.
-        // return;
-        // }
-        // }
-        // while (lineStream.hasNext()) {
-        // long keyStartAddress = lineStream.position;
-        // long keyEndAddress = lineStream.findSemi();
-        // long keySuffix = lineStream.suffix;
-        // int keyHash = lineStream.hash;
-        // long valueStartAddress = lineStream.position;
-        // long valueEndAddress = lineStream.findTemperature();
-        // int temperature = parseDouble(valueStartAddress, valueEndAddress);
-        // lineConsumer.process(keyStartAddress, keyEndAddress, keyHash, temperature, keySuffix);
-        // }
-
     }
 
     private void smallWorker(long offset, long chunkSize, MapReduce<I> lineConsumer) {
@@ -623,7 +575,6 @@ public class CalculateAverage_vaidhy<I, T> {
 
         @Override
         public void process(long keyStartAddress, long keyEndAddress, long hash, int temperature) {
-            // System.out.println(unsafeToString(keyStartAddress, keyEndAddress) + " --> " + temperature + " hash: " + hash);
             HashEntry entry = statistics.find(keyStartAddress, keyEndAddress, hash);
             if (entry == null) {
                 throw new IllegalStateException("Hash table too small :(");
@@ -632,12 +583,6 @@ public class CalculateAverage_vaidhy<I, T> {
                 entry.value = new IntSummaryStatistics();
             }
             entry.value.accept(temperature);
-
-            // IntSummaryStatistics stats = verify.computeIfAbsent(key, ignore -> new IntSummaryStatistics());
-            // stats.accept(temperature);
-            // if (stats.getCount() != entry.value.getCount()) {
-            // System.out.println("Trouble");
-            // }
         }
 
         @Override
