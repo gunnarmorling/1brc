@@ -140,7 +140,7 @@ public class CalculateAverage_abeobk {
         }
 
         final boolean contentEquals(long other_addr, long other_word0, long other_tail, int keylen) {
-            if (tail != other_tail || word0 != other_word0)
+            if (word0 != other_word0 || tail != other_tail)
                 return false;
             // this is faster than comparision if key is short
             long xsum = 0;
@@ -199,7 +199,6 @@ public class CalculateAverage_abeobk {
         // parse loop
         while (addr < end) {
             long row_addr = addr;
-            long hash = 0;
 
             long word0 = UNSAFE.getLong(addr);
             long semipos_code = getSemiPosCode(word0);
@@ -233,7 +232,7 @@ public class CalculateAverage_abeobk {
                 continue;
             }
 
-            hash ^= word0;
+            long hash = word0;
             addr += 8;
             long word = UNSAFE.getLong(addr);
             semipos_code = getSemiPosCode(word);
@@ -266,6 +265,8 @@ public class CalculateAverage_abeobk {
                 }
                 continue;
             }
+
+            // why not going for more? tested, slower
 
             while (semipos_code == 0) {
                 hash ^= word;
