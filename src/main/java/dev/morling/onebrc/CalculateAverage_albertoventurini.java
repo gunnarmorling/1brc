@@ -44,11 +44,14 @@ public class CalculateAverage_albertoventurini {
     // the names will be printed in alphabetical order.
     private static final class TrieNode {
         final TrieNode[] children = new TrieNode[256];
-        long min = Long.MAX_VALUE;
-        long max = Long.MIN_VALUE;
-        long sum;
-        long count;
+        int min = Integer.MAX_VALUE;
+        int max = Integer.MIN_VALUE;
+        int sum;
+        int count;
     }
+
+    private static final int TWO_BYTE_TO_INT = 480 + 48;
+    private static final int THREE_BYTE_TO_INT = 4800 + 480 + 48;
 
     // Process a chunk and write results in a Trie rooted at 'root'.
     private static void processChunk(final TrieNode root, final ChunkReader cr) {
@@ -66,30 +69,32 @@ public class CalculateAverage_albertoventurini {
             }
 
             // Process the reading value (temperature)
-            long reading = 0;
-            boolean negative = false;
-            while (true) {
-                byte c = cr.getNext();
-                if (c == '-') {
-                    negative = true;
+            int reading;
+
+            byte b1 = cr.getNext();
+            byte b2 = cr.getNext();
+            byte b3 = cr.getNext();
+            byte b4 = cr.getNext();
+            if (b2 == '.') { // value is n.n
+                reading = (b1 * 10 + b3 - TWO_BYTE_TO_INT);
+                // b4 == \n
+            }
+            else {
+                if (b4 == '.') { // value is -nn.n
+                    reading = -(b2 * 100 + b3 * 10 + cr.getNext() - THREE_BYTE_TO_INT);
                 }
-                else if (c == '.') {
-                    // Assume that all temperature readings have one decimal digit.
-                    // So here we read the remaining decimal digit, then exit the loop.
-                    reading = reading * 10 + (cr.getNext() - '0');
-                    cr.getNext(); // Consume newline character
-                    break;
+                else if (b1 == '-') { // value is -n.n
+                    reading = -(b2 * 10 + b4 - TWO_BYTE_TO_INT);
                 }
-                else {
-                    reading = reading * 10 + (c - '0');
+                else { // value is nn.n
+                    reading = (b1 * 100 + b2 * 10 + b4 - THREE_BYTE_TO_INT);
                 }
+                cr.getNext(); // new line
             }
 
-            final long signedReading = negative ? -reading : reading;
-
-            node.min = Math.min(node.min, signedReading);
-            node.max = Math.max(node.max, signedReading);
-            node.sum += signedReading;
+            node.min = Math.min(node.min, reading);
+            node.max = Math.max(node.max, reading);
+            node.sum += reading;
             node.count++;
         }
     }
