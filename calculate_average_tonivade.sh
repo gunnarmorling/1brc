@@ -15,5 +15,5 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="-Xmx1G -Xms1G -XX:+AlwaysPreTouch --enable-preview"
+JAVA_OPTS="-Xmx1G -Xms1G -XX:+AlwaysPreTouch -XX:+UseParallelGC -XX:-UseCompressedOops --enable-preview"
 java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_tonivade
