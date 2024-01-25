@@ -38,12 +38,15 @@ import java.util.concurrent.Executors;
  */
 public class CalculateAverage_albertoventurini {
 
+    // The maximum byte that can ever appear in a UTF-8-encoded string is 11110111, i.e., 0xF7
+    private static final int MAX_UTF8_BYTE_VALUE = 0xF7;
+
     // Define a prefix tree that is used to store results.
     // Each node in the trie represents a byte (NOT character) from a location name.
     // A nice side effect is, when traversing the trie to print results,
     // the names will be printed in alphabetical order.
     private static final class TrieNode {
-        final TrieNode[] children = new TrieNode[256];
+        final TrieNode[] children = new TrieNode[MAX_UTF8_BYTE_VALUE];
         int min = Integer.MAX_VALUE;
         int max = Integer.MIN_VALUE;
         int sum;
@@ -147,7 +150,7 @@ public class CalculateAverage_albertoventurini {
                 System.out.print(location + "=" + round(min) + "/" + mean + "/" + round(max));
             }
 
-            for (int i = 0; i < 256; i++) {
+            for (int i = 0; i < MAX_UTF8_BYTE_VALUE; i++) {
                 final TrieNode[] childNodes = new TrieNode[nodes.length];
                 boolean shouldRecurse = false;
                 for (int j = 0; j < nodes.length; j++) {
@@ -264,7 +267,7 @@ public class CalculateAverage_albertoventurini {
     private static void processWithChunkReaders() throws Exception {
         final var randomAccessFile = new RandomAccessFile(FILE, "r");
 
-        final int nThreads = Runtime.getRuntime().availableProcessors();
+        final int nThreads = randomAccessFile.length() < 1 << 20 ? 1 : Runtime.getRuntime().availableProcessors();
 
         final CountDownLatch latch = new CountDownLatch(nThreads);
 
