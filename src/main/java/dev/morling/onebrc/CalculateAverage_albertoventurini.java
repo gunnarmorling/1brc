@@ -22,6 +22,20 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+/**
+ * == File reading ==
+ * The file is read using RandomAccessFile, and split into chunks. Each thread is assigned a chunk.
+ * E.g. if the file size is 100, and we have two threads, the first thread will read from 0 to 49,
+ * the second from 50 to 99.
+ * Each chunk is aligned to the next end-of-line (or to the end-of-file), so that each thread
+ * consumes full input lines.
+ * Further, each file chunk is split into smaller pieces (byte arrays), with each piece up to 2^22 bytes.
+ * This particular size seems to work best on my machine.
+ * == Data structure ==
+ * Each thread stores its results in a prefix tree (trie). Each node in the trie represents
+ * one byte of a location's name. Non-ASCII characters are represented by multiple nodes in the trie.
+ * Each leaf contains the statistics for a location.
+ */
 public class CalculateAverage_albertoventurini {
 
     // Define a prefix tree that is used to store results.
@@ -56,17 +70,19 @@ public class CalculateAverage_albertoventurini {
             boolean negative = false;
             while (true) {
                 byte c = cr.getNext();
-                if (c == '\n') {
-                    break;
-                }
-                else if (c == '-') {
+                if (c == '-') {
                     negative = true;
-                    continue;
                 }
                 else if (c == '.') {
-                    continue;
+                    // Assume that all temperature readings have one decimal digit.
+                    // So here we read the remaining decimal digit, then exit the loop.
+                    reading = reading * 10 + (cr.getNext() - '0');
+                    cr.getNext(); // Consume newline character
+                    break;
                 }
-                reading = reading * 10 + (c - '0');
+                else {
+                    reading = reading * 10 + (c - '0');
+                }
             }
 
             final long signedReading = negative ? -reading : reading;
@@ -83,7 +99,7 @@ public class CalculateAverage_albertoventurini {
     // aggregates results from all tries.
     static class ResultPrinter {
         // Contains the bytes for the current location name. 100 bytes should be enough
-        // to represent all location names encoded in UTF-8.
+        // to represent each location name encoded in UTF-8.
         final byte[] bytes = new byte[100];
 
         boolean firstOutput = true;
@@ -94,7 +110,7 @@ public class CalculateAverage_albertoventurini {
             System.out.println("}");
         }
 
-        private double round(long value) {
+        private static double round(long value) {
             return Math.round(value) / 10.0;
         }
 
@@ -238,6 +254,8 @@ public class CalculateAverage_albertoventurini {
         return chunkReaders;
     }
 
+    // Spin up threads and assign a file chunk to each one.
+    // Then use the 'ResultPrinter' class to aggregate and print the results.
     private static void processWithChunkReaders() throws Exception {
         final var randomAccessFile = new RandomAccessFile(FILE, "r");
 
@@ -268,8 +286,6 @@ public class CalculateAverage_albertoventurini {
     }
 
     public static void main(String[] args) throws Exception {
-
         processWithChunkReaders();
-
     }
 }
