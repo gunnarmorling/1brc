@@ -39,6 +39,7 @@ public class CalculateAverage_abeobk {
     private static final int BUCKET_SIZE = 1 << 16;
     private static final int BUCKET_MASK = BUCKET_SIZE - 1;
     private static final int MAX_STR_LEN = 100;
+    private static final int MAX_STATIONS = 10000;
     private static final Unsafe UNSAFE = initUnsafe();
     private static final long[] HASH_MASKS = new long[]{
             0x0L,
@@ -195,7 +196,7 @@ public class CalculateAverage_abeobk {
     static final Node[] parse(int thread_id, long start, long end) {
         int cls = 0;
         long addr = start;
-        var map = new Node[BUCKET_SIZE + 10000]; // extra space for collisions
+        var map = new Node[BUCKET_SIZE + MAX_STATIONS]; // extra space for collisions
         // parse loop
         while (addr < end) {
             long row_addr = addr;
@@ -232,7 +233,6 @@ public class CalculateAverage_abeobk {
                 continue;
             }
 
-            long hash = word0;
             addr += 8;
             long word = UNSAFE.getLong(addr);
             semipos_code = getSemiPosCode(word);
@@ -245,8 +245,7 @@ public class CalculateAverage_abeobk {
                 addr += (dot_pos >>> 3) + 3;
 
                 long tail = (word & HASH_MASKS[semi_pos]);
-                hash ^= tail;
-                int bucket = xxh32(hash) & BUCKET_MASK;
+                int bucket = xxh32(word0 ^ tail) & BUCKET_MASK;
                 short val = parseNum(num_word, dot_pos);
 
                 while (true) {
@@ -268,6 +267,7 @@ public class CalculateAverage_abeobk {
 
             // why not going for more? tested, slower
 
+            long hash = word0;
             while (semipos_code == 0) {
                 hash ^= word;
                 addr += 8;
@@ -283,8 +283,7 @@ public class CalculateAverage_abeobk {
             addr += (dot_pos >>> 3) + 4;
 
             long tail = (word & HASH_MASKS[semi_pos]);
-            hash ^= tail;
-            int bucket = xxh32(hash) & BUCKET_MASK;
+            int bucket = xxh32(hash ^ tail) & BUCKET_MASK;
             short val = parseNum(num_word, dot_pos);
 
             while (true) {
