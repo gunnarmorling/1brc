@@ -41,6 +41,7 @@ public class CalculateAverage_vaidhy<I, T> {
         private long endAddress;
         private long hash;
 
+        private int next;
         IntSummaryStatistics value;
     }
 
@@ -48,7 +49,7 @@ public class CalculateAverage_vaidhy<I, T> {
         private final HashEntry[] entries;
         private final int twoPow;
 
-        private int size = 0;
+        private int next = -1;
 
         PrimitiveHashMap(int twoPow) {
             this.twoPow = twoPow;
@@ -69,7 +70,8 @@ public class CalculateAverage_vaidhy<I, T> {
                     entry.startAddress = startAddress;
                     entry.endAddress = endAddress;
                     entry.hash = hash;
-                    ++size;
+                    entry.next = next;
+                    this.next = i;
                     return entry;
                 }
                 if (entry.hash == hash) {
@@ -108,6 +110,24 @@ public class CalculateAverage_vaidhy<I, T> {
             }
 
             return true;
+        }
+
+        public Iterable<HashEntry> entrySet() {
+            return () -> new Iterator<>() {
+                int scan = next;
+
+                @Override
+                public boolean hasNext() {
+                    return scan != -1;
+                }
+
+                @Override
+                public HashEntry next() {
+                    HashEntry entry = entries[scan];
+                    scan = entry.next;
+                    return entry;
+                }
+            };
         }
     }
 
@@ -165,6 +185,7 @@ public class CalculateAverage_vaidhy<I, T> {
     }
 
     private static long simpleHash(long hash, long nextData) {
+        // return hash ^ nextData;
         return (hash ^ Long.rotateLeft((nextData * C1), R1)) * C2;
     }
 
@@ -391,6 +412,8 @@ public class CalculateAverage_vaidhy<I, T> {
         long prevRelevant = 0;
         int prevBytes = 0;
 
+        long crossPoint = Math.min(chunkEnd + 1, fileEnd);
+
         while (true) {
             if (newLineToken) {
                 int newLinePosition = findNewLine(data, nextReadOffset);
@@ -409,14 +432,11 @@ public class CalculateAverage_vaidhy<I, T> {
                     nextReadOffset = newLinePosition + 1;
                     newRecordStart = temperatureEnd + 1;
 
-                    if (newRecordStart > chunkEnd || newRecordStart >= fileEnd) {
+                    if (newRecordStart >= crossPoint) {
                         break;
                     }
 
                     hash = DEFAULT_SEED;
-
-                    prevRelevant = 0;
-                    prevBytes = 0;
 
                     if (nextReadOffset == 8) {
                         nextReadOffset = 0;
@@ -427,16 +447,6 @@ public class CalculateAverage_vaidhy<I, T> {
             }
             else {
                 int semiPosition = findSemi(data, nextReadOffset);
-
-                // excessBytes = 5
-                // prevData = aaax_xxxx
-
-                // nextData = (nextData << excessBytes) | (data <<< (8 - excessBytes));
-
-                // prevRelevant = 0000_0aaa
-
-                // nextReadOffset = 2 ( 8 - NRO = 6 useful)
-                // prevBytes = 3 (6 useful + 3 available = 9 - meaning 1 extra)
 
                 if (semiPosition == -1) {
                     long currRelevant = data >>> (nextReadOffset << 3);
@@ -489,7 +499,6 @@ public class CalculateAverage_vaidhy<I, T> {
 
                         int newPrevBytes = prevBytes + (semiPosition - nextReadOffset);
                         if (newPrevBytes > 8) {
-
                             long remaining = currRelevant >>> ((8 - prevBytes) << 3);
                             hash = simpleHash(hash, remaining);
                         }
@@ -718,7 +727,7 @@ public class CalculateAverage_vaidhy<I, T> {
 
         Map<String, IntSummaryStatistics> output = new HashMap<>(10000);
         for (PrimitiveHashMap map : list) {
-            for (HashEntry entry : map.entries) {
+            for (HashEntry entry : map.entrySet()) {
                 if (entry.value != null) {
                     String keyStr = unsafeToString(entry.startAddress, entry.endAddress);
 
