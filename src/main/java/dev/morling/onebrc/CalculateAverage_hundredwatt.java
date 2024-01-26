@@ -301,7 +301,7 @@ public class CalculateAverage_hundredwatt {
                     long end = Math.min(start + CHUNK_SIZE, fileSize);
                     MappedByteBuffer bb = null;
                     try {
-                        bb = fileChannel.map(FileChannel.MapMode.READ_ONLY, start, end - start);
+                        bb = fileChannel.map(FileChannel.MapMode.READ_ONLY, start, Math.min(end - start + 8, fileSize - start));
                     }
                     catch (IOException e) {
                         throw new RuntimeException(e);
