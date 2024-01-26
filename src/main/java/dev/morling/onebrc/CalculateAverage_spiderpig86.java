@@ -17,7 +17,7 @@ package dev.morling.onebrc;
 
 import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -47,7 +47,7 @@ import java.util.concurrent.Executors;
  */
 public class CalculateAverage_spiderpig86 {
 
-    private static final String FILE = "./measurements1.txt";
+    private static final String FILE = "src/test/resources/samples/measurements-20.txt";
     private static final boolean DEBUG = false;
 
     private record Measurement(String station, double value) {
@@ -92,8 +92,8 @@ public class CalculateAverage_spiderpig86 {
         long start = System.currentTimeMillis();
 
         // Read file in parallel
-        String measurementFile = args.length == 1 ? args[0] : FILE;
-        List<Measurement> measurements = Files.lines(Path.of(measurementFile))
+        String measurementFile = args.length == 0 ? FILE : args[0];
+        List<Measurement> measurements = Files.lines(Paths.get(measurementFile))
                 .parallel()
                 .map(line -> {
                     // Substring is faster than split by a long shot
@@ -109,13 +109,14 @@ public class CalculateAverage_spiderpig86 {
         try (ExecutorService executorService = Executors.newFixedThreadPool(threads)) {
             List<CompletableFuture<Void>> futures = new ArrayList<>();
             Map<String, ResultRow> aggregated = new ConcurrentHashMap<>();
-            int chunkSize = measurements.size() / threads;
+            int chunkSize = Math.max(1, measurements.size() / threads);
 
-            for (int i = 0; i < threads; i++) {
+            for (int i = 0; i < Math.min(threads, measurements.size()); i++) {
                 int finalI = i;
                 futures.add(CompletableFuture
                         .supplyAsync(() -> processChunk(measurements, finalI * chunkSize,
-                                Math.min((finalI + 1) * chunkSize, measurements.size())), executorService)
+                                (finalI != threads - 1) ? (finalI + 1) * chunkSize : measurements.size()),
+                                executorService)
                         .thenAccept(resultMap -> {
                             resultMap.forEach((station, resultRow) -> aggregated.merge(station, resultRow, ResultRow::merge));
                         }));
