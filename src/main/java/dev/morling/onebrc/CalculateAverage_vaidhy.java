@@ -156,6 +156,24 @@ public class CalculateAverage_vaidhy<I, T> {
 
     private static final Unsafe UNSAFE = initUnsafe();
 
+    private static int parseDoubleFromLong(long data, int len) {
+        int normalized = 0;
+        boolean negative = false;
+        for (int i = 0; i < len; i++) {
+            long ch = data & 0xff;
+            data >>>= 1;
+            if (ch == '-') {
+                negative = true;
+                continue;
+            }
+            if (ch == '.') {
+                continue;
+            }
+            normalized = (normalized * 10) + (normalized ^ 0x30);
+        }
+        return negative ? -normalized : normalized;
+    }
+
     private static int parseDouble(long startAddress, long endAddress) {
         int normalized;
         int length = (int) (endAddress - startAddress);
@@ -302,6 +320,7 @@ public class CalculateAverage_vaidhy<I, T> {
 
     private static final long ALL_ONES = 0xffff_ffff_ffff_ffffL;
 
+    // Influenced by roy's SIMD as a register technique.
     private int findByte(long data, long pattern, int readOffsetBits) {
         data >>>= readOffsetBits;
         long match = data ^ pattern;
@@ -318,6 +337,20 @@ public class CalculateAverage_vaidhy<I, T> {
         }
     }
 
+    private int findByteOctet(long data, long pattern) {
+        long match = data ^ pattern;
+        long mask = (match - START_BYTE_INDICATOR) & ((~match) & END_BYTE_INDICATOR);
+
+        if (mask == 0) {
+            // Not Found
+            return -1;
+        }
+        else {
+            // Found
+            return Long.numberOfTrailingZeros(mask) >>> 3;
+        }
+    }
+
     private int findSemi(long data, int readOffsetBits) {
         return findByte(data, SEMI_DETECTION, readOffsetBits);
     }
@@ -327,6 +360,82 @@ public class CalculateAverage_vaidhy<I, T> {
     }
 
     private void bigWorker(long offset, long chunkSize, MapReduce<I> lineConsumer) {
+        long chunkStart = offset + fileService.address();
+        long chunkEnd = chunkStart + chunkSize;
+        long fileEnd = fileService.address() + fileService.length();
+        long stopPoint = Math.min(chunkEnd + 1, fileEnd);
+
+        boolean skip = offset != 0;
+        for (long position = chunkStart; position < stopPoint;) {
+
+            if (skip) {
+                long data = UNSAFE.getLong(position);
+                int newLinePosition = findByteOctet(data, NEW_LINE_DETECTION);
+                if (newLinePosition != -1) {
+                    skip = false;
+                    position = position + newLinePosition + 1;
+                }
+                else {
+                    position = position + 8;
+                }
+                continue;
+            }
+
+            long stationStart = position;
+            long stationEnd = -1;
+            long hash = DEFAULT_SEED;
+            long suffix = 0;
+            do {
+                long data = UNSAFE.getLong(position);
+                int semiPosition = findByteOctet(data, SEMI_DETECTION);
+                if (semiPosition != -1) {
+                    stationEnd = position + semiPosition;
+                    position = stationEnd + 1;
+
+                    if (semiPosition != 0) {
+                        suffix = data & (ALL_ONES >>> (64 - (semiPosition << 3)));
+                    }
+                    else {
+                        suffix = UNSAFE.getLong(position - 8);
+                    }
+                    hash = simpleHash(hash, suffix);
+                    break;
+                }
+                else {
+                    hash = simpleHash(hash, data);
+                    position = position + 8;
+                }
+            } while (true);
+
+            int temperature = 0;
+            {
+                byte ch = UNSAFE.getByte(position);
+                boolean negative = false;
+                if (ch == '-') {
+                    negative = true;
+                    position++;
+                }
+                while (true) {
+                    position++;
+                    if (ch == '\n') {
+                        break;
+                    }
+                    if (ch != '.') {
+                        temperature *= 10;
+                        temperature += (ch ^ '0');
+                    }
+                    ch = UNSAFE.getByte(position);
+                }
+                if (negative) {
+                    temperature = -temperature;
+                }
+            }
+
+            lineConsumer.process(stationStart, stationEnd, hash, suffix, temperature);
+        }
+    }
+
+    private void bigWorkerAligned(long offset, long chunkSize, MapReduce<I> lineConsumer) {
         long fileStart = fileService.address();
         long chunkEnd = fileStart + offset + chunkSize;
         long newRecordStart = fileStart + offset;
@@ -407,8 +516,7 @@ public class CalculateAverage_vaidhy<I, T> {
                 int semiPositionBits = findSemi(data, nextReadOffsetBits);
 
                 if (semiPositionBits == -1) {
-                    long currRelevant = data >>> nextReadOffsetBits;
-                    currRelevant <<= prevBits;
+                    long currRelevant = data >>> (nextReadOffsetBits - prevBits);
 
                     prevRelevant = prevRelevant | currRelevant;
                     int newPrevBits = prevBits + (64 - nextReadOffsetBits);
