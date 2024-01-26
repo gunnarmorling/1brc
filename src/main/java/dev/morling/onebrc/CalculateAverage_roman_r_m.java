@@ -112,23 +112,24 @@ public class CalculateAverage_roman_r_m {
                             long next = UNSAFE.getLong(offset);
                             long pattern = applyPattern(next, SEMICOLON_MASK);
                             int bytes;
-                            if (pattern != 0) {
+                            if (pattern == 0) {
+                                station.hash = hashFull(next);
+                                do {
+                                    offset += 8;
+                                    next = UNSAFE.getLong(offset);
+                                    pattern = applyPattern(next, SEMICOLON_MASK);
+                                } while (pattern == 0);
+
+                                bytes = Long.numberOfTrailingZeros(pattern) / 8;
+                                offset += bytes;
+                                tailMask = ((1L << (8 * bytes)) - 1);
+                            }
+                            else {
                                 bytes = Long.numberOfTrailingZeros(pattern) / 8;
                                 offset += bytes;
                                 tailMask = ((1L << (8 * bytes)) - 1);
 
                                 station.hash = hashPartial(next, bytes);
-                            }
-                            else {
-                                station.hash = hashFull(next);
-                                while (pattern == 0) {
-                                    offset += 8;
-                                    next = UNSAFE.getLong(offset);
-                                    pattern = applyPattern(next, SEMICOLON_MASK);
-                                }
-                                bytes = Long.numberOfTrailingZeros(pattern) / 8;
-                                offset += bytes;
-                                tailMask = ((1L << (8 * bytes)) - 1);
                             }
 
                             int len = (int) (offset - start);
