@@ -183,6 +183,7 @@ public class CalculateAverage_abeobk {
         return (short) ((abs_val ^ signed) - signed);
     }
 
+    //Thread pool worker
     static final class Worker extends Thread {
         final int thread_id;
 
@@ -198,7 +199,8 @@ public class CalculateAverage_abeobk {
             int id;
             int cls = 0;
 
-            // process in small chunk to maintain disk locality
+            // process in small chunk to maintain disk locality (artsiomkorzun trick)
+            // but keep going instead of merging
             while ((id = chunk_id.getAndIncrement()) < chunk_cnt) {
                 long addr = start_addr + id * CHUNK_SZ;
                 long end = Math.min(addr + CHUNK_SZ, end_addr);
