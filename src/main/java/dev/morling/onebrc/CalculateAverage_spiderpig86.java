@@ -28,7 +28,9 @@ import java.util.TreeMap;
  *          100k lines - 154ms,
  *          1m lines - 578ms
  *      - 1/16/24 - changed to single linear pass, use indexOf instead of string tokenizer, other changes.
+ *      https://stackoverflow.com/questions/13997361/string-substring-vs-string-split
  *          1m lines - 544ms
+ *      - 1/25/24 - make parseRow() functionality inline. No noticeable improvement.
  */
 public class CalculateAverage_spiderpig86 {
 
@@ -73,11 +75,16 @@ public class CalculateAverage_spiderpig86 {
 
             // Read to the end
             while ((line = reader.readLine()) != null) {
-                Measurement measurement = parseRow(line);
-                if (!stations.containsKey(measurement.station)) {
-                    stations.put(measurement.station, new ResultRow());
+                // Substring is faster than split by a long shot
+                // https://stackoverflow.com/questions/13997361/string-substring-vs-string-split#:~:text=When%20you%20run%20this%20multiple,would%20be%20even%20more%20drastic.
+                int delimiterIndex = line.indexOf(';');
+                String station = line.substring(0, delimiterIndex);
+                double value = Double.parseDouble(line.substring(delimiterIndex + 1));
+
+                if (!stations.containsKey(station)) {
+                    stations.put(station, new ResultRow());
                 }
-                stations.get(measurement.station).processValue(measurement.value());
+                stations.get(station).processValue(value);
             }
         }
         catch (IOException e) {
@@ -88,12 +95,5 @@ public class CalculateAverage_spiderpig86 {
         System.out.println(stations);
         // TODO Remove
          System.out.println("Elapsed time ms: " + (System.currentTimeMillis() - start));
-    }
-
-    private static Measurement parseRow(String row) {
-        // Substring is faster than split by a long shot
-        // https://stackoverflow.com/questions/13997361/string-substring-vs-string-split#:~:text=When%20you%20run%20this%20multiple,would%20be%20even%20more%20drastic.
-        int delimiterIndex = row.indexOf(';');
-        return new Measurement(row.substring(0, delimiterIndex), Double.parseDouble(row.substring(delimiterIndex + 1)));
     }
 }
