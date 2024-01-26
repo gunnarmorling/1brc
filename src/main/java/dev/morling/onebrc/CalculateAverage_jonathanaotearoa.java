@@ -220,7 +220,7 @@ public class CalculateAverage_jonathanaotearoa {
             return new Chunk(startAddress, lastByteAddress, lastWordAddress, isLast);
         }
 
-        public Long getWord(final long address) {
+        public long getWord(final long address) {
             if (isLast && address > lastWordAddress) {
                 // Make sure we don't read beyond the end of the file and potentially crash the JVM.
                 final long word = UNSAFE.getLong(lastWordAddress);
