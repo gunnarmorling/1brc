@@ -15,8 +15,6 @@
  */
 package dev.morling.onebrc;
 
-import java.io.BufferedReader;
-import java.io.FileReader;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,9 +27,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.Collectors;
 
 /**
  * Changelog:
@@ -52,9 +47,11 @@ import java.util.stream.Collectors;
  */
 public class CalculateAverage_spiderpig86 {
 
-    private static final String FILE = "./measurements3.txt";
+    private static final String FILE = "./measurements1.txt";
+    private static final boolean DEBUG = false;
 
-    private record Measurement(String station, double value) { }
+    private record Measurement(String station, double value) {
+    }
 
     private static class ResultRow {
         private double min = Double.POSITIVE_INFINITY;
@@ -95,17 +92,18 @@ public class CalculateAverage_spiderpig86 {
         long start = System.currentTimeMillis();
 
         // Read file in parallel
-        List<Measurement> measurements = Files.readAllLines(Path.of(FILE))
-                .stream().parallel()
-                        .map(line -> {
-                            // Substring is faster than split by a long shot
-                            // https://stackoverflow.com/questions/13997361/string-substring-vs-string-split#:~:text=When%20you%20run%20this%20multiple,would%20be%20even%20more%20drastic.
-                            int delimiterIndex = line.indexOf(';');
-                            String station = line.substring(0, delimiterIndex);
-                            double value = Double.parseDouble(line.substring(delimiterIndex + 1));
-                            return new Measurement(station, value);
-                        }).toList();
-        System.out.println("Finish file read: " + (System.currentTimeMillis() - start));
+        String measurementFile = args.length == 1 ? args[0] : FILE;
+        List<Measurement> measurements = Files.lines(Path.of(measurementFile))
+                .parallel()
+                .map(line -> {
+                    // Substring is faster than split by a long shot
+                    // https://stackoverflow.com/questions/13997361/string-substring-vs-string-split#:~:text=When%20you%20run%20this%20multiple,would%20be%20even%20more%20drastic.
+                    int delimiterIndex = line.indexOf(';');
+                    String station = line.substring(0, delimiterIndex);
+                    double value = Double.parseDouble(line.substring(delimiterIndex + 1));
+                    return new Measurement(station, value);
+                }).toList();
+        debug("Finish file read: " + (System.currentTimeMillis() - start));
 
         int threads = Runtime.getRuntime().availableProcessors();
         try (ExecutorService executorService = Executors.newFixedThreadPool(threads)) {
@@ -117,7 +115,7 @@ public class CalculateAverage_spiderpig86 {
                 int finalI = i;
                 futures.add(CompletableFuture
                         .supplyAsync(() -> processChunk(measurements, finalI * chunkSize,
-                                Math.min((finalI+1) * chunkSize, measurements.size())), executorService)
+                                Math.min((finalI + 1) * chunkSize, measurements.size())), executorService)
                         .thenAccept(resultMap -> {
                             resultMap.forEach((station, resultRow) -> aggregated.merge(station, resultRow, ResultRow::merge));
                         }));
@@ -125,13 +123,13 @@ public class CalculateAverage_spiderpig86 {
 
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                     .join();
-            System.out.println("Finish aggregation time ms: " + (System.currentTimeMillis() - start));
+            debug("Finish aggregation time ms: " + (System.currentTimeMillis() - start));
             System.out.println(new TreeMap<>(aggregated));
-            System.out.println("Tree Map time ms: " + (System.currentTimeMillis() - start));
+            debug("Tree Map time ms: " + (System.currentTimeMillis() - start));
         }
 
         // TODO Remove
-         System.out.println("Elapsed time ms: " + (System.currentTimeMillis() - start));
+        debug("Elapsed time ms: " + (System.currentTimeMillis() - start));
     }
 
     private static Map<String, ResultRow> processChunk(List<Measurement> measurements, int start, int end) {
@@ -144,5 +142,11 @@ public class CalculateAverage_spiderpig86 {
             results.get(m.station).processValue(m.value);
         }
         return results;
+    }
+
+    private static void debug(String s) {
+        if (DEBUG) {
+            System.out.println(s);
+        }
     }
 }
