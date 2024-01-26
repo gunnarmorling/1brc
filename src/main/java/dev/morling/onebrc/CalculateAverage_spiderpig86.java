@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,7 +48,7 @@ import java.util.concurrent.Executors;
  */
 public class CalculateAverage_spiderpig86 {
 
-    private static final String FILE = "src/test/resources/samples/measurements-20.txt";
+    private static final String FILE = "./measurements.txt";
     private static final boolean DEBUG = false;
 
     private record Measurement(String station, double value) {
@@ -75,7 +76,7 @@ public class CalculateAverage_spiderpig86 {
         }
 
         public double getMean() {
-            return total / count;
+            return round(total) / count;
         }
 
         public String toString() {
