@@ -31,7 +31,7 @@ public class CalculateAverage_PanagiotisDrakatos {
 
     public static void main(String[] args) throws IOException {
         SeekableByteRead(FILE);
-        Boolean DEBUG = true;
+        System.out.println(sortedCities);
     }
 
     private static void SeekableByteRead(String path) throws IOException {
