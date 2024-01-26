@@ -45,9 +45,7 @@ for sample in $(ls $INPUT); do
   rm -f measurements.txt
   ln -s $sample measurements.txt
 
-  echo $("./calculate_average_$FORK.sh") | ./tocsv.sh
-
-  diff -u <("./calculate_average_$FORK.sh" | ./tocsv.sh) <(./tocsv.sh < ${sample%.txt}.out)
+  diff --color=always <("./calculate_average_$FORK.sh" | ./tocsv.sh) <(./tocsv.sh < ${sample%.txt}.out)
 done
 
 rm measurements.txt
