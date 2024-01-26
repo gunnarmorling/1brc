@@ -51,7 +51,7 @@ public class CalculateAverage_jonathanaotearoa {
     }
 
     private static final Path FILE_PATH = Path.of("./measurements.txt");
-
+    private static final byte MAX_LINE_BYTES = 107;
     private static final byte NEW_LINE_BYTE = '\n';
     private static final long SEPARATOR_XOR_MASK = 0x3b3b3b3b3b3b3b3bL;
 
@@ -73,16 +73,9 @@ public class CalculateAverage_jonathanaotearoa {
             final long fileSize = fc.size();
             try (final Arena arena = Arena.ofConfined()) {
                 final long fileAddress = fc.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, arena).address();
-                final long[] chunks = getChunks(fileAddress, fileSize);
-
-                final TreeMap<String, StationData> result = IntStream.range(0, chunks.length - 1)
+                final TreeMap<String, StationData> result = createChunks(fileAddress, fileSize)
                         .parallel()
-                        .mapToObj(chunkIndex -> {
-                            final long chunkStartAddress = chunks[chunkIndex];
-                            final long chunkEndAddress = chunks[chunkIndex + 1];
-                            final boolean isLastChunk = chunkIndex == chunks.length - 2;
-                            return processChunk(chunkStartAddress, chunkEndAddress, isLastChunk);
-                        })
+                        .map(CalculateAverage_jonathanaotearoa::processChunk)
                         .flatMap(Repository::entries)
                         .collect(Collectors.toMap(
                                 sd -> sd.name,
@@ -94,33 +87,39 @@ public class CalculateAverage_jonathanaotearoa {
         }
     }
 
-    private static long[] getChunks(final long fileAddress, final long fileSize) {
-        // The number of cores - 1.
-        final int nChunks = ForkJoinPool.getCommonPoolParallelism();
-        final long[] chunks = new long[nChunks + 1];
-        final long chunkSize = fileSize / nChunks;
-        chunks[0] = fileAddress;
-        for (int i = 1; i < chunks.length; i++) {
-            long chunkAddress = fileAddress + i * chunkSize;
-            // The generated file has a new line char at the end, so I'm just checking for that.
-            while (UNSAFE.getByte(chunkAddress) != NEW_LINE_BYTE) {
-                chunkAddress++;
-            }
-            chunks[i] = chunkAddress + 1;
-        }
-        chunks[nChunks] = fileAddress + fileSize;
-        return chunks;
+    private static Stream<Chunk> createChunks(final long fileAddress, final long fileSize) {
+        final long[] chunkAddresses = getChunkAddresses(fileAddress, fileSize);
+        final long lastByteAddress = fileAddress + fileSize - 1;
+        return IntStream.range(0, chunkAddresses.length)
+                .mapToObj(chunkIndex -> Chunk.fromAddress(chunkAddresses, chunkIndex, lastByteAddress));
     }
 
-    private static Repository processChunk(final long startAddress,
-                                           final long endAddress,
-                                           final boolean isLastChunk) {
+    private static long[] getChunkAddresses(final long fileAddress, final long fileSize) {
+        // Should be the number of cores - 1.
+        final int parallelism = ForkJoinPool.getCommonPoolParallelism();
+        if ((long) parallelism * MAX_LINE_BYTES > fileSize) {
+            // There might not be enough lines in the file. Return a single chunk.
+            return new long[]{ fileAddress };
+        }
+        final long[] addresses = new long[parallelism];
+        final long chunkSize = fileSize / parallelism;
+        addresses[0] = fileAddress;
+        for (int i = 1; i < addresses.length; i++) {
+            long chunkAddress = fileAddress + (i * chunkSize);
+            // Find the end of the previous line.
+            while (UNSAFE.getByte(chunkAddress) != NEW_LINE_BYTE) {
+                chunkAddress--;
+            }
+            addresses[i] = chunkAddress + 1;
+        }
+        return addresses;
+    }
+
+    private static Repository processChunk(final Chunk chunk) {
         final Repository repo = new Repository();
-        final long lastWordAddress = endAddress - 7;
+        long address = chunk.startAddress;
 
-        long address = startAddress;
-
-        while (address < endAddress) {
+        while (address <= chunk.lastByteAddress) {
             // Read station name.
             long nameAddress = address;
             long nameWord;
@@ -130,7 +129,7 @@ public class CalculateAverage_jonathanaotearoa {
             while (true) {
                 // We don't care about byte order when constructing a hash.
                 // There's no need, therefore, to reverse the bytes if the OS is little endian.
-                nameWord = isLastChunk ? getWordSafely(address, lastWordAddress) : UNSAFE.getLong(address);
+                nameWord = chunk.getWord(address);
 
                 // Based on the Hacker's Delight "Find First 0-Byte" branch-free, 5-instruction, algorithm.
                 // See also https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
@@ -165,7 +164,7 @@ public class CalculateAverage_jonathanaotearoa {
             }
 
             final long tempAddress = separatorAddress + 1;
-            final long tempWord = isLastChunk ? getWordSafely(tempAddress, lastWordAddress) : UNSAFE.getLong(tempAddress);
+            final long tempWord = chunk.getWord(tempAddress);
 
             // Get the position of the decimal point...
             // "." in UTF-8 is 46, which is 00101110 in binary.
@@ -209,15 +208,28 @@ public class CalculateAverage_jonathanaotearoa {
         return repo;
     }
 
-    private static long getWordSafely(final long address, final long lastWordAddress) {
-        // Make sure we don't read beyond the end of the file and potentially crash the JVM.
-        if (address > lastWordAddress) {
-            final long word = UNSAFE.getLong(lastWordAddress);
-            final int bytesToDiscard = (int) (address - lastWordAddress);
-            // As with elsewhere, this assumes little endianness.
-            return word >>> (bytesToDiscard << 3);
+    private record Chunk(long startAddress, long lastByteAddress, long lastWordAddress, boolean isLast) {
+
+        public static Chunk fromAddress(final long[] chunkAddresses,
+                                        final int chunkIndex,
+                                        final long lastFileByteAddress) {
+            final long startAddress = chunkAddresses[chunkIndex];
+            final boolean isLast = chunkIndex == chunkAddresses.length - 1;
+            final long lastByteAddress = isLast ? lastFileByteAddress : chunkAddresses[chunkIndex + 1] - 1;
+            final long lastWordAddress = lastByteAddress - (Long.BYTES - 1);
+            return new Chunk(startAddress, lastByteAddress, lastWordAddress, isLast);
         }
-        return UNSAFE.getLong(address);
+
+        public Long getWord(final long address) {
+            if (isLast && address > lastWordAddress) {
+                // Make sure we don't read beyond the end of the file and potentially crash the JVM.
+                final long word = UNSAFE.getLong(lastWordAddress);
+                final int bytesToDiscard = (int) (address - lastWordAddress);
+                // As with elsewhere, this assumes little endianness.
+                return word >>> (bytesToDiscard << 3);
+            }
+            return UNSAFE.getLong(address);
+        }
     }
 
     private static class StationData implements Comparable<StationData> {

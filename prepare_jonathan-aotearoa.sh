@@ -16,13 +16,13 @@
 #
 
 source "$HOME/.sdkman/bin/sdkman-init.sh"
-sdk use java 21.0.1-graal 1>&2
+sdk use java 21.0.2-graal 1>&2
 
 if [ ! -f target/CalculateAverage_jonathan-aotearoa_image ]; then
     # Enable preview features and disable system assertions.
     JAVA_OPTS="--enable-preview -dsa"
     # Use the no-op GC.
     # Enable CPU features (-march=native) and level-3 optimisations (-O3)
-    NATIVE_IMAGE_OPTS="--gc=epsilon -O3 -march=native --strict-image-heap $JAVA_OPTS"
+    NATIVE_IMAGE_OPTS="--initialize-at-build-time=dev.morling.onebrc.CalculateAverage_jonathanaotearoa --gc=epsilon -O3 -march=native --strict-image-heap $JAVA_OPTS"
     native-image $NATIVE_IMAGE_OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o target/CalculateAverage_jonathan-aotearoa_image dev.morling.onebrc.CalculateAverage_jonathanaotearoa
 fi
