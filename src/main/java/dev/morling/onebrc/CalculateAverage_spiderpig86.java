@@ -46,12 +46,13 @@ import java.util.stream.Collectors;
  *      <li> 1/25/24 - make parseRow() functionality inline. No noticeable improvement.</li>
  *      <li> 1/26/24 - rewrite to use parallel streams to read/process rows into memory and then use multiple
  *      threads to aggregate results.
- *          1m lines - 417ms</li>
+ *          1m lines - 417ms
+ *          10m lines - 2493ms</li>
  * </ol>
  */
 public class CalculateAverage_spiderpig86 {
 
-    private static final String FILE = "./measurements2.txt";
+    private static final String FILE = "./measurements3.txt";
 
     private record Measurement(String station, double value) { }
 
@@ -104,6 +105,7 @@ public class CalculateAverage_spiderpig86 {
                             double value = Double.parseDouble(line.substring(delimiterIndex + 1));
                             return new Measurement(station, value);
                         }).toList();
+        System.out.println("Finish file read: " + (System.currentTimeMillis() - start));
 
         int threads = Runtime.getRuntime().availableProcessors();
         try (ExecutorService executorService = Executors.newFixedThreadPool(threads)) {
@@ -123,7 +125,9 @@ public class CalculateAverage_spiderpig86 {
 
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                     .join();
+            System.out.println("Finish aggregation time ms: " + (System.currentTimeMillis() - start));
             System.out.println(new TreeMap<>(aggregated));
+            System.out.println("Tree Map time ms: " + (System.currentTimeMillis() - start));
         }
 
         // TODO Remove
