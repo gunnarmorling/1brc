@@ -25,14 +25,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.TreeMap;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class CalculateAverage_gigiblender {
-     private static final int AVAIL_CORES = Runtime.getRuntime().availableProcessors();
-//    private static final int AVAIL_CORES = 8;
-
-    // TODO maybe put this further apart in the array to avoid false sharing
+    private static final int AVAIL_CORES = Runtime.getRuntime().availableProcessors();
     private static final HashTable[] tables = new HashTable[AVAIL_CORES];
 
     private static Unsafe unsafe;
@@ -67,26 +62,16 @@ public class CalculateAverage_gigiblender {
         byte[] data;
 
         private static final int HASH_OFFSET = 0;
-        private static final int HASH_SIZE = 8;
 
         private static final int ADDR_OFFSET = 8;
-        private static final int ADDR_SIZE = 8;
         private static final long ADDR_MASK = 0x00FFFFFFFFFFFFFFL;
-        private static final long STRING_LENGTH_MASK = 0xFF00000000000000L;
         private static final int STRING_LENGTH_SHIFT = 56;
 
         private static final int COUNT_OFFSET = 16;
-        private static final int COUNT_SIZE = 4;
-
-        private static final int MAX_OFFSET = 20;
-        private static final int MIN_SIZE = 2;
-        private static final int MIN_OFFSET = 22;
-        private static final int MAX_SIZE = 2;
 
         private static final int SUM_OFFSET = 24;
-        private static final int SUM_SIZE = 8;
 
-        // private int reprobe_count;
+        private int reprobe_count;
 
         public HashTable() {
             data = new byte[DATA_SIZE];
@@ -140,13 +125,25 @@ public class CalculateAverage_gigiblender {
                     return false;
                 }
             }
-            for (; i < size_bytes; i++) {
-                byte entry_byte = unsafe.getByte(entry_string_addr + i);
-                byte string_byte = unsafe.getByte(string_addr + i);
-                if (entry_byte != string_byte) {
-                    return false;
-                }
+            // The hash function is not great, so I end up in this case a lot, so I take some risks.
+            // This never caused a SIGSEGV even though it might :) If it does, fall back to the commented version below.
+            // I will try to improve on the hash function
+            if (remaining_bytes != 0) {
+                long entry_bytes = unsafe.getLong(entry_string_addr + i);
+                long string_bytes = unsafe.getLong(string_addr + i);
+                // mask the bytes we care about
+                long mask = (1L << (remaining_bytes * Byte.SIZE)) - 1;
+                entry_bytes &= mask;
+                string_bytes &= mask;
+                return entry_bytes == string_bytes;
             }
+            // for (; i < size_bytes; i++) {
+            // byte entry_byte = unsafe.getByte(entry_string_addr + i);
+            // byte string_byte = unsafe.getByte(string_addr + i);
+            // if (entry_byte != string_byte) {
+            // return false;
+            // }
+            // }
             return true;
         }
 
@@ -226,27 +223,25 @@ public class CalculateAverage_gigiblender {
         }
 
         public void update_res(TreeMap<String, Result> result_map) {
-            // System.out.println("Reprobe count: " + reprobe_count);
+            // System.err.println("Reprobe count: " + reprobe_count);
             Result r = new Result();
 
             for (int i = 0; i < NUM_ENTRIES; i++) {
                 long entry_addr_offset = (long) i * ENTRY_SIZE;
-                long entry_count0 = unsafe.getInt(data, Unsafe.ARRAY_BYTE_BASE_OFFSET + entry_addr_offset + COUNT_OFFSET);
-                if (entry_count0 == 0) {
+                long entry_count_max_min = count_max_min(entry_addr_offset);
+                int entry_count = mask_count(entry_count_max_min);
+                if (entry_count == 0) {
                     continue;
                 }
                 long entry_string_addr_and_length = string_addr_and_length(entry_addr_offset);
                 long entry_string_addr = string_addr(entry_string_addr_and_length);
                 long entry_string_length = string_length(entry_string_addr_and_length);
 
-                // TODO no reason to copy the byte arrary twice here. Maybe just allocate a string of same size and then replace
-                // the byte array reference
+                // no reason to copy the byte array twice here but what can you do...
                 byte[] bytes = new byte[(int) entry_string_length];
                 unsafe.copyMemory(null, entry_string_addr, bytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, entry_string_length);
                 String s = new String(bytes, StandardCharsets.UTF_8);
 
-                long entry_count_max_min = count_max_min(entry_addr_offset);
-                int entry_count = mask_count(entry_count_max_min);
                 short entry_max = mask_max(entry_count_max_min);
                 short entry_min = mask_min(entry_count_max_min);
 
@@ -343,24 +338,25 @@ public class CalculateAverage_gigiblender {
             // dump(cur_addr, cur_addr + semicolon_byte_index);
 
             if (semicolon_byte_index != 8) {
-                long value_mem_up_to_semicolon = value_mem & ((1L << semicolon_byte_index) - 1);
+                long value_mem_up_to_semicolon = value_mem & ((1L << (semicolon_byte_index * Byte.SIZE)) - 1);
+
                 // We have a semicolon, so the hash is complete now. We can construct the number
                 // and insert it into the hash table
                 long start_num_addr = cur_addr + semicolon_byte_index + 1;
 
+                // Always read the next 8 bytes for the number. It seems that this is faster than
+                // checking if the whole number is in the current 8 bytes and only reading if it is not
                 long number_mem_value = unsafe.getLong(start_num_addr);
                 long number_len_bytes = get_newline_index(number_mem_value);
 
                 long final_number = extract_number(number_mem_value, number_len_bytes);
 
-                // TODO hash function is still bad -- try to find something better
-                hash = hash_artsiomkorzun(hash ^ value_mem_up_to_semicolon);
+                // 0.2421196 % reprobe rate
+                hash = compute_hash(hash ^ value_mem_up_to_semicolon);
 
                 // We have the final number now. We can insert it into the hash table
                 my_table.insert(hash, string_addr, string_size, final_number);
                 // Now we can move on to the next line
-                // TODO am I faster with misaligned loads -- i.e. continue processing the current read bytes instead
-                // of paying the cost reading some bytes twice? Probably yes based on the other solutions
                 hash = -2346162244362633811L;
                 string_size = 0;
                 cur_addr = start_num_addr + number_len_bytes + 1;
@@ -368,7 +364,7 @@ public class CalculateAverage_gigiblender {
             }
             else {
                 // No semicolon in the 8 bytes read. Continue reading
-                hash = value_mem;
+                hash = hash ^ value_mem;
                 cur_addr += 8;
             }
         }
@@ -376,7 +372,8 @@ public class CalculateAverage_gigiblender {
     }
 
     private static long extract_number(long number_mem_value, long number_len_bytes) {
-        // Pray for CSE and Sea of Nodes moving the mess below in the proper places :)
+        // Pray for GVN/CSE and Sea of Nodes moving the mess below in the proper places because
+        // I don't want to spend the time to do it properly :)
         long number_mem_dot_index = get_dot_index(number_mem_value);
 
         int fractional_part = get_fractional_part(number_mem_value, number_len_bytes);
@@ -414,10 +411,11 @@ public class CalculateAverage_gigiblender {
         return (int) (-2 * sign + 1) * -1;
     }
 
-    private static int hash_artsiomkorzun(long x) { // Hash burrowed from artsiomkorzun
+    private static long compute_hash(long x) { // Hash burrowed from artsiomkorzun and slightly changed
         long h = x * -7046029254386353131L;
-        h ^= h >>> 32;
-        return (int) (h ^ h >>> 16);
+        long h1 = h ^ (h >>> 32);
+        h = h ^ (h << 32);
+        return h1 ^ h;
     }
 
     private static void dump(long startAddr, long endAddr) {
@@ -463,7 +461,6 @@ public class CalculateAverage_gigiblender {
     private static final boolean SINGLE_CORE = false;
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        // FileChannel fileChannel = FileChannel.open(Paths.get(FILE), ExtendedOpenOption.DIRECT);
         FileChannel file_channel = FileChannel.open(Paths.get(FILE), StandardOpenOption.READ);
         long file_size = file_channel.size();
         long base_addr = file_channel.map(FileChannel.MapMode.READ_ONLY, 0, file_size, Arena.global()).address();
