@@ -300,23 +300,27 @@ public class CalculateAverage_roman_r_m {
 
             int idx0 = idx;
             int i = 0;
-            while (keys[idx] != null && !keys[idx].equals(s)) {
-                i++;
-                idx = (idx0 + i * i) % SIZE;
-            }
-            if (keys[idx] == null) {
-                keys[idx] = s.copy();
-                values[idx] = new int[4];
-                values[idx][0] = value;
-                values[idx][1] = value;
-                values[idx][2] = value;
-                values[idx][3] = 1;
-            }
-            else {
-                values[idx][0] = Math.min(values[idx][0], value);
-                values[idx][1] = Math.max(values[idx][1], value);
-                values[idx][2] += value;
-                values[idx][3] += 1;
+            while (true) {
+                if (keys[idx] != null && keys[idx].equals(s)) {
+                    values[idx][0] = Math.min(values[idx][0], value);
+                    values[idx][1] = Math.max(values[idx][1], value);
+                    values[idx][2] += value;
+                    values[idx][3] += 1;
+                    return;
+                }
+                else if (keys[idx] == null) {
+                    keys[idx] = s.copy();
+                    values[idx] = new int[4];
+                    values[idx][0] = value;
+                    values[idx][1] = value;
+                    values[idx][2] = value;
+                    values[idx][3] = 1;
+                    return;
+                }
+                else {
+                    i++;
+                    idx = (idx0 + i * i) % SIZE;
+                }
             }
         }
 
