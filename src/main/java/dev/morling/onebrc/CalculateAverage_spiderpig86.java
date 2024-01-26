@@ -18,19 +18,36 @@ package dev.morling.onebrc;
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 /**
  * Changelog:
- *      - 1/15/24 - initial minor changes with syntax. 100k lines - 209ms
- *      - 1/15/24 - new algorithm without streams, new splitting method, use of BufferedReader. https://stackoverflow.com/questions/11001330/java-split-string-performances
+ * <ol>
+ *      <li> 1/15/24 - initial minor changes with syntax. 100k lines - 209ms</li>
+ *      <li> 1/15/24 - new algorithm without streams, new splitting method, use of BufferedReader. https://stackoverflow.com/questions/11001330/java-split-string-performances
  *          100k lines - 154ms,
- *          1m lines - 578ms
- *      - 1/16/24 - changed to single linear pass, use indexOf instead of string tokenizer, other changes.
+ *          1m lines - 578ms</li>
+ *      <li> 1/16/24 - changed to single linear pass, use indexOf instead of string tokenizer, other changes.
  *      https://stackoverflow.com/questions/13997361/string-substring-vs-string-split
- *          1m lines - 544ms
- *      - 1/25/24 - make parseRow() functionality inline. No noticeable improvement.
+ *          1m lines - 544ms</li>
+ *      <li> 1/25/24 - make parseRow() functionality inline. No noticeable improvement.</li>
+ *      <li> 1/26/24 - rewrite to use parallel streams to read/process rows into memory and then use multiple
+ *      threads to aggregate results.
+ *          1m lines - 417ms</li>
+ * </ol>
  */
 public class CalculateAverage_spiderpig86 {
 
@@ -51,6 +68,14 @@ public class CalculateAverage_spiderpig86 {
             ++count;
         }
 
+        public ResultRow merge(ResultRow other) {
+            min = Math.min(min, other.min);
+            max = Math.max(max, other.max);
+            total += other.total;
+            count += other.count;
+            return this;
+        }
+
         public double getMean() {
             return total / count;
         }
@@ -68,32 +93,52 @@ public class CalculateAverage_spiderpig86 {
         // TODO Remove
         long start = System.currentTimeMillis();
 
-        // Read file
-        Map<String, ResultRow> stations = new TreeMap<>();
-        try (BufferedReader reader = new BufferedReader(new FileReader(FILE))) {
-            String line;
+        // Read file in parallel
+        List<Measurement> measurements = Files.readAllLines(Path.of(FILE))
+                .stream().parallel()
+                        .map(line -> {
+                            // Substring is faster than split by a long shot
+                            // https://stackoverflow.com/questions/13997361/string-substring-vs-string-split#:~:text=When%20you%20run%20this%20multiple,would%20be%20even%20more%20drastic.
+                            int delimiterIndex = line.indexOf(';');
+                            String station = line.substring(0, delimiterIndex);
+                            double value = Double.parseDouble(line.substring(delimiterIndex + 1));
+                            return new Measurement(station, value);
+                        }).toList();
 
-            // Read to the end
-            while ((line = reader.readLine()) != null) {
-                // Substring is faster than split by a long shot
-                // https://stackoverflow.com/questions/13997361/string-substring-vs-string-split#:~:text=When%20you%20run%20this%20multiple,would%20be%20even%20more%20drastic.
-                int delimiterIndex = line.indexOf(';');
-                String station = line.substring(0, delimiterIndex);
-                double value = Double.parseDouble(line.substring(delimiterIndex + 1));
+        int threads = Runtime.getRuntime().availableProcessors();
+        try (ExecutorService executorService = Executors.newFixedThreadPool(threads)) {
+            List<CompletableFuture<Void>> futures = new ArrayList<>();
+            Map<String, ResultRow> aggregated = new ConcurrentHashMap<>();
+            int chunkSize = measurements.size() / threads;
 
-                if (!stations.containsKey(station)) {
-                    stations.put(station, new ResultRow());
-                }
-                stations.get(station).processValue(value);
+            for (int i = 0; i < threads; i++) {
+                int finalI = i;
+                futures.add(CompletableFuture
+                        .supplyAsync(() -> processChunk(measurements, finalI * chunkSize,
+                                Math.min((finalI+1) * chunkSize, measurements.size())), executorService)
+                        .thenAccept(resultMap -> {
+                            resultMap.forEach((station, resultRow) -> aggregated.merge(station, resultRow, ResultRow::merge));
+                        }));
             }
-        }
-        catch (IOException e) {
-            e.printStackTrace();
-            return;
+
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                    .join();
+            System.out.println(new TreeMap<>(aggregated));
         }
 
-        System.out.println(stations);
         // TODO Remove
          System.out.println("Elapsed time ms: " + (System.currentTimeMillis() - start));
+    }
+
+    private static Map<String, ResultRow> processChunk(List<Measurement> measurements, int start, int end) {
+        final Map<String, ResultRow> results = new HashMap<>();
+        for (int i = start; i < end; i++) {
+            Measurement m = measurements.get(i);
+            if (!results.containsKey(m.station)) {
+                results.put(m.station, new ResultRow());
+            }
+            results.get(m.station).processValue(m.value);
+        }
+        return results;
     }
 }
