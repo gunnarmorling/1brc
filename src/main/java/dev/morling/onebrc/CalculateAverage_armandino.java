@@ -45,6 +45,7 @@ public class CalculateAverage_armandino {
     private static final byte DOT = 46;
     private static final byte MINUS = 45;
     private static final byte ZERO_DIGIT = 48;
+    private static final int PRIME = 1117;
     private static final Unsafe UNSAFE = getUnsafe();
 
     public static void main(String[] args) throws Exception {
@@ -78,7 +79,7 @@ public class CalculateAverage_armandino {
                 byte b;
 
                 while ((b = UNSAFE.getByte(i++)) != SEMICOLON) {
-                    keyHash = 31 * keyHash + b;
+                    keyHash = PRIME * keyHash + b;
                 }
 
                 final int keyLength = (int) (i - keyAddress - 1);
@@ -114,13 +115,14 @@ public class CalculateAverage_armandino {
                 stats.sum += measurement;
                 stats.count++;
             }
+
             return map;
         }
     }
 
     private static class Stats implements Comparable<Stats> {
         private String key;
-        private final byte[] keyBytes;
+        private final long keyAddress;
         private final int keyLength;
         private final int keyHash;
         private int min = Integer.MAX_VALUE;
@@ -129,17 +131,15 @@ public class CalculateAverage_armandino {
         private long sum;
 
         private Stats(long keyAddress, int keyLength, int keyHash) {
+            this.keyAddress = keyAddress;
             this.keyLength = keyLength;
-            this.keyBytes = new byte[keyLength];
             this.keyHash = keyHash;
-
-            for (int i = 0; i < keyLength; i++) {
-                keyBytes[i] = UNSAFE.getByte(keyAddress++);
-            }
         }
 
         String getKey() {
             if (key == null) {
+                var keyBytes = new byte[keyLength];
+                UNSAFE.copyMemory(null, keyAddress, keyBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, keyLength);
                 key = new String(keyBytes, 0, keyLength, UTF_8);
             }
             return key;
@@ -230,37 +230,6 @@ public class CalculateAverage_armandino {
             return Arrays.stream(table).filter(Objects::nonNull);
         }
 
-        private void resize() {
-            var copy = new SimpleMap(table.length * 2);
-            for (Stats s : table) {
-                if (s != null) {
-                    final int pos = (copy.table.length - 1) & s.keyHash;
-                    int i = pos;
-
-                    if (copy.table[i] == null) {
-                        copy.table[i] = s;
-                        continue;
-                    }
-
-                    while (i < copy.table.length && copy.table[i] != null) {
-                        i++;
-                    }
-                    if (i == copy.table.length) {
-                        i = pos;
-                        while (i >= 0 && copy.table[i] != null) {
-                            i--;
-                        }
-                    }
-                    if (i < 0) {
-                        // shouldn't happen because put() is called after increasing size
-                        throw new IllegalStateException("table is full");
-                    }
-                    copy.table[i] = s;
-                }
-            }
-            table = copy.table;
-        }
-
         Stats putStats(final int keyHash, final long keyAddress, final int keyLength) {
             final int pos = (table.length - 1) & keyHash;
 
@@ -291,22 +260,49 @@ public class CalculateAverage_armandino {
             return putStats(keyHash, keyAddress, keyLength);
         }
 
-        private boolean keysEqual(Stats stats, long keyAddress, final int keyLength) {
-            if (stats.keyLength != keyLength) {
-                return false;
-            }
-            for (int i = 0; i < keyLength; i++) {
-                if (stats.keyBytes[i] != UNSAFE.getByte(keyAddress++)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
         private static Stats createAt(Stats[] table, long keyAddress, int keyLength, int key, int i) {
             Stats stats = new Stats(keyAddress, keyLength, key);
             table[i] = stats;
             return stats;
+        }
+
+        private static boolean keysEqual(Stats stats, long keyAddress, final int keyLength) {
+            // credit: abeobk
+            long xsum = 0;
+            int n = keyLength & 0xF8;
+            for (int i = 0; i < n; i += 8) {
+                xsum |= (UNSAFE.getLong(stats.keyAddress + i) ^ UNSAFE.getLong(keyAddress + i));
+            }
+            return xsum == 0;
+        }
+
+        private void resize() {
+            var copy = new SimpleMap(table.length * 2);
+            for (Stats s : table) {
+                if (s != null) {
+                    final int pos = (copy.table.length - 1) & s.keyHash;
+                    int i = pos;
+                    if (copy.table[i] == null) {
+                        copy.table[i] = s;
+                        continue;
+                    }
+                    while (i < copy.table.length && copy.table[i] != null) {
+                        i++;
+                    }
+                    if (i == copy.table.length) {
+                        i = pos;
+                        while (i >= 0 && copy.table[i] != null) {
+                            i--;
+                        }
+                    }
+                    if (i < 0) {
+                        // if we reach here it's a bug!
+                        throw new IllegalStateException("table is full");
+                    }
+                    copy.table[i] = s;
+                }
+            }
+            table = copy.table;
         }
     }
 }

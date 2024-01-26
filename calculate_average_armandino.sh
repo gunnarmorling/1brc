@@ -15,6 +15,11 @@
 #  limitations under the License.
 #
 
-
-JAVA_OPTS="--enable-preview -da -dsa -Xms128m -Xmx128m -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -XX:+AlwaysPreTouch"
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_armandino
+if [ -f target/CalculateAverage_armandino_image ]; then
+    echo "Picking up existing native image 'target/CalculateAverage_armandino_image', delete the file to select JVM mode." 1>&2
+    target/CalculateAverage_armandino_image
+else
+    echo "Chosing to run the app in JVM mode as no native image was found, use prepare_armandino.sh to generate." 1>&2
+    JAVA_OPTS="--enable-preview -da -dsa -Xms128m -Xmx128m -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -XX:+AlwaysPreTouch"
+    java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_armandino
+fi
