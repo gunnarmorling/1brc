@@ -64,6 +64,15 @@ public class CalculateAverage_roman_r_m {
         return start + Long.numberOfTrailingZeros(i) / 8;
     }
 
+    static int hashFull(long word) {
+        return (int) (word ^ (word >>> 32));
+    }
+
+    static int hashPartial(long word, int bytes) {
+        long h = Long.reverseBytes(word) >>> (8 * (8 - bytes));
+        return (int) (h ^ (h >>> 32));
+    }
+
     public static void main(String[] args) throws Exception {
         Field f = Unsafe.class.getDeclaredField("theUnsafe");
         f.setAccessible(true);
@@ -108,12 +117,10 @@ public class CalculateAverage_roman_r_m {
                                 offset += bytes;
                                 tailMask = ((1L << (8 * bytes)) - 1);
 
-                                long h = Long.reverseBytes(next) >>> (8 * (8 - bytes));
-                                station.hash = (int) (h ^ (h >>> 32));
+                                station.hash = hashPartial(next, bytes);
                             }
                             else {
-                                long h = next;
-                                station.hash = (int) (h ^ (h >>> 32));
+                                station.hash = hashFull(next);
                                 while (pattern == 0) {
                                     offset += 8;
                                     next = UNSAFE.getLong(offset);
