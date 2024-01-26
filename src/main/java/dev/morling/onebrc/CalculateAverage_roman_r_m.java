@@ -40,6 +40,7 @@ public class CalculateAverage_roman_r_m {
     private static final long SEMICOLON_MASK = broadcast((byte) ';');
     private static final long LINE_END_MASK = broadcast((byte) '\n');
     private static final long DOT_MASK = broadcast((byte) '.');
+    private static final long ZEROES_MASK = broadcast((byte) '0');
 
     // from netty
 
@@ -152,7 +153,7 @@ public class CalculateAverage_roman_r_m {
                                 long numLen = applyPattern(encodedVal, DOT_MASK);
                                 numLen = Long.numberOfTrailingZeros(numLen) / 8;
 
-                                encodedVal ^= broadcast((byte) 0x30);
+                                encodedVal ^= ZEROES_MASK;
 
                                 int intPart = (int) (encodedVal & ((1 << (8 * numLen)) - 1));
                                 intPart <<= 8 * (2 - numLen);
