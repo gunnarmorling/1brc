@@ -183,7 +183,7 @@ public class CalculateAverage_abeobk {
         return (short) ((abs_val ^ signed) - signed);
     }
 
-    //Thread pool worker
+    // Thread pool worker
     static final class Worker extends Thread {
         final int thread_id;
 
