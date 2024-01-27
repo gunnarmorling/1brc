@@ -29,10 +29,10 @@ import java.util.stream.IntStream;
  * Simple solution that memory maps the input file, then splits it into one segment per available core and uses
  * sun.misc.Unsafe to directly access the mapped memory. Uses a long at a time when checking for collision.
  * <p>
- * Runs in 0.60s on my Intel i9-13900K
+ * Runs in 0.45s on my Intel i9-13900K
  * Perf stats:
- *     34,716,719,245      cpu_core/cycles/
- *     40,776,530,892      cpu_atom/cycles/
+ *     33,128,048,027      cpu_core/cycles/
+ *     38,668,037,020      cpu_atom/cycles/
  */
 public class CalculateAverage_thomaswue {
     private static final String FILE = "./measurements.txt";
@@ -42,10 +42,11 @@ public class CalculateAverage_thomaswue {
     // Holding the current result for a single city.
     private static class Result {
         long lastNameLong, secondLastNameLong;
-        long[] name;
-        int count;
-        short min, max;
+        long min, max;
         long sum;
+        int count;
+        long[] name;
+        String nameAsString;
 
         private Result() {
             this.min = MAX_TEMP;
@@ -73,13 +74,16 @@ public class CalculateAverage_thomaswue {
         }
 
         public String calcName() {
-            ByteBuffer bb = ByteBuffer.allocate(name.length * Long.BYTES).order(ByteOrder.nativeOrder());
-            bb.asLongBuffer().put(name);
-            byte[] array = bb.array();
-            int i = 0;
-            while (array[i++] != ';')
-                ;
-            return new String(array, 0, i - 1, StandardCharsets.UTF_8);
+            if (nameAsString == null) {
+                ByteBuffer bb = ByteBuffer.allocate(name.length * Long.BYTES).order(ByteOrder.nativeOrder());
+                bb.asLongBuffer().put(name);
+                byte[] array = bb.array();
+                int i = 0;
+                while (array[i++] != ';')
+                    ;
+                nameAsString = new String(array, 0, i - 1, StandardCharsets.UTF_8);
+            }
+            return nameAsString;
         }
     }
 
@@ -95,9 +99,10 @@ public class CalculateAverage_thomaswue {
         // Parallel processing of segments.
         List<List<Result>> allResults = IntStream.range(0, chunks.length - 1).mapToObj(chunkIndex -> parseLoop(chunks[chunkIndex], chunks[chunkIndex + 1]))
                 .map(resultArray -> {
-                    List<Result> results = new ArrayList<>();
+                    List<Result> results = new ArrayList<>(500);
                     for (Result r : resultArray) {
                         if (r != null) {
+                            r.calcName();
                             results.add(r);
                         }
                     }
@@ -145,76 +150,92 @@ public class CalculateAverage_thomaswue {
         Scanner scanner = new Scanner(chunkStart, chunkEnd);
         long word = scanner.getLong();
         long pos = findDelimiter(word);
-        while (scanner.hasNext()) {
-            long nameAddress = scanner.pos();
-            long hash = 0;
 
-            // Search for ';', one long at a time.
-            if (pos != 0) {
-                pos = Long.numberOfTrailingZeros(pos) >>> 3;
-                scanner.add(pos);
-                word = mask(word, pos);
-                hash = word;
-
-                int number = scanNumber(scanner);
-                long nextWord = scanner.getLong();
-                long nextPos = findDelimiter(nextWord);
-
-                Result existingResult = results[hashToIndex(hash, results)];
-                if (existingResult != null && existingResult.lastNameLong == word) {
-                    word = nextWord;
-                    pos = nextPos;
-                    record(existingResult, number);
-                    continue;
-                }
-
-                scanner.setPos(nameAddress + pos);
-            }
-            else {
-                scanner.add(8);
-                hash = word;
-                long prevWord = word;
-                word = scanner.getLong();
-                pos = findDelimiter(word);
+        outermost: while (scanner.hasNext()) {
+            long hash;
+            long nameAddress;
+            while (true) {
+                nameAddress = scanner.pos();
+                // Search for ';', one long at a time.
                 if (pos != 0) {
                     pos = Long.numberOfTrailingZeros(pos) >>> 3;
                     scanner.add(pos);
                     word = mask(word, pos);
-                    hash ^= word;
+                    hash = word;
 
-                    Result existingResult = results[hashToIndex(hash, results)];
-                    if (existingResult != null && existingResult.lastNameLong == word && existingResult.secondLastNameLong == prevWord) {
-                        int number = scanNumber(scanner);
-                        word = scanner.getLong();
-                        pos = findDelimiter(word);
+                    int index = hashToIndex(hash, results);
+                    long number = scanNumber(scanner);
+                    Result existingResult = results[index];
+                    long nextWord = scanner.getLong();
+                    long nextPos = findDelimiter(nextWord);
+
+                    if (existingResult != null && existingResult.lastNameLong == word) {
+                        word = nextWord;
+                        pos = nextPos;
                         record(existingResult, number);
-                        continue;
+                    }
+                    else {
+                        scanner.setPos(nameAddress + pos);
+                        break;
                     }
                 }
                 else {
                     scanner.add(8);
-                    hash ^= word;
-                    while (true) {
-                        word = scanner.getLong();
-                        pos = findDelimiter(word);
-                        if (pos != 0) {
-                            pos = Long.numberOfTrailingZeros(pos) >>> 3;
-                            scanner.add(pos);
-                            word = mask(word, pos);
-                            hash ^= word;
-                            break;
+                    hash = word;
+                    long prevWord = word;
+                    word = scanner.getLong();
+                    pos = findDelimiter(word);
+                    if (pos != 0) {
+                        pos = Long.numberOfTrailingZeros(pos) >>> 3;
+                        scanner.add(pos);
+                        word = mask(word, pos);
+                        hash ^= word;
+                        int index = hashToIndex(hash, results);
+                        long number = scanNumber(scanner);
+                        Result existingResult = results[index];
+                        long nextWord = scanner.getLong();
+                        long nextDelimiterWord = findDelimiter(nextWord);
+
+                        if (existingResult != null && existingResult.lastNameLong == word && existingResult.secondLastNameLong == prevWord) {
+                            word = nextWord;
+                            pos = nextDelimiterWord;
+                            record(existingResult, number);
                         }
                         else {
-                            scanner.add(8);
-                            hash ^= word;
+                            scanner.setPos(nameAddress + pos + 8);
+                            break;
                         }
                     }
+                    else {
+                        scanner.add(8);
+                        hash ^= word;
+                        while (true) {
+                            word = scanner.getLong();
+                            pos = findDelimiter(word);
+                            if (pos != 0) {
+                                pos = Long.numberOfTrailingZeros(pos) >>> 3;
+                                scanner.add(pos);
+                                word = mask(word, pos);
+                                hash ^= word;
+                                break;
+                            }
+                            else {
+                                scanner.add(8);
+                                hash ^= word;
+                            }
+                        }
+                        break;
+                    }
+                }
+
+                if (!scanner.hasNext()) {
+                    break outermost;
                 }
             }
 
             // Save length of name for later.
             int nameLength = (int) (scanner.pos() - nameAddress);
-            int number = scanNumber(scanner);
+            long number = scanNumber(scanner);
 
             // Final calculation for index into hash table.
             int tableIndex = hashToIndex(hash, results);
@@ -225,9 +246,9 @@ public class CalculateAverage_thomaswue {
                 }
                 // Check for collision.
                 int i = 0;
-                int namePos = 0;
+                long[] name = existingResult.name;
                 for (; i < nameLength + 1 - 8; i += 8) {
-                    if (namePos >= existingResult.name.length || existingResult.name[namePos++] != scanner.getLongAt(nameAddress + i)) {
+                    if (scanner.getLongAt(i, name) != scanner.getLongAt(nameAddress + i)) {
                         tableIndex = (tableIndex + 31) & (results.length - 1);
                         continue outer;
                     }
@@ -250,30 +271,29 @@ public class CalculateAverage_thomaswue {
         return results;
     }
 
-    private static int scanNumber(Scanner scanPtr) {
+    private static long scanNumber(Scanner scanPtr) {
         scanPtr.add(1);
         long numberWord = scanPtr.getLong();
         int decimalSepPos = Long.numberOfTrailingZeros(~numberWord & 0x10101000);
-        int number = convertIntoNumber(decimalSepPos, numberWord);
+        long number = convertIntoNumber(decimalSepPos, numberWord);
         scanPtr.add((decimalSepPos >>> 3) + 3);
         return number;
     }
 
-    private static void record(Result existingResult, int number) {
+    private static void record(Result existingResult, long number) {
         if (number < existingResult.min) {
-            existingResult.min = (short) number;
+            existingResult.min = number;
         }
         if (number > existingResult.max) {
-            existingResult.max = (short) number;
+            existingResult.max = number;
         }
         existingResult.sum += number;
         existingResult.count++;
     }
 
     private static int hashToIndex(long hash, Result[] results) {
-        int hashAsInt = (int) (hash ^ (hash >>> 28));
-        int finalHash = (hashAsInt ^ (hashAsInt >>> 17));
-        return (finalHash & (results.length - 1));
+        long hashAsInt = hash ^ (hash >>> 37) ^ (hash >>> 17);
+        return (int) (hashAsInt & (results.length - 1));
     }
 
     private static long mask(long word, long pos) {
@@ -281,7 +301,7 @@ public class CalculateAverage_thomaswue {
     }
 
     // Special method to convert a number in the ascii number into an int without branches created by Quan Anh Mai.
-    private static int convertIntoNumber(int decimalSepPos, long numberWord) {
+    private static long convertIntoNumber(int decimalSepPos, long numberWord) {
         int shift = 28 - decimalSepPos;
         // signed is -1 if negative, 0 otherwise
         long signed = (~numberWord << 59) >> 63;
@@ -292,8 +312,7 @@ public class CalculateAverage_thomaswue {
         // 0xUU00TTHH00 * (100 * 0x1000000 + 10 * 0x10000 + 1) =
         // 0x000000UU00TTHH00 + 0x00UU00TTHH000000 * 10 + 0xUU00TTHH00000000 * 100
         long absValue = ((digits * 0x640a0001) >>> 32) & 0x3FF;
-        long value = (absValue ^ signed) - signed;
-        return (int) value;
+        return (absValue ^ signed) - signed;
     }
 
     private static long findDelimiter(long word) {
@@ -385,6 +404,10 @@ public class CalculateAverage_thomaswue {
 
         long getLongAt(long pos) {
             return UNSAFE.getLong(pos);
+        }
+
+        long getLongAt(long pos, long[] array) {
+            return UNSAFE.getLong(array, pos + sun.misc.Unsafe.ARRAY_LONG_BASE_OFFSET);
         }
 
         void setPos(long l) {
