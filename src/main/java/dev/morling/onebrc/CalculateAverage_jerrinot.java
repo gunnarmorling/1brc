@@ -18,6 +18,7 @@ package dev.morling.onebrc;
 import sun.misc.Unsafe;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.lang.foreign.Arena;
 import java.lang.reflect.Field;
@@ -54,7 +55,27 @@ public class CalculateAverage_jerrinot {
     }
 
     public static void main(String[] args) throws Exception {
+        // credits for spawning new workers: thomaswue
+        if (args.length == 0 || !("--worker".equals(args[0]))) {
+            spawnWorker();
+            return;
+        }
         calculate();
+    }
+
+    private static void spawnWorker() throws IOException {
+        ProcessHandle.Info info = ProcessHandle.current().info();
+        ArrayList<String> workerCommand = new ArrayList<>();
+        info.command().ifPresent(workerCommand::add);
+        info.arguments().ifPresent(args -> workerCommand.addAll(Arrays.asList(args)));
+        workerCommand.add("--worker");
+        new ProcessBuilder()
+                .command(workerCommand)
+                .inheritIO()
+                .redirectOutput(ProcessBuilder.Redirect.PIPE)
+                .start()
+                .getInputStream()
+                .transferTo(System.out);
     }
 
     static void calculate() throws Exception {
@@ -140,6 +161,7 @@ public class CalculateAverage_jerrinot {
         }
         sb.append('}');
         System.out.println(sb);
+        System.out.close();
     }
 
     public static int ceilPow2(int i) {
