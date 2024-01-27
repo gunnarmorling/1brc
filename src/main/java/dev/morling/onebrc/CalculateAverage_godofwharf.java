@@ -118,16 +118,16 @@ public class CalculateAverage_godofwharf {
                         .forEach(split -> {
                             // process splits concurrently using a thread pool
                             futures.add(executorService.submit(() -> {
-                                MemorySegment subSegment = memorySegment.asSlice(split.offset, split.length);
-                                // this byte buffer should end with '\n' or EOF
-                                subSegment.load();
-                                ByteBuffer bb = subSegment.asByteBuffer();
                                 int tid = (int) Thread.currentThread().threadId();
                                 byte[] currentPage = new byte[pageSize + MAX_STR_LEN];
                                 int bytesRead = 0;
                                 // iterate over each page in split
                                 for (Page page : split.pages) {
-                                    bb.get(bytesRead, currentPage, 0, (int) page.length);
+                                    // this byte buffer should end with '\n' or EOF
+                                    MemorySegment segment = memorySegment.asSlice(page.offset, page.length);
+                                    segment.load();
+                                    ByteBuffer bb = segment.asByteBuffer();
+                                    bb.get(0, currentPage, 0, (int) page.length);
                                     SearchResult searchResult = findNewLinesVectorized(currentPage, (int) page.length);
                                     int prevOffset = 0;
                                     int j = 0;
@@ -157,9 +157,10 @@ public class CalculateAverage_godofwharf {
                                         j++;
                                     }
                                     bytesRead += (int) page.length;
+                                    // Explicitly commented out because unload seems to take a lot of time
+                                    segment.unload();
                                 }
-                                // Explicitly commented out because unload seems to take a lot of time
-                                subSegment.unload();
+
                             }));
                         });
                 for (Future<?> future : futures) {
