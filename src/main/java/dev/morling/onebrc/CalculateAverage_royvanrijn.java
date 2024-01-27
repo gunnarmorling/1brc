@@ -62,8 +62,9 @@ import sun.misc.Unsafe;
  * Unrolling scan-loop:              1200 ms (seems to help, perhaps even more on target machine)
  * Adding more readable reader:      1300 ms (scores got worse on target machine anyway)
  *
- * Using old x86 MacBook and perf:   3500 ms (different scoring)
+ * Using old x86 MacBook and perf:   3500 ms (different machine for testing)
  * Decided to rewrite loop for 16 b: 3050 ms
+ * Small changes, limited heap:      2950 ms
  *
  * I have some instructions that could be removed, but faster with...
  *
@@ -201,6 +202,17 @@ public class CalculateAverage_royvanrijn {
         return entry;
     }
 
+    private static byte[] fillEntry16(final byte[] entry, final int entryLength, final int temp, final long readBuffer1, final long readBuffer2) {
+        UNSAFE.putLong(entry, ENTRY_SUM, temp);
+        UNSAFE.putInt(entry, ENTRY_MIN, temp);
+        UNSAFE.putInt(entry, ENTRY_MAX, temp);
+        UNSAFE.putInt(entry, ENTRY_COUNT, 1);
+        UNSAFE.putByte(entry, ENTRY_LENGTH, (byte) entryLength);
+        UNSAFE.putLong(entry, ENTRY_NAME + entryLength - 16, readBuffer1);
+        UNSAFE.putLong(entry, ENTRY_NAME + entryLength - 8, readBuffer2);
+        return entry;
+    }
+
     public static void updateEntry(final byte[] entry, final int temp) {
 
         int entryMin = UNSAFE.getInt(entry, ENTRY_MIN);
@@ -326,51 +338,53 @@ public class CalculateAverage_royvanrijn {
 
         private boolean readNext() {
 
-            readBuffer1 = UNSAFE.getLong(ptr);
-            readBuffer2 = UNSAFE.getLong(ptr + 8);
+            long lastRead = UNSAFE.getLong(ptr);
 
             entryLength += 16;
 
             // Find delimiter and create mask for long1
-            long comparisonResult1 = (readBuffer1 ^ DELIMITER_MASK);
+            long comparisonResult1 = (lastRead ^ DELIMITER_MASK);
             long highBitMask1 = (comparisonResult1 - 0x0101010101010101L) & (~comparisonResult1 & 0x8080808080808080L);
 
             boolean noContent1 = highBitMask1 == 0;
             long mask1 = noContent1 ? 0 : ~((highBitMask1 >>> 7) - 1);
-            int position1 = noContent1 ? -1 : Long.numberOfTrailingZeros(highBitMask1) >> 3;
+            int position1 = noContent1 ? 0 : 1 + (Long.numberOfTrailingZeros(highBitMask1) >> 3);
 
-            readBuffer1 &= ~mask1;
+            readBuffer1 = lastRead & ~mask1;
             hash ^= readBuffer1;
 
-            if (position1 != -1) {
+            int delimiter1 = position1 == 0 ? 0 : position1; // not nnecessary, but faster?
+
+            if (delimiter1 != 0) {
                 hash ^= hash >> 32;
                 readBuffer2 = 0;
-                ptr += position1 + 1;
+                ptr += delimiter1;
                 return false;
             }
 
+            lastRead = UNSAFE.getLong(ptr + 8);
+
             // Repeat for long2
-            long comparisonResult2 = (readBuffer2 ^ DELIMITER_MASK);
+            long comparisonResult2 = (lastRead ^ DELIMITER_MASK);
             long highBitMask2 = (comparisonResult2 - 0x0101010101010101L) & (~comparisonResult2 & 0x8080808080808080L);
             boolean noContent2 = highBitMask2 == 0;
-            long mask2 = noContent2 ? -1 : ((highBitMask2 >>> 7) - 1);
-            int position2 = noContent2 ? -1 : Long.numberOfTrailingZeros(highBitMask2) >> 3;
+            long mask2 = noContent2 ? 0 : ~((highBitMask2 >>> 7) - 1);
+            int position2 = noContent2 ? 0 : 1 + (Long.numberOfTrailingZeros(highBitMask2) >> 3);
 
-            mask2 = ~mask2; // also not necessary, but faster with?
             // Apply masks
-            readBuffer2 &= ~mask2;
+            readBuffer2 = lastRead & ~mask2;
             hash ^= readBuffer2;
 
-            int delimiter = position2 == -1 ? -1 : position2 + 8; // not nnecessary, but faster?
+            int delimiter2 = position2 == 0 ? 0 : position2 + 8; // not necessary, but faster?
 
             hash ^= hash >> 32;
 
-            if (delimiter == -1) {
-                ptr += 16;
-                return true;
+            if (delimiter2 != 0) {
+                ptr += delimiter2;
+                return false;
             }
-            ptr += delimiter + 1;
-            return false;
+            ptr += 16;
+            return true;
         }
 
         private int processEndAndGetTemperature() {
@@ -388,20 +402,21 @@ public class CalculateAverage_royvanrijn {
         // Awesome idea of merykitty:
         private int readTemperature() {
             // This is the number part: X.X, -X.X, XX.x or -XX.X
-            long numberBytes = UNSAFE.getLong(ptr);
-            long invNumberBytes = ~numberBytes;
+            final long numberBytes = UNSAFE.getLong(ptr);
+            final long invNumberBytes = ~numberBytes;
 
-            int dotPosition = Long.numberOfTrailingZeros(invNumberBytes & DOT_BITS);
+            final int dotPosition = Long.numberOfTrailingZeros(invNumberBytes & DOT_BITS);
+
+            // Calculates the sign
+            final long signed = (invNumberBytes << 59) >> 63;
+            final int min28 = (dotPosition ^ 0b11100);
+            final long minusFilter = ~(signed & 0xFF);
+            // Use the pre-calculated decimal position to adjust the values
+            final long digits = ((numberBytes & minusFilter) << min28) & 0x0F000F0F00L;
 
             // Update the pointer here, bit awkward, but we have all the data
             ptr += (dotPosition >> 3) + 3;
 
-            int min28 = (28 - dotPosition);
-            // Calculates the sign
-            final long signed = (invNumberBytes << 59) >> 63;
-            final long minusFilter = ~(signed & 0xFF);
-            // Use the pre-calculated decimal position to adjust the values
-            long digits = ((numberBytes & minusFilter) << min28) & 0x0F000F0F00L;
             // Multiply by a magic (100 * 0x1000000 + 10 * 0x10000 + 1), to get the result
             final long absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
             // And perform abs()
@@ -411,10 +426,6 @@ public class CalculateAverage_royvanrijn {
         private boolean matches(final byte[] entry) {
             int step = 0;
             for (; step < entryLength - 16;) {
-                if (compare(null, entryStart + step, entry, ENTRY_NAME + step)) {
-                    return false;
-                }
-                step += 8;
                 if (compare(null, entryStart + step, entry, ENTRY_NAME + step)) {
                     return false;
                 }
@@ -431,8 +442,13 @@ public class CalculateAverage_royvanrijn {
         }
 
         private boolean matches16(final byte[] entry) {
-            return !compare(readBuffer1, entry, ENTRY_NAME) &&
-                    !compare(readBuffer2, entry, ENTRY_NAME + 8);
+            if (compare(readBuffer1, entry, ENTRY_NAME)) {
+                return false;
+            }
+            if (compare(readBuffer2, entry, ENTRY_NAME + 8)) {
+                return false;
+            }
+            return true;
         }
     }
 
@@ -463,7 +479,7 @@ public class CalculateAverage_royvanrijn {
                     if (entry == null) {
                         byte[] entryBytes = (entryCount < PREMADE_ENTRIES) ? preConstructedEntries[entryCount++]
                                 : new byte[ENTRY_BASESIZE_WHITESPACE + 16]; // with enough room
-                        table[index] = fillEntry(entryBytes, reader.entryStart, 16, temperature, reader.readBuffer1, reader.readBuffer2);
+                        table[index] = fillEntry16(entryBytes, 16, temperature, reader.readBuffer1, reader.readBuffer2);
                         break;
                     }
                     else if (reader.matches16(entry)) {

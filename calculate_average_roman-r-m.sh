@@ -15,21 +15,16 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="--enable-preview -XX:+UseTransparentHugePages"
-
-# epsilon GC needs enough memory or it makes things worse
-# see https://stackoverflow.com/questions/58087596/why-are-repeated-memory-allocations-observed-to-be-slower-using-epsilon-vs-g1
-JAVA_OPTS="$JAVA_OPTS -XX:+UnlockExperimentalVMOptions -XX:-EnableJVMCI -XX:+UseEpsilonGC -Xmx1G -Xms1G -XX:+AlwaysPreTouch"
-
 if [ -f target/CalculateAverage_roman_r_m_image ]; then
-    echo "Picking up existing native image 'target/CalculateAverage_roman_r_m_image', delete the file to select JVM mode." 1>&2
+    echo "Running native image 'target/CalculateAverage_roman_r_m_image'." 1>&2
     target/CalculateAverage_roman_r_m_image
 else
-    JAVA_OPTS="--enable-preview -XX:+UnlockExperimentalVMOptions -XX:+TrustFinalNonStaticFields -dsa -XX:+UseNUMA"
-    if [[ ! "$(uname -s)" = "Darwin" ]]; then
-        # On OS/X, my machine, this errors:
-        JAVA_OPTS="$JAVA_OPTS -XX:+UseTransparentHugePages"
-    fi
-    echo "Choosing to run the app in JVM mode as no native image was found, use additional_build_step_roman_r_m.sh to generate." 1>&2
+    JAVA_OPTS="--enable-preview -XX:+UseTransparentHugePages"
+    JAVA_OPTS="$JAVA_OPTS -XX:+UnlockExperimentalVMOptions -XX:+TrustFinalNonStaticFields -dsa -XX:+UseNUMA"
+    # epsilon GC needs enough memory or it makes things worse
+    # see https://stackoverflow.com/questions/58087596/why-are-repeated-memory-allocations-observed-to-be-slower-using-epsilon-vs-g1
+    JAVA_OPTS="$JAVA_OPTS -XX:+UnlockExperimentalVMOptions -XX:-EnableJVMCI -XX:+UseEpsilonGC -Xmx1G -Xms1G -XX:+AlwaysPreTouch"
+
+    echo "Running on JVM" 1>&2
     java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_roman_r_m
 fi

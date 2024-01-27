@@ -23,6 +23,8 @@ if [ ! -f target/CalculateAverage_roman_r_m_image ]; then
 
     JAVA_OPTS="--enable-preview -dsa"
     NATIVE_IMAGE_OPTS="--initialize-at-build-time=dev.morling.onebrc.CalculateAverage_roman_r_m --gc=epsilon -Ob -O3 -march=native --strict-image-heap $JAVA_OPTS"
+    NATIVE_IMAGE_OPTS="$NATIVE_IMAGE_OPTS -R:MaxHeapSize=128m"
+    NATIVE_IMAGE_OPTS="$NATIVE_IMAGE_OPTS -H:+UnlockExperimentalVMOptions -H:-GenLoopSafepoints -H:InlineAllBonus=10 -H:-ParseRuntimeOptions"
 
     native-image $NATIVE_IMAGE_OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o target/CalculateAverage_roman_r_m_image dev.morling.onebrc.CalculateAverage_roman_r_m
 fi
