@@ -508,7 +508,8 @@ public class CalculateAverage_godofwharf {
                        boolean isAscii,
                        int precomputedHashCode,
                        State.AggregationKey aggregationKey) {
-        public Measurement(byte[] station,
+
+    public Measurement(byte[] station,
                            int stationLen,
                            byte[] temperature,
                            int temperatureLen,
@@ -521,6 +522,7 @@ public class CalculateAverage_godofwharf {
                     hashCode,
                     new State.AggregationKey(station, stationLen, isAscii, hashCode));
         }
+
     }
 
     record LineMetadata(byte[] station,
