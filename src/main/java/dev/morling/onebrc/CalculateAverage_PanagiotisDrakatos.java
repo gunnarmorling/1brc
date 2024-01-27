@@ -46,10 +46,10 @@ public class CalculateAverage_PanagiotisDrakatos {
 
     }
 
-    private static Stream<MappedByteBuffer> SplitSeekableByteChannel(FileChannel channel) throws IOException {
-        return StreamSupport.stream(Spliterators.spliteratorUnknownSize(new Iterator<MappedByteBuffer>() {
+    private static Stream<ByteBuffer> SplitSeekableByteChannel(FileChannel channel) throws IOException {
+        return StreamSupport.stream(Spliterators.spliteratorUnknownSize(new Iterator<ByteBuffer>() {
             private static final long MAP_SIZE = 1024 * 1024 * 10L;
-            private ByteBuffer buffer_tmp = null;
+
             private long position = 0;
             private long length = channel.size();
 
@@ -62,23 +62,15 @@ public class CalculateAverage_PanagiotisDrakatos {
             }
 
             @Override
-            public MappedByteBuffer next() {
+            public ByteBuffer next() {
                 try {
-                    long remaining = length - position;
-                    long bytestomap = (long) Math.min(MAP_SIZE, remaining);
-                    MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_ONLY, position, bytestomap);
-                    if (buffer_tmp != null) {
-                        ByteBuffer[] s = new ByteBuffer[]{ buffer_tmp, buffer };
-                        buffer = (MappedByteBuffer) concat(s);
-                    }
+                    MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_ONLY, position, Math.min(MAP_SIZE, length - position));
                     int end = buffer.limit() - 1;
                     while (buffer.get(end) != '\n') {
                         end--;
                     }
-                    buffer_tmp = buffer.slice(end + 1, buffer.limit() - end - 1);
-                    buffer.position(0);
-                    position += bytestomap;
-                    return buffer.slice(0, end + 1);
+                    position += end + 1;
+                    return buffer.slice(0, end);
                 }
                 catch (IOException e) {
                     throw new RuntimeException(e);
@@ -92,7 +84,7 @@ public class CalculateAverage_PanagiotisDrakatos {
         for (int i = 0; i < buffers.length; i++)
             overAllCapacity += buffers[i].limit() - buffers[i].position();
         overAllCapacity += buffers[0].limit() - buffers[0].position();
-        ByteBuffer all = ByteBuffer.allocateDirect(overAllCapacity);
+        ByteBuffer all = ByteBuffer.allocate(overAllCapacity);
         for (int i = 0; i < buffers.length; i++) {
             ByteBuffer curr = buffers[i];
             all.put(curr);
@@ -110,7 +102,7 @@ public class CalculateAverage_PanagiotisDrakatos {
         return map1;
     }
 
-    private static Map<String, MeasurementObject> MappingByteBufferToData(MappedByteBuffer byteBuffer) {
+    private static Map<String, MeasurementObject> MappingByteBufferToData(ByteBuffer byteBuffer) {
         Map<String, MeasurementObject> cities = new HashMap<>();
         ByteBuffer bb = byteBuffer.duplicate();
         int start = 0;
@@ -121,10 +113,16 @@ public class CalculateAverage_PanagiotisDrakatos {
             }
             int temp_counter = 0;
             int temp_end = end;
-            bb.position(end);
-            while (bb.get(temp_end) != '\n') {
-                temp_counter++;
-                temp_end++;
+            try {
+                bb.position(end);
+                while (bb.get(temp_end) != '\n') {
+                    temp_counter++;
+                    temp_end++;
+                }
+            }
+            catch (IndexOutOfBoundsException e) {
+                temp_counter--;
+                temp_end--;
             }
             ByteBuffer city = bb.slice(start, end - start);
             ByteBuffer temp = bb.slice(end + 1, temp_counter);
