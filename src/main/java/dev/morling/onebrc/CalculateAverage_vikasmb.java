@@ -55,7 +55,6 @@ public class CalculateAverage_vikasmb {
             }
         }
         System.out.print("}");
-        System.out.println();
         // Instant endTime = Instant.now();
         // Duration elapsedTime = Duration.between(startTime, endTime);
         // System.out.println(STR."Elapsed time \{elapsedTime}");
