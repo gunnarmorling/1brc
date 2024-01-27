@@ -69,7 +69,7 @@ public class CalculateAverage_fatroom {
         long fileSize = file.length();
         long position = 0;
 
-        List<Callable<Map<String, MeasurementAggregator>>> tasks = new ArrayList<>();
+        List<Callable<StationMap>> tasks = new LinkedList<>();
         while (position < fileSize) {
             long end = Math.min(position + SEGMENT_LENGTH, fileSize);
             int length = (int) (end - position);
@@ -88,42 +88,45 @@ public class CalculateAverage_fatroom {
         for (var future : executor.invokeAll(tasks)) {
             var segmentAggregates = future.get();
             for (var entry : segmentAggregates.entrySet()) {
-                aggregates.merge(entry.getKey(), entry.getValue(), MeasurementAggregator::combineWith);
+                aggregates.merge(entry.getKey(), entry.value, MeasurementAggregator::combineWith);
             }
         }
         executor.shutdown();
-        executor.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
+
+        // no sense to wait longer than base case
+        executor.awaitTermination(5, TimeUnit.MINUTES);
 
         System.out.println(aggregates);
     }
 
-    private static Map<String, MeasurementAggregator> processBuffer(MappedByteBuffer source, int length) {
-        Map<String, MeasurementAggregator> aggregates = new HashMap<>(500);
-        String station;
-        byte[] buffer = new byte[64];
+    private static StationMap processBuffer(MappedByteBuffer source, int length) {
+        StationMap aggregates = new StationMap();
+        byte[] buffer = new byte[200];
+        byte[] measurement = new byte[5];
         int measurementLength;
         int idx = 0;
+        int hash = 1;
         for (int i = 0; i < length; ++i) {
             byte b = source.get(i);
+            hash = 31 * hash + b;
             buffer[idx++] = b;
             if (b == ';') {
-                station = new String(buffer, 0, idx - 1, StandardCharsets.UTF_8);
                 measurementLength = 3;
-                source.position(i + 1);
-                buffer[0] = source.get(++i);
-                buffer[1] = source.get(++i);
-                buffer[2] = source.get(++i);
-                buffer[3] = source.get(++i);
-                if (buffer[3] != '\n') {
+                measurement[0] = source.get(++i);
+                measurement[1] = source.get(++i);
+                measurement[2] = source.get(++i);
+                measurement[3] = source.get(++i);
+                if (measurement[3] != '\n') {
                     measurementLength++;
-                    buffer[4] = source.get(++i);
-                    if (buffer[4] != '\n') {
+                    measurement[4] = source.get(++i);
+                    if (measurement[4] != '\n') {
                         i++;
                         measurementLength++;
                     }
                 }
-                aggregates.computeIfAbsent(station, s -> new MeasurementAggregator()).consume(parseMeasurement(buffer, measurementLength));
+                aggregates.get(hash, buffer, idx - 1).consume(parseMeasurement(measurement, measurementLength));
                 idx = 0;
+                hash = 1;
             }
         }
         return aggregates;
@@ -132,10 +135,57 @@ public class CalculateAverage_fatroom {
     static double parseMeasurement(byte[] source, int size) {
         int isNegativeSignPresent = ~(source[0] >> 4) & 1;
         int firstDigit = source[isNegativeSignPresent] - '0';
-        int secondDigit = source[size - 3] - '0';
-        int thirdDigit = source[size - 1] - '0';
+        int secondDigit = source[size - 3];
+        int thirdDigit = source[size - 1];
         int has4 = (size - isNegativeSignPresent) >> 2;
-        int value = has4 * firstDigit * 100 + secondDigit * 10 + thirdDigit;
+        int value = has4 * firstDigit * 100 + secondDigit * 10 + thirdDigit - 528;
         return -isNegativeSignPresent ^ value - isNegativeSignPresent;
+    }
+
+    static class Station {
+        private byte[] bytes;
+        private int hash;
+        private MeasurementAggregator value;
+        private Station next;
+
+        public Station(int hash, byte[] bytes, int length, Station next) {
+            this.hash = hash;
+            this.bytes = new byte[length];
+            System.arraycopy(bytes, 0, this.bytes, 0, length);
+            this.value = new MeasurementAggregator();
+            this.next = next;
+        }
+
+        public String getKey() {
+            return new String(bytes, 0, bytes.length, StandardCharsets.UTF_8);
+        }
+    }
+
+    static class StationMap {
+        private Station[] stations = new Station[16384];
+
+        MeasurementAggregator get(int hash, byte[] buffer, int length) {
+            int bucketId = hash & 0x3fff;
+            Station entry = stations[bucketId];
+            while (entry != null) {
+                if (entry.hash == hash && Arrays.equals(entry.bytes, 0, entry.bytes.length, buffer, 0, length)) {
+                    return entry.value;
+                }
+                entry = entry.next;
+            }
+            stations[bucketId] = new Station(hash, buffer, length, stations[bucketId]);
+            return stations[bucketId].value;
+        }
+
+        private List<Station> entrySet() {
+            List<Station> result = new LinkedList<>();
+            for (var station : stations) {
+                while (station != null) {
+                    result.add(station);
+                    station = station.next;
+                }
+            }
+            return result;
+        }
     }
 }

@@ -15,13 +15,10 @@
  */
 package dev.morling.onebrc;
 
-import sun.misc.Unsafe;
-
 import java.io.IOException;
-import java.lang.foreign.Arena;
-import java.lang.reflect.Field;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
-import java.nio.channels.FileChannel.MapMode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -32,30 +29,27 @@ import java.util.stream.IntStream;
  * Simple solution that memory maps the input file, then splits it into one segment per available core and uses
  * sun.misc.Unsafe to directly access the mapped memory. Uses a long at a time when checking for collision.
  * <p>
- * Runs in 0.70s on my Intel i9-13900K
+ * Runs in 0.60s on my Intel i9-13900K
  * Perf stats:
- *     40,622,862,783      cpu_core/cycles/
- *     48,241,929,925      cpu_atom/cycles/
+ *     34,716,719,245      cpu_core/cycles/
+ *     40,776,530,892      cpu_atom/cycles/
  */
 public class CalculateAverage_thomaswue {
     private static final String FILE = "./measurements.txt";
+    private static final int MIN_TEMP = -999;
+    private static final int MAX_TEMP = 999;
 
     // Holding the current result for a single city.
     private static class Result {
-        final long nameAddress;
-        long lastNameLong;
-        int remainingShift;
-        int min;
-        int max;
-        long sum;
+        long lastNameLong, secondLastNameLong;
+        long[] name;
         int count;
+        short min, max;
+        long sum;
 
-        private Result(long nameAddress, int value) {
-            this.nameAddress = nameAddress;
-            this.min = value;
-            this.max = value;
-            this.sum = value;
-            this.count = 1;
+        private Result() {
+            this.min = MAX_TEMP;
+            this.max = MIN_TEMP;
         }
 
         public String toString() {
@@ -68,180 +62,266 @@ public class CalculateAverage_thomaswue {
 
         // Accumulate another result into this one.
         private void add(Result other) {
-            min = Math.min(min, other.min);
-            max = Math.max(max, other.max);
+            if (other.min < min) {
+                min = other.min;
+            }
+            if (other.max > max) {
+                max = other.max;
+            }
             sum += other.sum;
             count += other.count;
+        }
+
+        public String calcName() {
+            ByteBuffer bb = ByteBuffer.allocate(name.length * Long.BYTES).order(ByteOrder.nativeOrder());
+            bb.asLongBuffer().put(name);
+            byte[] array = bb.array();
+            int i = 0;
+            while (array[i++] != ';')
+                ;
+            return new String(array, 0, i - 1, StandardCharsets.UTF_8);
         }
     }
 
     public static void main(String[] args) throws IOException {
+        if (args.length == 0 || !("--worker".equals(args[0]))) {
+            spawnWorker();
+            return;
+        }
         // Calculate input segments.
         int numberOfChunks = Runtime.getRuntime().availableProcessors();
         long[] chunks = getSegments(numberOfChunks);
 
         // Parallel processing of segments.
-        List<HashMap<String, Result>> allResults = IntStream.range(0, chunks.length - 1).mapToObj(chunkIndex -> {
-            HashMap<String, Result> cities = HashMap.newHashMap(1 << 10);
-            parseLoop(chunks[chunkIndex], chunks[chunkIndex + 1], cities);
-            return cities;
-        }).parallel().toList();
+        List<List<Result>> allResults = IntStream.range(0, chunks.length - 1).mapToObj(chunkIndex -> parseLoop(chunks[chunkIndex], chunks[chunkIndex + 1]))
+                .map(resultArray -> {
+                    List<Result> results = new ArrayList<>();
+                    for (Result r : resultArray) {
+                        if (r != null) {
+                            results.add(r);
+                        }
+                    }
+                    return results;
+                }).parallel().toList();
 
-        // Accumulate results sequentially.
-        HashMap<String, Result> result = allResults.getFirst();
-        for (int i = 1; i < allResults.size(); ++i) {
-            for (Map.Entry<String, Result> entry : allResults.get(i).entrySet()) {
-                Result current = result.putIfAbsent(entry.getKey(), entry.getValue());
+        // Final output.
+        System.out.println(accumulateResults(allResults));
+        System.out.close();
+    }
+
+    private static void spawnWorker() throws IOException {
+        ProcessHandle.Info info = ProcessHandle.current().info();
+        ArrayList<String> workerCommand = new ArrayList<>();
+        info.command().ifPresent(workerCommand::add);
+        info.arguments().ifPresent(args -> workerCommand.addAll(Arrays.asList(args)));
+        workerCommand.add("--worker");
+        new ProcessBuilder()
+                .command(workerCommand)
+                .inheritIO()
+                .redirectOutput(ProcessBuilder.Redirect.PIPE)
+                .start()
+                .getInputStream()
+                .transferTo(System.out);
+    }
+
+    // Accumulate results sequentially for simplicity.
+    private static TreeMap<String, Result> accumulateResults(List<List<Result>> allResults) {
+        TreeMap<String, Result> result = new TreeMap<>();
+        for (List<Result> resultArr : allResults) {
+            for (Result r : resultArr) {
+                String name = r.calcName();
+                Result current = result.putIfAbsent(name, r);
                 if (current != null) {
-                    current.add(entry.getValue());
+                    current.add(r);
                 }
             }
         }
-
-        // Final output.
-        System.out.println(new TreeMap<>(result));
+        return result;
     }
 
-    private static final Unsafe UNSAFE = initUnsafe();
-
-    private static Unsafe initUnsafe() {
-        try {
-            Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
-            theUnsafe.setAccessible(true);
-            return (Unsafe) theUnsafe.get(Unsafe.class);
-        }
-        catch (NoSuchFieldException | IllegalAccessException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private static void parseLoop(long chunkStart, long chunkEnd, HashMap<String, Result> cities) {
-        Result[] results = new Result[1 << 18];
-        long scanPtr = chunkStart;
-        while (scanPtr < chunkEnd) {
-            long nameAddress = scanPtr;
+    // Main parse loop.
+    private static Result[] parseLoop(long chunkStart, long chunkEnd) {
+        Result[] results = new Result[1 << 17];
+        Scanner scanner = new Scanner(chunkStart, chunkEnd);
+        long word = scanner.getLong();
+        long pos = findDelimiter(word);
+        while (scanner.hasNext()) {
+            long nameAddress = scanner.pos();
             long hash = 0;
 
             // Search for ';', one long at a time.
-            long word = UNSAFE.getLong(scanPtr);
-            int pos = findDelimiter(word);
-            if (pos != 8) {
-                scanPtr += pos;
-                word = word & (-1L >>> ((8 - pos - 1) << 3));
-                hash ^= word;
+            if (pos != 0) {
+                pos = Long.numberOfTrailingZeros(pos) >>> 3;
+                scanner.add(pos);
+                word = mask(word, pos);
+                hash = word;
+
+                int number = scanNumber(scanner);
+                long nextWord = scanner.getLong();
+                long nextPos = findDelimiter(nextWord);
+
+                Result existingResult = results[hashToIndex(hash, results)];
+                if (existingResult != null && existingResult.lastNameLong == word) {
+                    word = nextWord;
+                    pos = nextPos;
+                    record(existingResult, number);
+                    continue;
+                }
+
+                scanner.setPos(nameAddress + pos);
             }
             else {
-                scanPtr += 8;
-                hash ^= word;
-                while (true) {
-                    word = UNSAFE.getLong(scanPtr);
-                    pos = findDelimiter(word);
-                    if (pos != 8) {
-                        scanPtr += pos;
-                        word = word & (-1L >>> ((8 - pos - 1) << 3));
-                        hash ^= word;
-                        break;
+                scanner.add(8);
+                hash = word;
+                long prevWord = word;
+                word = scanner.getLong();
+                pos = findDelimiter(word);
+                if (pos != 0) {
+                    pos = Long.numberOfTrailingZeros(pos) >>> 3;
+                    scanner.add(pos);
+                    word = mask(word, pos);
+                    hash ^= word;
+
+                    Result existingResult = results[hashToIndex(hash, results)];
+                    if (existingResult != null && existingResult.lastNameLong == word && existingResult.secondLastNameLong == prevWord) {
+                        int number = scanNumber(scanner);
+                        word = scanner.getLong();
+                        pos = findDelimiter(word);
+                        record(existingResult, number);
+                        continue;
                     }
-                    else {
-                        scanPtr += 8;
-                        hash ^= word;
+                }
+                else {
+                    scanner.add(8);
+                    hash ^= word;
+                    while (true) {
+                        word = scanner.getLong();
+                        pos = findDelimiter(word);
+                        if (pos != 0) {
+                            pos = Long.numberOfTrailingZeros(pos) >>> 3;
+                            scanner.add(pos);
+                            word = mask(word, pos);
+                            hash ^= word;
+                            break;
+                        }
+                        else {
+                            scanner.add(8);
+                            hash ^= word;
+                        }
                     }
                 }
             }
 
             // Save length of name for later.
-            int nameLength = (int) (scanPtr - nameAddress);
-            scanPtr++;
-
-            long numberWord = UNSAFE.getLong(scanPtr);
-            // The 4th binary digit of the ascii of a digit is 1 while
-            // that of the '.' is 0. This finds the decimal separator
-            // The value can be 12, 20, 28
-            int decimalSepPos = Long.numberOfTrailingZeros(~numberWord & 0x10101000);
-            int number = convertIntoNumber(decimalSepPos, numberWord);
-
-            // Skip past new line.
-            // scanPtr++;
-            scanPtr += (decimalSepPos >>> 3) + 3;
+            int nameLength = (int) (scanner.pos() - nameAddress);
+            int number = scanNumber(scanner);
 
             // Final calculation for index into hash table.
-            int hashAsInt = (int) (hash ^ (hash >>> 32));
-            int finalHash = (hashAsInt ^ (hashAsInt >>> 18));
-            int tableIndex = (finalHash & (results.length - 1));
+            int tableIndex = hashToIndex(hash, results);
             outer: while (true) {
                 Result existingResult = results[tableIndex];
                 if (existingResult == null) {
-                    newEntry(results, cities, nameAddress, number, tableIndex, nameLength);
+                    existingResult = newEntry(results, nameAddress, tableIndex, nameLength, scanner);
+                }
+                // Check for collision.
+                int i = 0;
+                int namePos = 0;
+                for (; i < nameLength + 1 - 8; i += 8) {
+                    if (namePos >= existingResult.name.length || existingResult.name[namePos++] != scanner.getLongAt(nameAddress + i)) {
+                        tableIndex = (tableIndex + 31) & (results.length - 1);
+                        continue outer;
+                    }
+                }
+
+                int remainingShift = (64 - (nameLength + 1 - i) << 3);
+                if (((existingResult.lastNameLong ^ (scanner.getLongAt(nameAddress + i) << remainingShift)) == 0)) {
+                    record(existingResult, number);
                     break;
                 }
                 else {
-                    // Check for collision.
-                    int i = 0;
-                    for (; i < nameLength + 1 - 8; i += 8) {
-                        if (UNSAFE.getLong(existingResult.nameAddress + i) != UNSAFE.getLong(nameAddress + i)) {
-                            tableIndex = (tableIndex + 1) & (results.length - 1);
-                            continue outer;
-                        }
-                    }
-                    if (((existingResult.lastNameLong ^ UNSAFE.getLong(nameAddress + i)) << existingResult.remainingShift) == 0) {
-                        existingResult.min = Math.min(existingResult.min, number);
-                        existingResult.max = Math.max(existingResult.max, number);
-                        existingResult.sum += number;
-                        existingResult.count++;
-                        break;
-                    }
-                    else {
-                        // Collision error, try next.
-                        tableIndex = (tableIndex + 1) & (results.length - 1);
-                    }
+                    // Collision error, try next.
+                    tableIndex = (tableIndex + 31) & (results.length - 1);
                 }
             }
+
+            word = scanner.getLong();
+            pos = findDelimiter(word);
         }
+        return results;
     }
 
-    // Special method to convert a number in the specific format into an int value without branches created by
-    // Quan Anh Mai.
+    private static int scanNumber(Scanner scanPtr) {
+        scanPtr.add(1);
+        long numberWord = scanPtr.getLong();
+        int decimalSepPos = Long.numberOfTrailingZeros(~numberWord & 0x10101000);
+        int number = convertIntoNumber(decimalSepPos, numberWord);
+        scanPtr.add((decimalSepPos >>> 3) + 3);
+        return number;
+    }
+
+    private static void record(Result existingResult, int number) {
+        if (number < existingResult.min) {
+            existingResult.min = (short) number;
+        }
+        if (number > existingResult.max) {
+            existingResult.max = (short) number;
+        }
+        existingResult.sum += number;
+        existingResult.count++;
+    }
+
+    private static int hashToIndex(long hash, Result[] results) {
+        int hashAsInt = (int) (hash ^ (hash >>> 28));
+        int finalHash = (hashAsInt ^ (hashAsInt >>> 17));
+        return (finalHash & (results.length - 1));
+    }
+
+    private static long mask(long word, long pos) {
+        return (word << ((7 - pos) << 3));
+    }
+
+    // Special method to convert a number in the ascii number into an int without branches created by Quan Anh Mai.
     private static int convertIntoNumber(int decimalSepPos, long numberWord) {
         int shift = 28 - decimalSepPos;
         // signed is -1 if negative, 0 otherwise
         long signed = (~numberWord << 59) >> 63;
         long designMask = ~(signed & 0xFF);
-        // Align the number to a specific position and transform the ascii code
-        // to actual digit value in each byte
+        // Align the number to a specific position and transform the ascii to digit value
         long digits = ((numberWord & designMask) << shift) & 0x0F000F0F00L;
-
         // Now digits is in the form 0xUU00TTHH00 (UU: units digit, TT: tens digit, HH: hundreds digit)
         // 0xUU00TTHH00 * (100 * 0x1000000 + 10 * 0x10000 + 1) =
-        // 0x000000UU00TTHH00 +
-        // 0x00UU00TTHH000000 * 10 +
-        // 0xUU00TTHH00000000 * 100
-        // Now TT * 100 has 2 trailing zeroes and HH * 100 + TT * 10 + UU < 0x400
-        // This results in our value lies in the bit 32 to 41 of this product
-        // That was close :)
+        // 0x000000UU00TTHH00 + 0x00UU00TTHH000000 * 10 + 0xUU00TTHH00000000 * 100
         long absValue = ((digits * 0x640a0001) >>> 32) & 0x3FF;
         long value = (absValue ^ signed) - signed;
         return (int) value;
     }
 
-    private static int findDelimiter(long word) {
+    private static long findDelimiter(long word) {
         long input = word ^ 0x3B3B3B3B3B3B3B3BL;
         long tmp = (input - 0x0101010101010101L) & ~input & 0x8080808080808080L;
-        return Long.numberOfTrailingZeros(tmp) >>> 3;
+        return tmp;
     }
 
-    private static void newEntry(Result[] results, HashMap<String, Result> cities, long nameAddress, int number, int hash, int nameLength) {
-        Result r = new Result(nameAddress, number);
+    private static Result newEntry(Result[] results, long nameAddress, int hash, int nameLength, Scanner scanner) {
+        Result r = new Result();
         results[hash] = r;
-        byte[] bytes = new byte[nameLength];
-
+        long[] name = new long[(nameLength / Long.BYTES) + 1];
+        int pos = 0;
         int i = 0;
-        for (; i < nameLength + 1 - 8; i += 8) {
+        for (; i < nameLength + 1 - Long.BYTES; i += Long.BYTES) {
+            name[pos++] = scanner.getLongAt(nameAddress + i);
         }
-        r.lastNameLong = UNSAFE.getLong(nameAddress + i);
-        r.remainingShift = (64 - (nameLength + 1 - i) << 3);
-        UNSAFE.copyMemory(null, nameAddress, bytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, nameLength);
-        String nameAsString = new String(bytes, StandardCharsets.UTF_8);
-        cities.put(nameAsString, r);
+
+        if (pos > 0) {
+            r.secondLastNameLong = name[pos - 1];
+        }
+
+        int remainingShift = (64 - (nameLength + 1 - i) << 3);
+        long lastWord = (scanner.getLongAt(nameAddress + i) << remainingShift);
+        r.lastNameLong = lastWord;
+        name[pos] = lastWord >> remainingShift;
+        r.name = name;
+        return r;
     }
 
     private static long[] getSegments(int numberOfChunks) throws IOException {
@@ -249,19 +329,66 @@ public class CalculateAverage_thomaswue {
             long fileSize = fileChannel.size();
             long segmentSize = (fileSize + numberOfChunks - 1) / numberOfChunks;
             long[] chunks = new long[numberOfChunks + 1];
-            long mappedAddress = fileChannel.map(MapMode.READ_ONLY, 0, fileSize, Arena.global()).address();
+            long mappedAddress = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, java.lang.foreign.Arena.global()).address();
             chunks[0] = mappedAddress;
             long endAddress = mappedAddress + fileSize;
+            Scanner s = new Scanner(mappedAddress, mappedAddress + fileSize);
             for (int i = 1; i < numberOfChunks; ++i) {
                 long chunkAddress = mappedAddress + i * segmentSize;
                 // Align to first row start.
-                while (chunkAddress < endAddress && UNSAFE.getByte(chunkAddress++) != '\n') {
-                    // nop
-                }
+                while (chunkAddress < endAddress && (s.getLongAt(chunkAddress++) & 0xFF) != '\n')
+                    ;
                 chunks[i] = Math.min(chunkAddress, endAddress);
             }
             chunks[numberOfChunks] = endAddress;
             return chunks;
+        }
+    }
+
+    private static class Scanner {
+
+        private static final sun.misc.Unsafe UNSAFE = initUnsafe();
+
+        private static sun.misc.Unsafe initUnsafe() {
+            try {
+                java.lang.reflect.Field theUnsafe = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+                theUnsafe.setAccessible(true);
+                return (sun.misc.Unsafe) theUnsafe.get(sun.misc.Unsafe.class);
+            }
+            catch (NoSuchFieldException | IllegalAccessException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        long pos, end;
+
+        public Scanner(long start, long end) {
+            this.pos = start;
+            this.end = end;
+        }
+
+        boolean hasNext() {
+            return pos < end;
+        }
+
+        long pos() {
+            return pos;
+        }
+
+        void add(long delta) {
+            pos += delta;
+        }
+
+        long getLong() {
+            return UNSAFE.getLong(pos);
+        }
+
+        long getLongAt(long pos) {
+            return UNSAFE.getLong(pos);
+        }
+
+        void setPos(long l) {
+            this.pos = l;
         }
     }
 }
