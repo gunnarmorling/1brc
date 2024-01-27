@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 #
 #  Copyright 2023 The original authors
 #
@@ -15,13 +15,9 @@
 #  limitations under the License.
 #
 
-source "$HOME/.sdkman/bin/sdkman-init.sh"
-sdk use java 21.0.2-graal 1>&2
-
-# ./mvnw clean verify removes target/ and will re-trigger native image creation.
-if [ ! -f target/CalculateAverage_abeobk_image ]; then
-    NATIVE_IMAGE_OPTS="--gc=epsilon -O3 -dsa -march=native -R:MaxHeapSize=128m -H:-GenLoopSafepoints -H:-ParseRuntimeOptions --enable-preview --initialize-at-build-time=dev.morling.onebrc.CalculateAverage_abeobk"
-    native-image $NATIVE_IMAGE_OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o target/CalculateAverage_abeobk_image dev.morling.onebrc.CalculateAverage_abeobk
-fi
-
-
+JAVA_OPTS="-Xmx64m"
+JAVA_OPTS="$JAVA_OPTS -XX:+UnlockExperimentalVMOptions"
+JAVA_OPTS="$JAVA_OPTS -XX:+AlwaysPreTouch"
+JAVA_OPTS="$JAVA_OPTS -XX:+TrustFinalNonStaticFields -XX:InlineSmallCode=10000"
+JAVA_OPTS="$JAVA_OPTS -XX:-TieredCompilation -XX:CICompilerCount=2 -XX:CompileThreshold=1000"
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_gabrielfoo
