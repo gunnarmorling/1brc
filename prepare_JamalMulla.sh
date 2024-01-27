@@ -16,7 +16,7 @@
 #
 
 source "$HOME/.sdkman/bin/sdkman-init.sh"
-sdk use java 21.0.1-graal 1>&2
+sdk use java 21.0.2-graal 1>&2
 
 # ./mvnw clean verify removes target/ and will re-trigger native image creation.
 if [ ! -f target/CalculateAverage_JamalMulla_image ]; then
