@@ -253,19 +253,19 @@ public class CalculateAverage_dpsoft {
             for (Measurement other : otherMap.measurements) {
                 if (other == null)
                     continue;
-                int idx = other.nameHash & ROWS_MASK;
+                int index = other.nameHash & ROWS_MASK;
                 while (true) {
-                    Measurement cur = measurements[idx];
-                    if (cur == null) {
-                        measurements[idx] = other;
+                    Measurement m = measurements[index];
+                    if (m == null) {
+                        measurements[index] = other;
                         break;
                     }
-                    else if (Arrays.equals(cur.name, other.name)) {
-                        cur.merge(other);
+                    else if (Arrays.equals(m.name, other.name)) {
+                        m.merge(other);
                         break;
                     }
                     else {
-                        idx = (idx + 1) & ROWS_MASK;
+                        index = (index + 1) & ROWS_MASK;
                     }
                 }
             }
