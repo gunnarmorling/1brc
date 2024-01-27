@@ -446,14 +446,13 @@ public class CalculateAverage_vaidhy<I, T> {
 
             int temperature = 0;
             {
-                byte ch = UNSAFE.getByte(position);
+                byte ch = UNSAFE.getByte(position++);
                 boolean negative = false;
                 if (ch == '-') {
                     negative = true;
-                    position++;
+                    ch = UNSAFE.getByte(position++);
                 }
                 while (true) {
-                    position++;
                     if (ch == '\n') {
                         break;
                     }
@@ -461,7 +460,7 @@ public class CalculateAverage_vaidhy<I, T> {
                         temperature *= 10;
                         temperature += (ch ^ '0');
                     }
-                    ch = UNSAFE.getByte(position);
+                    ch = UNSAFE.getByte(position++);
                 }
                 if (negative) {
                     temperature = -temperature;
