@@ -604,6 +604,9 @@ public class CalculateAverage_serkan_ozal {
 
             // Compare remaining parts of the keys
 
+            if (NATIVE_BYTE_ORDER == ByteOrder.BIG_ENDIAN) {
+                keyLength = Integer.reverseBytes(keyLength);
+            }
             int alignedKeyLength = keyLength & 0xFFFFFFF8;
             int i;
             for (i = keyCheckIdx; i < alignedKeyLength; i += Long.BYTES) {
