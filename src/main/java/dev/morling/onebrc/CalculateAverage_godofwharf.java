@@ -40,6 +40,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 public class CalculateAverage_godofwharf {
     private static final String FILE = "./measurements.txt";
+    private static final boolean DEBUG = Boolean.parseBoolean(System.getProperty("debug", "false"));
 
     private static final VectorSpecies<Byte> SPECIES = VectorSpecies.ofPreferred(byte.class);
     private static final Vector<Byte> NEW_LINE_VEC = SPECIES.broadcast('\n');
@@ -61,16 +62,16 @@ public class CalculateAverage_godofwharf {
         Map<String, MeasurementAggregator> measurements = compute();
         long time1 = System.nanoTime();
         System.out.println(measurements);
-        System.err.println("Print took " + (System.nanoTime() - time1) + " ns");
-        System.err.printf("Took %d ms%n", System.currentTimeMillis() - startTimeMs);
-        System.err.printf("Time spent on GC=%d ms%n", ManagementFactory.getGarbageCollectorMXBeans().get(0).getCollectionTime());
+        printDebugMessage("Print took %d ns%n", (System.nanoTime() - time1));
+        printDebugMessage("Took %d ms%n", System.currentTimeMillis() - startTimeMs);
+        printDebugMessage("Time spent on GC=%d ms%n", ManagementFactory.getGarbageCollectorMXBeans().get(0).getCollectionTime());
         System.exit(0);
     }
 
     private static Map<String, MeasurementAggregator> compute() throws Exception {
         int nThreads = Integer.parseInt(
                 System.getProperty("threads", "" + Runtime.getRuntime().availableProcessors()));
-        System.err.printf("Running program with %d threads %n", nThreads);
+        printDebugMessage("Running program with %d threads %n", nThreads);
         Job job = new Job(nThreads - 1);
         job.compute(FILE);
         job.merge();
@@ -102,14 +103,14 @@ public class CalculateAverage_godofwharf {
                 // Ensure that the split length never exceeds Integer.MAX_VALUE. This is because ByteBuffers cannot
                 // be larger than 2 GiB.
                 int splitLength = (int) Math.min(Integer.MAX_VALUE, Math.rint(fileLength * 1.0 / nThreads));
-                System.err.printf("fileLength = %d, splitLength = %d%n", file.length(), splitLength);
+                printDebugMessage("fileLength = %d, splitLength = %d%n", file.length(), splitLength);
                 long time1 = System.nanoTime();
                 // Break the file into multiple splits. One thread would process one split.
                 // This routine makes sure that the splits are uniformly sized to the best extent possible.
                 // Each split would either end with a '\n' character or EOF
                 List<Split> splits = breakFileIntoSplits(file, splitLength, pageSize, memorySegment, false);
-                System.err.printf("Number of splits = %d, splits = [%s]%n", splits.size(), splits);
-                System.err.printf("Splits calculation took %d ns%n", System.nanoTime() - time1);
+                printDebugMessage("Number of splits = %d, splits = [%s]%n", splits.size(), splits);
+                printDebugMessage("Splits calculation took %d ns%n", System.nanoTime() - time1);
                 // consume splits in parallel using the common fork join pool
                 long time = System.nanoTime();
                 List<Future<?>> futures = new ArrayList<>(splits.size() * 2);
@@ -164,7 +165,7 @@ public class CalculateAverage_godofwharf {
                 for (Future<?> future : futures) {
                     future.get();
                 }
-                System.err.println("Aggregate took " + (System.nanoTime() - time) + " ns");
+                printDebugMessage("Aggregate took %d ns%n", (System.nanoTime() - time));
             }
         }
 
@@ -185,14 +186,14 @@ public class CalculateAverage_godofwharf {
                                     return agg;
                                 });
                             }));
-            System.err.println("Merge took " + (System.nanoTime() - time) + " ns");
+            printDebugMessage("Merge took %d ns%n", (System.nanoTime() - time));
         }
 
         public Map<String, MeasurementAggregator> sort() {
             long time = System.nanoTime();
             Map<String, MeasurementAggregator> ret2 = new TreeMap<>();
             ret.forEach((k, v) -> ret2.put(k.toString(), v));
-            System.err.println("Tree map construction took " + (System.nanoTime() - time) + " ns");
+            printDebugMessage("Tree map construction took %d ns%n", (System.nanoTime() - time));
             return ret2;
         }
 
@@ -489,11 +490,11 @@ public class CalculateAverage_godofwharf {
                 }
             }
             catch (ArrayIndexOutOfBoundsException e) {
-                System.err.printf("Array index out of bounds for string: %s%n", new String(b, 0, len));
+                printDebugMessage("Array index out of bounds for string: %s%n", new String(b, 0, len));
                 throw new RuntimeException(e);
             }
             catch (StringIndexOutOfBoundsException e) {
-                System.err.printf("String index out of bounds for string: %s%n", new String(b, 0, len));
+                printDebugMessage("String index out of bounds for string: %s%n", new String(b, 0, len));
                 throw new RuntimeException(e);
             }
         }
@@ -583,6 +584,13 @@ public class CalculateAverage_godofwharf {
         }
 
         record TableEntry(State.AggregationKey key, MeasurementAggregator aggregator) {
+        }
+    }
+
+    private static void printDebugMessage(final String message,
+                                          final Object... args) {
+        if (DEBUG) {
+            System.err.printf(message, args);
         }
     }
 }
