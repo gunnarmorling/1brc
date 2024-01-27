@@ -34,14 +34,14 @@ import static java.lang.foreign.ValueLayout.*;
 /* A fast implementation with no unsafe.
  * Features:
  * * memory mapped file using preview Arena FFI
- * * semicolon finding using incubator vector api
+ * * semicolon finding and name comparison using incubator vector api
  * * read chunks in parallel
  * * minimise allocation
  * * no unsafe
  *
  * Timings on 4 core i7-7500U CPU @ 2.70GHz:
  * average_baseline: 4m48s
- * ianopolous:         15s
+ * ianopolous:         14s
 */
 public class CalculateAverage_ianopolousfast {
 
@@ -60,7 +60,7 @@ public class CalculateAverage_ianopolousfast {
         MemorySegment mmap = channel.map(FileChannel.MapMode.READ_ONLY, 0, filesize, arena);
         int nChunks = filesize < 4 * 1024 * 1024 ? 1 : Runtime.getRuntime().availableProcessors();
         long chunkSize = (filesize + nChunks - 1) / nChunks;
-        List<List<List<Stat>>> allResults = IntStream.range(0, nChunks)
+        List<Stat[]> allResults = IntStream.range(0, nChunks)
                 .parallel()
                 .mapToObj(i -> parseStats(i * chunkSize, Math.min((i + 1) * chunkSize, filesize), mmap))
                 .toList();
@@ -69,7 +69,7 @@ public class CalculateAverage_ianopolousfast {
                 .parallel()
                 .flatMap(f -> {
                     try {
-                        return f.stream().filter(Objects::nonNull).flatMap(Collection::stream);
+                        return Arrays.stream(f).filter(Objects::nonNull);
                     }
                     catch (Exception e) {
                         e.printStackTrace();
@@ -80,12 +80,11 @@ public class CalculateAverage_ianopolousfast {
         System.out.println(merged);
     }
 
-    public static boolean matchingStationBytes(long start, long end, int offset, MemorySegment buffer, Stat existing) {
-        int len = (int) (end - start);
-        if (len != existing.name.length)
-            return false;
-        for (int i = offset; i < len; i++) {
-            if (existing.name[i] != buffer.get(JAVA_BYTE, offset + start++))
+    public static boolean matchingStationBytes(long start, long end, MemorySegment buffer, Stat existing) {
+        for (int index = 0; index < end - start; index += BYTE_SPECIES.vectorByteSize()) {
+            ByteVector line = ByteVector.fromMemorySegment(BYTE_SPECIES, buffer, start + index, ByteOrder.nativeOrder(), BYTE_SPECIES.indexInRange(start + index, end));
+            ByteVector found = ByteVector.fromArray(BYTE_SPECIES, existing.name, index);
+            if (!found.eq(line).allTrue())
                 return false;
         }
         return true;
@@ -98,77 +97,30 @@ public class CalculateAverage_ianopolousfast {
         return (finalHash & (len - 1));
     }
 
-    public static Stat parseStation(long start, long end, long first8, long second8,
-                                    MemorySegment buffer) {
+    public static Stat createStation(long start, long end, MemorySegment buffer) {
         byte[] stationBuffer = new byte[(int) (end - start)];
         for (long off = start; off < end; off++)
             stationBuffer[(int) (off - start)] = buffer.get(JAVA_BYTE, off);
-        return new Stat(stationBuffer, first8, second8);
+        return new Stat(stationBuffer);
     }
 
-    public static Stat dedupeStation(long start, long end, long hash, long first8, long second8,
-                                     MemorySegment buffer, List<List<Stat>> stations) {
+    public static Stat dedupeStation(long start, long end, long hash, MemorySegment buffer, Stat[] stations) {
         int index = hashToIndex(hash, MAX_STATIONS);
-        List<Stat> matches = stations.get(index);
-        if (matches == null) {
-            List<Stat> value = new ArrayList<>();
-            Stat res = parseStation(start, end, first8, second8, buffer);
-            value.add(res);
-            stations.set(index, value);
+        Stat match = stations[index];
+        if (match == null) {
+            Stat res = createStation(start, end, buffer);
+            stations[index] = res;
             return res;
         }
         else {
-            for (int i = 0; i < matches.size(); i++) {
-                Stat s = matches.get(i);
-                if (first8 == s.first8 && second8 == s.second8 && matchingStationBytes(start, end, 16, buffer, s))
-                    return s;
+            while (match != null) {
+                if (matchingStationBytes(start, end, buffer, match))
+                    return match;
+                index = (index + 1) % stations.length;
+                match = stations[index];
             }
-            Stat res = parseStation(start, end, first8, second8, buffer);
-            matches.add(res);
-            return res;
-        }
-    }
-
-    public static Stat dedupeStation8(long start, long end, long hash, long first8, MemorySegment buffer, List<List<Stat>> stations) {
-        int index = hashToIndex(hash, MAX_STATIONS);
-        List<Stat> matches = stations.get(index);
-        if (matches == null) {
-            List<Stat> value = new ArrayList<>();
-            Stat station = parseStation(start, end, first8, 0, buffer);
-            value.add(station);
-            stations.set(index, value);
-            return station;
-        }
-        else {
-            for (int i = 0; i < matches.size(); i++) {
-                Stat s = matches.get(i);
-                if (first8 == s.first8 && s.name.length <= 8)
-                    return s;
-            }
-            Stat station = parseStation(start, end, first8, 0, buffer);
-            matches.add(station);
-            return station;
-        }
-    }
-
-    public static Stat dedupeStation16(long start, long end, long hash, long first8, long second8, MemorySegment buffer, List<List<Stat>> stations) {
-        int index = hashToIndex(hash, MAX_STATIONS);
-        List<Stat> matches = stations.get(index);
-        if (matches == null) {
-            List<Stat> value = new ArrayList<>();
-            Stat res = parseStation(start, end, first8, second8, buffer);
-            value.add(res);
-            stations.set(index, value);
-            return res;
-        }
-        else {
-            for (int i = 0; i < matches.size(); i++) {
-                Stat s = matches.get(i);
-                if (first8 == s.first8 && second8 == s.second8 && s.name.length <= 16)
-                    return s;
-            }
-            Stat res = parseStation(start, end, first8, second8, buffer);
-            matches.add(res);
+            Stat res = createStation(start, end, buffer);
+            stations[index] = res;
             return res;
         }
     }
@@ -177,60 +129,38 @@ public class CalculateAverage_ianopolousfast {
         return d & (-1L << ((8 - nbytes) * 8));
     }
 
-    public static Stat parseStation(long lineStart, MemorySegment buffer, List<List<Stat>> stations) {
+    public static Stat parseStation(long lineStart, MemorySegment buffer, Stat[] stations) {
         ByteVector line = ByteVector.fromMemorySegment(BYTE_SPECIES, buffer, lineStart, ByteOrder.nativeOrder());
         int keySize = line.compare(VectorOperators.EQ, ';').firstTrue();
 
-        if (keySize == BYTE_SPECIES.vectorByteSize()) {
+        long first8 = buffer.get(LONG_LAYOUT, lineStart);
+        long second8 = 0;
+        if (keySize <= 8) {
+            first8 = maskHighBytes(first8, keySize & 0x07);
+        }
+        else if (keySize <= 16) {
+            second8 = maskHighBytes(buffer.get(LONG_LAYOUT, lineStart + 8), keySize & 0x07);
+        }
+        else if (keySize == BYTE_SPECIES.vectorByteSize()) {
             while (buffer.get(JAVA_BYTE, lineStart + keySize) != ';') {
                 keySize++;
             }
-            long first8 = buffer.get(LONG_LAYOUT, lineStart);
-            if (keySize < 8)
-                return dedupeStation8(lineStart, lineStart + keySize, first8, first8, buffer, stations);
-            long second8 = buffer.get(LONG_LAYOUT, lineStart + 8);
-            if (keySize < 16)
-                return dedupeStation16(lineStart, lineStart + keySize, first8 ^ second8, first8, second8, buffer, stations);
-            long hash = first8 ^ second8; // todo include other bytes
-            return dedupeStation(lineStart, lineStart + keySize, hash, first8, second8, buffer, stations);
-        }
-
-        long first8 = buffer.get(LONG_LAYOUT, lineStart);
-        if (keySize <= 8) {
-            first8 = maskHighBytes(first8, keySize & 0x07);
-            return dedupeStation8(lineStart, lineStart + keySize, first8, first8, buffer, stations);
-        }
-        long second8 = buffer.get(LONG_LAYOUT, lineStart + 8);
-        if (keySize < 16) {
-            second8 = maskHighBytes(second8, keySize & 0x07);
-            return dedupeStation16(lineStart, lineStart + keySize, first8 ^ second8, first8, second8, buffer, stations);
+            second8 = maskHighBytes(buffer.get(LONG_LAYOUT, lineStart + 8), keySize & 0x07);
         }
         long hash = first8 ^ second8; // todo include later bytes
-        return dedupeStation(lineStart, lineStart + keySize, hash, first8, second8, buffer, stations);
-    }
-
-    public static int getDot(long d) {
-        // from Hacker's Delight page 92
-        d = d ^ 0x2e2e2e2e2e2e2e2eL;
-        long y = (d & 0x7f7f7f7f7f7f7f7fL) + 0x7f7f7f7f7f7f7f7fL;
-        y = ~(y | d | 0x7f7f7f7f7f7f7f7fL);
-        return Long.numberOfLeadingZeros(y) >> 3;
+        return dedupeStation(lineStart, lineStart + keySize, hash, buffer, stations);
     }
 
     public static short getMinus(long d) {
-        d = d & 0xff00000000000000L;
-        d = d ^ 0x2d2d2d2d2d2d2d2dL;
-        long y = (d & 0x7f7f7f7f7f7f7f7fL) + 0x7f7f7f7f7f7f7f7fL;
-        y = ~(y | d | 0x7f7f7f7f7f7f7f7fL);
-        return (short) ((Long.numberOfLeadingZeros(y) >> 6) - 1);
+        return ((d & 0xff00000000000000L) ^ 0x2d00000000000000L) != 0 ? 0 : (short) -1;
     }
 
-    public static long processTemperature(long lineSplit, MemorySegment buffer, Stat station) {
+    public static long processTemperature(long lineSplit, int size, MemorySegment buffer, Stat station) {
         long d = buffer.get(LONG_LAYOUT, lineSplit);
         // negative is either 0 or -1
         short negative = getMinus(d);
         d = d << (negative * -8);
-        int dotIndex = getDot(d);
+        int dotIndex = size - 2 + negative;
         d = (d >> 8) | 0x30000000_00000000L; // add a leading 0 digit
         d = d >> 8 * (5 - dotIndex);
         short temperature = (short) ((byte) d - '0' +
@@ -238,10 +168,41 @@ public class CalculateAverage_ianopolousfast {
                 100 * (((byte) (d >> 24)) - '0'));
         temperature = (short) ((temperature ^ negative) - negative); // negative treatment inspired by merkitty
         station.add(temperature);
-        return lineSplit - negative + dotIndex + 3;
+        return lineSplit + size + 1;
     }
 
-    public static List<List<Stat>> parseStats(long startByte, long endByte, MemorySegment buffer) {
+    private static long parseLine(long lineStart, MemorySegment buffer, Stat[] stations) {
+        ByteVector line = ByteVector.fromMemorySegment(BYTE_SPECIES, buffer, lineStart, ByteOrder.nativeOrder());
+        int lineSize = line.compare(VectorOperators.EQ, '\n').firstTrue();
+        int index = lineSize;
+        while (index == BYTE_SPECIES.vectorByteSize()) {
+            index = ByteVector.fromMemorySegment(BYTE_SPECIES, buffer, lineStart + lineSize,
+                    ByteOrder.nativeOrder()).compare(VectorOperators.EQ, '\n').firstTrue();
+            lineSize += index;
+        }
+        int keySize = lineSize - 6 + ByteVector.fromMemorySegment(BYTE_SPECIES, buffer, lineStart + lineSize - 6,
+                ByteOrder.nativeOrder()).compare(VectorOperators.EQ, ';').firstTrue();
+
+        long first8 = buffer.get(LONG_LAYOUT, lineStart);
+        long second8 = 0;
+        if (keySize <= 8) {
+            first8 = maskHighBytes(first8, keySize & 0x07);
+        }
+        else if (keySize <= 16) {
+            second8 = maskHighBytes(buffer.get(LONG_LAYOUT, lineStart + 8), keySize & 0x07);
+        }
+        else if (keySize == BYTE_SPECIES.vectorByteSize()) {
+            while (buffer.get(JAVA_BYTE, lineStart + keySize) != ';') {
+                keySize++;
+            }
+            second8 = maskHighBytes(buffer.get(LONG_LAYOUT, lineStart + 8), keySize & 0x07);
+        }
+        long hash = first8 ^ second8; // todo include later bytes
+        Stat station = dedupeStation(lineStart, lineStart + keySize, hash, buffer, stations);
+        return processTemperature(lineStart + keySize + 1, lineSize - keySize - 1, buffer, station);
+    }
+
+    public static Stat[] parseStats(long startByte, long endByte, MemorySegment buffer) {
         // read first partial line
         if (startByte > 0) {
             for (int i = 0; i < MAX_LINE_LENGTH; i++) {
@@ -252,22 +213,17 @@ public class CalculateAverage_ianopolousfast {
             }
         }
 
-        List<List<Stat>> stations = new ArrayList<>(MAX_STATIONS);
-        for (int i = 0; i < MAX_STATIONS; i++)
-            stations.add(null);
+        Stat[] stations = new Stat[MAX_STATIONS];
 
         // Handle reading the very last few lines in the file
         // this allows us to not worry about reading beyond the end
         // in the inner loop (reducing branches)
         // We need at least the vector lane size bytes back
         if (endByte == buffer.byteSize()) {
-            endByte -= 1; // skip final new line
             // reverse at least vector lane width
-            while (endByte > 0 && buffer.byteSize() - endByte < BYTE_SPECIES.vectorByteSize()) {
+            endByte = Math.max(buffer.byteSize() - BYTE_SPECIES.vectorByteSize(), 0);
+            while (endByte > 0 && buffer.get(JAVA_BYTE, endByte) != '\n')
                 endByte--;
-                while (endByte > 0 && buffer.get(JAVA_BYTE, endByte) != '\n')
-                    endByte--;
-            }
 
             if (endByte > 0)
                 endByte++;
@@ -278,28 +234,37 @@ public class CalculateAverage_ianopolousfast {
             int index = 0;
             while (endByte + index < buffer.byteSize()) {
                 Stat station = parseStation(index, end, stations);
-                index = (int) processTemperature(index + station.name.length + 1, end, station);
+                int tempSize = 3;
+                if (end.get(JAVA_BYTE, index + station.namelen + 5) == '\n')
+                    tempSize = 4;
+                if (end.get(JAVA_BYTE, index + station.namelen + 6) == '\n')
+                    tempSize = 5;
+                index = (int) processTemperature(index + station.namelen + 1, tempSize, end, station);
             }
         }
 
-        while (startByte < endByte) {
-            Stat station = parseStation(startByte, buffer, stations);
-            startByte = processTemperature(startByte + station.name.length + 1, buffer, station);
-        }
+        innerloop(startByte, endByte, buffer, stations);
         return stations;
+    }
+
+    private static void innerloop(long startByte, long endByte, MemorySegment buffer, Stat[] stations) {
+        while (startByte < endByte) {
+            startByte = parseLine(startByte, buffer, stations);
+        }
     }
 
     public static class Stat {
         final byte[] name;
+        final int namelen;
         int count = 0;
         short min = Short.MAX_VALUE, max = Short.MIN_VALUE;
         long total = 0;
-        final long first8, second8;
 
-        public Stat(byte[] name, long first8, long second8) {
-            this.name = name;
-            this.first8 = first8;
-            this.second8 = second8;
+        public Stat(byte[] name) {
+            int vecSize = BYTE_SPECIES.vectorByteSize();
+            int arrayLen = (name.length + vecSize - 1) / vecSize * vecSize;
+            this.name = Arrays.copyOfRange(name, 0, arrayLen);
+            this.namelen = name.length;
         }
 
         public void add(short value) {
@@ -326,7 +291,7 @@ public class CalculateAverage_ianopolousfast {
         }
 
         public String name() {
-            return new String(name);
+            return new String(Arrays.copyOfRange(name, 0, namelen));
         }
 
         public String toString() {

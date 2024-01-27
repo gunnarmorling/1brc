@@ -125,7 +125,7 @@ public class CalculateAverage_karthikeyan97 {
         final long mappedAddress = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, raf.length(), Arena.global()).address();
         long length = raf.length();
         final long endAddress = mappedAddress + length - 1;
-        int cores = length > 1000 ? Runtime.getRuntime().availableProcessors() * 2 : 1;
+        int cores = length > 1000 ? Runtime.getRuntime().availableProcessors() : 1;
         long boundary[][] = new long[cores][2];
         long segments = length / (cores);
         long before = -1;
@@ -145,25 +145,21 @@ public class CalculateAverage_karthikeyan97 {
         boundary[cores - 1][0] = before + 1;
         boundary[cores - 1][1] = length - 1;
 
-        Field f = Unsafe.class.getDeclaredField("theUnsafe");
-        f.setAccessible(true);
-        Unsafe unsafe = (Unsafe) f.get(null);
-
-        int l3Size = (13 * 1024 * 1024);// unsafe.l3Size();
+        int l3Size = (12 * 1024 * 1024);// unsafe.l3Size();
 
         System.out.println(new TreeMap((Arrays.stream(boundary).parallel().map(i -> {
-            FileInputStream fileInputStream = null;
             try {
                 int seglen = (int) (i[1] - i[0] + 1);
-                HashMap<modifiedbytearray, MeasurementAggregator> resultmap = new HashMap<>(1000);
+                HashMap<modifiedbytearray, MeasurementAggregator> resultmap = new HashMap<>(4000);
                 long segstart = mappedAddress + i[0];
                 int bytesRemaining = seglen;
                 long num = 0;
-                int sign = 1;
                 boolean isNumber = false;
                 byte bi;
+                int sign = 1;
                 modifiedbytearray stationName = null;
                 int hascode = 5381;
+                // System.out.println("start:" + System.nanoTime() / 1000000);
                 while (bytesRemaining > 0) {
                     int bytesptr = 0;
                     // int bytesread = buffer.remaining() > l3Size ? l3Size : buffer.remaining();
@@ -178,64 +174,59 @@ public class CalculateAverage_karthikeyan97 {
                     while (bytesptr < actualReadSize) {
                         bi = readArr[bytesptr++];// UNSAFE.getByte(segstart + bytesReading++);
                         if (!isNumber) {
-                            if (bi >= 192) {
+                            while (bi != 59) {
                                 hascode = (hascode << 5) + hascode ^ bi;
+                                bi = readArr[bytesptr++];
                             }
-                            else if (bi == 59) {
-                                isNumber = true;
-                                stationName = new modifiedbytearray(readArr, bbstart, bytesptr - 2, hascode & 0xFFFFFFFF);
-                                bbstart = 0;
-                                hascode = 5381;
-                                if (bytesptr >= readSize) {
-                                    break;
-                                }
-                            }
-                            else {
-                                hascode = (hascode << 5) + hascode ^ bi;
-                            }
+                            isNumber = true;
+                            stationName = new modifiedbytearray(readArr, bbstart, bytesptr - 2, hascode & 0xFFFFFFFF);
+                            bbstart = 0;
+                            hascode = 5381;
                         }
                         else {
-                            switch (bi) {
-                                case 0x2E:
-                                    break;
-                                case 0x2D:
+                            while (bi != 10) {
+                                if (bi == 0x2D) {
                                     sign = -1;
-                                    break;
-                                case 10:
-                                    hascode = 5381;
-                                    isNumber = false;
-                                    bbstart = bytesptr;
-                                    MeasurementAggregator agg = resultmap.get(stationName);
-                                    num *= sign;
-                                    if (agg == null) {
-                                        agg = new MeasurementAggregator();
-                                        agg.min = num;
-                                        agg.max = num;
-                                        agg.sum = (long) (num);
-                                        agg.count = 1;
-                                        resultmap.put(stationName, agg);
-                                    }
-                                    else {
-                                        if (agg.min >= num) {
-                                            agg.min = num;
-                                        }
-                                        if (agg.max <= num) {
-                                            agg.max = num;
-                                        }
-                                        agg.sum += (long) (num);
-                                        agg.count++;
-                                    }
-                                    num = 0;
-                                    sign = 1;
-                                    break;
-                                default:
+                                }
+                                else if (bi != 0x2E) {
                                     num = num * 10 + (bi - 0x30);
+                                }
+                                bi = readArr[bytesptr++];
+                            }
+                            hascode = 5381;
+                            isNumber = false;
+                            bbstart = bytesptr;
+                            num *= sign;
+                            MeasurementAggregator agg = resultmap.get(stationName);
+                            if (agg == null) {
+                                agg = new MeasurementAggregator();
+                                agg.min = num;
+                                agg.max = num;
+                                agg.sum = (long) (num);
+                                agg.count = 1;
+                                resultmap.put(stationName, agg);
+                            }
+                            else {
+                                if (agg.min >= num) {
+                                    agg.min = num;
+                                }
+                                if (agg.max <= num) {
+                                    agg.max = num;
+                                }
+                                agg.sum += (long) (num);
+                                agg.count++;
+                            }
+                            num = 0;
+                            sign = 1;
+                            if (bytesptr >= readSize) {
+                                break;
                             }
                         }
                     }
                     bytesRemaining -= bytesptr;
                     segstart += bytesptr;
                 }
+                // System.out.println("end:" + System.nanoTime() / 1000000);
                 /*
                  * while (bytesReading < (i[1] - i[0] + 1) && buffer.position() < buffer.limit()) {
                  * buffer.clear();

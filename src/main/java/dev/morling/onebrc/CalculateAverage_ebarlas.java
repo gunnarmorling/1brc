@@ -185,48 +185,114 @@ public class CalculateAverage_ebarlas {
             long keyAddr = keyBaseAddr; // address for next int
             int keyArrLen = 0; // number of key 4-byte ints
             int keyLastBytes; // occupancy in last byte (1, 2, 3, or 4)
-            byte b0, b1, b2, b3;
+            int val;
             while (true) {
                 int n = UNSAFE.getInt(cursor);
                 cursor += 4;
-                b0 = (byte) (n & 0xFF);
-                b1 = (byte) ((n >> 8) & 0xFF);
-                b2 = (byte) ((n >> 16) & 0xFF);
-                b3 = (byte) ((n >> 24) & 0xFF);
-                if (b0 == ';') { // ...;1.1
+                if ((n & 0xFF) == ';') { // ;vvv
                     UNSAFE.putInt(keyAddr, 0); // always pad with extra int to facilitate 8-byte aligned comparisons
                     keyLastBytes = 4;
-                    b0 = b1;
-                    b1 = b2;
-                    b2 = b3;
-                    b3 = (byte) (UNSAFE.getByte(cursor++) & 0xFF);
+                    byte b0 = (byte) ((n >> 8) & 0xFF);
+                    byte b1 = (byte) ((n >> 16) & 0xFF);
+                    byte b2 = (byte) ((n >> 24) & 0xFF);
+                    if (b0 == '-') {
+                        if (b2 != '.') { // 6 bytes: -dd.dn
+                            cursor++; // decimal point
+                            byte b4 = UNSAFE.getByte(cursor);
+                            cursor += 2; // adv beyond digit and newline
+                            val = -(((b1 - '0') * 10 + (b2 - '0')) * 10 + (b4 - '0'));
+                        }
+                        else { // 5 bytes: -d.dn
+                            byte b3 = UNSAFE.getByte(cursor);
+                            cursor += 2; // digit and newline
+                            val = -((b1 - '0') * 10 + (b3 - '0'));
+                        }
+                    }
+                    else {
+                        if (b1 != '.') { // 5 bytes: dd.dn
+                            var b3 = UNSAFE.getByte(cursor);
+                            cursor += 2; // digit and newline
+                            val = ((b0 - '0') * 10 + (b1 - '0')) * 10 + (b3 - '0');
+                        }
+                        else { // 4 bytes: d.dn
+                            cursor++; // newline
+                            val = (b0 - '0') * 10 + (b2 - '0');
+                        }
+                    }
                     break;
                 }
-                else if (b1 == ';') { // ...a;1.1
+                else if ((n & 0xFF00) == 0x3b00) { // k;vv
                     int k = n & 0xFF;
                     UNSAFE.putLong(keyAddr, k); // pad with extra int for comparison alignment
                     keyLastBytes = 1;
                     keyArrLen++;
                     keyHash += k;
-                    b0 = b2;
-                    b1 = b3;
-                    b2 = (byte) (UNSAFE.getByte(cursor++) & 0xFF);
-                    b3 = (byte) (UNSAFE.getByte(cursor++) & 0xFF);
+                    byte b0 = (byte) ((n >> 16) & 0xFF);
+                    byte b1 = (byte) ((n >> 24) & 0xFF);
+                    byte b2 = UNSAFE.getByte(cursor++);
+                    if (b0 == '-') {
+                        if (b2 != '.') { // 6 bytes: -dd.dn
+                            cursor++; // decimal point
+                            byte b4 = UNSAFE.getByte(cursor);
+                            cursor += 2; // adv beyond digit and newline
+                            val = -(((b1 - '0') * 10 + (b2 - '0')) * 10 + (b4 - '0'));
+                        }
+                        else { // 5 bytes: -d.dn
+                            byte b3 = UNSAFE.getByte(cursor);
+                            cursor += 2; // digit newline
+                            val = -((b1 - '0') * 10 + (b3 - '0'));
+                        }
+                    }
+                    else {
+                        if (b1 != '.') { // 5 bytes: dd.dn
+                            byte b3 = UNSAFE.getByte(cursor);
+                            cursor += 2; // newline
+                            val = ((b0 - '0') * 10 + (b1 - '0')) * 10 + (b3 - '0');
+                        }
+                        else { // 4 bytes: d.dn
+                            cursor++;
+                            val = (b0 - '0') * 10 + (b2 - '0');
+                        }
+                    }
                     break;
                 }
-                else if (b2 == ';') { // ...ab;1.1
+                else if ((n & 0xFF0000) == 0x3b0000) { // kk;v
                     int k = n & 0xFFFF;
                     UNSAFE.putLong(keyAddr, k); // pad with extra int for comparison alignment
                     keyLastBytes = 2;
                     keyArrLen++;
                     keyHash += k;
-                    b0 = b3;
-                    b1 = (byte) (UNSAFE.getByte(cursor++) & 0xFF);
-                    b2 = (byte) (UNSAFE.getByte(cursor++) & 0xFF);
-                    b3 = (byte) (UNSAFE.getByte(cursor++) & 0xFF);
+                    byte b0 = (byte) ((n >> 24) & 0xFF);
+                    if (b0 == '-') {
+                        n = UNSAFE.getInt(cursor);
+                        cursor += 4;
+                        byte b1 = (byte) (n & 0xFF);
+                        byte b2 = (byte) ((n >> 8) & 0xFF);
+                        byte b3 = (byte) ((n >> 16) & 0xFF);
+                        if (b2 != '.') { // 6 bytes: -dd.dn
+                            byte b4 = (byte) ((n >> 24) & 0xFF);
+                            cursor++; // newline
+                            val = -(((b1 - '0') * 10 + (b2 - '0')) * 10 + (b4 - '0'));
+                        }
+                        else { // 5 bytes: -d.dn
+                            val = -((b1 - '0') * 10 + (b3 - '0'));
+                        }
+                    }
+                    else {
+                        byte b1 = UNSAFE.getByte(cursor++);
+                        byte b2 = UNSAFE.getByte(cursor++);
+                        byte b3 = UNSAFE.getByte(cursor++);
+                        if (b1 != '.') { // 5 bytes: dd.dn
+                            cursor++; // newline
+                            val = ((b0 - '0') * 10 + (b1 - '0')) * 10 + (b3 - '0');
+                        }
+                        else { // 4 bytes: d.dn
+                            val = (b0 - '0') * 10 + (b2 - '0');
+                        }
+                    }
                     break;
                 }
-                else if (b3 == ';') { // ...abc;1.1
+                else if ((n & 0xFF000000) == 0x3b000000) { // kkk;
                     int k = n & 0xFFFFFF;
                     UNSAFE.putLong(keyAddr, k); // pad with extra int for comparison alignment
                     keyLastBytes = 3;
@@ -234,13 +300,33 @@ public class CalculateAverage_ebarlas {
                     keyHash += k;
                     n = UNSAFE.getInt(cursor);
                     cursor += 4;
-                    b0 = (byte) (n & 0xFF);
-                    b1 = (byte) ((n >> 8) & 0xFF);
-                    b2 = (byte) ((n >> 16) & 0xFF);
-                    b3 = (byte) ((n >> 24) & 0xFF);
+                    byte b0 = (byte) (n & 0xFF);
+                    byte b1 = (byte) ((n >> 8) & 0xFF);
+                    byte b2 = (byte) ((n >> 16) & 0xFF);
+                    byte b3 = (byte) ((n >> 24) & 0xFF);
+                    if (b0 == '-') {
+                        if (b2 != '.') { // 6 bytes: -dd.dn
+                            byte b4 = UNSAFE.getByte(cursor);
+                            cursor += 2; // adv beyond digit and newline
+                            val = -(((b1 - '0') * 10 + (b2 - '0')) * 10 + (b4 - '0'));
+                        }
+                        else { // 5 bytes: -d.dn
+                            cursor++; // newline
+                            val = -((b1 - '0') * 10 + (b3 - '0'));
+                        }
+                    }
+                    else {
+                        if (b1 != '.') { // 5 bytes: dd.dn
+                            cursor++; // newline
+                            val = ((b0 - '0') * 10 + (b1 - '0')) * 10 + (b3 - '0');
+                        }
+                        else { // 4 bytes: d.dn
+                            val = (b0 - '0') * 10 + (b2 - '0');
+                        }
+                    }
                     break;
                 }
-                else {
+                else { // kkkk
                     UNSAFE.putInt(keyAddr, n);
                     keyArrLen++;
                     keyAddr += 4;
@@ -255,27 +341,6 @@ public class CalculateAverage_ebarlas {
             }
             else if (!equals(st.keyAddr, st.keyLen, keyBaseAddr, keyArrLen)) {
                 st = findInTable(stats, keyHash, keyBaseAddr, keyArrLen, keyLastBytes);
-            }
-            int val;
-            if (b0 == '-') {
-                if (b2 != '.') { // 6 bytes: -dd.dn
-                    var b = UNSAFE.getByte(cursor);
-                    cursor += 2; // adv beyond digit and newline
-                    val = -(((b1 - '0') * 10 + (b2 - '0')) * 10 + (b - '0'));
-                }
-                else { // 5 bytes: -d.dn
-                    cursor++; // newline
-                    val = -((b1 - '0') * 10 + (b3 - '0'));
-                }
-            }
-            else {
-                if (b1 != '.') { // 5 bytes: dd.dn
-                    cursor++; // newline
-                    val = ((b0 - '0') * 10 + (b1 - '0')) * 10 + (b3 - '0');
-                }
-                else { // 4 bytes: d.dn
-                    val = (b0 - '0') * 10 + (b2 - '0');
-                }
             }
             st.min = Math.min(st.min, val);
             st.max = Math.max(st.max, val);
