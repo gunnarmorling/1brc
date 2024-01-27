@@ -251,14 +251,21 @@ public class CalculateAverage_dpsoft {
 
         public MeasurementMap merge(MeasurementMap otherMap) {
             for (Measurement other : otherMap.measurements) {
-                if (other != null) {
-                    int index = other.nameHash & ROWS_MASK;
-                    Measurement m = measurements[index];
-                    if (m == null || Arrays.equals(m.name, other.name)) {
-                        measurements[index] = (m == null) ? other : m.merge(other);
+                if (other == null)
+                    continue;
+                int idx = other.nameHash & ROWS_MASK;
+                while (true) {
+                    Measurement cur = measurements[idx];
+                    if (cur == null) {
+                        measurements[idx] = other;
+                        break;
+                    }
+                    else if (Arrays.equals(cur.name, other.name)) {
+                        cur.merge(other);
+                        break;
                     }
                     else {
-                        measurements[(index + 1) & ROWS_MASK] = other;
+                        idx = (idx + 1) & ROWS_MASK;
                     }
                 }
             }
@@ -269,12 +276,12 @@ public class CalculateAverage_dpsoft {
     static final class Measurement {
         public final int nameHash;
         public final byte[] name;
-        long sum = 0;
-        int count = 0;
-        long min = Integer.MAX_VALUE;
-        long max = Integer.MIN_VALUE;
 
-        // Default constructor for Measurement.
+        public long sum;
+        public int count = 0;
+        public int min = Integer.MAX_VALUE;
+        public int max = Integer.MIN_VALUE;
+
         public Measurement(byte[] name, int nameHash) {
             this.name = name;
             this.nameHash = nameHash;
@@ -299,9 +306,6 @@ public class CalculateAverage_dpsoft {
         }
 
         public Measurement merge(Measurement m2) {
-            if (m2 == null) {
-                return this;
-            }
             min = Math.min(min, m2.min);
             max = Math.max(max, m2.max);
             sum += m2.sum;
