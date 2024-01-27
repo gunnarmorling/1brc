@@ -107,6 +107,8 @@ public class CalculateAverage_jonathanaotearoa {
     }
 
     private static TreeMap<String, StationData> processFile(final FileChannel fc, final long fileSize) throws IOException {
+        assert fileSize >= Long.BYTES : STR."File size must be >= \{Long.BYTES} but was \{fileSize}";
+
         try (final Arena arena = Arena.ofConfined()) {
             final long fileAddress = fc.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, arena).address();
             return createChunks(fileAddress, fileSize)
@@ -127,7 +129,7 @@ public class CalculateAverage_jonathanaotearoa {
         final long chunkStep = fileSize / parallelism;
         final long lastFileByteAddress = fileAddress + fileSize - 1;
         if (chunkStep < MAX_LINE_BYTES) {
-            // We're dealing with a tiny file, just return a single chunk.
+            // We're dealing with a small file, return a single chunk.
             return Stream.of(new Chunk(fileAddress, lastFileByteAddress, true));
         }
         final Chunk[] chunks = new Chunk[parallelism];
@@ -247,7 +249,7 @@ public class CalculateAverage_jonathanaotearoa {
 
         public Chunk(final long startAddress, final long lastByteAddress, final boolean isLast) {
             this(startAddress, lastByteAddress, lastByteAddress - (Long.BYTES - 1), isLast);
-            // These get check when running TestRunner.
+            // Enabled when running TestRunner.
             assert lastByteAddress > startAddress : STR."lastByteAddress \{lastByteAddress} must be > startAddress \{startAddress}";
             assert lastWordAddress >= startAddress : STR."lastWordAddress \{lastWordAddress} must be >= startAddress \{startAddress}";
         }
@@ -364,7 +366,7 @@ public class CalculateAverage_jonathanaotearoa {
             final StringBuilder testResults = new StringBuilder();
             try (DirectoryStream<Path> dirStream = Files.newDirectoryStream(SAMPLE_DIR_PATH, "*.txt")) {
                 dirStream.forEach(path -> {
-                    testResults.append("Testing '%s'... ".formatted(path.getFileName()));
+                    testResults.append(STR."Testing '\{path.getFileName()}'... ");
                     final ByteArrayOutputStream out = new ByteArrayOutputStream();
                     System.setOut(new PrintStream(out));
                     final String expectedResultFileName = path.getFileName().toString().replace(".txt", ".out");
@@ -381,7 +383,7 @@ public class CalculateAverage_jonathanaotearoa {
                         }
                     }
                     catch (IOException e) {
-                        throw new RuntimeException("Error testing '%s".formatted(path.getFileName()));
+                        throw new RuntimeException(STR."Error testing '\{path.getFileName()}");
                     }
                 });
             }
