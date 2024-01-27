@@ -39,7 +39,6 @@ public class CalculateAverage_vaidhy<I, T> {
     private static final class HashEntry {
         private long startAddress;
         private long endAddress;
-        private long hash;
         private long suffix;
         private int next;
         IntSummaryStatistics value;
@@ -47,12 +46,15 @@ public class CalculateAverage_vaidhy<I, T> {
 
     private static class PrimitiveHashMap {
         private final HashEntry[] entries;
+        private final long[] hashes;
+
         private final int twoPow;
         private int next = -1;
 
         PrimitiveHashMap(int twoPow) {
             this.twoPow = twoPow;
             this.entries = new HashEntry[1 << twoPow];
+            this.hashes = new long[1 << twoPow];
             for (int i = 0; i < entries.length; i++) {
                 this.entries[i] = new HashEntry();
             }
@@ -62,25 +64,60 @@ public class CalculateAverage_vaidhy<I, T> {
             int len = entries.length;
             int h = Long.hashCode(hash);
             int i = (h ^ (h >> twoPow)) & (len - 1);
+            long lookupLength = endAddress - startAddress;
+
+            long hashEntry = hashes[i];
+            if (hashEntry == 0) {
+                HashEntry entry = entries[i];
+                entry.startAddress = startAddress;
+                entry.endAddress = endAddress;
+                hashes[i] = hash;
+                entry.next = next;
+                entry.suffix = suffix;
+                this.next = i;
+                return entry;
+            }
+
+            if (hashEntry == hash) {
+                HashEntry entry = entries[i];
+                if (entry.suffix == suffix) {
+                    long entryLength = entry.endAddress - entry.startAddress;
+                    if (entryLength == lookupLength) {
+                        boolean found = compareEntryKeys(startAddress, endAddress, entry);
+                        if (found) {
+                            return entry;
+                        }
+                    }
+                }
+            }
+
+            i++;
+            if (i == len) {
+                i = 0;
+            }
 
             do {
-                HashEntry entry = entries[i];
-                if (entry.value == null) {
+                hashEntry = hashes[i];
+                if (hashEntry == 0) {
+                    HashEntry entry = entries[i];
                     entry.startAddress = startAddress;
                     entry.endAddress = endAddress;
-                    entry.hash = hash;
+                    hashes[i] = hash;
                     entry.next = next;
                     entry.suffix = suffix;
                     this.next = i;
                     return entry;
                 }
-                if (entry.hash == hash && entry.suffix == suffix) {
-                    long entryLength = entry.endAddress - entry.startAddress;
-                    long lookupLength = endAddress - startAddress;
-                    if (entryLength == lookupLength) {
-                        boolean found = compareEntryKeys(startAddress, endAddress, entry);
-                        if (found) {
-                            return entry;
+
+                if (hashEntry == hash) {
+                    HashEntry entry = entries[i];
+                    if (entry.suffix == suffix) {
+                        long entryLength = entry.endAddress - entry.startAddress;
+                        if (entryLength == lookupLength) {
+                            boolean found = compareEntryKeys(startAddress, endAddress, entry);
+                            if (found) {
+                                return entry;
+                            }
                         }
                     }
                 }
@@ -719,10 +756,10 @@ public class CalculateAverage_vaidhy<I, T> {
                 ChunkProcessorImpl::new,
                 CalculateAverage_vaidhy::combineOutputs);
 
-        int proc = 2 * Runtime.getRuntime().availableProcessors();
+        int proc = Runtime.getRuntime().availableProcessors();
 
         ExecutorService executor = Executors.newFixedThreadPool(proc);
-        Map<String, IntSummaryStatistics> output = calculateAverageVaidhy.master(proc, executor);
+        Map<String, IntSummaryStatistics> output = calculateAverageVaidhy.master(2 * proc, executor);
         executor.shutdown();
 
         Map<String, String> outputStr = toPrintMap(output);
