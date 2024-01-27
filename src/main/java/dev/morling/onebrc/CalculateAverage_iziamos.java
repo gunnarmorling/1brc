@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.reflect.Field;
+import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,7 +29,6 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 
-import static dev.morling.onebrc.CalculateAverage_iziamos.ByteBackedResultSet.mask;
 import static java.nio.channels.FileChannel.MapMode.READ_ONLY;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.nio.file.StandardOpenOption.READ;
@@ -61,6 +61,7 @@ public class CalculateAverage_iziamos {
         BASE_POINTER = WHOLE_FILE_SEGMENT.address();
         END_POINTER = BASE_POINTER + FILE_SIZE;
     }
+
     private static final long CHUNK_SIZE = 64 * 1024 * 1024;
     // private static final long CHUNK_SIZE = Long.MAX_VALUE;
 
@@ -141,7 +142,7 @@ public class CalculateAverage_iziamos {
     }
 
     private static void scalarLoop(final long start, final long limit, final long result) {
-        final var cursor = new ScalarLoopCursor(start, limit);
+        final LoopCursor cursor = new ScalarLoopCursor(start, limit);
         while (cursor.hasMore()) {
             final long address = cursor.getCurrentAddress();
             final int length = cursor.getStringLength();
@@ -151,7 +152,19 @@ public class CalculateAverage_iziamos {
         }
     }
 
-    public static class ScalarLoopCursor {
+    public interface LoopCursor {
+        long getCurrentAddress();
+
+        int getStringLength();
+
+        int getHash();
+
+        int getCurrentValue();
+
+        boolean hasMore();
+    }
+
+    public static class ScalarLoopCursor implements LoopCursor {
         private long pointer;
         private final long limit;
 
@@ -180,41 +193,35 @@ public class CalculateAverage_iziamos {
         }
 
         public int getHash() {
-            return mask(hash);
+            return hash;
         }
 
         public int getCurrentValue() {
-            final byte first = UNSAFE.getByte(pointer++);
-            final byte second = UNSAFE.getByte(pointer++);
-            final byte third = UNSAFE.getByte(pointer++);
-            final byte fourth = UNSAFE.getByte(pointer++);
-            final byte fifth = UNSAFE.getByte(pointer++);
+            return getCurrentValueMeryKitty();
+        }
 
-            int value;
-            if (second == '.') {
-                // D.D\n
-                value = appendDigit(digitCharToInt(first), third);
-                pointer--;
-                return value;
+        /**
+         * No point rewriting what would essentially be the same code <3.
+         */
+        public int getCurrentValueMeryKitty() {
+            long word = UNSAFE.getLong(pointer);
+            if (ByteOrder.nativeOrder() == ByteOrder.BIG_ENDIAN) {
+                word = Long.reverseBytes(word);
             }
-            else if (fourth == '.') {
-                // -DD.D\n
-                value = digitCharToInt(second);
-                value = appendDigit(value, third);
-                value = -appendDigit(value, fifth);
-                pointer++;
-                return value;
-            }
-            else if (first == '-') {
-                // -D.D\n
-                return -appendDigit(digitCharToInt(second), fourth);
-            }
-            else {
-                // DD.D\n
-                value = digitCharToInt(first);
-                value = appendDigit(value, second);
-                return appendDigit(value, fourth);
-            }
+
+            int decimalSepPos = Long.numberOfTrailingZeros(~word & 0x10101000);
+            int shift = 28 - decimalSepPos;
+
+            long signed = (~word << 59) >> 63;
+            long designMask = ~(signed & 0xFF);
+
+            long digits = ((word & designMask) << shift) & 0x0F000F0F00L;
+
+            long absValue = ((digits * 0x640a0001) >>> 32) & 0x3FF;
+            int increment = (decimalSepPos >>> 3) + 3;
+
+            pointer += increment;
+            return (int) ((absValue ^ signed) - signed);
         }
 
         public boolean hasMore() {
@@ -222,22 +229,12 @@ public class CalculateAverage_iziamos {
         }
     }
 
-    private static int appendDigit(int value, final byte b) {
-        value *= 10;
-        value += digitCharToInt(b);
-        return value;
-    }
-
-    private static int digitCharToInt(final byte b) {
-        return b - '0';
-    }
-
     public interface ResultConsumer {
         void consume(final String name, final int min, final int max, final long sum, final long count);
     }
 
     static class ByteBackedResultSet {
-        private static final int MAP_SIZE = 16384;
+        private static final int MAP_SIZE = 16384 * 4;
         private static final int MASK = MAP_SIZE - 1;
         private static final long STRUCT_SIZE = 64;
         private static final long BYTE_SIZE = MAP_SIZE * STRUCT_SIZE;
@@ -338,7 +335,7 @@ public class CalculateAverage_iziamos {
                                     final long otherStringAddress,
                                     final int otherStringLength) {
 
-            for (int slot = hash;; slot = mask(++slot)) {
+            for (int slot = mask(hash);; slot = mask(++slot)) {
                 final long structBase = baseAddress + ((long) slot * STRUCT_SIZE);
                 final long nameStart = UNSAFE.getLong(structBase);
                 if (nameStart == 0) {
