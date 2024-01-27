@@ -41,8 +41,6 @@ public final class CalculateAverage_JaimePolidura {
     }
 
     public static void main(String[] args) throws Exception {
-        long a = System.currentTimeMillis();
-
         Worker[] workers = createWorkers();
 
         startWorkers(workers);
@@ -50,10 +48,6 @@ public final class CalculateAverage_JaimePolidura {
 
         Map<String, Result> results = mergeWorkersResults(workers);
         printResults(results);
-
-        long b = System.currentTimeMillis();
-
-        System.out.println(b - a);
     }
 
     private static void joinWorkers(Worker[] workers) throws InterruptedException {
@@ -138,10 +132,10 @@ public final class CalculateAverage_JaimePolidura {
     }
 
     static class Worker extends Thread {
-        private final byte[] lastNameBytes = new byte[100];
-        private int lastNameLength;
-        private long lastNameHash;
-        private int lastTemperature;
+        private final byte[] lastParsedNameBytes = new byte[100];
+        private int lastParsedNameLength;
+        private long lastParsedNameHash;
+        private int lastParsedTemperature;
 
         private final SimpleMap results;
         private final MemorySegment mmappedFile;
@@ -175,7 +169,7 @@ public final class CalculateAverage_JaimePolidura {
 
                 this.currentAddr++; //We don't want it to point to \n
 
-                results.put(lastNameHash, this.lastNameBytes, (short) this.lastNameLength, lastTemperature);
+                results.put(this.lastParsedNameHash, this.lastParsedNameBytes, this.lastParsedNameLength, this.lastParsedTemperature);
             }
         }
 
@@ -224,12 +218,12 @@ public final class CalculateAverage_JaimePolidura {
 
             this.currentAddr += (((decimalSepPos - 4) / 8) + 2);
 
-            this.lastTemperature = (int) signedValue;
+            this.lastParsedTemperature = (int) signedValue;
         }
 
         // I first saw this idea in Artsiom Korzun's implementation
         private void parseName() {
-            this.lastNameHash = 0;
+            this.lastParsedNameHash = 0;
 
             long totalWordHash = 0;
             int totalWordLength = 0;
@@ -246,18 +240,18 @@ public final class CalculateAverage_JaimePolidura {
 
                     actualWord = mask(actualWord, actualLength);
 
-                    UNSAFE.putLong(this.lastNameBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET + totalWordLength, actualWord);
+                    UNSAFE.putLong(this.lastParsedNameBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET + totalWordLength, actualWord);
 
                     totalWordHash ^= actualWord;
                     totalWordLength += actualLength;
 
-                    this.lastNameLength = totalWordLength;
-                    this.lastNameHash = totalWordHash;
+                    this.lastParsedNameLength = totalWordLength;
+                    this.lastParsedNameHash = totalWordHash;
                     this.currentAddr += totalWordLength + 1; //+1 Because we don't want to point to ';'
 
                     break;
                 } else {
-                    UNSAFE.putLong(this.lastNameBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET + totalWordLength, actualWord);
+                    UNSAFE.putLong(this.lastParsedNameBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET + totalWordLength, actualWord);
 
                     totalWordLength += 8;
                     totalWordHash ^= actualWord;
@@ -309,7 +303,7 @@ public final class CalculateAverage_JaimePolidura {
             this.size = size;
         }
 
-        public void put(long hashToPut, byte[] nameToPut, short nameLength, int valueToPut) {
+        public void put(long hashToPut, byte[] nameToPut, int nameLength, int valueToPut) {
             int index = hashToIndex(hashToPut);
 
             for(;;){
@@ -346,14 +340,14 @@ public final class CalculateAverage_JaimePolidura {
 
     static class Result {
         public byte[] name;
-        public short nameLength;
+        public int nameLength;
         public int max;
         public int min;
         public int sum;
         public int count;
         public long hash;
 
-        public Result(long hash, byte[] name, short nameLength, int max, int min, int sum, int occ) {
+        public Result(long hash, byte[] name, int nameLength, int max, int min, int sum, int occ) {
             this.nameLength = nameLength;
             this.count = occ;
             this.hash = hash;
