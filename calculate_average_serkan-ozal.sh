@@ -23,10 +23,8 @@ if [[ ! "$(uname -s)" = "Darwin" ]]; then
   JAVA_OPTS="$JAVA_OPTS -XX:+UseTransparentHugePages"
 fi
 
-# TODO Generate/Get a random and available file descriptor number?
-fd=1234
 #echo "Process started at $(date +%s%N | cut -b1-13)"
-eval "exec $fd< <({ CLOSE_STDOUT_ON_RESULT=true USE_SHARED_ARENA=true java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_serkan_ozal; })"
-read <&$fd result
+eval "exec 3< <({ CLOSE_STDOUT_ON_RESULT=true USE_SHARED_ARENA=true java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_serkan_ozal; })"
+read <&3 result
 echo -e "$result"
 #echo "Process finished at $(date +%s%N | cut -b1-13)"
