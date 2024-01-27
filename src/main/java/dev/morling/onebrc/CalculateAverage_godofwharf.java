@@ -18,6 +18,7 @@ package dev.morling.onebrc;
 
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.Vector;
+import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
 
 import java.io.IOException;
@@ -36,6 +37,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.function.BiConsumer;
 import java.util.stream.IntStream;
+import java.util.zip.CRC32C;
 
 import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -150,7 +152,10 @@ public class CalculateAverage_godofwharf {
                                         byte[] station = new byte[stationLen];
                                         System.arraycopy(currentPage, prevOffset, station, 0, stationLen);
                                         System.arraycopy(currentPage, prevOffset + stationLen + 1, temperature, 0, temperatureLen);
-                                        int hashCode = Arrays.hashCode(station);
+                                        CRC32C c = new CRC32C();
+                                        c.update(station, 0, stationLen);
+                                        int hashCode = (int) (c.getValue() & 0xFFFF);
+                                        //int hashCode = Arrays.hashCode(station);
                                         Measurement m = new Measurement(
                                                 station, stationLen, temperature, temperatureLen, false, hashCode);
                                         threadLocalStates[tid].update(m);
@@ -357,12 +362,12 @@ public class CalculateAverage_godofwharf {
     }
 
     public static class State {
-        private final Map<AggregationKey, MeasurementAggregator> state;
-        // private final FastHashMap state;
+        // private final Map<AggregationKey, MeasurementAggregator> state;
+        private final FastHashMap state;
 
         public State() {
-            this.state = new HashMap<>(DEFAULT_HASH_TBL_SIZE);
-            // this.state = new FastHashMap(DEFAULT_HASH_TBL_SIZE);
+            // this.state = new HashMap<>(DEFAULT_HASH_TBL_SIZE);
+            this.state = new FastHashMap(DEFAULT_HASH_TBL_SIZE);
         }
 
         // Implementing the logic in update method instead of calling HashMap.compute() has reduced the runtime significantly
