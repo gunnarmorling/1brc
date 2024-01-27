@@ -327,6 +327,7 @@ public final class CalculateAverage_JaimePolidura {
                     return;
                 }
 
+                //Dealing with has collisions. We try to go to the next slot
                 if(++index >= this.size) {
                     index = 0;
                 }
