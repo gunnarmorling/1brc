@@ -35,7 +35,8 @@ public final class CalculateAverage_JaimePolidura {
             Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
             theUnsafe.setAccessible(true);
             return (Unsafe) theUnsafe.get(Unsafe.class);
-        }  catch (Exception e) {
+        }
+        catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
@@ -51,13 +52,13 @@ public final class CalculateAverage_JaimePolidura {
     }
 
     private static void joinWorkers(Worker[] workers) throws InterruptedException {
-        for(int i = 0; i < workers.length; i++){
+        for (int i = 0; i < workers.length; i++) {
             workers[i].join();
         }
     }
 
     private static void startWorkers(Worker[] workers) {
-        for(int i = 0; i < workers.length; i++){
+        for (int i = 0; i < workers.length; i++) {
             workers[i].start();
         }
     }
@@ -69,9 +70,9 @@ public final class CalculateAverage_JaimePolidura {
         int nWorkers = Runtime.getRuntime().availableProcessors();
 
         Worker[] workers = new Worker[nWorkers];
-        long quantityPerWorker = Math.floorDiv(channel.size(),  nWorkers);
+        long quantityPerWorker = Math.floorDiv(channel.size(), nWorkers);
 
-        for(int i = 0; i < nWorkers; i++){
+        for (int i = 0; i < nWorkers; i++) {
             long startAddr = mmappedFile.address() + quantityPerWorker * i;
             long endAddr = startAddr + quantityPerWorker;
             workers[i] = new Worker(mmappedFile, channel.size(), startAddr, endAddr);
@@ -84,19 +85,20 @@ public final class CalculateAverage_JaimePolidura {
     private static Map<String, Result> mergeWorkersResults(Worker[] workers) {
         Map<String, Result> mergedResults = new TreeMap<>();
 
-        for(int i = 0; i < workers.length; i++){
+        for (int i = 0; i < workers.length; i++) {
             Worker worker = workers[i];
 
             for (Result entry : worker.results.entries) {
-                if(entry != null){
+                if (entry != null) {
                     String name = new String(entry.name, 0, entry.nameLength);
                     Result alreadyExistingResult = mergedResults.get(name);
-                    if(alreadyExistingResult != null){
+                    if (alreadyExistingResult != null) {
                         alreadyExistingResult.min = Math.min(alreadyExistingResult.min, entry.min);
                         alreadyExistingResult.max = Math.max(alreadyExistingResult.max, entry.max);
                         alreadyExistingResult.count = alreadyExistingResult.count + entry.count;
                         alreadyExistingResult.sum = alreadyExistingResult.sum + entry.sum;
-                    } else{
+                    }
+                    else {
                         mergedResults.put(name, entry);
                     }
                 }
@@ -111,7 +113,7 @@ public final class CalculateAverage_JaimePolidura {
         stringBuilder.append('{');
 
         for (Map.Entry<String, Result> entry : results.entrySet()) {
-            if(stringBuilder.length() > 1){
+            if (stringBuilder.length() > 1) {
                 stringBuilder.append(", ");
             }
 
@@ -140,8 +142,8 @@ public final class CalculateAverage_JaimePolidura {
         private final SimpleMap results;
         private final MemorySegment mmappedFile;
         private final long mmappedFileSize;
-        private long currentAddr; //Will point to beginning of string
-        private long endAddr; //Will point to \n
+        private long currentAddr; // Will point to beginning of string
+        private long endAddr; // Will point to \n
 
         public Worker(MemorySegment mmappedFile, long mmappedFileSize, long startAddr, long endAddr) {
             super("Worker[" + startAddr + ", " + endAddr + "]");
@@ -159,15 +161,15 @@ public final class CalculateAverage_JaimePolidura {
             adjustStartAddr();
             adjustEndAddr();
 
-            if(this.currentAddr >= endAddr){
+            if (this.currentAddr >= endAddr) {
                 return;
             }
 
-            while(currentAddr < endAddr) {
+            while (currentAddr < endAddr) {
                 parseName();
                 parseTemperature();
 
-                this.currentAddr++; //We don't want it to point to \n
+                this.currentAddr++; // We don't want it to point to \n
 
                 results.put(this.lastParsedNameHash, this.lastParsedNameBytes, this.lastParsedNameLength, this.lastParsedTemperature);
             }
@@ -201,7 +203,7 @@ public final class CalculateAverage_JaimePolidura {
             // xxxxn.nn -> xxxn.nn_
             long numberAligned = (numberWord & designMask) << shift;
 
-            //We convert ascii representation to number value
+            // We convert ascii representation to number value
             long numberConvertedFromAscii = numberAligned & 0x0F000F0F00L;
 
             // Now digits is in the form 0xUU00TTHH00 (UU: units digit, TT: tens digit, HH: hundreds digit)
@@ -228,13 +230,13 @@ public final class CalculateAverage_JaimePolidura {
             long totalWordHash = 0;
             int totalWordLength = 0;
 
-            for(;;) {
+            for (;;) {
                 long actualWord = UNSAFE.getLong(currentAddr + totalWordLength);
                 long hasSemicolon = hasByte(actualWord, SEMICOLON_PATTERN);
 
-                if(hasSemicolon != 0) {
+                if (hasSemicolon != 0) {
                     int actualLength = Long.numberOfTrailingZeros(hasSemicolon) >> 3;
-                    if(actualLength == 0) {
+                    if (actualLength == 0) {
                         actualWord = 0;
                     }
 
@@ -247,10 +249,11 @@ public final class CalculateAverage_JaimePolidura {
 
                     this.lastParsedNameLength = totalWordLength;
                     this.lastParsedNameHash = totalWordHash;
-                    this.currentAddr += totalWordLength + 1; //+1 Because we don't want to point to ';'
+                    this.currentAddr += totalWordLength + 1; // +1 Because we don't want to point to ';'
 
                     break;
-                } else {
+                }
+                else {
                     UNSAFE.putLong(this.lastParsedNameBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET + totalWordLength, actualWord);
 
                     totalWordLength += 8;
@@ -271,24 +274,24 @@ public final class CalculateAverage_JaimePolidura {
         }
 
         private void adjustStartAddr() {
-            if(currentAddr == this.mmappedFile.address()) {
+            if (currentAddr == this.mmappedFile.address()) {
                 return;
             }
 
-            while(UNSAFE.getByte(currentAddr) != '\n' && currentAddr != endAddr) {
+            while (UNSAFE.getByte(currentAddr) != '\n' && currentAddr != endAddr) {
                 currentAddr++;
             }
 
-            currentAddr++; //We want it to point to the first character instead of \n
+            currentAddr++; // We want it to point to the first character instead of \n
         }
 
         private void adjustEndAddr() {
             long endAddressMmappedFile = mmappedFile.address() + mmappedFileSize;
-            if(endAddr >= endAddressMmappedFile){
+            if (endAddr >= endAddressMmappedFile) {
                 return;
             }
 
-            while(UNSAFE.getByte(endAddr) != '\n' && endAddr != endAddressMmappedFile) {
+            while (UNSAFE.getByte(endAddr) != '\n' && endAddr != endAddressMmappedFile) {
                 endAddr++;
             }
         }
@@ -306,12 +309,12 @@ public final class CalculateAverage_JaimePolidura {
         public void put(long hashToPut, byte[] nameToPut, int nameLength, int valueToPut) {
             int index = hashToIndex(hashToPut);
 
-            for(;;){
+            for (;;) {
                 Result actualEntry = entries[index];
 
-                if(actualEntry == null) {
+                if (actualEntry == null) {
                     byte[] nameToPutCopy = new byte[nameLength];
-                    for(int i = 0; i < nameLength; i++){
+                    for (int i = 0; i < nameLength; i++) {
                         nameToPutCopy[i] = nameToPut[i];
                     }
 
@@ -319,7 +322,7 @@ public final class CalculateAverage_JaimePolidura {
                             valueToPut, valueToPut, 1);
                     return;
                 }
-                if(actualEntry.hash == hashToPut){
+                if (actualEntry.hash == hashToPut) {
                     actualEntry.min = Math.min(actualEntry.min, valueToPut);
                     actualEntry.max = Math.max(actualEntry.max, valueToPut);
                     actualEntry.count++;
@@ -327,8 +330,8 @@ public final class CalculateAverage_JaimePolidura {
                     return;
                 }
 
-                //Dealing with has collisions. We try to go to the next slot
-                if(++index >= this.size) {
+                // Dealing with has collisions. We try to go to the next slot
+                if (++index >= this.size) {
                     index = 0;
                 }
             }
