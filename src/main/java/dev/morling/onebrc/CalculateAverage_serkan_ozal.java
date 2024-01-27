@@ -596,7 +596,10 @@ public class CalculateAverage_serkan_ozal {
                 ByteVector entryKeyVector = ByteVector.fromArray(BYTE_SPECIES, data, keyStartOffset - Unsafe.ARRAY_BYTE_BASE_OFFSET);
                 long eqMask = keyVector.compare(VectorOperators.EQ, entryKeyVector).toLong();
                 int eqCount = Long.numberOfTrailingZeros(~eqMask);
-                if (eqCount >= keyCheckLength) {
+                if (eqCount < keyCheckLength) {
+                    return false;
+                }
+                if (keyCheckLength == keyLength) {
                     return true;
                 }
                 keyCheckIdx = BYTE_SPECIES_SIZE;
@@ -604,10 +607,12 @@ public class CalculateAverage_serkan_ozal {
 
             // Compare remaining parts of the keys
 
+            int normalizedKeyLength = keyLength;
             if (NATIVE_BYTE_ORDER == ByteOrder.BIG_ENDIAN) {
-                keyLength = Integer.reverseBytes(keyLength);
+                normalizedKeyLength = Integer.reverseBytes(normalizedKeyLength);
             }
-            int alignedKeyLength = keyLength & 0xFFFFFFF8;
+
+            int alignedKeyLength = normalizedKeyLength & 0xFFFFFFF8;
             int i;
             for (i = keyCheckIdx; i < alignedKeyLength; i += Long.BYTES) {
                 if (U.getLong(keyStartAddress + i) != U.getLong(data, keyStartOffset + i)) {
@@ -621,7 +626,7 @@ public class CalculateAverage_serkan_ozal {
                 wordA = Long.reverseBytes(wordA);
                 wordB = Long.reverseBytes(wordB);
             }
-            int halfShift = (Long.BYTES - (keyLength & 0x00000007)) << 2;
+            int halfShift = (Long.BYTES - (normalizedKeyLength & 0x00000007)) << 2;
             long mask = (0xFFFFFFFFFFFFFFFFL >>> halfShift) >> halfShift;
             wordA = wordA & mask;
             // No need to mask "wordB" (word from key in the map), because it is already padded with 0s
