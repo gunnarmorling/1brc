@@ -60,8 +60,7 @@ public class CalculateAverage_godofwharf {
         long startTimeMs = System.currentTimeMillis();
         Map<String, MeasurementAggregator> measurements = compute();
         long time1 = System.nanoTime();
-        measurements.forEach((k, v) -> System.out.println("%s=%s".formatted(k, v)));
-        // System.out.println(measurements);
+        System.out.println(measurements);
         System.err.println("Print took " + (System.nanoTime() - time1) + " ns");
         System.err.printf("Took %d ms%n", System.currentTimeMillis() - startTimeMs);
         System.err.printf("Time spent on GC=%d ms%n", ManagementFactory.getGarbageCollectorMXBeans().get(0).getCollectionTime());
@@ -69,8 +68,8 @@ public class CalculateAverage_godofwharf {
     }
 
     private static Map<String, MeasurementAggregator> compute() throws Exception {
-        int nThreads = Integer.parseInt(System.getProperty("threads",
-                "" + Runtime.getRuntime().availableProcessors()));
+        int nThreads = Integer.parseInt(
+                System.getProperty("threads", "" + Runtime.getRuntime().availableProcessors()));
         System.err.printf("Running program with %d threads %n", nThreads);
         Job job = new Job(nThreads - 1);
         job.compute(FILE);
@@ -108,7 +107,7 @@ public class CalculateAverage_godofwharf {
                 // Break the file into multiple splits. One thread would process one split.
                 // This routine makes sure that the splits are uniformly sized to the best extent possible.
                 // Each split would either end with a '\n' character or EOF
-                List<Split> splits = breakFileIntoSplits(file, splitLength, pageSize, memorySegment);
+                List<Split> splits = breakFileIntoSplits(file, splitLength, pageSize, memorySegment, false);
                 System.err.printf("Number of splits = %d, splits = [%s]%n", splits.size(), splits);
                 System.err.printf("Splits calculation took %d ns%n", System.nanoTime() - time1);
                 // consume splits in parallel using the common fork join pool
@@ -288,7 +287,8 @@ public class CalculateAverage_godofwharf {
         private static List<Split> breakFileIntoSplits(final RandomAccessFile file,
                                                        final int splitLength,
                                                        final int pageLength,
-                                                       final MemorySegment memorySegment)
+                                                       final MemorySegment memorySegment,
+                                                       final boolean enableChecks)
                 throws IOException {
             final List<Split> splits = new ArrayList<>();
             // Try to break the file into multiple splits while ensuring that each split has at least splitLength bytes
@@ -297,7 +297,7 @@ public class CalculateAverage_godofwharf {
                 long splitStartOffset = i;
                 long splitEndOffset = Math.min(file.length(), splitStartOffset + splitLength); // not inclusive
                 if (splitEndOffset == file.length()) { // reached EOF
-                    List<Page> pages = breakSplitIntoPages(splitStartOffset, splitEndOffset, pageLength, memorySegment);
+                    List<Page> pages = breakSplitIntoPages(splitStartOffset, splitEndOffset, pageLength, memorySegment, enableChecks);
                     splits.add(new Split(splitStartOffset, splitEndOffset - splitStartOffset, pages));
                     break;
                 }
@@ -309,11 +309,12 @@ public class CalculateAverage_godofwharf {
                 // Find the next offset which has either '\n' or EOF
                 LineMetadata lineMetadata = findNextOccurrenceOfNewLine(bb, (int) segmentLength, 0);
                 splitEndOffset += lineMetadata.offset;
-                if (memorySegment.asSlice(splitEndOffset - 1, 1).asByteBuffer().get(0) != '\n') {
+                if (enableChecks &&
+                        memorySegment.asSlice(splitEndOffset - 1, 1).asByteBuffer().get(0) != '\n') {
                     throw new IllegalStateException("Page doesn't end with NL char");
                 }
                 // Break the split further into multiple pages based on pageLength
-                List<Page> pages = breakSplitIntoPages(splitStartOffset, splitEndOffset, pageLength, memorySegment);
+                List<Page> pages = breakSplitIntoPages(splitStartOffset, splitEndOffset, pageLength, memorySegment, enableChecks);
                 splits.add(new Split(splitStartOffset, splitEndOffset - splitStartOffset, pages));
                 i = splitEndOffset;
                 lookahead.unload();
@@ -324,7 +325,8 @@ public class CalculateAverage_godofwharf {
         private static List<Page> breakSplitIntoPages(final long splitStartOffset,
                                                       final long splitEndOffset,
                                                       final int pageLength,
-                                                      final MemorySegment memorySegment) {
+                                                      final MemorySegment memorySegment,
+                                                      final boolean enableChecks) {
             List<Page> pages = new ArrayList<>();
             for (long i = splitStartOffset; i < splitEndOffset;) {
                 long pageStartOffset = i;
@@ -340,7 +342,8 @@ public class CalculateAverage_godofwharf {
                 // Find next offset which has either '\n' or the end of split
                 LineMetadata lineMetadata = findNextOccurrenceOfNewLine(bb, (int) lookaheadLength, 0);
                 pageEndOffset += lineMetadata.offset;
-                if (memorySegment.asSlice(pageEndOffset - 1, 1).asByteBuffer().get(0) != '\n') {
+                if (enableChecks &&
+                        memorySegment.asSlice(pageEndOffset - 1, 1).asByteBuffer().get(0) != '\n') {
                     throw new IllegalStateException("Page doesn't end with NL char");
                 }
                 pages.add(new Page(pageStartOffset, pageEndOffset - pageStartOffset));
