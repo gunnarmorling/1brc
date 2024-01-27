@@ -15,5 +15,16 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="--enable-preview"
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_vaidhy
+if [ -f target/CalculateAverage_vaidhy_image ]; then
+    echo "Picking up existing native image 'target/CalculateAverage_vaidhy_image', delete the file to select JVM mode." 1>&2
+    target/CalculateAverage_vaidhy_image
+else
+    JAVA_OPTS="--enable-preview -XX:+UnlockExperimentalVMOptions -XX:+TrustFinalNonStaticFields -XX:+UseTransparentHugePages"
+    if [[ ! "$(uname -s)" = "Darwin" ]]; then
+        # On OS/X, my machine, this errors:
+        JAVA_OPTS="$JAVA_OPTS -XX:+UseTransparentHugePages"
+    fi
+
+    echo "Chosing to run the app in JVM mode as no native image was found, use prepare_vaidhy.sh to generate." 1>&2
+    java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_vaidhy
+fi
