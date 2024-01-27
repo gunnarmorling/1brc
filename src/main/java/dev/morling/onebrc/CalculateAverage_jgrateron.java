@@ -20,12 +20,12 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 public class CalculateAverage_jgrateron {
@@ -96,7 +96,7 @@ public class CalculateAverage_jgrateron {
         var startTime = System.nanoTime();
         var archivo = new File(FILE);
         var tareas = new ArrayList<Thread>();
-        var totalMediciones = new ConcurrentHashMap<Index, Medicion>();
+        var totalMediciones = new HashMap<Index, Medicion>();
         var particiones = dividirArchivo(archivo);
 
         for (var p : particiones) {
@@ -104,10 +104,17 @@ public class CalculateAverage_jgrateron {
                 try (var miTarea = new MiTarea(archivo, p)) {
                     var mediciones = miTarea.calcularMediciones();
                     for (var entry : mediciones.entrySet()) {
-                        var medicion = totalMediciones.computeIfAbsent(entry.getKey(), k -> entry.getValue());
+                        Medicion medicion;
+                        synchronized (totalMediciones) {
+                            medicion = totalMediciones.get(entry.getKey());
+                            if (medicion == null) {
+                                totalMediciones.put(entry.getKey(), entry.getValue());
+                                medicion = entry.getValue();
+                            }
+                        }
                         synchronized (medicion) {
-                            var otraMed = entry.getValue();
-                            if (otraMed.hashCode() != medicion.hashCode()) {
+                            if (!medicion.equals(entry.getValue())) {
+                                var otraMed = entry.getValue();
                                 medicion.update(otraMed.count, otraMed.tempMin, otraMed.tempMax, otraMed.tempSum);
                             }
                         }
@@ -144,17 +151,38 @@ public class CalculateAverage_jgrateron {
      */
     static class Index {
         private int hash;
+        private byte[] data;
+        private int fromIndex;
+        private int length;
 
         public Index() {
             this.hash = 0;
         }
 
-        public Index(int hash) {
-            this.hash = hash;
+        public Index(byte data[], int fromIndex, int length) {
+            this.data = data;
+            this.fromIndex = fromIndex;
+            this.length = length;
+            this.hash = calcHashCode(length, data, fromIndex, length);
         }
 
-        public void setHash(int hash) {
-            this.hash = hash;
+        public void setData(byte data[], int fromIndex, int length) {
+            this.data = data;
+            this.fromIndex = fromIndex;
+            this.length = length;
+            this.hash = calcHashCode(length, data, fromIndex, length);
+        }
+
+        /*
+         * Calcula el hash de cada estacion,
+         * variation of Daniel J Bernstein's algorithm
+         */
+        private int calcHashCode(int result, byte[] a, int fromIndex, int length) {
+            int end = fromIndex + length;
+            for (int i = fromIndex; i < end; i++) {
+                result = ((result << 5) + result) ^ a[i];
+            }
+            return result;
         }
 
         @Override
@@ -168,7 +196,8 @@ public class CalculateAverage_jgrateron {
                 return true;
             }
             var otro = (Index) obj;
-            return this.hash == otro.hash;
+            return Arrays.equals(this.data, this.fromIndex, this.fromIndex + this.length, otro.data, otro.fromIndex,
+                    otro.fromIndex + otro.length);
         }
     }
 
@@ -272,31 +301,18 @@ public class CalculateAverage_jgrateron {
          * Busca una medicion por su hash y crea o actualiza la temperatura
          */
         public void updateMediciones(byte data[], int pos, int semicolon) {
-            var hashEstacion = calcHashCode(semicolon, data, pos, semicolon);
             var temp = strToInt(data, pos, semicolon);
-            index.setHash(hashEstacion);
+            index.setData(data, pos, semicolon);
             var medicion = mediciones.get(index);
             if (medicion == null) {
                 var estacion = new byte[semicolon];
                 System.arraycopy(data, pos, estacion, 0, semicolon);
                 medicion = new Medicion(estacion, 1, temp, temp, temp);
-                mediciones.put(new Index(hashEstacion), medicion);
+                mediciones.put(new Index(estacion, 0, semicolon), medicion);
             }
             else {
                 medicion.update(1, temp, temp, temp);
             }
-        }
-
-        /*
-         * Calcula el hash de cada estacion,
-         * variation of Daniel J Bernstein's algorithm
-         */
-        private int calcHashCode(int result, byte[] a, int fromIndex, int length) {
-            int end = fromIndex + length;
-            for (int i = fromIndex; i < end; i++) {
-                result = ((result << 5) + result) ^ a[i];
-            }
-            return result;
         }
 
         /*
