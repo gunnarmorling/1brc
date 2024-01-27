@@ -26,12 +26,9 @@ import java.util.Map;
 import java.util.TreeMap;
 
 public final class CalculateAverage_JaimePolidura {
-    private static final String FILE = "C:\\Users\\jaime\\OneDrive\\Escritorio\\measurements.txt";
-    private static final String FILE2 = "./measurements.txt";
+    private static final String FILE = "./measurements.txt";
     private static final Unsafe UNSAFE = initUnsafe();
     private static final long SEMICOLON_PATTERN = 0X3B3B3B3B3B3B3B3BL;
-    private static final int FNV_32_PRIME = 0x01000193;
-    private static final int FNV_32_INIT = 0x811c9dc5;
 
     private static Unsafe initUnsafe() {
         try {
@@ -44,12 +41,19 @@ public final class CalculateAverage_JaimePolidura {
     }
 
     public static void main(String[] args) throws Exception {
+        long a = System.currentTimeMillis();
+
         Worker[] workers = createWorkers();
 
         startWorkers(workers);
         joinWorkers(workers);
 
-        mergeWorkersResultsAndPrint(workers);
+        Map<String, Result> results = mergeWorkersResults(workers);
+        printResults(results);
+
+        long b = System.currentTimeMillis();
+
+        System.out.println(b - a);
     }
 
     private static void joinWorkers(Worker[] workers) throws InterruptedException {
@@ -69,8 +73,9 @@ public final class CalculateAverage_JaimePolidura {
         MemorySegment mmappedFile = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size(), Arena.global());
 
         int nWorkers = Runtime.getRuntime().availableProcessors();
+
         Worker[] workers = new Worker[nWorkers];
-        long quantityPerWorker = Math.ceilDiv(channel.size(), nWorkers);
+        long quantityPerWorker = Math.floorDiv(channel.size(),  nWorkers);
 
         for(int i = 0; i < nWorkers; i++){
             long startAddr = mmappedFile.address() + quantityPerWorker * i;
@@ -82,7 +87,7 @@ public final class CalculateAverage_JaimePolidura {
         return workers;
     }
 
-    private static void mergeWorkersResultsAndPrint(Worker[] workers) {
+    private static Map<String, Result> mergeWorkersResults(Worker[] workers) {
         Map<String, Result> mergedResults = new TreeMap<>();
 
         for(int i = 0; i < workers.length; i++){
@@ -104,12 +109,39 @@ public final class CalculateAverage_JaimePolidura {
             }
         }
 
-        System.out.println(mergedResults);
+        return mergedResults;
+    }
+
+    private static void printResults(Map<String, Result> results) {
+        StringBuilder stringBuilder = new StringBuilder(results.size() * 32);
+        stringBuilder.append('{');
+
+        for (Map.Entry<String, Result> entry : results.entrySet()) {
+            if(stringBuilder.length() > 1){
+                stringBuilder.append(", ");
+            }
+
+            Result result = entry.getValue();
+            stringBuilder.append(entry.getKey())
+                    .append('=')
+                    .append(round(result.min))
+                    .append('/')
+                    .append(round((double) result.sum / (result.count * 10)))
+                    .append('/')
+                    .append(round(result.max));
+
+        }
+
+        stringBuilder.append('}');
+
+        System.out.println(stringBuilder);
     }
 
     static class Worker extends Thread {
         private final byte[] lastNameBytes = new byte[100];
         private int lastNameLength;
+        private long lastNameHash;
+        private int lastTemperature;
 
         private final SimpleMap results;
         private final MemorySegment mmappedFile;
@@ -118,12 +150,14 @@ public final class CalculateAverage_JaimePolidura {
         private long endAddr; //Will point to \n
 
         public Worker(MemorySegment mmappedFile, long mmappedFileSize, long startAddr, long endAddr) {
+            super("Worker[" + startAddr + ", " + endAddr + "]");
+
             this.mmappedFileSize = mmappedFileSize;
             this.mmappedFile = mmappedFile;
             this.currentAddr = startAddr;
             this.endAddr = endAddr;
 
-            this.results = new SimpleMap(roundUpToPowerOfTwo(10_000));
+            this.results = new SimpleMap(roundUpToPowerOfTwo(1 << 16)); // 2^16
         }
 
         @Override
@@ -137,28 +171,16 @@ public final class CalculateAverage_JaimePolidura {
 
             while(currentAddr < endAddr) {
                 parseName();
-                int temperature = parseTemperature();
+                parseTemperature();
 
                 this.currentAddr++; //We don't want it to point to \n
 
-                int hashToPut = calculateLastHash();
-                results.put(hashToPut, this.lastNameBytes, (short) this.lastNameLength, temperature);
+                results.put(lastNameHash, this.lastNameBytes, (short) this.lastNameLength, lastTemperature);
             }
         }
 
-        private int calculateLastHash() {
-            int hash = FNV_32_INIT;
-
-            for(int i = 0; i < this.lastNameLength; i++){
-                hash ^= this.lastNameBytes[i];
-            }
-
-            hash *= FNV_32_PRIME;
-
-            return hash;
-        }
-
-        private int parseTemperature() {
+        // Idea from Quan Anh Mai's implementation
+        private void parseTemperature() {
             long numberWord = UNSAFE.getLong(currentAddr);
 
             // The 4th binary digit of the ascii (Starting from left) of a digit is 1 while '.' is 0
@@ -202,38 +224,51 @@ public final class CalculateAverage_JaimePolidura {
 
             this.currentAddr += (((decimalSepPos - 4) / 8) + 2);
 
-            return (int) signedValue;
+            this.lastTemperature = (int) signedValue;
         }
 
+        // I first saw this idea in Artsiom Korzun's implementation
         private void parseName() {
-            long word1 = UNSAFE.getLong(currentAddr);
-            long hasSemicolon1 = hasByte(word1, SEMICOLON_PATTERN);
-            if(hasSemicolon1 != 0) {
-                lastNameLength = Long.numberOfTrailingZeros(hasSemicolon1) >> 3;
-                word1 = (word1 << 16) >> 16;
-                currentAddr += lastNameLength + 1; //+1 to point to the next number not ;
-                UNSAFE.putLong(this.lastNameBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, word1);
+            this.lastNameHash = 0;
 
-                return;
+            long totalWordHash = 0;
+            int totalWordLength = 0;
+
+            for(;;) {
+                long actualWord = UNSAFE.getLong(currentAddr + totalWordLength);
+                long hasSemicolon = hasByte(actualWord, SEMICOLON_PATTERN);
+
+                if(hasSemicolon != 0) {
+                    int actualLength = Long.numberOfTrailingZeros(hasSemicolon) >> 3;
+                    if(actualLength == 0) {
+                        actualWord = 0;
+                    }
+
+                    actualWord = mask(actualWord, actualLength);
+
+                    UNSAFE.putLong(this.lastNameBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET + totalWordLength, actualWord);
+
+                    totalWordHash ^= actualWord;
+                    totalWordLength += actualLength;
+
+                    this.lastNameLength = totalWordLength;
+                    this.lastNameHash = totalWordHash;
+                    this.currentAddr += totalWordLength + 1; //+1 Because we don't want to point to ';'
+
+                    break;
+                } else {
+                    UNSAFE.putLong(this.lastNameBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET + totalWordLength, actualWord);
+
+                    totalWordLength += 8;
+                    totalWordHash ^= actualWord;
+                }
             }
+        }
 
-            long word2 = UNSAFE.getLong(currentAddr + 8);
-            long hasSemicolon2 = hasByte(word2, SEMICOLON_PATTERN);
-            if(hasSemicolon2 != 0) {
-                UNSAFE.putLong(this.lastNameBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, word1);
-                lastNameLength = 8 + (Long.numberOfTrailingZeros(hasSemicolon2) >> 3);
-                word2 = (word2 << 16) >> 16;
-                currentAddr += lastNameLength + 1; //+1 to point to the next number not ;
-                UNSAFE.putLong(this.lastNameBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET + 8, word2);
-
-                return;
-            }
-
-            byte currentByte = 0x00;
-            lastNameLength = 0;
-            while(currentAddr < endAddr && (currentByte = UNSAFE.getByte(currentAddr++)) != 0x3B) { //;
-                lastNameBytes[lastNameLength++] = currentByte;
-            }
+        // Removes "garbage" of a word byte
+        private long mask(long word, int length) {
+            int shift = (8 - length) * 8;
+            return (word << shift) >> shift;
         }
 
         private long hasByte(long word, long pattern) {
@@ -274,26 +309,38 @@ public final class CalculateAverage_JaimePolidura {
             this.size = size;
         }
 
-        public void put(int hashToPut, byte[] nameToPut, short nameLength, int valueToPut) {
-            int index = (int) ((size - 1) & hashToPut);
+        public void put(long hashToPut, byte[] nameToPut, short nameLength, int valueToPut) {
+            int index = hashToIndex(hashToPut);
 
-            Result actualEntry = entries[index];
-            if(actualEntry == null) {
-                byte[] nameToPutCopy = new byte[nameLength];
-                for(int i = 0; i < nameLength; i++){
-                    nameToPutCopy[i] = nameToPut[i];
+            for(;;){
+                Result actualEntry = entries[index];
+
+                if(actualEntry == null) {
+                    byte[] nameToPutCopy = new byte[nameLength];
+                    for(int i = 0; i < nameLength; i++){
+                        nameToPutCopy[i] = nameToPut[i];
+                    }
+
+                    entries[index] = new Result(hashToPut, nameToPutCopy, nameLength, valueToPut,
+                            valueToPut, valueToPut, 1);
+                    return;
+                }
+                if(actualEntry.hash == hashToPut){
+                    actualEntry.min = Math.min(actualEntry.min, valueToPut);
+                    actualEntry.max = Math.max(actualEntry.max, valueToPut);
+                    actualEntry.count++;
+                    actualEntry.sum = actualEntry.sum + valueToPut;
+                    return;
                 }
 
-                entries[index] = new Result(hashToPut, nameToPutCopy, nameLength, valueToPut,
-                        valueToPut, valueToPut, 1);
-                return;
+                if(++index >= this.size) {
+                    index = 0;
+                }
             }
-            if(actualEntry.hash == hashToPut){
-                actualEntry.min = Math.min(actualEntry.min, valueToPut);
-                actualEntry.max = Math.max(actualEntry.max, valueToPut);
-                actualEntry.count++;
-                actualEntry.sum = actualEntry.sum + valueToPut;
-            }
+        }
+
+        private int hashToIndex(long hash) {
+            return (int) (((hash >> 32) ^ ((int) hash)) & (this.size - 1));
         }
     }
 
@@ -315,11 +362,10 @@ public final class CalculateAverage_JaimePolidura {
             this.min = min;
             this.sum = sum;
         }
+    }
 
-        @Override
-        public String toString() {
-            return (min/10) + "/" + ((sum/10) / count) + "/" + (max/10);
-        }
+    private static double round(double value) {
+        return Math.round(value / 10.0);
     }
 
     private static int roundUpToPowerOfTwo(int number) {

@@ -15,13 +15,10 @@
 #  limitations under the License.
 #
 
-if [ -f target/CalculateAverage_JaimePolidura_image ]; then
-	echo "Running in native mode" 
-	target/CalculateAverage_JaimePolidura_image
-else
-	echo "Native image not found. Running in JVM mode"
-	JAVA_OPTS="--enable-preview -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -XX:+UseTransparentHugePages -XX:+TrustFinalNonStaticFields"
-	java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_JaimePolidura
-fi
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+sdk use java 21.0.2-graal 1>&2
 
-
+if [ ! -f target/CalculateAverage_JaimePolidura_image ]; then
+	OPTS="--gc=epsilon -O3 --enable-preview --initialize-at-build-time=dev.morling.onebrc.CalculateAverage_JaimePolidura"
+	native-image $OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o target/CalculateAverage_JaimePolidura_image dev.morling.onebrc.CalculateAverage_JaimePolidura
+fi	
