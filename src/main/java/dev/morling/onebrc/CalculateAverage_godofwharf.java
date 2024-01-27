@@ -24,8 +24,10 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -56,6 +58,8 @@ public class CalculateAverage_godofwharf {
             2, 3, 4, 5, 6, 7, 8, 9, -1, -1 };
     private static final int MAX_STR_LEN = 100;
     private static final int DEFAULT_HASH_TBL_SIZE = 10010;
+    private static final int DEFAULT_PAGE_SIZE = 8_388_608; // 8 MB
+    private static final int PAGE_SIZE = Integer.parseInt(System.getProperty("pageSize", STR."\{DEFAULT_PAGE_SIZE}"));
 
     public static void main(String[] args) throws Exception {
         long startTimeMs = System.currentTimeMillis();
@@ -83,7 +87,6 @@ public class CalculateAverage_godofwharf {
         private final State[] threadLocalStates;
         private final Map<State.AggregationKey, MeasurementAggregator> ret = new ConcurrentHashMap<>(DEFAULT_HASH_TBL_SIZE);
         private final ExecutorService executorService;
-        private final int pageSize = 8_388_608; // 8 MB
 
         public Job(final int nThreads) {
             this.threadLocalStates = new State[(nThreads << 4)];
@@ -97,7 +100,7 @@ public class CalculateAverage_godofwharf {
             // Create a random access file so that we can map the contents of the file into native memory for faster access
             try (RandomAccessFile file = new RandomAccessFile(path, "r")) {
                 // Create a memory segment for the entire file
-                MemorySegment memorySegment = file.getChannel().map(
+                MemorySegment globalSegment = file.getChannel().map(
                         FileChannel.MapMode.READ_ONLY, 0, file.length(), Arena.global());
                 long fileLength = file.length();
                 // Ensure that the split length never exceeds Integer.MAX_VALUE. This is because ByteBuffers cannot
@@ -108,7 +111,7 @@ public class CalculateAverage_godofwharf {
                 // Break the file into multiple splits. One thread would process one split.
                 // This routine makes sure that the splits are uniformly sized to the best extent possible.
                 // Each split would either end with a '\n' character or EOF
-                List<Split> splits = breakFileIntoSplits(file, splitLength, pageSize, memorySegment, false);
+                List<Split> splits = breakFileIntoSplits(file, splitLength, PAGE_SIZE, globalSegment, false);
                 printDebugMessage("Number of splits = %d, splits = [%s]%n", splits.size(), splits);
                 printDebugMessage("Splits calculation took %d ns%n", System.nanoTime() - time1);
                 // consume splits in parallel using the common fork join pool
@@ -119,15 +122,13 @@ public class CalculateAverage_godofwharf {
                             // process splits concurrently using a thread pool
                             futures.add(executorService.submit(() -> {
                                 int tid = (int) Thread.currentThread().threadId();
-                                byte[] currentPage = new byte[pageSize + MAX_STR_LEN];
-                                int bytesRead = 0;
+                                byte[] currentPage = new byte[PAGE_SIZE + MAX_STR_LEN]
                                 // iterate over each page in split
                                 for (Page page : split.pages) {
                                     // this byte buffer should end with '\n' or EOF
-                                    MemorySegment segment = memorySegment.asSlice(page.offset, page.length);
+                                    MemorySegment segment = globalSegment.asSlice(page.offset, page.length);
                                     segment.load();
-                                    ByteBuffer bb = segment.asByteBuffer();
-                                    bb.get(0, currentPage, 0, (int) page.length);
+                                    MemorySegment.copy(segment, ValueLayout.JAVA_BYTE, 0L, currentPage, 0, (int) page.length);
                                     SearchResult searchResult = findNewLinesVectorized(currentPage, (int) page.length);
                                     int prevOffset = 0;
                                     int j = 0;
