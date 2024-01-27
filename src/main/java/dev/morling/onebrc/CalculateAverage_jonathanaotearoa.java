@@ -17,9 +17,7 @@ package dev.morling.onebrc;
 
 import sun.misc.Unsafe;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.PrintStream;
 import java.lang.foreign.Arena;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
@@ -31,6 +29,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Collectors;
@@ -50,12 +49,12 @@ public class CalculateAverage_jonathanaotearoa {
             UNSAFE = (Unsafe) theUnsafe.get(null);
         }
         catch (NoSuchFieldException | IllegalAccessException e) {
-            throw new RuntimeException("Error getting instance of %s".formatted(Unsafe.class.getName()));
+            throw new RuntimeException(STR."Error getting instance of \{Unsafe.class.getName()}");
         }
     }
 
+    private static final Path FILE_PATH = Path.of("./measurements.txt");
     private static final Path SAMPLE_DIR_PATH = Path.of("./src/test/resources/samples");
-    private static final Path DEFAULT_FILE_PATH = Path.of("./measurements.txt");
     private static final byte MAX_LINE_BYTES = 107;
     private static final byte NEW_LINE_BYTE = '\n';
     private static final long SEPARATOR_XOR_MASK = 0x3b3b3b3b3b3b3b3bL;
@@ -72,23 +71,48 @@ public class CalculateAverage_jonathanaotearoa {
     // Subtracts 48, i.e. the UFT-8 value offset, from the digits bytes.
     // As a result, '0' (48) becomes 0, '1' (49) becomes 1, and so on.
     private static final long TEMP_DIGITS_MASK = 0x0f000f0f00L;
-    private static Path FILE_PATH = DEFAULT_FILE_PATH;
 
     public static void main(final String[] args) throws IOException {
-        try (final FileChannel fc = FileChannel.open(FILE_PATH, StandardOpenOption.READ)) {
+        System.out.println(processFile(FILE_PATH));
+    }
+
+    /**
+     * Processes the specified file.
+     * <p>
+     * Extracted from the main method for testability.
+     * </p>
+     *
+     * @param filePath the path of the file we want to process.
+     * @return a sorted map of station data keyed by station name.
+     * @throws IOException if an error occurs.
+     */
+    private static SortedMap<String, StationData> processFile(final Path filePath) throws IOException {
+        assert filePath != null : "filePath cannot be null";
+        assert Files.isRegularFile(filePath) : STR."\{filePath.toAbsolutePath()} is not a valid file";
+
+        try (final FileChannel fc = FileChannel.open(filePath, StandardOpenOption.READ)) {
             final long fileSize = fc.size();
             if (fileSize < Long.BYTES) {
                 // The file size is less than our word size!
                 // Keep it simple and fall back to non-performant processing.
-                System.out.println(processTinyFile(fc, fileSize));
+                return processTinyFile(fc, fileSize);
             }
-            else {
-                System.out.println(processFile(fc, fileSize));
-            }
+            return processFile(fc, fileSize);
         }
     }
 
-    private static TreeMap<String, StationData> processTinyFile(final FileChannel fc, final long fileSize) throws IOException {
+    /**
+     * An unoptimised method for processing a tiny file.
+     * <p>
+     * Handling tiny files in a separate method reduces the complexity of {@link #processFile(FileChannel, long)}.
+     * </p>
+     *
+     * @param fc the file channel to read from.
+     * @param fileSize the file size in bytes.
+     * @return a sorted map of station data keyed by station name.
+     * @throws IOException if an error occurs reading from the file channel.
+     */
+    private static SortedMap<String, StationData> processTinyFile(final FileChannel fc, final long fileSize) throws IOException {
         final ByteBuffer byteBuffer = ByteBuffer.allocate((int) fileSize);
         fc.read(byteBuffer);
         return new String(byteBuffer.array(), StandardCharsets.UTF_8)
@@ -106,7 +130,15 @@ public class CalculateAverage_jonathanaotearoa {
                         TreeMap::new));
     }
 
-    private static TreeMap<String, StationData> processFile(final FileChannel fc, final long fileSize) throws IOException {
+    /**
+     * An optimised method for processing files > {@link Long#BYTES} in size.
+     *
+     * @param fc the file channel to map into memory.
+     * @param fileSize the file size in bytes.
+     * @return a sorted map of station data keyed by station name.
+     * @throws IOException if an error occurs mapping the file channel into memory.
+     */
+    private static SortedMap<String, StationData> processFile(final FileChannel fc, final long fileSize) throws IOException {
         assert fileSize >= Long.BYTES : STR."File size must be >= \{Long.BYTES} but was \{fileSize}";
 
         try (final Arena arena = Arena.ofConfined()) {
@@ -123,6 +155,17 @@ public class CalculateAverage_jonathanaotearoa {
         }
     }
 
+    /**
+     * Divides the file into chunks that can be processed in parallel.
+     * <p>
+     * If dividing the file into {@link ForkJoinPool#getCommonPoolParallelism() parallelism} chunks would result in a
+     * chunk size less than the maximum line size in bytes, then a single chunk is returned for the entire file.
+     * </p>
+     *
+     * @param fileAddress the address of the file.
+     * @param fileSize the size of the file in bytes.
+     * @return a stream of chunks.
+     */
     private static Stream<Chunk> createChunks(final long fileAddress, final long fileSize) {
         // The number of cores - 1.
         final int parallelism = ForkJoinPool.getCommonPoolParallelism();
@@ -152,6 +195,12 @@ public class CalculateAverage_jonathanaotearoa {
         return Stream.of(chunks);
     }
 
+    /**
+     * Does the work of processing a chunk.
+     *
+     * @param chunk the chunk to process.
+     * @return a repository containing the chunk's station data.
+     */
     private static Repository processChunk(final Chunk chunk) {
         final Repository repo = new Repository();
         long address = chunk.startAddress;
@@ -245,6 +294,14 @@ public class CalculateAverage_jonathanaotearoa {
         return repo;
     }
 
+    /**
+     * Represents a portion of a file containing 1 or more whole lines.
+     *
+     * @param startAddress the memory address of the first byte.
+     * @param lastByteAddress the memory address of the last byte.
+     * @param lastWordAddress the memory address of the last whole word.
+     * @param isLast whether this is the last chunk.
+     */
     private record Chunk(long startAddress, long lastByteAddress, long lastWordAddress, boolean isLast) {
 
         public Chunk(final long startAddress, final long lastByteAddress, final boolean isLast) {
@@ -254,8 +311,20 @@ public class CalculateAverage_jonathanaotearoa {
             assert lastWordAddress >= startAddress : STR."lastWordAddress \{lastWordAddress} must be >= startAddress \{startAddress}";
         }
 
+        /**
+         * Gets an 8 byte word from this chunk.
+         * <p>
+         * If the specified address is greater than {@link Chunk#lastWordAddress} and {@link Chunk#isLast}, the word
+         * will be truncated. This ensures we never read beyond the end of the file.
+         * </p>
+         *
+         * @param address the address of the word we want.
+         * @return the word at the specified address.
+         */
         public long getWord(final long address) {
-            assert address >= startAddress : "address cannot be before startAddress";
+            assert address >= startAddress : STR."address must be >= startAddress \{startAddress}, but was \{address}";
+            assert address < lastByteAddress : STR."address must be < lastByteAddress \{lastByteAddress}, but was \{address}";
+
             if (isLast && address > lastWordAddress) {
                 // Make sure we don't read beyond the end of the file and potentially crash the JVM.
                 final long word = UNSAFE.getLong(lastWordAddress);
@@ -362,19 +431,14 @@ public class CalculateAverage_jonathanaotearoa {
      */
     public static final class TestRunner {
         public static void main(String[] args) throws IOException {
-            final PrintStream sysOut = System.out;
             final StringBuilder testResults = new StringBuilder();
             try (DirectoryStream<Path> dirStream = Files.newDirectoryStream(SAMPLE_DIR_PATH, "*.txt")) {
-                dirStream.forEach(path -> {
-                    testResults.append(STR."Testing '\{path.getFileName()}'... ");
-                    final ByteArrayOutputStream out = new ByteArrayOutputStream();
-                    System.setOut(new PrintStream(out));
-                    final String expectedResultFileName = path.getFileName().toString().replace(".txt", ".out");
-                    FILE_PATH = path;
+                dirStream.forEach(filePath -> {
+                    testResults.append(STR."Testing '\{filePath.getFileName()}'... ");
+                    final String expectedResultFileName = filePath.getFileName().toString().replace(".txt", ".out");
                     try {
                         final String expected = Files.readString(SAMPLE_DIR_PATH.resolve(expectedResultFileName));
-                        CalculateAverage_jonathanaotearoa.main(args);
-                        final String actual = out.toString(StandardCharsets.UTF_8);
+                        final String actual = processFile(filePath).toString();
                         if (actual.equals(expected)) {
                             testResults.append("Passed\n");
                         }
@@ -383,13 +447,11 @@ public class CalculateAverage_jonathanaotearoa {
                         }
                     }
                     catch (IOException e) {
-                        throw new RuntimeException(STR."Error testing '\{path.getFileName()}");
+                        throw new RuntimeException(STR."Error testing '\{filePath.getFileName()}");
                     }
                 });
             }
             finally {
-                System.setOut(sysOut);
-                FILE_PATH = DEFAULT_FILE_PATH;
                 System.out.println(testResults);
             }
         }
