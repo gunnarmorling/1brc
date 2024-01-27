@@ -19,9 +19,7 @@ source "$HOME/.sdkman/bin/sdkman-init.sh"
 sdk use java 21.0.2-graal 1>&2
 
 # ./mvnw clean verify removes target/ and will re-trigger native image creation.
-if [ ! -f target/CalculateAverage_abeobk_image ]; then
-    NATIVE_IMAGE_OPTS="--gc=epsilon -O3 -dsa -march=native -R:MaxHeapSize=128m -H:-GenLoopSafepoints -H:-ParseRuntimeOptions --enable-preview --initialize-at-build-time=dev.morling.onebrc.CalculateAverage_abeobk"
-    native-image $NATIVE_IMAGE_OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o target/CalculateAverage_abeobk_image dev.morling.onebrc.CalculateAverage_abeobk
+if [ ! -f target/CalculateAverage_armandino_image ]; then
+    NATIVE_IMAGE_OPTS="--gc=epsilon -O3 -march=native --enable-preview -H:InlineAllBonus=10 -H:-ParseRuntimeOptions --initialize-at-build-time=dev.morling.onebrc.CalculateAverage_armandino\$Scanner"
+    native-image $NATIVE_IMAGE_OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o target/CalculateAverage_armandino_image dev.morling.onebrc.CalculateAverage_armandino
 fi
-
-
