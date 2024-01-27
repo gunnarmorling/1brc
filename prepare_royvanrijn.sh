@@ -21,8 +21,8 @@ sdk use java 21.0.2-graal 1>&2
 # ./mvnw clean verify removes target/ and will re-trigger native image creation.
 if [ ! -f target/CalculateAverage_royvanrijn_image ]; then
 
-    JAVA_OPTS="--enable-preview -dsa"
-    NATIVE_IMAGE_OPTS="--initialize-at-build-time=dev.morling.onebrc.CalculateAverage_royvanrijn --gc=epsilon -Ob -O3 -march=native --strict-image-heap $JAVA_OPTS"
+    JAVA_OPTS="--enable-preview"
+    NATIVE_IMAGE_OPTS="-H:+UnlockExperimentalVMOptions --initialize-at-build-time=dev.morling.onebrc.CalculateAverage_royvanrijn --gc=epsilon -O3 -march=native -R:MaxHeapSize=515m -H:-GenLoopSafepoints -H:InlineAllBonus=10 -H:-ParseRuntimeOptions $JAVA_OPTS"
 
     native-image $NATIVE_IMAGE_OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o target/CalculateAverage_royvanrijn_image dev.morling.onebrc.CalculateAverage_royvanrijn
 fi
