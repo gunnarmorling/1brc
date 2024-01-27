@@ -30,25 +30,24 @@ public class CalculateAverage_varunsankethi {
 
     public static void main(String[] args) throws IOException {
 
-        System.out.println(LocalDateTime.now());
         Files.newBufferedReader(Paths.get(pathToFile)).lines().parallel().forEach(line -> calculateMeasurements(line));
 
         for (DataPoints dp : dataPointsMapConc.values()) {
             dp.mean = Math.round((dp.sum / dp.count) * 10.0) / 10.0;
         }
         System.out.println(dataPointsMapConc);
-        System.out.println(LocalDateTime.now());
+
     }
 
     private static void calculateMeasurements(String line) {
 
-        int indexOfSplit = line.indexOf(";");
-        double newVal = Double.parseDouble(line.substring(indexOfSplit + 1));
-        String city = line.substring(0, indexOfSplit);
+        int splitIndex = line.indexOf(";");
+        double newVal = Double.parseDouble(line.substring(splitIndex + 1));
+        String city = line.substring(0, splitIndex);
         DataPoints dataPoints = null;
 
         if ((dataPoints = dataPointsMapConc.get(city)) == null) {
-            dataPointsMapConc.put(city, new DataPoints(newVal, newVal, newVal));
+            dataPointsMapConc.put(city, new DataPoints(newVal, newVal, newVal, newVal));
         }
         else {
 
@@ -69,11 +68,12 @@ public class CalculateAverage_varunsankethi {
 
         double sum = 0;
 
-        public DataPoints(double min, double mean, double max) {
+        public DataPoints(double min, double mean, double max, double sum) {
 
             this.max = max;
             this.mean = mean;
             this.min = min;
+            this.sum = sum;
         }
 
         @Override
