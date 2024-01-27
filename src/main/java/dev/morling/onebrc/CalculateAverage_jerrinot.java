@@ -361,11 +361,11 @@ public class CalculateAverage_jerrinot {
                 long mask = getDelimiterMask(currentWord);
                 long firstWordMask = ((mask - 1) ^ mask) >>> 8;
                 final long isMaskZeroA = ((mask | -mask) >>> 63) ^ 1;
-                long ext = -isMaskZeroA & 0xFF00_0000_0000_0000L;
+                long ext = -isMaskZeroA;
                 firstWordMask |= ext;
 
                 long maskedFirstWord = currentWord & firstWordMask;
-                long hash = hash(maskedFirstWord);
+                int hash = hash(maskedFirstWord);
                 while (mask == 0) {
                     cursor += 8;
                     currentWord = UNSAFE.getLong(cursor);
@@ -376,13 +376,13 @@ public class CalculateAverage_jerrinot {
                 final long maskedWord = currentWord & ((mask - 1) ^ mask) >>> 8;
 
                 int len = (int) (semicolon - start);
-                long baseEntryPtr = getOrCreateEntryBaseOffsetSlow(len, start, (int) hash, maskedWord);
+                long baseEntryPtr = getOrCreateEntryBaseOffsetSlow(len, start, hash, maskedWord);
                 long temperatureWord = UNSAFE.getLong(semicolon + 1);
                 cursor = parseAndStoreTemperature(semicolon + 1, baseEntryPtr, temperatureWord);
             }
         }
 
-        private static long hash(long word1) {
+        private static int hash(long word1) {
             // credit: mtopolnik
             long seed = 0x51_7c_c1_b7_27_22_0a_95L;
             int rotDist = 17;
@@ -390,7 +390,7 @@ public class CalculateAverage_jerrinot {
             long hash = word1;
             hash *= seed;
             hash = Long.rotateLeft(hash, rotDist);
-            return hash;
+            return (int) hash;
         }
 
         @Override
@@ -416,39 +416,45 @@ public class CalculateAverage_jerrinot {
                 long maskB = getDelimiterMask(currentWordB);
                 long maskC = getDelimiterMask(currentWordC);
 
-                long firstWordMaskA = (maskA ^ (maskA - 1)) >>> 8;
-                long firstWordMaskB = (maskB ^ (maskB - 1)) >>> 8;
-                long firstWordMaskC = (maskC ^ (maskC - 1)) >>> 8;
+                long maskComplementA = -maskA;
+                long maskComplementB = -maskB;
+                long maskComplementC = -maskC;
 
-                final long isMaskZeroA = ((maskA | -maskA) >>> 63) ^ 1;
-                final long isMaskZeroB = ((maskB | -maskB) >>> 63) ^ 1;
-                final long isMaskZeroC = ((maskC | -maskC) >>> 63) ^ 1;
+                long maskWithDelimiterA = (maskA ^ (maskA - 1));
+                long maskWithDelimiterB = (maskB ^ (maskB - 1));
+                long maskWithDelimiterC = (maskC ^ (maskC - 1));
 
-                long extA = -isMaskZeroA & 0xFF00_0000_0000_0000L;
-                long extB = -isMaskZeroB & 0xFF00_0000_0000_0000L;
-                long extC = -isMaskZeroC & 0xFF00_0000_0000_0000L;
+                long firstWordMaskA = maskWithDelimiterA >>> 8;
+                long firstWordMaskB = maskWithDelimiterB >>> 8;
+                long firstWordMaskC = maskWithDelimiterC >>> 8;
 
-                firstWordMaskA |= extA;
-                firstWordMaskB |= extB;
-                firstWordMaskC |= extC;
-
-                long maskedFirstWordA = currentWordA & firstWordMaskA;
-                long maskedFirstWordB = currentWordB & firstWordMaskB;
-                long maskedFirstWordC = currentWordC & firstWordMaskC;
-
-                // assertMasks(isMaskZeroA, maskA);
-
-                long hashA = hash(maskedFirstWordA);
-                long hashB = hash(maskedFirstWordB);
-                long hashC = hash(maskedFirstWordC);
+                int isMaskZeroA = (int) (((maskA | maskComplementA) >>> 63) ^ 1);
+                int isMaskZeroB = (int) (((maskB | maskComplementB) >>> 63) ^ 1);
+                int isMaskZeroC = (int) (((maskC | maskComplementC) >>> 63) ^ 1);
 
                 cursorA += isMaskZeroA * 8;
                 cursorB += isMaskZeroB * 8;
                 cursorC += isMaskZeroC * 8;
 
-                currentWordA = UNSAFE.getLong(cursorA);
-                currentWordB = UNSAFE.getLong(cursorB);
-                currentWordC = UNSAFE.getLong(cursorC);
+                long nextWordA = UNSAFE.getLong(cursorA);
+                long nextWordB = UNSAFE.getLong(cursorB);
+                long nextWordC = UNSAFE.getLong(cursorC);
+
+                long extA = -(long) isMaskZeroA;
+                long extB = -(long) isMaskZeroB;
+                long extC = -(long) isMaskZeroC;
+
+                long maskedFirstWordA = (currentWordA & firstWordMaskA) | (extA & currentWordA);
+                long maskedFirstWordB = (currentWordB & firstWordMaskB) | (extB & currentWordB);
+                long maskedFirstWordC = (currentWordC & firstWordMaskC) | (extC & currentWordC);
+
+                int hashA = hash(maskedFirstWordA);
+                int hashB = hash(maskedFirstWordB);
+                int hashC = hash(maskedFirstWordC);
+
+                currentWordA = nextWordA;
+                currentWordB = nextWordB;
+                currentWordC = nextWordC;
 
                 maskA = getDelimiterMask(currentWordA);
                 while (maskA == 0) {
@@ -505,21 +511,21 @@ public class CalculateAverage_jerrinot {
                     baseEntryPtrA = getOrCreateEntryBaseOffsetFast(mapIndexA, lenA, maskedWordA, maskedFirstWordA);
                 }
                 else {
-                    baseEntryPtrA = getOrCreateEntryBaseOffsetSlow(lenA, startA, (int) hashA, maskedWordA);
+                    baseEntryPtrA = getOrCreateEntryBaseOffsetSlow(lenA, startA, hashA, maskedWordA);
                 }
 
                 if (lenB < 16) {
                     baseEntryPtrB = getOrCreateEntryBaseOffsetFast(mapIndexB, lenB, maskedWordB, maskedFirstWordB);
                 }
                 else {
-                    baseEntryPtrB = getOrCreateEntryBaseOffsetSlow(lenB, startB, (int) hashB, maskedWordB);
+                    baseEntryPtrB = getOrCreateEntryBaseOffsetSlow(lenB, startB, hashB, maskedWordB);
                 }
 
                 if (lenC < 16) {
                     baseEntryPtrC = getOrCreateEntryBaseOffsetFast(mapIndexC, lenC, maskedWordC, maskedFirstWordC);
                 }
                 else {
-                    baseEntryPtrC = getOrCreateEntryBaseOffsetSlow(lenC, startC, (int) hashC, maskedWordC);
+                    baseEntryPtrC = getOrCreateEntryBaseOffsetSlow(lenC, startC, hashC, maskedWordC);
                 }
 
                 cursorA = parseAndStoreTemperature(digitStartA, baseEntryPtrA, temperatureWordA);
