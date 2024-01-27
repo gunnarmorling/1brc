@@ -157,7 +157,6 @@ public class CalculateAverage_godofwharf {
                                         prevOffset = curOffset + 1;
                                         j++;
                                     }
-                                    bytesRead += (int) page.length;
                                     // Explicitly commented out because unload seems to take a lot of time
                                     segment.unload();
                                 }
