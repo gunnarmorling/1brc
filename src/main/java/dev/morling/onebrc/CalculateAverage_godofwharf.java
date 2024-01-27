@@ -122,7 +122,7 @@ public class CalculateAverage_godofwharf {
                             // process splits concurrently using a thread pool
                             futures.add(executorService.submit(() -> {
                                 int tid = (int) Thread.currentThread().threadId();
-                                byte[] currentPage = new byte[PAGE_SIZE + MAX_STR_LEN]
+                                byte[] currentPage = new byte[PAGE_SIZE + MAX_STR_LEN];
                                 // iterate over each page in split
                                 for (Page page : split.pages) {
                                     // this byte buffer should end with '\n' or EOF
