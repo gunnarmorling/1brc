@@ -20,11 +20,12 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 public class CalculateAverage_jgrateron {
@@ -32,6 +33,8 @@ public class CalculateAverage_jgrateron {
     private static final int MAX_LENGTH_LINE = 255;
     private static final int MAX_BUFFER = 1024 * 8;
     private static boolean DEBUG = false;
+    public static int DECENAS[] = { 0, 10, 20, 30, 40, 50, 60, 70, 80, 90 };
+    public static int CENTENAS[] = { 0, 100, 200, 300, 400, 500, 600, 700, 800, 900 };
 
     public record Particion(long offset, long size) {
     }
@@ -92,21 +95,25 @@ public class CalculateAverage_jgrateron {
         Locale.setDefault(Locale.US);
         var startTime = System.nanoTime();
         var archivo = new File(FILE);
-        var totalMediciones = new TreeMap<String, Medicion>();
         var tareas = new ArrayList<Thread>();
+        var totalMediciones = new HashMap<Index, Medicion>();
         var particiones = dividirArchivo(archivo);
 
         for (var p : particiones) {
             var hilo = Thread.ofVirtual().start(() -> {
                 try (var miTarea = new MiTarea(archivo, p)) {
                     var mediciones = miTarea.calcularMediciones();
-                    synchronized (totalMediciones) {
-                        for (var entry : mediciones.entrySet()) {
-                            var medicion = totalMediciones.get(entry.getKey());
+                    for (var entry : mediciones.entrySet()) {
+                        Medicion medicion;
+                        synchronized (totalMediciones) {
+                            medicion = totalMediciones.get(entry.getKey());
                             if (medicion == null) {
                                 totalMediciones.put(entry.getKey(), entry.getValue());
+                                medicion = entry.getValue();
                             }
-                            else {
+                        }
+                        synchronized (medicion) {
+                            if (!medicion.equals(entry.getValue())) {
                                 var otraMed = entry.getValue();
                                 medicion.update(otraMed.count, otraMed.tempMin, otraMed.tempMax, otraMed.tempSum);
                             }
@@ -119,12 +126,18 @@ public class CalculateAverage_jgrateron {
             });
             tareas.add(hilo);
         }
+
+        Comparator<Map.Entry<Index, Medicion>> comparar = (a, b) -> {
+            return a.getValue().getNombreEstacion().compareTo(b.getValue().getNombreEstacion());
+        };
+
         for (var hilo : tareas) {
             hilo.join();
         }
 
         var result = totalMediciones.entrySet().stream()//
-                .map(e -> e.getKey() + "=" + e.getValue().toString())//
+                .sorted(comparar)
+                .map(e -> e.getValue().toString())//
                 .collect(Collectors.joining(", "));
 
         System.out.println("{" + result + "}");
@@ -138,17 +151,38 @@ public class CalculateAverage_jgrateron {
      */
     static class Index {
         private int hash;
+        private byte[] data;
+        private int fromIndex;
+        private int length;
 
         public Index() {
             this.hash = 0;
         }
 
-        public Index(int hash) {
-            this.hash = hash;
+        public Index(byte data[], int fromIndex, int length) {
+            this.data = data;
+            this.fromIndex = fromIndex;
+            this.length = length;
+            this.hash = calcHashCode(length, data, fromIndex, length);
         }
 
-        public void setHash(int hash) {
-            this.hash = hash;
+        public void setData(byte data[], int fromIndex, int length) {
+            this.data = data;
+            this.fromIndex = fromIndex;
+            this.length = length;
+            this.hash = calcHashCode(length, data, fromIndex, length);
+        }
+
+        /*
+         * Calcula el hash de cada estacion,
+         * variation of Daniel J Bernstein's algorithm
+         */
+        private int calcHashCode(int result, byte[] a, int fromIndex, int length) {
+            int end = fromIndex + length;
+            for (int i = fromIndex; i < end; i++) {
+                result = ((result << 5) + result) ^ a[i];
+            }
+            return result;
         }
 
         @Override
@@ -162,7 +196,8 @@ public class CalculateAverage_jgrateron {
                 return true;
             }
             var otro = (Index) obj;
-            return this.hash == otro.hash;
+            return Arrays.equals(this.data, this.fromIndex, this.fromIndex + this.length, otro.data, otro.fromIndex,
+                    otro.fromIndex + otro.length);
         }
     }
 
@@ -171,14 +206,12 @@ public class CalculateAverage_jgrateron {
      * RandomAccessFile permite dezplazar el puntero de lectura del archivo
      * Tenemos un Map para guardar las estadisticas y un map para guardar los
      * nombres de las estaciones
-     * 
      */
     static class MiTarea implements AutoCloseable {
         private final RandomAccessFile rFile;
         private long maxRead;
         private Index index = new Index();
         private Map<Index, Medicion> mediciones = new HashMap<>();
-        private Map<Index, String> estaciones = new HashMap<>();
 
         public MiTarea(File file, Particion particion) throws IOException {
             rFile = new RandomAccessFile(file, "r");
@@ -197,7 +230,7 @@ public class CalculateAverage_jgrateron {
          * obtiene la posicion de separacion ";" de la estacion y su temperatura
          * calcula el hash, convierte a double y actualiza las estadisticas
          */
-        public Map<String, Medicion> calcularMediciones() throws IOException {
+        public Map<Index, Medicion> calcularMediciones() throws IOException {
             var buffer = new byte[MAX_BUFFER];// buffer para lectura en el archivo
             var rest = new byte[MAX_LENGTH_LINE];// Resto que sobra en cada lectura del buffer
             var lenRest = 0;// Longitud que sobró en cada lectura del buffer
@@ -211,17 +244,15 @@ public class CalculateAverage_jgrateron {
                 if (numBytes == -1) {
                     break;
                 }
-                var totalLeidos = totalRead + numBytes;
-                if (totalLeidos > maxRead) {
-                    numBytes = maxRead - totalRead;
-                }
+                numBytes = totalRead + numBytes > maxRead ? maxRead - totalRead : numBytes;
                 totalRead += numBytes;
                 int pos = 0;
                 int len = 0;
                 int idx = 0;
                 int semicolon = 0;
                 while (pos < numBytes) {
-                    if (buffer[pos] == '\n' || buffer[pos] == '\r') {
+                    var b = buffer[pos];
+                    if (b == '\n' || b == '\r') {
                         if (lenRest > 0) {
                             // concatenamos el sobrante anterior con la nueva linea
                             System.arraycopy(buffer, idx, rest, lenRest, len);
@@ -238,7 +269,7 @@ public class CalculateAverage_jgrateron {
                         semicolon = 0;
                     }
                     else {
-                        if (buffer[pos] == ';') {
+                        if (b == ';') {
                             semicolon = len;
                         }
                         len++;
@@ -250,7 +281,7 @@ public class CalculateAverage_jgrateron {
                     lenRest = len;
                 }
             }
-            return transformMediciones();
+            return mediciones;
         }
 
         /*
@@ -270,19 +301,14 @@ public class CalculateAverage_jgrateron {
          * Busca una medicion por su hash y crea o actualiza la temperatura
          */
         public void updateMediciones(byte data[], int pos, int semicolon) {
-            var hashEstacion = calcHashCode(0, data, pos, semicolon);
             var temp = strToInt(data, pos, semicolon);
-            index.setHash(hashEstacion);
-            var estacion = estaciones.get(index);
-            if (estacion == null) {
-                estacion = new String(data, pos, semicolon);
-                estaciones.put(new Index(hashEstacion), estacion);
-            }
-            index.setHash(hashEstacion);
+            index.setData(data, pos, semicolon);
             var medicion = mediciones.get(index);
             if (medicion == null) {
-                medicion = new Medicion(1, temp, temp, temp);
-                mediciones.put(new Index(hashEstacion), medicion);
+                var estacion = new byte[semicolon];
+                System.arraycopy(data, pos, estacion, 0, semicolon);
+                medicion = new Medicion(estacion, 1, temp, temp, temp);
+                mediciones.put(new Index(estacion, 0, semicolon), medicion);
             }
             else {
                 medicion.update(1, temp, temp, temp);
@@ -290,50 +316,15 @@ public class CalculateAverage_jgrateron {
         }
 
         /*
-         * Convierte las estaciones de hash a string
+         * convierte de un arreglo de bytes a integer
          */
-        private Map<String, Medicion> transformMediciones() {
-            var newMediciones = new HashMap<String, Medicion>();
-            for (var e : mediciones.entrySet()) {
-                var estacion = estaciones.get(e.getKey());
-                var medicion = e.getValue();
-                newMediciones.put(estacion, medicion);
-            }
-            return newMediciones;
-        }
 
-        /*
-         * Calcula el hash de cada estacion, esto es una copia de java.internal.hashcode
-         */
-        private int calcHashCode(int result, byte[] a, int fromIndex, int length) {
-            int end = fromIndex + length;
-            for (int i = fromIndex; i < end; i++) {
-                result = 31 * result + a[i];
-            }
-            return result;
-        }
-
-        /*
-         * convierte de un arreglo de bytes a double
-         */
         public int strToInt(byte linea[], int idx, int posSeparator) {
-            int number = 0;
             int pos = idx + posSeparator + 1;
             boolean esNegativo = linea[pos] == '-';
-            if (esNegativo) {
-                pos++;
-            }
-            int digit1 = linea[pos] - 48;
-            pos++;
-            if (linea[pos] == '.') {
-                pos++;
-                number = (digit1 * 10) + (linea[pos] - 48);
-            }
-            else {
-                int digit2 = linea[pos] - 48;
-                pos += 2;
-                number = (digit1 * 100) + (digit2 * 10) + (linea[pos] - 48);
-            }
+            pos = esNegativo ? pos + 1 : pos;
+            int number = linea[pos + 1] == '.' ? DECENAS[(linea[pos] - 48)] + linea[pos + 2] - 48
+                    : CENTENAS[(linea[pos] - 48)] + DECENAS[(linea[pos + 1] - 48)] + (linea[pos + 3] - 48);
             return esNegativo ? -number : number;
         }
     }
@@ -346,9 +337,12 @@ public class CalculateAverage_jgrateron {
         private int tempMin;
         private int tempMax;
         private int tempSum;
+        private byte estacion[];
+        private String nombreEstacion;
 
-        public Medicion(int count, int tempMin, int tempMax, int tempSum) {
+        public Medicion(byte estacion[], int count, int tempMin, int tempMax, int tempSum) {
             super();
+            this.estacion = estacion;
             this.count = count;
             this.tempMin = tempMin;
             this.tempMax = tempMax;
@@ -357,12 +351,8 @@ public class CalculateAverage_jgrateron {
 
         public void update(int count, int tempMin, int tempMax, int tempSum) {
             this.count += count;
-            if (tempMin < this.tempMin) {
-                this.tempMin = tempMin;
-            }
-            if (tempMax > this.tempMax) {
-                this.tempMax = tempMax;
-            }
+            this.tempMin = Math.min(tempMin, this.tempMin);
+            this.tempMax = Math.max(tempMax, this.tempMax);
             this.tempSum += tempSum;
         }
 
@@ -370,12 +360,20 @@ public class CalculateAverage_jgrateron {
             return Math.round(number) / 10.0;
         }
 
+        public String getNombreEstacion() {
+            if (nombreEstacion == null) {
+                nombreEstacion = new String(estacion);
+            }
+            return nombreEstacion;
+        }
+
         @Override
         public String toString() {
             var min = round(tempMin);
             var mid = round(1.0 * tempSum / count);
             var max = round(tempMax);
-            return "%.1f/%.1f/%.1f".formatted(min, mid, max);
+            var nombre = getNombreEstacion();
+            return "%s=%.1f/%.1f/%.1f".formatted(nombre, min, mid, max);
         }
     }
 }
