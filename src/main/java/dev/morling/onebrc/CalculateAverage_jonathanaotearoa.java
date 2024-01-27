@@ -17,11 +17,16 @@ package dev.morling.onebrc;
 
 import sun.misc.Unsafe;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.lang.foreign.Arena;
 import java.lang.reflect.Field;
+import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
@@ -29,7 +34,6 @@ import java.util.Objects;
 import java.util.TreeMap;
 import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static java.lang.Math.max;
@@ -50,7 +54,8 @@ public class CalculateAverage_jonathanaotearoa {
         }
     }
 
-    private static final Path FILE_PATH = Path.of("./measurements.txt");
+    private static final Path SAMPLE_DIR_PATH = Path.of("./src/test/resources/samples");
+    private static final Path DEFAULT_FILE_PATH = Path.of("./measurements.txt");
     private static final byte MAX_LINE_BYTES = 107;
     private static final byte NEW_LINE_BYTE = '\n';
     private static final long SEPARATOR_XOR_MASK = 0x3b3b3b3b3b3b3b3bL;
@@ -67,52 +72,82 @@ public class CalculateAverage_jonathanaotearoa {
     // Subtracts 48, i.e. the UFT-8 value offset, from the digits bytes.
     // As a result, '0' (48) becomes 0, '1' (49) becomes 1, and so on.
     private static final long TEMP_DIGITS_MASK = 0x0f000f0f00L;
+    private static Path FILE_PATH = DEFAULT_FILE_PATH;
 
     public static void main(final String[] args) throws IOException {
         try (final FileChannel fc = FileChannel.open(FILE_PATH, StandardOpenOption.READ)) {
             final long fileSize = fc.size();
-            try (final Arena arena = Arena.ofConfined()) {
-                final long fileAddress = fc.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, arena).address();
-                final TreeMap<String, StationData> result = createChunks(fileAddress, fileSize)
-                        .parallel()
-                        .map(CalculateAverage_jonathanaotearoa::processChunk)
-                        .flatMap(Repository::entries)
-                        .collect(Collectors.toMap(
-                                sd -> sd.name,
-                                sd -> sd,
-                                StationData::merge,
-                                TreeMap::new));
-                System.out.println(result);
+            if (fileSize < Long.BYTES) {
+                // The file size is less than our word size!
+                // Keep it simple and fall back to non-performant processing.
+                System.out.println(processTinyFile(fc, fileSize));
             }
+            else {
+                System.out.println(processFile(fc, fileSize));
+            }
+        }
+    }
+
+    private static TreeMap<String, StationData> processTinyFile(final FileChannel fc, final long fileSize) throws IOException {
+        final ByteBuffer byteBuffer = ByteBuffer.allocate((int) fileSize);
+        fc.read(byteBuffer);
+        return new String(byteBuffer.array(), StandardCharsets.UTF_8)
+                .lines()
+                .map(line -> line.trim().split(";"))
+                .map(tokens -> {
+                    final String stationName = tokens[0];
+                    final int temp = Integer.parseInt(tokens[1].replace(".", ""));
+                    return new StationData(stationName, stationName.hashCode(), temp);
+                })
+                .collect(Collectors.toMap(
+                        sd -> sd.name,
+                        sd -> sd,
+                        StationData::merge,
+                        TreeMap::new));
+    }
+
+    private static TreeMap<String, StationData> processFile(final FileChannel fc, final long fileSize) throws IOException {
+        try (final Arena arena = Arena.ofConfined()) {
+            final long fileAddress = fc.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, arena).address();
+            return createChunks(fileAddress, fileSize)
+                    .parallel()
+                    .map(CalculateAverage_jonathanaotearoa::processChunk)
+                    .flatMap(Repository::entries)
+                    .collect(Collectors.toMap(
+                            sd -> sd.name,
+                            sd -> sd,
+                            StationData::merge,
+                            TreeMap::new));
         }
     }
 
     private static Stream<Chunk> createChunks(final long fileAddress, final long fileSize) {
-        final long[] chunkAddresses = getChunkAddresses(fileAddress, fileSize);
-        final long lastByteAddress = fileAddress + fileSize - 1;
-        return IntStream.range(0, chunkAddresses.length)
-                .mapToObj(chunkIndex -> Chunk.fromAddress(chunkAddresses, chunkIndex, lastByteAddress));
-    }
-
-    private static long[] getChunkAddresses(final long fileAddress, final long fileSize) {
-        // Should be the number of cores - 1.
+        // The number of cores - 1.
         final int parallelism = ForkJoinPool.getCommonPoolParallelism();
-        if ((long) parallelism * MAX_LINE_BYTES > fileSize) {
-            // There might not be enough lines in the file. Return a single chunk.
-            return new long[]{ fileAddress };
+        final long chunkStep = fileSize / parallelism;
+        final long lastFileByteAddress = fileAddress + fileSize - 1;
+        if (chunkStep < MAX_LINE_BYTES) {
+            // We're dealing with a tiny file, just return a single chunk.
+            return Stream.of(new Chunk(fileAddress, lastFileByteAddress, true));
         }
-        final long[] addresses = new long[parallelism];
-        final long chunkSize = fileSize / parallelism;
-        addresses[0] = fileAddress;
-        for (int i = 1; i < addresses.length; i++) {
-            long chunkAddress = fileAddress + (i * chunkSize);
-            // Find the end of the previous line.
-            while (UNSAFE.getByte(chunkAddress) != NEW_LINE_BYTE) {
-                chunkAddress--;
+        final Chunk[] chunks = new Chunk[parallelism];
+        long startAddress = fileAddress;
+        for (int i = 0, n = parallelism - 1; i < n; i++) {
+            // Find end of the *previous* line.
+            // We know there's a previous line in this chunk because chunkStep >= MAX_LINE_BYTES.
+            // The last chunk may be slightly bigger than the others.
+            // For a 1 billion line file, this has zero impact.
+            long lastByteAddress = startAddress + chunkStep;
+            while (UNSAFE.getByte(lastByteAddress) != NEW_LINE_BYTE) {
+                lastByteAddress--;
             }
-            addresses[i] = chunkAddress + 1;
+            // We've found the end of the previous line.
+            chunks[i] = new Chunk(startAddress, lastByteAddress, false);
+            startAddress = ++lastByteAddress;
         }
-        return addresses;
+        // The remaining bytes are assigned to the last chunk.
+        chunks[chunks.length - 1] = (new Chunk(startAddress, lastFileByteAddress, true));
+        return Stream.of(chunks);
     }
 
     private static Repository processChunk(final Chunk chunk) {
@@ -210,17 +245,15 @@ public class CalculateAverage_jonathanaotearoa {
 
     private record Chunk(long startAddress, long lastByteAddress, long lastWordAddress, boolean isLast) {
 
-        public static Chunk fromAddress(final long[] chunkAddresses,
-                                        final int chunkIndex,
-                                        final long lastFileByteAddress) {
-            final long startAddress = chunkAddresses[chunkIndex];
-            final boolean isLast = chunkIndex == chunkAddresses.length - 1;
-            final long lastByteAddress = isLast ? lastFileByteAddress : chunkAddresses[chunkIndex + 1] - 1;
-            final long lastWordAddress = lastByteAddress - (Long.BYTES - 1);
-            return new Chunk(startAddress, lastByteAddress, lastWordAddress, isLast);
+        public Chunk(final long startAddress, final long lastByteAddress, final boolean isLast) {
+            this(startAddress, lastByteAddress, lastByteAddress - (Long.BYTES - 1), isLast);
+            // These get check when running TestRunner.
+            assert lastByteAddress > startAddress : STR."lastByteAddress \{lastByteAddress} must be > startAddress \{startAddress}";
+            assert lastWordAddress >= startAddress : STR."lastWordAddress \{lastWordAddress} must be >= startAddress \{startAddress}";
         }
 
         public long getWord(final long address) {
+            assert address >= startAddress : "address cannot be before startAddress";
             if (isLast && address > lastWordAddress) {
                 // Make sure we don't read beyond the end of the file and potentially crash the JVM.
                 final long word = UNSAFE.getLong(lastWordAddress);
@@ -317,6 +350,46 @@ public class CalculateAverage_jonathanaotearoa {
                 i = (i + 1) % table.length;
             }
             return i;
+        }
+    }
+
+    /**
+     * Helper for running tests without blowing away the main measurements.txt file.
+     * Saves regenerating the 1 billion line file after each test run.
+     * Enable assertions in the IDE run config.
+     */
+    public static final class TestRunner {
+        public static void main(String[] args) throws IOException {
+            final PrintStream sysOut = System.out;
+            final StringBuilder testResults = new StringBuilder();
+            try (DirectoryStream<Path> dirStream = Files.newDirectoryStream(SAMPLE_DIR_PATH, "*.txt")) {
+                dirStream.forEach(path -> {
+                    testResults.append("Testing '%s'... ".formatted(path.getFileName()));
+                    final ByteArrayOutputStream out = new ByteArrayOutputStream();
+                    System.setOut(new PrintStream(out));
+                    final String expectedResultFileName = path.getFileName().toString().replace(".txt", ".out");
+                    FILE_PATH = path;
+                    try {
+                        final String expected = Files.readString(SAMPLE_DIR_PATH.resolve(expectedResultFileName));
+                        CalculateAverage_jonathanaotearoa.main(args);
+                        final String actual = out.toString(StandardCharsets.UTF_8);
+                        if (actual.equals(expected)) {
+                            testResults.append("Passed\n");
+                        }
+                        else {
+                            testResults.append("Failed. Actual output does not match expected\n");
+                        }
+                    }
+                    catch (IOException e) {
+                        throw new RuntimeException("Error testing '%s".formatted(path.getFileName()));
+                    }
+                });
+            }
+            finally {
+                System.setOut(sysOut);
+                FILE_PATH = DEFAULT_FILE_PATH;
+                System.out.println(testResults);
+            }
         }
     }
 }
