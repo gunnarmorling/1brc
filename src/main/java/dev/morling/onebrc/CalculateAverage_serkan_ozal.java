@@ -30,6 +30,7 @@ import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -47,7 +48,7 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public class CalculateAverage_serkan_ozal {
 
-    private static final String FILE = "./measurements.txt";
+    private static final String FILE = System.getProperty("file.path", "./measurements.txt");
 
     private static final VectorSpecies<Byte> BYTE_SPECIES = ByteVector.SPECIES_PREFERRED.length() >= 16
             // Since majority (99%) of the city names <= 16 bytes, according to my experiments,
@@ -327,7 +328,7 @@ public class CalculateAverage_serkan_ozal {
 
         private void doProcessRegion(MemorySegment region, long regionAddress, long regionStart, long regionEnd) {
             final int vectorSize = BYTE_SPECIES.vectorByteSize();
-            final long regionMainLimit = regionEnd - MAX_LINE_LENGTH;
+            final long regionMainLimit = regionEnd - BYTE_SPECIES_SIZE;
 
             long regionPtr;
 
@@ -515,7 +516,20 @@ public class CalculateAverage_serkan_ozal {
         }
 
         private void print() {
-            System.out.println(resultMap);
+            StringBuilder sb = new StringBuilder(1 << 14);
+            boolean firstEntryAppended = false;
+            sb.append("{");
+            for (Map.Entry<String, KeyResult> e : resultMap.entrySet()) {
+                if (firstEntryAppended) {
+                    sb.append(", ");
+                }
+                String key = e.getKey();
+                KeyResult value = e.getValue();
+                sb.append(key).append("=").append(value);
+                firstEntryAppended = true;
+            }
+            sb.append('}');
+            System.out.println(sb);
         }
 
     }
@@ -546,8 +560,12 @@ public class CalculateAverage_serkan_ozal {
         private static final int ENTRY_HASH_MASK = MAP_CAPACITY - 1;
         private static final int MAP_SIZE = ENTRY_SIZE * MAP_CAPACITY;
         private static final int ENTRY_MASK = MAP_SIZE - 1;
+        private static final int KEY_ARRAY_OFFSET = KEY_OFFSET - Unsafe.ARRAY_BYTE_BASE_OFFSET;
 
         private final byte[] data;
+        // Max number of unique keys are 10K, so 1 << 14 (16384) is long enough to hold offsets for all of them
+        private final long[] entryOffsets = new long[1 << 14];
+        private int entryOffsetIdx = 0;
 
         private OpenMap() {
             this.data = new byte[MAP_SIZE];
@@ -579,7 +597,6 @@ public class CalculateAverage_serkan_ozal {
             // and continue until find an available slot in case of hash collision
             // TODO Prevent infinite loop if all the slots are in use for other keys
             for (long entryOffset = Unsafe.ARRAY_BYTE_BASE_OFFSET + (idx * ENTRY_SIZE);; entryOffset = (entryOffset + ENTRY_SIZE) & ENTRY_MASK) {
-                int keyStartOffset = (int) entryOffset + KEY_OFFSET;
                 int keySize = U.getInt(data, entryOffset + KEY_SIZE_OFFSET);
                 // Check whether current index is empty (no another key is inserted yet)
                 if (keySize == 0) {
@@ -587,26 +604,28 @@ public class CalculateAverage_serkan_ozal {
                     U.putShort(data, entryOffset + MIN_VALUE_OFFSET, Short.MAX_VALUE);
                     U.putShort(data, entryOffset + MAX_VALUE_OFFSET, Short.MIN_VALUE);
                     U.putInt(data, entryOffset + KEY_SIZE_OFFSET, keyLength);
-                    U.copyMemory(null, keyStartAddress, data, keyStartOffset, keyLength);
+                    U.copyMemory(null, keyStartAddress, data, entryOffset + KEY_OFFSET, keyLength);
+                    entryOffsets[entryOffsetIdx++] = entryOffset;
                     return entryOffset;
                 }
+                int keyStartArrayOffset = (int) entryOffset + KEY_ARRAY_OFFSET;
                 // Check for hash collision (hashes are same, but keys are different).
                 // If there is no collision (both hashes and keys are equals), return current slot's offset.
                 // Otherwise, continue iterating until find an available slot.
-                if (keySize == keyLength && keysEqual(keyVector, keyStartAddress, keyLength, keyStartOffset)) {
+                if (keySize == keyLength && keysEqual(keyVector, keyStartAddress, keyLength, keyStartArrayOffset)) {
                     return entryOffset;
                 }
             }
         }
 
-        private boolean keysEqual(ByteVector keyVector, long keyStartAddress, int keyLength, int keyStartOffset) {
+        private boolean keysEqual(ByteVector keyVector, long keyStartAddress, int keyLength, int keyStartArrayOffset) {
             int keyCheckIdx = 0;
             if (keyVector != null) {
                 // Use vectorized search for the comparison of keys.
                 // Since majority of the city names >= 8 bytes and <= 16 bytes,
                 // this way is more efficient (according to my experiments) than any other comparisons (byte by byte or 2 longs).
                 int keyCheckLength = Math.min(BYTE_SPECIES_SIZE, keyLength);
-                ByteVector entryKeyVector = ByteVector.fromArray(BYTE_SPECIES, data, keyStartOffset - Unsafe.ARRAY_BYTE_BASE_OFFSET);
+                ByteVector entryKeyVector = ByteVector.fromArray(BYTE_SPECIES, data, keyStartArrayOffset);
                 long eqMask = keyVector.compare(VectorOperators.EQ, entryKeyVector).toLong();
                 int eqCount = Long.numberOfTrailingZeros(~eqMask);
                 if (eqCount < keyCheckLength) {
@@ -625,6 +644,7 @@ public class CalculateAverage_serkan_ozal {
                 normalizedKeyLength = Integer.reverseBytes(normalizedKeyLength);
             }
 
+            long keyStartOffset = keyStartArrayOffset + Unsafe.ARRAY_BYTE_BASE_OFFSET;
             int alignedKeyLength = normalizedKeyLength & 0xFFFFFFF8;
             int i;
             for (i = keyCheckIdx; i < alignedKeyLength; i += Long.BYTES) {
@@ -663,18 +683,20 @@ public class CalculateAverage_serkan_ozal {
 
         private void merge(Map<String, KeyResult> resultMap) {
             // Merge this local map into global result map
-            for (int i = 0; i < MAP_SIZE; i += ENTRY_SIZE) {
-                int baseOffset = Unsafe.ARRAY_BYTE_BASE_OFFSET + i;
-                int keyLength = U.getInt(data, baseOffset + KEY_SIZE_OFFSET);
+            Arrays.sort(entryOffsets, 0, entryOffsetIdx);
+            for (int i = 0; i < entryOffsetIdx; i++) {
+                long entryOffset = entryOffsets[i];
+                int keyLength = U.getInt(data, entryOffset + KEY_SIZE_OFFSET);
                 if (keyLength == 0) {
                     // No entry is available for this index, so continue iterating
                     continue;
                 }
-                String key = new String(data, i + KEY_OFFSET, keyLength, StandardCharsets.UTF_8);
-                int count = U.getInt(data, baseOffset + COUNT_OFFSET);
-                short minValue = U.getShort(data, baseOffset + MIN_VALUE_OFFSET);
-                short maxValue = U.getShort(data, baseOffset + MAX_VALUE_OFFSET);
-                long sum = U.getLong(data, baseOffset + VALUE_SUM_OFFSET);
+                int entryArrayIdx = (int) (entryOffset + KEY_OFFSET - Unsafe.ARRAY_BYTE_BASE_OFFSET);
+                String key = new String(data, entryArrayIdx, keyLength, StandardCharsets.UTF_8);
+                int count = U.getInt(data, entryOffset + COUNT_OFFSET);
+                short minValue = U.getShort(data, entryOffset + MIN_VALUE_OFFSET);
+                short maxValue = U.getShort(data, entryOffset + MAX_VALUE_OFFSET);
+                long sum = U.getLong(data, entryOffset + VALUE_SUM_OFFSET);
                 KeyResult result = new KeyResult(count, minValue, maxValue, sum);
                 KeyResult existingResult = resultMap.get(key);
                 if (existingResult == null) {
