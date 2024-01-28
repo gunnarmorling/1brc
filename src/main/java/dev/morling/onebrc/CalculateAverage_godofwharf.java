@@ -716,24 +716,24 @@ public class CalculateAverage_godofwharf {
         // h2 - secondary hashcode of key
         private int probe(final int idx,
                           final State.AggregationKey key) {
-            int curIdx = idx;
             // if we find an empty slot, return immediately
-            if (tableEntries[curIdx] == null) {
-                return curIdx;
+            if (tableEntries[idx] == null) {
+                return idx;
             }
             // we found a non-empty slot
             // check if we can use it
             // to check if a key exists in map, we compare both the hash codes and then check for key equality
-            boolean exists = tableEntries[curIdx].key.hashCodes[0] == key.hashCodes[0] &&
-                    tableEntries[curIdx].key.hashCodes[1] == key.hashCodes[1] &&
-                    tableEntries[curIdx].key.equals(key);
+            boolean exists = tableEntries[idx].key.hashCodes[0] == key.hashCodes[0] &&
+                    tableEntries[idx].key.hashCodes[1] == key.hashCodes[1] &&
+                    tableEntries[idx].key.equals(key);
             if (exists) {
-                return curIdx;
+                return idx;
             }
 
             // we need to search for other slots (empty/non-empty)
             // update curIdx to the next slot
-            curIdx = mod(curIdx + key.hashCodes[1], size);
+            int attempts = 1;
+            int nextIdx = size - mod(idx + attempts * key.hashCodes[1], size);
 
             // iterate until we find a slot which meets any of the following criteria
             // - slot is empty
@@ -741,18 +741,22 @@ public class CalculateAverage_godofwharf {
             // - h1 doesn't match with key (or)
             // - h1 matches but h2 doesn't match with key (or)
             // - h1 and h2 match but station name doesn't match
-            while (curIdx != idx &&
-                    tableEntries[curIdx] != null &&
-                    (tableEntries[curIdx].key.hashCodes[0] != key.hashCodes[0] ||
-                            tableEntries[curIdx].key.hashCodes[1] != key.hashCodes[1] ||
-                            !tableEntries[curIdx].key.equals(key))) {
-                curIdx = mod(curIdx + key.hashCodes[1], size);
+            while (nextIdx != idx &&
+                    tableEntries[nextIdx] != null &&
+                    (tableEntries[nextIdx].key.hashCodes[0] != key.hashCodes[0] ||
+                            tableEntries[nextIdx].key.hashCodes[1] != key.hashCodes[1] ||
+                            !tableEntries[nextIdx].key.equals(key))) {
+                attempts++;
+                nextIdx = size - mod(idx + (attempts * (long) key.hashCodes[1]), size);
+            }
+            if (attempts > 1) {
+                System.out.printf("Probe tries = %d%n", attempts);
             }
             // if curIdx matches the idx we started with, then a cycle has occurred
-            if (curIdx == idx) {
+            if (nextIdx == idx) {
                 throw new IllegalStateException("Probe failed because we can't find slot for key");
             }
-            return curIdx;
+            return nextIdx;
         }
 
         public static class TableEntry {
