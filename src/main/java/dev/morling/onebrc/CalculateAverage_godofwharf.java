@@ -358,7 +358,8 @@ public class CalculateAverage_godofwharf {
         }
 
         private static int computeHashCode1(final byte[] b) {
-            int result = -2;
+            // for perfect hasing, set seed as -2 and hash map size to 1<<14
+            int result = 1;
             for (byte value : b) {
                 result = 31 * result + value;
             }
@@ -366,7 +367,7 @@ public class CalculateAverage_godofwharf {
         }
 
         private static int computeHashCode2(final byte[] b) {
-            int result = -2;
+            int result = 1;
             for (byte value : b) {
                 result = 127 * result + value;
             }
