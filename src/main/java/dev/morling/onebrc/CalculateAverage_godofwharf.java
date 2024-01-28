@@ -749,9 +749,9 @@ public class CalculateAverage_godofwharf {
                 attempts++;
                 nextIdx = size - mod(idx + (attempts * (long) key.hashCodes[1]), size);
             }
-            if (attempts > 1) {
-                System.out.printf("Probe tries = %d%n", attempts);
-            }
+//            if (attempts > 1) {
+//                System.out.printf("Probe tries = %d%n", attempts);
+//            }
             // if curIdx matches the idx we started with, then a cycle has occurred
             if (nextIdx == idx) {
                 throw new IllegalStateException("Probe failed because we can't find slot for key");
