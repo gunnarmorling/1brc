@@ -20,7 +20,6 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
-import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -70,9 +69,11 @@ public class CalculateAverage_dpsoft {
 
     // Credits to @spullara
     private static List<FileSegment> getMemorySegments(int numberOfSegments) throws IOException {
+
         try (var fileChannel = FileChannel.open(Path.of(FILE), StandardOpenOption.READ)) {
             var memorySegment = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size(), Arena.global());
             long fileSize = memorySegment.byteSize();
+
             long segmentSize = fileSize / numberOfSegments;
 
             List<FileSegment> segments = new ArrayList<>(numberOfSegments);
@@ -80,6 +81,11 @@ public class CalculateAverage_dpsoft {
             if (segmentSize < 1_000_000) {
                 segments.add(new FileSegment(0, fileSize));
                 return segments;
+            }
+
+            while (segmentSize >= Integer.MAX_VALUE) {
+                numberOfSegments += 1;
+                segmentSize = fileSize / numberOfSegments;
             }
 
             for (int i = 0; i < numberOfSegments; i++) {
@@ -155,7 +161,7 @@ public class CalculateAverage_dpsoft {
             int hash = 0;
             int idx = mbb.position();
             outer: while (true) {
-                int name = getInt(mbb);
+                int name = mbb.getInt();
                 for (int c = 0; c < 4; c++) {
                     int b = (name >> (c << 3)) & 0xFF;
                     if (b == ';') {
@@ -203,16 +209,16 @@ public class CalculateAverage_dpsoft {
             return measurements;
         }
 
-        private static int getInt(MappedByteBuffer mbb) {
-            if (mbb.remaining() >= 4) {
-                return mbb.getInt();
-            }
-            else {
-                byte[] bytes = new byte[4];
-                mbb.get(bytes, 0, mbb.remaining());
-                return ByteBuffer.wrap(bytes).getInt();
-            }
-        }
+        // private static int getInt(MappedByteBuffer mbb) {
+        // if (mbb.remaining() >= 4) {
+        // return mbb.getInt();
+        // }
+        // else {
+        // byte[] bytes = new byte[4];
+        // mbb.get(bytes, 0, mbb.remaining());
+        // return ByteBuffer.wrap(bytes).getInt();
+        // }
+        // }
 
         // Skips to the first line in the buffer, used for chunk processing.
         private static void skipToFirstLine(MappedByteBuffer mbb) {
