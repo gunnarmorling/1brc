@@ -20,6 +20,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
+import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -154,7 +155,7 @@ public class CalculateAverage_dpsoft {
             int hash = 0;
             int idx = mbb.position();
             outer: while (true) {
-                int name = mbb.getInt();
+                int name = getInt(mbb);
                 for (int c = 0; c < 4; c++) {
                     int b = (name >> (c << 3)) & 0xFF;
                     if (b == ';') {
@@ -200,6 +201,17 @@ public class CalculateAverage_dpsoft {
 
         public MeasurementMap getMeasurements() {
             return measurements;
+        }
+
+        private static int getInt(MappedByteBuffer mbb) {
+            if (mbb.remaining() >= 4) {
+                return mbb.getInt();
+            }
+            else {
+                byte[] bytes = new byte[4];
+                mbb.get(bytes, 0, mbb.remaining());
+                return ByteBuffer.wrap(bytes).getInt();
+            }
         }
 
         // Skips to the first line in the buffer, used for chunk processing.
