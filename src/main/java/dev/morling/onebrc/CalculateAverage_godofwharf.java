@@ -254,7 +254,7 @@ public class CalculateAverage_godofwharf {
             int[] positions = new int[64];
             while (j < loopBound) {
                 Vector<Byte> vec = ByteVector.fromArray(PREFERRED_SPECIES, page, j);
-                long res = vec.eq(NEW_LINE_VEC).toLong();
+                long res = NEW_LINE_VEC.eq(vec).toLong();
                 int k = 0;
                 int bitCount = Long.bitCount(res);
                 while (res > 0) {
@@ -746,6 +746,8 @@ public class CalculateAverage_godofwharf {
                     (tableEntries[nextIdx].key.hashCodes[0] != key.hashCodes[0] ||
                             tableEntries[nextIdx].key.hashCodes[1] != key.hashCodes[1] ||
                             !tableEntries[nextIdx].key.equals(key))) {
+                System.out.println("Collision between two strings [Existing key = %s, Given key = %s]".formatted(
+                        tableEntries[nextIdx].key.toString(), key.toString()));
                 attempts++;
                 nextIdx = size - mod(idx + (attempts * (long) key.hashCodes[1]), size);
             }
