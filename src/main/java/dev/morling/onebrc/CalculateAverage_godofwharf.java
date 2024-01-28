@@ -129,6 +129,9 @@ public class CalculateAverage_godofwharf {
                                 int tid = (int) Thread.currentThread().threadId();
                                 byte[] currentPage = new byte[PAGE_SIZE + MAX_STR_LEN];
                                 long timer = 0;
+                                long timer1 = 0;
+                                long timer2 = 0;
+                                long timer3 = 0;
                                 // iterate over each page in split
                                 for (Page page : split.pages) {
                                     // this byte buffer should end with '\n' or EOF
@@ -155,19 +158,28 @@ public class CalculateAverage_godofwharf {
                                         int stationLen = lineLength - temperatureLen - 1;
                                         byte[] temperature = new byte[temperatureLen];
                                         byte[] station = new byte[stationLen];
+                                        long time3 = System.nanoTime();
                                         System.arraycopy(currentPage, prevOffset, station, 0, stationLen);
                                         System.arraycopy(currentPage, prevOffset + stationLen + 1, temperature, 0, temperatureLen);
+                                        timer1 += System.nanoTime() - time3;
+                                        long time4 = System.nanoTime();
                                         int[] hashCodes = computeHashCodes(station);
+                                        timer2 += System.nanoTime() - time4;
                                         Measurement m = new Measurement(
                                                 station, stationLen, temperature, temperatureLen, false, hashCodes);
+                                        long time5 = System.nanoTime();
                                         threadLocalStates[tid].update(m);
+                                        timer3 += System.nanoTime() - time5;
                                         prevOffset = curOffset + 1;
                                         j++;
                                     }
                                     // Explicitly commented out because unload seems to take a lot of time
                                     // segment.unload();
                                 }
-                                printDebugMessage("Spent a total of %d ns in reading contents from file %n".formatted(timer));
+                                printDebugMessage("Spent a total of %d ns on reading contents from file %n".formatted(timer));
+                                printDebugMessage("Spent a total of %d ns on copying byte arrays %n".formatted(timer1));
+                                printDebugMessage("Spent a total of %d ns on computing hash code %n".formatted(timer2));
+                                printDebugMessage("Spent a total of %d ns on updating map %n".formatted(timer3));
                             }));
                         });
                 for (Future<?> future : futures) {
