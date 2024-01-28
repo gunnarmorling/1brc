@@ -40,6 +40,7 @@ public class CalculateAverage_roman_r_m {
     private static final long SEMICOLON_MASK = broadcast((byte) ';');
     private static final long LINE_END_MASK = broadcast((byte) '\n');
     private static final long DOT_MASK = broadcast((byte) '.');
+    private static final long ZEROES_MASK = broadcast((byte) '0');
 
     // from netty
 
@@ -64,117 +65,13 @@ public class CalculateAverage_roman_r_m {
         return start + Long.numberOfTrailingZeros(i) / 8;
     }
 
-    static class Worker {
-        private final MemorySegment ms;
-        private final long end;
-        private long offset;
+    static int hashFull(long word) {
+        return (int) (word ^ (word >>> 32));
+    }
 
-        public Worker(FileChannel channel, long start, long end) {
-            try {
-                this.ms = channel.map(FileChannel.MapMode.READ_ONLY, start, end - start, Arena.ofConfined());
-                this.offset = ms.address();
-                this.end = ms.address() + end - start;
-            }
-            catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        private void parseName(ByteString station) {
-            long start = offset;
-            long next = UNSAFE.getLong(offset);
-            long pattern = applyPattern(next, SEMICOLON_MASK);
-            int bytes;
-            if (pattern != 0) {
-                bytes = Long.numberOfTrailingZeros(pattern) / 8;
-                offset += bytes;
-                long h = Long.reverseBytes(next) >>> (8 * (8 - bytes));
-                station.hash = (int) (h ^ (h >>> 32));
-            }
-            else {
-                long h = next;
-                station.hash = (int) (h ^ (h >>> 32));
-                while (pattern == 0) {
-                    offset += 8;
-                    next = UNSAFE.getLong(offset);
-                    pattern = applyPattern(next, SEMICOLON_MASK);
-                }
-                bytes = Long.numberOfTrailingZeros(pattern) / 8;
-                offset += bytes;
-            }
-
-            int len = (int) (offset - start);
-            station.offset = start;
-            station.len = len;
-            station.tail = next & ((1L << (8 * bytes)) - 1);
-
-            offset++;
-        }
-
-        int parseNumberFast() {
-            long encodedVal = UNSAFE.getLong(offset);
-
-            int neg = 1 - Integer.bitCount((int) (encodedVal & 0x10));
-            encodedVal >>>= 8 * neg;
-
-            var len = applyPattern(encodedVal, DOT_MASK);
-            len = Long.numberOfTrailingZeros(len) / 8;
-
-            encodedVal ^= broadcast((byte) 0x30);
-
-            int intPart = (int) (encodedVal & ((1 << (8 * len)) - 1));
-            intPart <<= 8 * (2 - len);
-            intPart *= (100 * 256 + 10);
-            intPart = (intPart & 0x3FF80) >>> 8;
-
-            int frac = (int) ((encodedVal >>> (8 * (len + 1))) & 0xFF);
-
-            offset += neg + len + 3; // 1 for . + 1 for fractional part + 1 for new line char
-            int sign = 1 - 2 * neg;
-            int val = intPart + frac;
-            return sign * val;
-        }
-
-        int parseNumberSlow() {
-            int neg = 1 - Integer.bitCount(UNSAFE.getByte(offset) & 0x10);
-            offset += neg;
-
-            int val = UNSAFE.getByte(offset++) - '0';
-            byte b;
-            while ((b = UNSAFE.getByte(offset++)) != '.') {
-                val = val * 10 + (b - '0');
-            }
-            b = UNSAFE.getByte(offset);
-            val = val * 10 + (b - '0');
-            offset += 2;
-            val *= 1 - 2 * neg;
-            return val;
-        }
-
-        int parseNumber() {
-            if (end - offset >= 8) {
-                return parseNumberFast();
-            }
-            else {
-                return parseNumberSlow();
-            }
-        }
-
-        public TreeMap<String, ResultRow> run() {
-            var resultStore = new ResultStore();
-            var station = new ByteString(ms);
-
-            while (offset < end) {
-                parseName(station);
-                long val = parseNumber();
-                var a = resultStore.get(station);
-                a.min = Math.min(a.min, val);
-                a.max = Math.max(a.max, val);
-                a.sum += val;
-                a.count++;
-            }
-            return resultStore.toMap();
-        }
+    static int hashPartial(long word, int bytes) {
+        long h = Long.reverseBytes(word) >>> (8 * (8 - bytes));
+        return (int) (h ^ (h >>> 32));
     }
 
     public static void main(String[] args) throws Exception {
@@ -200,12 +97,100 @@ public class CalculateAverage_roman_r_m {
         var result = IntStream.range(0, numThreads)
                 .parallel()
                 .mapToObj(i -> {
-                    long start = i == 0 ? 0 : bounds[i - 1] + 1;
-                    long end = bounds[i];
-                    Worker worker = new Worker(channel, start, end);
-                    var res = worker.run();
-                    worker.ms.unload();
-                    return res;
+                    try {
+                        long segmentStart = i == 0 ? 0 : bounds[i - 1] + 1;
+                        long segmentEnd = bounds[i];
+                        var segment = channel.map(FileChannel.MapMode.READ_ONLY, segmentStart, segmentEnd - segmentStart, Arena.ofConfined());
+
+                        var resultStore = new ResultStore();
+                        var station = new ByteString(segment);
+                        long offset = segment.address();
+                        long end = offset + segment.byteSize();
+                        long tailMask;
+                        while (offset < end) {
+                            // parsing station name
+                            long start = offset;
+                            long next = UNSAFE.getLong(offset);
+                            long pattern = applyPattern(next, SEMICOLON_MASK);
+                            int bytes;
+                            if (pattern == 0) {
+                                station.hash = hashFull(next);
+                                do {
+                                    offset += 8;
+                                    next = UNSAFE.getLong(offset);
+                                    pattern = applyPattern(next, SEMICOLON_MASK);
+                                } while (pattern == 0);
+
+                                bytes = Long.numberOfTrailingZeros(pattern) / 8;
+                                offset += bytes;
+                                tailMask = ((1L << (8 * bytes)) - 1);
+                            }
+                            else {
+                                bytes = Long.numberOfTrailingZeros(pattern) / 8;
+                                offset += bytes;
+                                tailMask = ((1L << (8 * bytes)) - 1);
+
+                                station.hash = hashPartial(next, bytes);
+                            }
+
+                            int len = (int) (offset - start);
+                            station.offset = start;
+                            station.len = len;
+                            station.tail = next & tailMask;
+
+                            offset++;
+
+                            // parsing temperature
+                            // TODO next may contain temperature as well, maybe try using it if we know the full number is there
+                            // 8 - bytes >= 5 -> bytes <= 3
+                            long val;
+                            if (end - offset >= 8) {
+                                long encodedVal = UNSAFE.getLong(offset);
+
+                                int neg = 1 - Integer.bitCount((int) (encodedVal & 0x10));
+                                encodedVal >>>= 8 * neg;
+
+                                long numLen = applyPattern(encodedVal, DOT_MASK);
+                                numLen = Long.numberOfTrailingZeros(numLen) / 8;
+
+                                encodedVal ^= ZEROES_MASK;
+
+                                int intPart = (int) (encodedVal & ((1 << (8 * numLen)) - 1));
+                                intPart <<= 8 * (2 - numLen);
+                                intPart *= (100 * 256 + 10);
+                                intPart = (intPart & 0x3FF80) >>> 8;
+
+                                int frac = (int) ((encodedVal >>> (8 * (numLen + 1))) & 0xFF);
+
+                                offset += neg + numLen + 3; // 1 for . + 1 for fractional part + 1 for new line char
+                                int sign = 1 - 2 * neg;
+                                val = sign * (intPart + frac);
+                            }
+                            else {
+                                int neg = 1 - Integer.bitCount(UNSAFE.getByte(offset) & 0x10);
+                                offset += neg;
+
+                                val = UNSAFE.getByte(offset++) - '0';
+                                byte b;
+                                while ((b = UNSAFE.getByte(offset++)) != '.') {
+                                    val = val * 10 + (b - '0');
+                                }
+                                b = UNSAFE.getByte(offset);
+                                val = val * 10 + (b - '0');
+                                offset += 2;
+                                val *= 1 - (2L * neg);
+                            }
+
+                            resultStore.update(station, (int) val);
+                        }
+
+                        segment.unload();
+
+                        return resultStore.toMap();
+                    }
+                    catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
                 }).reduce((m1, m2) -> {
                     m2.forEach((k, v) -> m1.merge(k, v, ResultRow::merge));
                     return m1;
@@ -275,10 +260,17 @@ public class CalculateAverage_roman_r_m {
     }
 
     private static final class ResultRow {
-        long min = 1000;
-        long sum = 0;
-        long max = -1000;
-        int count = 0;
+        long min;
+        long sum;
+        long max;
+        int count;
+
+        public ResultRow(int[] values) {
+            min = values[0];
+            max = values[1];
+            sum = values[2];
+            count = values[3];
+        }
 
         public String toString() {
             return round(min / 10.0) + "/" + round(sum / 10.0 / count) + "/" + round(max / 10.0);
@@ -300,29 +292,38 @@ public class CalculateAverage_roman_r_m {
     static class ResultStore {
         private static final int SIZE = 16384;
         private final ByteString[] keys = new ByteString[SIZE];
-        private final ResultRow[] values = new ResultRow[SIZE];
+        private final int[][] values = new int[SIZE][];
 
-        ResultRow get(ByteString s) {
+        void update(ByteString s, int value) {
             int h = s.hashCode();
             int idx = (SIZE - 1) & h;
 
+            var keys = this.keys;
+
+            int idx0 = idx;
             int i = 0;
-            while (keys[idx] != null && !keys[idx].equals(s)) {
-                i++;
-                idx = (idx + i * i) % SIZE;
+            while (true) {
+                if (keys[idx] != null && keys[idx].equals(s)) {
+                    values[idx][0] = Math.min(values[idx][0], value);
+                    values[idx][1] = Math.max(values[idx][1], value);
+                    values[idx][2] += value;
+                    values[idx][3] += 1;
+                    return;
+                }
+                else if (keys[idx] == null) {
+                    keys[idx] = s.copy();
+                    values[idx] = new int[4];
+                    values[idx][0] = value;
+                    values[idx][1] = value;
+                    values[idx][2] = value;
+                    values[idx][3] = 1;
+                    return;
+                }
+                else {
+                    i++;
+                    idx = (idx0 + i * i) % SIZE;
+                }
             }
-            ResultRow result;
-            if (keys[idx] == null) {
-                keys[idx] = s.copy();
-                result = new ResultRow();
-                values[idx] = result;
-            }
-            else {
-                result = values[idx];
-                // TODO see it it makes any difference
-                // keys[idx].offset = s.offset;
-            }
-            return result;
         }
 
         TreeMap<String, ResultRow> toMap() {
@@ -330,7 +331,7 @@ public class CalculateAverage_roman_r_m {
             var result = new TreeMap<String, ResultRow>();
             for (int i = 0; i < SIZE; i++) {
                 if (keys[i] != null) {
-                    result.put(keys[i].asString(buf), values[i]);
+                    result.put(keys[i].asString(buf), new ResultRow(values[i]));
                 }
             }
             return result;

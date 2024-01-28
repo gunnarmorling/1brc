@@ -79,13 +79,13 @@ public class CalculateAverage_gonix {
 
 class Aggregator {
     private static final int MAX_STATIONS = 10_000;
-    private static final int MAX_STATION_SIZE = (100 * 4) / 8 + 5;
+    private static final int MAX_STATION_SIZE = Math.ceilDiv(100, 8) + 5;
     private static final int INDEX_SIZE = 1024 * 1024;
     private static final int INDEX_MASK = INDEX_SIZE - 1;
-    private static final int FLD_MAX = 0;
-    private static final int FLD_MIN = 1;
-    private static final int FLD_SUM = 2;
-    private static final int FLD_COUNT = 3;
+    private static final int FLD_COUNT = 0;
+    private static final int FLD_SUM = 1;
+    private static final int FLD_MIN = 2;
+    private static final int FLD_MAX = 3;
 
     // Poor man's hash map: hash code to offset in `mem`.
     private final int[] index;
@@ -205,27 +205,15 @@ class Aggregator {
 
     private void add(ByteBuffer buf, int start, long tailAndLen, int hash, int measurement) {
         int idx = hash & INDEX_MASK;
-        while (true) {
-            if (index[idx] != 0) {
-                int offset = index[idx];
-                if (keyEqual(offset, buf, start, tailAndLen)) {
-                    int pos = offset + (int) (tailAndLen & 0xFF) + 1;
-                    mem[pos + FLD_MIN] = Math.min((int) measurement, (int) mem[pos + FLD_MIN]);
-                    mem[pos + FLD_MAX] = Math.max((int) measurement, (int) mem[pos + FLD_MAX]);
-                    mem[pos + FLD_SUM] += measurement;
-                    mem[pos + FLD_COUNT] += 1;
-                    return;
-                }
-            }
-            else {
-                index[idx] = create(buf, start, tailAndLen, hash, measurement);
+        for (; index[idx] != 0; idx = (idx + 1) & INDEX_MASK) {
+            if (update(index[idx], buf, start, tailAndLen, measurement)) {
                 return;
             }
-            idx = (idx + 1) & INDEX_MASK;
         }
+        index[idx] = create(buf, start, tailAndLen, measurement);
     }
 
-    private int create(ByteBuffer buf, int start, long tailAndLen, int hash, int measurement) {
+    private int create(ByteBuffer buf, int start, long tailAndLen, int measurement) {
         int offset = memUsed;
 
         mem[offset] = tailAndLen;
@@ -248,8 +236,8 @@ class Aggregator {
         return offset;
     }
 
-    private boolean keyEqual(int offset, ByteBuffer buf, int start, long tailAndLen) {
-
+    private boolean update(int offset, ByteBuffer buf, int start, long tailAndLen, int measurement) {
+        var mem = this.mem;
         if (mem[offset] != tailAndLen) {
             return false;
         }
@@ -263,6 +251,16 @@ class Aggregator {
             memPos += 1;
             bufPos += 8;
         }
+
+        mem[memPos + FLD_COUNT] += 1;
+        mem[memPos + FLD_SUM] += measurement;
+        if (measurement < mem[memPos + FLD_MIN]) {
+            mem[memPos + FLD_MIN] = measurement;
+        }
+        if (measurement > mem[memPos + FLD_MAX]) {
+            mem[memPos + FLD_MAX] = measurement;
+        }
+
         return true;
     }
 
