@@ -320,8 +320,8 @@ public class CalculateAverage_giovannicuccu {
                 long size = memorySegment.byteSize();
                 int offset = 0;
                 long safe = size - KEY_SIZE;
-                ByteBuffer byteBuffer = memorySegment.asByteBuffer();
-                byteBuffer.order(ByteOrder.LITTLE_ENDIAN);
+                // ByteBuffer byteBuffer = memorySegment.asByteBuffer();
+                // byteBuffer.order(ByteOrder.LITTLE_ENDIAN);
                 ByteVector chunk1 = ByteVector.zero(BYTE_SPECIES);
                 ByteVector chunk2 = ByteVector.zero(BYTE_SPECIES);
                 while (offset < safe) {
@@ -367,7 +367,8 @@ public class CalculateAverage_giovannicuccu {
                     }
                     else {
                         byte[] bytes = new byte[BYTE_SPECIES_LANES];
-                        byteBuffer.get(offset + len, bytes, 0, (int) (size - offset - len));
+                        MemorySegment.copy(memorySegment, offset + len, MemorySegment.ofArray(bytes), 0, (size - offset - len));
+                        // byteBuffer.get(offset + len, bytes, 0, (int) (size - offset - len));
                         chunk1 = ByteVector.fromArray(BYTE_SPECIES, bytes, 0);
                         equals = chunk1.compare(VectorOperators.EQ, separators).firstTrue();
                         len += equals;
@@ -386,17 +387,17 @@ public class CalculateAverage_giovannicuccu {
                     else {
                         int currentPosition = offset;
                         int sign = 1;
-                        byte b = byteBuffer.get(currentPosition++);
+                        byte b = memorySegment.get(ValueLayout.JAVA_BYTE, currentPosition++);
                         if (b == '-') {
                             sign = -1;
                         }
                         else {
                             value = b - '0';
                         }
-                        while ((b = byteBuffer.get(currentPosition++)) != '.') {
+                        while ((b = memorySegment.get(ValueLayout.JAVA_BYTE, currentPosition++)) != '.') {
                             value = value * 10 + (b - '0');
                         }
-                        b = byteBuffer.get(currentPosition);
+                        b = memorySegment.get(ValueLayout.JAVA_BYTE, currentPosition);
                         value = value * 10 + (b - '0');
                         if (sign == -1) {
                             value = -value;
