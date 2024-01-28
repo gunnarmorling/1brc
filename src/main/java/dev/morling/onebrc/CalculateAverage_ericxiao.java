@@ -156,10 +156,6 @@ public class CalculateAverage_ericxiao {
 
             long keyStartAddress = byteStart;
 
-            // while (byteStart % 8 != 0) {
-            // byteStart++;
-            // }
-
             byteStart = (byteStart + 7) & ~7;
 
             final int vectorLoops = (int) (endAddress - byteStart) / 8;
