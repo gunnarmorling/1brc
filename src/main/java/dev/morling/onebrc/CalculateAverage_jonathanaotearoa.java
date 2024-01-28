@@ -42,8 +42,7 @@ public class CalculateAverage_jonathanaotearoa {
             final Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
             theUnsafe.setAccessible(true);
             UNSAFE = (Unsafe) theUnsafe.get(null);
-        }
-        catch (NoSuchFieldException | IllegalAccessException e) {
+        } catch (NoSuchFieldException | IllegalAccessException e) {
             throw new RuntimeException(STR."Error getting instance of \{Unsafe.class.getName()}");
         }
     }
@@ -141,7 +140,7 @@ public class CalculateAverage_jonathanaotearoa {
      * Handling tiny files in a separate method reduces the complexity of {@link #processFile(FileChannel, long)}.
      * </p>
      *
-     * @param fc the file channel to read from.
+     * @param fc       the file channel to read from.
      * @param fileSize the file size in bytes.
      * @return a sorted map of station data keyed by station name.
      * @throws IOException if an error occurs reading from the file channel.
@@ -167,7 +166,7 @@ public class CalculateAverage_jonathanaotearoa {
     /**
      * An optimised method for processing files > {@link Long#BYTES} in size.
      *
-     * @param fc the file channel to map into memory.
+     * @param fc       the file channel to map into memory.
      * @param fileSize the file size in bytes.
      * @return a sorted map of station data keyed by station name.
      * @throws IOException if an error occurs mapping the file channel into memory.
@@ -197,7 +196,7 @@ public class CalculateAverage_jonathanaotearoa {
      * </p>
      *
      * @param fileAddress the address of the file.
-     * @param fileSize the size of the file in bytes.
+     * @param fileSize    the size of the file in bytes.
      * @return a stream of chunks.
      */
     private static Stream<Chunk> createChunks(final long fileAddress, final long fileSize) {
@@ -327,10 +326,10 @@ public class CalculateAverage_jonathanaotearoa {
     /**
      * Represents a portion of a file containing 1 or more whole lines.
      *
-     * @param startAddress the memory address of the first byte.
+     * @param startAddress    the memory address of the first byte.
      * @param lastByteAddress the memory address of the last byte.
      * @param lastWordAddress the memory address of the last whole word.
-     * @param isLast whether this is the last chunk.
+     * @param isLast          whether this is the last chunk.
      */
     private record Chunk(long startAddress, long lastByteAddress, long lastWordAddress, boolean isLast) {
 
@@ -517,11 +516,20 @@ public class CalculateAverage_jonathanaotearoa {
             return index;
         }
 
-        private boolean isCollision(final int index, final int nameHash, final long nameAddress, final byte nameSize) {
+        private boolean isCollision(final int index, final long nameHash, final long nameAddress, final byte nameSize) {
             final StationData existing = table[index];
-            return existing != null
-                    && nameHash != existing.nameHash
-                    && !isMemoryEqual(nameAddress, existing.nameAddress, nameSize);
+            if (existing == null) {
+                return false;
+            }
+            if (nameHash != existing.nameHash) {
+                return true;
+            }
+            if (nameSize != existing.nameSize) {
+                return true;
+            }
+            // Last resort; check if the names are the same.
+            // This is real performance hit :(
+            return !isMemoryEqual(nameAddress, existing.nameAddress, nameSize);
         }
 
         /**
@@ -529,28 +537,17 @@ public class CalculateAverage_jonathanaotearoa {
          *
          * @param address1 the address of the first location.
          * @param address2 the address of the second locations.
-         * @param size the number of bytes to check for equality.
+         * @param size     the number of bytes to check for equality.
          * @return true if both addresses contain the same bytes.
          */
         private static boolean isMemoryEqual(final long address1, final long address2, final byte size) {
-            byte offset = 0;
-            if (size >= Long.BYTES) {
-                while (offset <= size - Long.BYTES) {
-                    final long l1 = UNSAFE.getLong(address1 + offset);
-                    final long l2 = UNSAFE.getLong(address2 + offset);
-                    if (l1 != l2) {
-                        return false;
-                    }
-                    offset += Long.BYTES;
-                }
-            }
-            while (offset < size) {
+            // Checking 1 byte at a time, so we can bail as early as possible.
+            for (int offset = 0; offset < size; offset++) {
                 final byte b1 = UNSAFE.getByte(address1 + offset);
                 final byte b2 = UNSAFE.getByte(address2 + offset);
                 if (b1 != b2) {
                     return false;
                 }
-                offset++;
             }
             return true;
         }
@@ -575,17 +572,14 @@ public class CalculateAverage_jonathanaotearoa {
                         final String actual = STR."\{resultsToString(results)}\n";
                         if (actual.equals(expected)) {
                             testResults.append("Passed\n");
-                        }
-                        else {
+                        } else {
                             testResults.append("Failed. Actual output does not match expected\n");
                         }
-                    }
-                    catch (IOException e) {
+                    } catch (IOException e) {
                         throw new RuntimeException(STR."Error testing '\{filePath.getFileName()}");
                     }
                 });
-            }
-            finally {
+            } finally {
                 System.out.println(testResults);
             }
         }
