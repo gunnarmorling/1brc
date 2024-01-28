@@ -67,7 +67,8 @@ public final class CalculateAverage_JaimePolidura {
         FileChannel channel = new RandomAccessFile(FILE, "r").getChannel();
         MemorySegment mmappedFile = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size(), Arena.global());
 
-        int nWorkers = channel.size() > 1024 ? Runtime.getRuntime().availableProcessors() : 1;
+        int nWorkers = channel.size() > 1024 * 1024 ? 32 : 1;
+        // int nWorkers = 32;
         Worker[] workers = new Worker[nWorkers];
         long quantityPerWorker = Math.floorDiv(channel.size(), nWorkers);
         long quantityLastWorker = quantityPerWorker + (channel.size() % nWorkers);
