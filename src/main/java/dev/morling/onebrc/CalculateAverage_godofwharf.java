@@ -155,12 +155,10 @@ public class CalculateAverage_godofwharf {
                                         int stationLen = lineLength - temperatureLen - 1;
                                         byte[] station = new byte[stationLen];
                                         System.arraycopy(currentPage, prevOffset, station, 0, stationLen);
-                                        //System.arraycopy(currentPage, prevOffset + stationLen + 1, temperature, 0, temperatureLen);
                                         int[] hashCodes = computeHashCodes(station);
                                         double temperature =
                                                 NumberUtils.parseDouble2(currentPage, prevOffset + stationLen + 1, temperatureLen);
-                                        Measurement m = new Measurement(
-                                                station, stationLen, temperature, false, hashCodes);
+                                        Measurement m = new Measurement(station, temperature, hashCodes);
                                         threadLocalStates[tid].update(m);
                                         prevOffset = curOffset + 1;
                                         j++;
@@ -476,23 +474,17 @@ public class CalculateAverage_godofwharf {
 
         public static class AggregationKey {
             private final byte[] station;
-            private final int stationLen;
-            private final boolean isAscii;
             private final int[] hashCodes;
 
             public AggregationKey(final byte[] station,
-                                  final int stationLen,
-                                  final boolean isAscii,
                                   final int[] hashCodes) {
                 this.station = station;
-                this.stationLen = stationLen;
-                this.isAscii = isAscii;
                 this.hashCodes = hashCodes;
             }
 
             @Override
             public String toString() {
-                return new String(station, 0, stationLen, isAscii ? US_ASCII : UTF_8);
+                return new String(station, UTF_8);
             }
 
             @Override
@@ -506,7 +498,7 @@ public class CalculateAverage_godofwharf {
                     return false;
                 }
                 AggregationKey sk = (AggregationKey) other;
-                return stationLen == sk.stationLen && Arrays.mismatch(station, sk.station) < 0;
+                return station.length == sk.station.length && Arrays.mismatch(station, sk.station) < 0;
 //                return stationLen == sk.stationLen &&
 //                        && checkArrayEquals(station, sk.station, stationLen);
             }
@@ -643,23 +635,17 @@ public class CalculateAverage_godofwharf {
 
     // record classes
     record Measurement(byte[] station,
-                       int stationLen,
                        double temperature,
-                       boolean isAscii,
                        int[] hashCodes,
                        State.AggregationKey aggregationKey) {
 
     public Measurement(byte[] station,
-                       int stationLen,
                        double temperature,
-                       boolean isAscii,
                        int[] hashCodes) {
             this(station,
-                    stationLen,
                     temperature,
-                    isAscii,
                     hashCodes,
-                    new State.AggregationKey(station, stationLen, isAscii, hashCodes));
+                    new State.AggregationKey(station, hashCodes));
         }
 
     }
