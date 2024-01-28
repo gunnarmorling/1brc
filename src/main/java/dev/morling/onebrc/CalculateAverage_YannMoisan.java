@@ -104,10 +104,7 @@ public class CalculateAverage_YannMoisan {
                     break;
                 field[fieldCurrentIndex++] = fieldByte;
             }
-            var dst = new byte[fieldCurrentIndex];
-            System.arraycopy(field, 0, dst, 0, fieldCurrentIndex);
-            var fieldStr = new Location(dst);
-            // System.arraycopy(field, 0, dst, 0, fieldCurrentIndex);
+            var fieldStr = new Location(Arrays.copyOfRange(field, 0, fieldCurrentIndex));
             var number = 0;
             var sign = 1;
             while (bb.position() < limit) {
@@ -119,9 +116,15 @@ public class CalculateAverage_YannMoisan {
                 else if (numberByte != '.')
                     number = number * 10 + (numberByte - '0');
             }
-            stats.computeIfAbsent(fieldStr,
-                    k -> new Stat())
-                    .update(sign * number);
+            var v = stats.get(fieldStr);
+            if (v == null) {
+                var vv = new Stat();
+                vv.update(sign * number);
+                stats.put(fieldStr, vv);
+            }
+            else {
+                v.update(sign * number);
+            }
         }
 
         return stats;

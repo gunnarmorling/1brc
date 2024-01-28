@@ -17,12 +17,14 @@ package dev.morling.onebrc;
 
 import sun.misc.Unsafe;
 
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
 import java.lang.reflect.Field;
-import java.nio.Buffer;
-import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -31,21 +33,19 @@ import java.util.concurrent.atomic.AtomicReference;
 public class CalculateAverage_artsiomkorzun {
 
     private static final Path FILE = Path.of("./measurements.txt");
-    private static final int SEGMENT_SIZE = 4 * 1024 * 1024;
-    private static final int SEGMENT_OVERLAP = 128;
+    private static final long SEGMENT_SIZE = 4 * 1024 * 1024;
+    private static final long SEGMENT_OVERLAP = 128;
     private static final long COMMA_PATTERN = 0x3B3B3B3B3B3B3B3BL;
     private static final long DOT_BITS = 0x10101000;
     private static final long MAGIC_MULTIPLIER = (100 * 0x1000000 + 10 * 0x10000 + 1);
 
     private static final Unsafe UNSAFE;
-    private static final long ADDRESS_OFFSET;
 
     static {
         try {
             Field unsafe = Unsafe.class.getDeclaredField("theUnsafe");
             unsafe.setAccessible(true);
             UNSAFE = (Unsafe) unsafe.get(Unsafe.class);
-            ADDRESS_OFFSET = UNSAFE.objectFieldOffset(Buffer.class.getDeclaredField("address"));
         }
         catch (Throwable e) {
             throw new RuntimeException(e);
@@ -60,11 +60,42 @@ public class CalculateAverage_artsiomkorzun {
         // System.err.println("Time: " + (end - start));
         // }
 
+        if (isSpawn(args)) {
+            spawn();
+            return;
+        }
+
         execute();
     }
 
+    private static boolean isSpawn(String[] args) {
+        for (String arg : args) {
+            if ("--worker".equals(arg)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static void spawn() throws Exception {
+        ProcessHandle.Info info = ProcessHandle.current().info();
+        ArrayList<String> commands = new ArrayList<>();
+        info.command().ifPresent(commands::add);
+        info.arguments().ifPresent(args -> commands.addAll(Arrays.asList(args)));
+        commands.add("--worker");
+
+        new ProcessBuilder()
+                .command(commands)
+                .start()
+                .getInputStream()
+                .transferTo(System.out);
+    }
+
     private static void execute() throws Exception {
-        long fileSize = Files.size(FILE);
+        MemorySegment fileMemory = map(FILE);
+        long fileAddress = fileMemory.address();
+        long fileSize = fileMemory.byteSize();
         int segmentCount = (int) ((fileSize + SEGMENT_SIZE - 1) / SEGMENT_SIZE);
 
         AtomicInteger counter = new AtomicInteger();
@@ -74,7 +105,7 @@ public class CalculateAverage_artsiomkorzun {
         Aggregator[] aggregators = new Aggregator[parallelism];
 
         for (int i = 0; i < aggregators.length; i++) {
-            aggregators[i] = new Aggregator(counter, result, segmentCount);
+            aggregators[i] = new Aggregator(counter, result, fileAddress, fileSize, segmentCount);
             aggregators[i].start();
         }
 
@@ -84,18 +115,17 @@ public class CalculateAverage_artsiomkorzun {
 
         Map<String, Aggregate> aggregates = result.get().aggregate();
         System.out.println(text(aggregates));
+        System.out.close();
     }
 
-    private static long address(ByteBuffer buffer) {
-        return UNSAFE.getLong(buffer, ADDRESS_OFFSET);
-    }
-
-    private static ByteBuffer allocate(int size) {
-        ByteBuffer buffer = ByteBuffer.allocateDirect(size + 4096);
-        long address = address(buffer);
-        long aligned = (address + 4095) & (~4095);
-        int padding = (int) (aligned - address);
-        return buffer.position(padding).limit(padding + size).slice();
+    private static MemorySegment map(Path file) {
+        try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ)) {
+            long size = channel.size();
+            return channel.map(FileChannel.MapMode.READ_ONLY, 0, size, Arena.global());
+        }
+        catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private static long word(long address) {
@@ -140,9 +170,15 @@ public class CalculateAverage_artsiomkorzun {
 
         private static final int ENTRIES = 64 * 1024;
         private static final int SIZE = 128 * ENTRIES;
+        private static final int MASK = (ENTRIES - 1) << 7;
 
-        private final ByteBuffer buffer = allocate(SIZE);
-        private final long pointer = address(buffer);
+        private final long pointer;
+
+        public Aggregates() {
+            long address = UNSAFE.allocateMemory(SIZE + 4096);
+            pointer = (address + 4095) & (~4095);
+            UNSAFE.setMemory(pointer, SIZE, (byte) 0);
+        }
 
         public long find(long word, int hash) {
             long address = pointer + offset(hash);
@@ -261,7 +297,7 @@ public class CalculateAverage_artsiomkorzun {
         }
 
         private static int offset(int hash) {
-            return ((hash) & (ENTRIES - 1)) << 7;
+            return hash & MASK;
         }
 
         private static int next(int prev) {
@@ -307,39 +343,35 @@ public class CalculateAverage_artsiomkorzun {
 
         private final AtomicInteger counter;
         private final AtomicReference<Aggregates> result;
-        private final int segments;
+        private final long fileAddress;
+        private final long fileSize;
+        private final int segmentCount;
 
-        public Aggregator(AtomicInteger counter, AtomicReference<Aggregates> result, int segments) {
+        public Aggregator(AtomicInteger counter, AtomicReference<Aggregates> result,
+                          long fileAddress, long fileSize, int segmentCount) {
             super("aggregator");
             this.counter = counter;
             this.result = result;
-            this.segments = segments;
+            this.fileAddress = fileAddress;
+            this.fileSize = fileSize;
+            this.segmentCount = segmentCount;
         }
 
         @Override
         public void run() {
             Aggregates aggregates = new Aggregates();
-            ByteBuffer buffer = allocate(SEGMENT_SIZE + SEGMENT_OVERLAP);
 
-            try (FileChannel channel = FileChannel.open(FILE)) {
-                for (int segment; (segment = counter.getAndIncrement()) < segments;) {
-                    buffer.clear();
+            for (int segment; (segment = counter.getAndIncrement()) < segmentCount;) {
+                long position = SEGMENT_SIZE * segment;
+                long size = Math.min(SEGMENT_SIZE + SEGMENT_OVERLAP, fileSize - position);
+                long address = fileAddress + position;
+                long limit = address + Math.min(SEGMENT_SIZE, size - 1);
 
-                    long position = (long) SEGMENT_SIZE * segment;
-                    int size = channel.read(buffer, position);
-
-                    long address = address(buffer);
-                    long limit = address + Math.min(SEGMENT_SIZE, size - 1);
-
-                    if (segment > 0) {
-                        address = next(address);
-                    }
-
-                    aggregate(aggregates, address, limit);
+                if (segment > 0) {
+                    address = next(address);
                 }
-            }
-            catch (Throwable e) {
-                throw new RuntimeException(e);
+
+                aggregate(aggregates, address, limit);
             }
 
             while (!result.compareAndSet(null, aggregates)) {
@@ -351,6 +383,13 @@ public class CalculateAverage_artsiomkorzun {
             }
         }
 
+        private static long next(long position) {
+            while (UNSAFE.getByte(position++) != '\n') {
+                // continue
+            }
+            return position;
+        }
+
         private static void aggregate(Aggregates aggregates, long position, long limit) {
             // this parsing can produce seg fault at page boundaries
             // e.g. file size is 4096 and the last entry is X=0.0, which is less than 8 bytes
@@ -360,16 +399,29 @@ public class CalculateAverage_artsiomkorzun {
             while (position <= limit) { // branchy version, credit: thomaswue
                 int length;
                 int hash;
+                int value;
 
-                long ptr = 0;
                 long word = word(position);
                 long separator = separator(word);
+                long end = position;
 
                 if (separator != 0) {
                     length = length(separator);
                     word = mask(word, separator);
                     hash = mix(word);
-                    ptr = aggregates.find(word, hash);
+                    end += length;
+
+                    long num = word(end);
+                    int dot = dot(num);
+                    value = value(num, dot);
+                    end += (dot >> 3) + 3;
+                    long ptr = aggregates.find(word, hash);
+
+                    if (ptr != 0) {
+                        Aggregates.update(ptr, value);
+                        position = end;
+                        continue;
+                    }
                 }
                 else {
                     long word0 = word;
@@ -380,7 +432,19 @@ public class CalculateAverage_artsiomkorzun {
                         length = length(separator) + 8;
                         word = mask(word, separator);
                         hash = mix(word ^ word0);
-                        ptr = aggregates.find(word0, word, hash);
+                        end += length;
+
+                        long num = word(end);
+                        int dot = dot(num);
+                        value = value(num, dot);
+                        end += (dot >> 3) + 3;
+                        long ptr = aggregates.find(word0, word, hash);
+
+                        if (ptr != 0) {
+                            Aggregates.update(ptr, value);
+                            position = end;
+                            continue;
+                        }
                     }
                     else {
                         length = 16;
@@ -399,32 +463,21 @@ public class CalculateAverage_artsiomkorzun {
                             length += length(separator);
                             word = mask(word, separator);
                             hash = mix(h ^ word);
+                            end += length;
+
+                            long num = word(end);
+                            int dot = dot(num);
+                            value = value(num, dot);
+                            end += (dot >> 3) + 3;
                             break;
                         }
                     }
                 }
 
-                if (ptr == 0) {
-                    ptr = aggregates.put(position, word, length, hash);
-                }
-
-                position = update(ptr, position + length);
+                long ptr = aggregates.put(position, word, length, hash);
+                Aggregates.update(ptr, value);
+                position = end;
             }
-        }
-
-        private static long update(long ptr, long position) {
-            // idea: merykitty
-            long word = word(position);
-            long inverted = ~word;
-            int dot = Long.numberOfTrailingZeros(inverted & DOT_BITS);
-            long signed = (inverted << 59) >> 63;
-            long mask = ~(signed & 0xFF);
-            long digits = ((word & mask) << (28 - dot)) & 0x0F000F0F00L;
-            long abs = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
-            int value = (int) ((abs ^ signed) - signed);
-
-            Aggregates.update(ptr, value);
-            return position + (dot >> 3) + 3;
         }
 
         private static long separator(long word) {
@@ -441,17 +494,24 @@ public class CalculateAverage_artsiomkorzun {
             return (Long.numberOfTrailingZeros(separator) >>> 3) + 1;
         }
 
-        private static long next(long position) {
-            while (UNSAFE.getByte(position++) != '\n') {
-                // continue
-            }
-            return position;
-        }
-
         private static int mix(long x) {
             long h = x * -7046029254386353131L;
-            h ^= h >>> 32;
-            return (int) (h ^ h >>> 16);
+            h ^= h >>> 35;
+            return (int) h;
+            // h ^= h >>> 32;
+            // return (int) (h ^ h >>> 16);
+        }
+
+        private static int dot(long num) {
+            return Long.numberOfTrailingZeros(~num & DOT_BITS);
+        }
+
+        private static int value(long w, int dot) {
+            long signed = (~w << 59) >> 63;
+            long mask = ~(signed & 0xFF);
+            long digits = ((w & mask) << (28 - dot)) & 0x0F000F0F00L;
+            long abs = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
+            return (int) ((abs ^ signed) - signed);
         }
     }
 }

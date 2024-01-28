@@ -24,17 +24,25 @@ import java.nio.channels.FileChannel.MapMode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
+
 import sun.misc.Unsafe;
 
 public class CalculateAverage_abeobk {
     private static final boolean SHOW_ANALYSIS = false;
+    private static final int CPU_CNT = Runtime.getRuntime().availableProcessors();
 
     private static final String FILE = "./measurements.txt";
     private static final int BUCKET_SIZE = 1 << 16;
     private static final int BUCKET_MASK = BUCKET_SIZE - 1;
     private static final int MAX_STR_LEN = 100;
+    private static final int MAX_STATIONS = 10000;
+    private static final long CHUNK_SZ = 1 << 22; // 4MB chunk
     private static final Unsafe UNSAFE = initUnsafe();
     private static final long[] HASH_MASKS = new long[]{
             0x0L,
@@ -47,6 +55,15 @@ public class CalculateAverage_abeobk {
             0xffffffffffffffL,
             0xffffffffffffffffL, };
 
+    private static AtomicInteger chunk_id = new AtomicInteger(0);
+    private static int chunk_cnt;
+    private static long start_addr, end_addr;
+    private static Stat[][] all_res;
+
+    private static final void debug(String s, Object... args) {
+        System.out.println(String.format(s, args));
+    }
+
     private static Unsafe initUnsafe() {
         try {
             Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
@@ -58,39 +75,57 @@ public class CalculateAverage_abeobk {
         }
     }
 
+    static class Stat {
+        Node node;
+        String key;
+
+        public final String toString() {
+            return (node.min / 10.0) + "/"
+                    + (Math.round(((double) node.sum / node.count)) / 10.0) + "/"
+                    + (node.max / 10.0);
+        }
+
+        Stat(Node n) {
+            node = n;
+            byte[] sbuf = new byte[MAX_STR_LEN];
+            long word = UNSAFE.getLong(n.addr);
+            long semipos_code = getSemiPosCode(word);
+            int keylen = 0;
+            while (semipos_code == 0) {
+                keylen += 8;
+                word = UNSAFE.getLong(n.addr + keylen);
+                semipos_code = getSemiPosCode(word);
+            }
+            keylen += Long.numberOfTrailingZeros(semipos_code) >>> 3;
+            UNSAFE.copyMemory(null, n.addr, sbuf, Unsafe.ARRAY_BYTE_BASE_OFFSET, keylen);
+            key = new String(sbuf, 0, keylen, StandardCharsets.UTF_8);
+        }
+    }
+
     static class Node {
         long addr;
         long word0;
         long tail;
-        int keylen;
-        int min, max;
-        int count;
         long sum;
+        int count;
+        short min, max;
 
-        String key() {
-            byte[] sbuf = new byte[MAX_STR_LEN];
-            UNSAFE.copyMemory(null, addr, sbuf, Unsafe.ARRAY_BYTE_BASE_OFFSET, keylen);
-            return new String(sbuf, 0, keylen, StandardCharsets.UTF_8);
-        }
-
-        public String toString() {
-            return String.format("%.1f/%.1f/%.1f", min * 0.1, sum * 0.1 / count, max * 0.1);
-        }
-
-        Node(long a, long t, int val, int kl) {
+        Node(long a, long t, short val) {
             addr = a;
             tail = t;
-            keylen = kl;
             sum = min = max = val;
             count = 1;
         }
 
-        Node(long a, long t, int val, int kl, long w0) {
-            this(a, t, val, kl);
+        Node(long a, long w0, long t, short val) {
+            addr = a;
             word0 = w0;
+            tail = t;
+            sum = min = max = val;
+            count = 1;
         }
 
-        void add(int val) {
+        final void add(short val) {
             sum += val;
             count++;
             if (val >= max) {
@@ -102,38 +137,28 @@ public class CalculateAverage_abeobk {
             }
         }
 
-        void merge(Node other) {
-            min = Math.min(min, other.min);
-            max = Math.max(max, other.max);
+        final void merge(Node other) {
             sum += other.sum;
             count += other.count;
+            if (other.max > max) {
+                max = other.max;
+            }
+            if (other.min < min) {
+                min = other.min;
+            }
         }
 
-        boolean contentEquals(long other_addr, long other_tail) {
-            if (tail != other_tail) // compare tail & length at the same time
+        final boolean contentEquals(long other_addr, long other_word0, long other_tail, int keylen) {
+            if (word0 != other_word0 || tail != other_tail)
                 return false;
             // this is faster than comparision if key is short
             long xsum = 0;
             int n = keylen & 0xF8;
-            for (int i = 0; i < n; i += 8) {
+            for (int i = 8; i < n; i += 8) {
                 xsum |= (UNSAFE.getLong(addr + i) ^ UNSAFE.getLong(other_addr + i));
             }
             return xsum == 0;
         }
-    }
-
-    // split into chunks
-    static long[] slice(long start_addr, long end_addr, long chunk_size, int cpu_cnt) {
-        long[] ptrs = new long[cpu_cnt + 1];
-        ptrs[0] = start_addr;
-        for (int i = 1; i < cpu_cnt; i++) {
-            long addr = start_addr + i * chunk_size;
-            while (addr < end_addr && UNSAFE.getByte(addr++) != '\n')
-                ;
-            ptrs[i] = Math.min(addr, end_addr);
-        }
-        ptrs[cpu_cnt] = end_addr;
-        return ptrs;
     }
 
     // idea from royvanrijn
@@ -144,199 +169,221 @@ public class CalculateAverage_abeobk {
 
     // speed/collision balance
     static final int xxh32(long hash) {
-        final int p1 = 0x85EBCA77; // prime
-        int low = (int) hash;
-        int high = (int) (hash >>> 33);
-        int h = (low * p1) ^ high;
-        return h ^ (h >>> 17);
+        long h = hash * 37;
+        return (int) (h ^ (h >>> 29));
     }
 
     // great idea from merykitty (Quan Anh Mai)
-    static final int parseNum(long num_word, int dot_pos) {
+    static final short parseNum(long num_word, int dot_pos) {
         int shift = 28 - dot_pos;
         long signed = (~num_word << 59) >> 63;
         long dsmask = ~(signed & 0xFF);
         long digits = ((num_word & dsmask) << shift) & 0x0F000F0F00L;
         long abs_val = ((digits * 0x640a0001) >>> 32) & 0x3FF;
-        return (int) ((abs_val ^ signed) - signed);
+        return (short) ((abs_val ^ signed) - signed);
     }
 
-    // optimize for contest
-    // save as much slow memory access as possible
-    // about 50% key < 8chars, 25% key bettween 8-10 chars
-    // keylength histogram (%) = [0, 0, 0, 0, 4, 10, 21, 15, 13, 11, 6, 6, 4, 2...
-    static final Node[] parse(int thread_id, long start, long end, int[] cls) {
-        long addr = start;
-        var map = new Node[BUCKET_SIZE + 10000]; // extra space for collisions
-        // parse loop
-        while (addr < end) {
-            long row_addr = addr;
-            long tail = 0;
-            long hash = 0;
-            int val = 0;
-            int bucket = 0;
+    // Thread pool worker
+    static final class Worker extends Thread {
+        final int thread_id;
 
-            long word0 = UNSAFE.getLong(addr);
-            long semipos_code = getSemiPosCode(word0);
-
-            // about 50% chance key < 8 chars
-            if (semipos_code != 0) {
-                int semi_pos = Long.numberOfTrailingZeros(semipos_code) >>> 3;
-                addr += semi_pos;
-                tail = (word0 & HASH_MASKS[semi_pos]);
-                bucket = xxh32(tail) & BUCKET_MASK;
-                long num_word = UNSAFE.getLong(++addr);
-                int dot_pos = Long.numberOfTrailingZeros(~num_word & 0x10101000);
-                val = parseNum(num_word, dot_pos);
-                addr += (dot_pos >>> 3) + 3;
-                while (true) {
-                    var node = map[bucket];
-                    if (node == null) {
-                        map[bucket] = new Node(row_addr, tail, val, semi_pos);
-                        break;
-                    }
-                    if (node.tail == tail) {
-                        node.add(val);
-                        break;
-                    }
-                    bucket++;
-                    if (SHOW_ANALYSIS)
-                        cls[thread_id]++;
-                }
-                continue;
-            }
-
-            hash ^= word0;
-            addr += 8;
-            long word = UNSAFE.getLong(addr);
-            semipos_code = getSemiPosCode(word);
-            // 43% chance
-            if (semipos_code != 0) {
-                int semi_pos = Long.numberOfTrailingZeros(semipos_code) >>> 3;
-                addr += semi_pos;
-                tail = (word & HASH_MASKS[semi_pos]);
-                hash ^= tail;
-                bucket = xxh32(hash) & BUCKET_MASK;
-                int keylen = (int) (addr - row_addr);
-                long num_word = UNSAFE.getLong(++addr);
-                int dot_pos = Long.numberOfTrailingZeros(~num_word & 0x10101000);
-                val = parseNum(num_word, dot_pos);
-                addr += (dot_pos >>> 3) + 3;
-
-                while (true) {
-                    var node = map[bucket];
-                    if (node == null) {
-                        map[bucket] = new Node(row_addr, tail, val, keylen, word0);
-                        break;
-                    }
-                    if (node.word0 == word0 && node.tail == tail) {
-                        node.add(val);
-                        break;
-                    }
-                    bucket++;
-                    if (SHOW_ANALYSIS)
-                        cls[thread_id]++;
-                }
-                continue;
-            }
-
-            while (semipos_code == 0) {
-                hash ^= word;
-                addr += 8;
-                word = UNSAFE.getLong(addr);
-                semipos_code = getSemiPosCode(word);
-            }
-
-            int semi_pos = Long.numberOfTrailingZeros(semipos_code) >>> 3;
-            addr += semi_pos;
-            tail = (word & HASH_MASKS[semi_pos]);
-            hash ^= tail;
-            bucket = xxh32(hash) & BUCKET_MASK;
-            int keylen = (int) (addr - row_addr);
-
-            long num_word = UNSAFE.getLong(++addr);
-
-            int dot_pos = Long.numberOfTrailingZeros(~num_word & 0x10101000);
-            val = parseNum(num_word, dot_pos);
-            addr += (dot_pos >>> 3) + 3;
-
-            while (true) {
-                var node = map[bucket];
-                if (node == null) {
-                    map[bucket] = new Node(row_addr, tail, val, keylen);
-                    break;
-                }
-                if (node.contentEquals(row_addr, tail)) {
-                    node.add(val);
-                    break;
-                }
-                bucket++;
-                if (SHOW_ANALYSIS)
-                    cls[thread_id]++;
-            }
+        Worker(int i) {
+            thread_id = i;
+            this.start();
         }
-        return map;
+
+        @Override
+        public void run() {
+            var map = new Node[BUCKET_SIZE + MAX_STATIONS]; // extra space for collisions
+            int cnt = 0;
+            int id;
+            int cls = 0;
+
+            // process in small chunk to maintain disk locality (artsiomkorzun trick)
+            // but keep going instead of merging
+            while ((id = chunk_id.getAndIncrement()) < chunk_cnt) {
+                long addr = start_addr + id * CHUNK_SZ;
+                long end = Math.min(addr + CHUNK_SZ, end_addr);
+                // adjust start
+                if (id > 0) {
+                    while (UNSAFE.getByte(addr++) != '\n')
+                        ;
+                }
+
+                // parse loop
+                // optimize for contest
+                // save as much slow memory access as possible
+                // about 50% key < 8chars, 25% key bettween 8-10 chars
+                // keylength histogram (%) = [0, 0, 0, 0, 4, 10, 21, 15, 13, 11, 6, 6, 4, 2...
+                while (addr < end) {
+                    long row_addr = addr;
+
+                    long word0 = UNSAFE.getLong(addr);
+                    long semipos_code = getSemiPosCode(word0);
+
+                    // about 50% chance key < 8 chars
+                    if (semipos_code != 0) {
+                        int semi_pos = Long.numberOfTrailingZeros(semipos_code) >>> 3;
+                        addr += semi_pos + 1;
+                        long num_word = UNSAFE.getLong(addr);
+                        int dot_pos = Long.numberOfTrailingZeros(~num_word & 0x10101000);
+                        addr += (dot_pos >>> 3) + 3;
+
+                        long tail = word0 & HASH_MASKS[semi_pos];
+                        int bucket = xxh32(tail) & BUCKET_MASK;
+                        short val = parseNum(num_word, dot_pos);
+
+                        while (true) {
+                            var node = map[bucket];
+                            if (node == null) {
+                                map[bucket] = new Node(row_addr, tail, val);
+                                cnt++;
+                                break;
+                            }
+                            if (node.tail == tail) {
+                                node.add(val);
+                                break;
+                            }
+                            bucket++;
+                            if (SHOW_ANALYSIS)
+                                cls++;
+                        }
+                        continue;
+                    }
+
+                    addr += 8;
+                    long word = UNSAFE.getLong(addr);
+                    semipos_code = getSemiPosCode(word);
+                    // 43% chance
+                    if (semipos_code != 0) {
+                        int semi_pos = Long.numberOfTrailingZeros(semipos_code) >>> 3;
+                        addr += semi_pos + 1;
+                        long num_word = UNSAFE.getLong(addr);
+                        int dot_pos = Long.numberOfTrailingZeros(~num_word & 0x10101000);
+                        addr += (dot_pos >>> 3) + 3;
+
+                        long tail = (word & HASH_MASKS[semi_pos]);
+                        int bucket = xxh32(word0 ^ tail) & BUCKET_MASK;
+                        short val = parseNum(num_word, dot_pos);
+
+                        while (true) {
+                            var node = map[bucket];
+                            if (node == null) {
+                                map[bucket] = new Node(row_addr, word0, tail, val);
+                                cnt++;
+                                break;
+                            }
+                            if (node.word0 == word0 && node.tail == tail) {
+                                node.add(val);
+                                break;
+                            }
+                            bucket++;
+                            if (SHOW_ANALYSIS)
+                                cls++;
+                        }
+                        continue;
+                    }
+
+                    // why not going for more? tested, slower
+                    long hash = word0;
+                    while (semipos_code == 0) {
+                        hash ^= word;
+                        addr += 8;
+                        word = UNSAFE.getLong(addr);
+                        semipos_code = getSemiPosCode(word);
+                    }
+
+                    int semi_pos = Long.numberOfTrailingZeros(semipos_code) >>> 3;
+                    addr += semi_pos;
+                    int keylen = (int) (addr - row_addr);
+                    long num_word = UNSAFE.getLong(addr + 1);
+                    int dot_pos = Long.numberOfTrailingZeros(~num_word & 0x10101000);
+                    addr += (dot_pos >>> 3) + 4;
+
+                    long tail = (word & HASH_MASKS[semi_pos]);
+                    int bucket = xxh32(hash ^ tail) & BUCKET_MASK;
+                    short val = parseNum(num_word, dot_pos);
+
+                    while (true) {
+                        var node = map[bucket];
+                        if (node == null) {
+                            map[bucket] = new Node(row_addr, word0, tail, val);
+                            cnt++;
+                            break;
+                        }
+                        if (node.contentEquals(row_addr, word0, tail, keylen)) {
+                            node.add(val);
+                            break;
+                        }
+                        bucket++;
+                        if (SHOW_ANALYSIS)
+                            cls++;
+                    }
+                }
+            }
+
+            if (SHOW_ANALYSIS) {
+                debug("Thread %d collision = %d", thread_id, cls);
+            }
+
+            Stat[] stats = new Stat[cnt];
+            int i = 0;
+            for (var node : map) {
+                if (node != null) {
+                    stats[i++] = new Stat(node);
+                }
+            }
+            all_res[thread_id] = stats;
+        }
+    }
+
+    // thomaswue trick
+    private static void spawnWorker() throws IOException {
+        ProcessHandle.Info info = ProcessHandle.current().info();
+        ArrayList<String> workerCommand = new ArrayList<>();
+        info.command().ifPresent(workerCommand::add);
+        info.arguments().ifPresent(args -> workerCommand.addAll(Arrays.asList(args)));
+        workerCommand.add("--worker");
+        new ProcessBuilder()
+                .command(workerCommand)
+                .start()
+                .getInputStream()
+                .transferTo(System.out);
     }
 
     public static void main(String[] args) throws InterruptedException, IOException {
-        try (var file = FileChannel.open(Path.of(FILE), StandardOpenOption.READ)) {
-            long start_addr = file.map(MapMode.READ_ONLY, 0, file.size(), Arena.global()).address();
-            long file_size = file.size();
-            long end_addr = start_addr + file_size;
-
-            // only use all cpus on large file
-            int cpu_cnt = file_size < 1e6 ? 1 : Runtime.getRuntime().availableProcessors();
-            long chunk_size = Math.ceilDiv(file_size, cpu_cnt);
-
-            // processing
-            var threads = new Thread[cpu_cnt];
-            var maps = new Node[cpu_cnt][];
-            var ptrs = slice(start_addr, end_addr, chunk_size, cpu_cnt);
-
-            int[] cls = new int[cpu_cnt]; // collision
-            int[] lenhist = new int[64]; // length histogram
-
-            for (int i = 0; i < cpu_cnt; i++) {
-                int thread_id = i;
-                (threads[thread_id] = new Thread(() -> {
-                    maps[thread_id] = parse(thread_id, ptrs[thread_id], ptrs[thread_id + 1], cls);
-                })).start();
-            }
-
-            // join all
-            for (var thread : threads)
-                thread.join();
-
-            if (SHOW_ANALYSIS) {
-                for (int i = 0; i < cpu_cnt; i++) {
-                    System.out.println("thread-" + i + " collision = " + cls[i]);
-                }
-            }
-
-            // collect results
-            TreeMap<String, Node> ms = new TreeMap<>();
-            for (var map : maps) {
-                for (var node : map) {
-                    if (node == null)
-                        continue;
-                    if (SHOW_ANALYSIS) {
-                        int kl = node.keylen & (lenhist.length - 1);
-                        lenhist[kl] += node.count;
-                    }
-                    var stat = ms.putIfAbsent(node.key(), node);
-                    if (stat != null)
-                        stat.merge(node);
-                }
-            }
-
-            if (SHOW_ANALYSIS) {
-                System.out.println("total=" + Arrays.stream(lenhist).sum());
-                System.out.println("length_histogram = "
-                        + Arrays.toString(Arrays.stream(lenhist).map(x -> (int) (x * 1.0e-7)).toArray()));
-            }
-            else
-                System.out.println(ms);
+        // thomaswue trick
+        if (args.length == 0 || !("--worker".equals(args[0]))) {
+            spawnWorker();
+            return;
         }
-    }
 
+        var file = FileChannel.open(Path.of(FILE), StandardOpenOption.READ);
+        long file_size = file.size();
+        start_addr = file.map(MapMode.READ_ONLY, 0, file.size(), Arena.global()).address();
+        end_addr = start_addr + file_size;
+
+        // only use all cpus on large file
+        int cpu_cnt = file_size < 1e6 ? 1 : CPU_CNT;
+        chunk_cnt = (int) Math.ceilDiv(file_size, CHUNK_SZ);
+        all_res = new Stat[cpu_cnt][];
+
+        List<Worker> workers = IntStream.range(0, cpu_cnt).mapToObj(i -> new Worker(i)).toList();
+        for (var w : workers)
+            w.join();
+
+        // collect all results
+        TreeMap<String, Stat> ms = new TreeMap<>();
+        for (var res : all_res) {
+            for (var s : res) {
+                var stat = ms.putIfAbsent(s.key, s);
+                if (stat != null)
+                    stat.node.merge(s.node);
+            }
+        }
+
+        // print output
+        System.out.println(ms);
+        System.out.close();
+    }
 }
