@@ -16,17 +16,14 @@
 package dev.morling.onebrc;
 
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.math.RoundingMode;
-import java.text.DecimalFormat;
-import java.text.DecimalFormatSymbols;
+import java.nio.channels.FileChannel;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
@@ -45,46 +42,41 @@ import static java.util.concurrent.CompletableFuture.supplyAsync;
 
 public class CalculateAverage_anestoruk {
 
-    private static final String path = "./measurements_1_000_000_000.txt";
-    // private static final String path = "./measurements.txt";
-    private static final DecimalFormat df = new DecimalFormat("0.0", new DecimalFormatSymbols(Locale.US));
+    private static final String path = "./measurements.txt";
     private static final int cpus = getRuntime().availableProcessors();
 
     public static void main(String[] args) throws IOException {
-        long startTimeMs = System.currentTimeMillis();
-        df.setRoundingMode(RoundingMode.HALF_UP);
-
-        List<MemoryRange> rangeList = new ArrayList<>();
+        List<SegmentRange> rangeList = new ArrayList<>();
         MemorySegment segment;
-        try (RandomAccessFile file = new RandomAccessFile(path, "r")) {
-            final long fileSize = file.length();
+
+        try (FileChannel channel = FileChannel.open(Path.of(path))) {
+            final long fileSize = channel.size();
             final long chunkSize = fileSize > 10_000 ? min(Integer.MAX_VALUE - 256, fileSize / cpus) : fileSize;
             final int chunks = (int) ceil((double) fileSize / chunkSize);
-
-            segment = file.getChannel().map(READ_ONLY, 0, fileSize, Arena.ofShared());
-            long position = 0;
+            segment = channel.map(READ_ONLY, 0, fileSize, Arena.global());
+            long startOffset = 0;
             long size = chunkSize;
             for (int i = 0; i < chunks && size > 0; i++) {
-                file.seek(position + size);
-                while (file.getFilePointer() < fileSize && file.readByte() != '\n') {
-                    size++;
+                long endOffset = startOffset + size;
+                while (endOffset < fileSize && segment.get(JAVA_BYTE, endOffset) != '\n') {
+                    endOffset++;
                 }
-                rangeList.add(new MemoryRange(position, position + size));
-                position += (size + 1);
-                size = min(chunkSize, fileSize - position);
+                rangeList.add(new SegmentRange(startOffset, endOffset));
+                startOffset = endOffset + 1;
+                size = min(chunkSize, fileSize - startOffset);
             }
         }
 
-        List<Map<ByteWrapper, Record>> partialResults = new ArrayList<>();
+        TreeMap<String, Record> result = new TreeMap<>();
         try (ExecutorService executor = Executors.newFixedThreadPool(cpus)) {
             List<CompletableFuture<Map<ByteWrapper, Record>>> futures = new ArrayList<>();
-            for (MemoryRange range : rangeList) {
+            for (SegmentRange range : rangeList) {
                 futures.add(supplyAsync(() -> process(range, segment), executor));
             }
             for (CompletableFuture<Map<ByteWrapper, Record>> future : futures) {
                 try {
                     Map<ByteWrapper, Record> partialResult = future.get();
-                    partialResults.add(partialResult);
+                    combine(result, partialResult);
                 }
                 catch (InterruptedException | ExecutionException ex) {
                     throw new RuntimeException(ex);
@@ -92,46 +84,45 @@ public class CalculateAverage_anestoruk {
             }
         }
 
-        TreeMap<String, Record> result = partialResults.stream().collect(
-                TreeMap::new, CalculateAverage_anestoruk::accumulate, TreeMap::putAll);
         System.out.println(result);
-        System.out.printf("Execution took: %s ms%n", (System.currentTimeMillis() - startTimeMs));
     }
 
-    private static Map<ByteWrapper, Record> process(MemoryRange range, MemorySegment segment) {
-        try {
-            Map<ByteWrapper, Record> partialResult = new HashMap<>(1_000);
-            byte[] cityBuffer = new byte[100], tempBuffer = new byte[100];
-            long i = range.startOffset;
-            byte b;
-            while (i < range.endOffset) {
-                int cityIdx = 0, tempIdx = 0;
-                while ((b = segment.get(JAVA_BYTE, i++)) != ';') {
-                    cityBuffer[cityIdx++] = b;
-                }
-                while (i < range.endOffset && (b = segment.get(JAVA_BYTE, i++)) != '\n') {
-                    if (b != '.') {
-                        tempBuffer[tempIdx++] = b;
-                    }
-                }
-                byte[] city = new byte[cityIdx];
-                System.arraycopy(cityBuffer, 0, city, 0, cityIdx);
-                ByteWrapper cityWrapper = new ByteWrapper(city);
-
-                byte[] temp = new byte[tempIdx];
-                System.arraycopy(tempBuffer, 0, temp, 0, tempIdx);
-                int temperature = toInt(temp);
-
-                partialResult.compute(cityWrapper, (_, record) -> update(record, temperature));
+    private static Map<ByteWrapper, Record> process(SegmentRange range, MemorySegment segment) {
+        Map<ByteWrapper, Record> partialResult = new HashMap<>(1_000);
+        byte[] buffer = new byte[100];
+        long offset = range.startOffset;
+        byte b;
+        while (offset < range.endOffset) {
+            int cityIdx = 0;
+            while ((b = segment.get(JAVA_BYTE, offset++)) != ';') {
+                buffer[cityIdx++] = b;
             }
-            return partialResult;
+            byte[] city = new byte[cityIdx];
+            System.arraycopy(buffer, 0, city, 0, cityIdx);
+            ByteWrapper cityWrapper = new ByteWrapper(city);
+
+            int value = 0;
+            boolean negative;
+            if ((b = segment.get(JAVA_BYTE, offset++)) == '-') {
+                negative = true;
+            }
+            else {
+                negative = false;
+                value = b - '0';
+            }
+            while ((b = segment.get(JAVA_BYTE, offset++)) != '\n') {
+                if (b != '.') {
+                    value = value * 10 + (b - '0');
+                }
+            }
+            int temperature = negative ? -value : value;
+
+            partialResult.compute(cityWrapper, (_, record) -> update(record, temperature));
         }
-        catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        return partialResult;
     }
 
-    private record MemoryRange(long startOffset, long endOffset) {
+    private record SegmentRange(long startOffset, long endOffset) {
     }
 
     private record ByteWrapper(byte[] bytes) {
@@ -152,36 +143,30 @@ public class CalculateAverage_anestoruk {
 
     private static class Record {
 
-        private int min = Integer.MAX_VALUE;
-        private int max = Integer.MIN_VALUE;
-        private long sum = 0;
-        private int count = 0;
+        private int min;
+        private int max;
+        private long sum;
+        private int count;
+
+        public Record(int temperature) {
+            this.min = temperature;
+            this.max = temperature;
+            this.sum = temperature;
+            this.count = 1;
+        }
 
         @Override
         public String toString() {
-            return "%s/%s/%s".formatted(
-                    df.format(min / 10.0),
-                    df.format((double) sum / count / 10.0),
-                    df.format(max / 10.0));
+            return "%.1f/%.1f/%.1f".formatted(
+                    (min / 10.0),
+                    ((double) sum / count / 10.0),
+                    (max / 10.0));
         }
-    }
-
-    private static int toInt(byte[] arr) {
-        int result = 0;
-        boolean negative = false;
-        for (byte b : arr) {
-            if (b == '-') {
-                negative = true;
-                continue;
-            }
-            result = result * 10 + (b - '0');
-        }
-        return negative ? -result : result;
     }
 
     private static Record update(Record record, int temperature) {
         if (record == null) {
-            record = new Record();
+            return new Record(temperature);
         }
         record.min = min(record.min, temperature);
         record.max = max(record.max, temperature);
@@ -190,7 +175,7 @@ public class CalculateAverage_anestoruk {
         return record;
     }
 
-    private static void accumulate(TreeMap<String, Record> result, Map<ByteWrapper, Record> partialResult) {
+    private static void combine(TreeMap<String, Record> result, Map<ByteWrapper, Record> partialResult) {
         partialResult.forEach((wrapper, partialRecord) -> {
             String city = new String(wrapper.bytes, UTF_8);
             result.compute(city, (_, record) -> {
