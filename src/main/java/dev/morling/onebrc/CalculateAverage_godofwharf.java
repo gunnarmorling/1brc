@@ -87,7 +87,7 @@ public class CalculateAverage_godofwharf {
     public static class Job {
         private final int nThreads;
         private final State[] threadLocalStates;
-        private final Map<State.AggregationKey, MeasurementAggregator> ret = new ConcurrentHashMap<>(DEFAULT_HASH_TBL_SIZE);
+        private final Map<String, MeasurementAggregator> globalMap = new ConcurrentHashMap<>(DEFAULT_HASH_TBL_SIZE);
         private final ExecutorService executorService;
 
         public Job(final int nThreads) {
@@ -179,7 +179,7 @@ public class CalculateAverage_godofwharf {
                     .filter(Objects::nonNull)
                     .forEach(threadLocalState -> threadLocalState.state
                             .forEach((k, v) -> {
-                                ret.compute(k, (ignored, agg) -> {
+                                globalMap.compute(k.toString(), (ignored, agg) -> {
                                     if (agg == null) {
                                         agg = v;
                                     }
