@@ -185,7 +185,7 @@ public class CalculateAverage_giovannicuccu {
 
         private final MemorySegment dataSegment = MemorySegment.ofArray(keyData);
 
-        public void addWithByteVector(ByteVector chunk1, int len, int hash, int value, MemorySegment memorySegment, int offset) {
+        public void addWithByteVector(ByteVector chunk1, int len, int hash, int value, MemorySegment memorySegment, long offset) {
             int index = hash & (SIZE - 1);
             int i = 0;
             while (measurements[index] != null) {
@@ -204,7 +204,7 @@ public class CalculateAverage_giovannicuccu {
             measurements[index] = new MeasurementAggregatorVectorized(keyData, index * KEY_SIZE, len, hash, value);
         }
 
-        public void add(int len, int hash, int value, MemorySegment memorySegment, int offset) {
+        public void add(int len, int hash, int value, MemorySegment memorySegment, long offset) {
             int index = hash & (SIZE - 1);
             while (measurements[index] != null) {
                 if (measurements[index].getLen() == len && measurements[index].getHash() == hash) {
@@ -311,14 +311,12 @@ public class CalculateAverage_giovannicuccu {
             }
         }
 
-        private final long ALL_ONE = -1L;
-
         private MeasurementListVectorized computeListForPartition(FileChannel fileChannel, PartitionBoundary boundary) {
             try (var arena = Arena.ofConfined()) {
                 var memorySegment = fileChannel.map(FileChannel.MapMode.READ_ONLY, boundary.start(), boundary.end() - boundary.start(), arena);
                 MeasurementListVectorized list = new MeasurementListVectorized();
                 long size = memorySegment.byteSize();
-                int offset = 0;
+                long offset = 0;
                 long safe = size - KEY_SIZE;
                 // ByteBuffer byteBuffer = memorySegment.asByteBuffer();
                 // byteBuffer.order(ByteOrder.LITTLE_ENDIAN);
@@ -336,7 +334,7 @@ public class CalculateAverage_giovannicuccu {
                     }
 
                     int hash = hash(memorySegment, offset, len);
-                    int prevOffset = offset;
+                    long prevOffset = offset;
                     offset += len + 1;
 
                     long numberWord = memorySegment.get(JAVA_LONG_LT, offset);
@@ -374,7 +372,7 @@ public class CalculateAverage_giovannicuccu {
                         len += equals;
                     }
                     int hash = hash(memorySegment, offset, len);
-                    int prevOffset = offset;
+                    long prevOffset = offset;
                     offset += len + 1;
 
                     int value = 0;
@@ -385,7 +383,7 @@ public class CalculateAverage_giovannicuccu {
                         offset += (decimalSepPos >>> 3) + 3;
                     }
                     else {
-                        int currentPosition = offset;
+                        long currentPosition = offset;
                         int sign = 1;
                         byte b = memorySegment.get(ValueLayout.JAVA_BYTE, currentPosition++);
                         if (b == '-') {
