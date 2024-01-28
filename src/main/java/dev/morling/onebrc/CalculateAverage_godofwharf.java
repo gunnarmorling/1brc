@@ -35,7 +35,6 @@ import java.util.concurrent.Future;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.stream.IntStream;
-import java.util.zip.CRC32C;
 
 import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -359,9 +358,17 @@ public class CalculateAverage_godofwharf {
         private static int[] computeHashCodes(final byte[] b) {
             // for perfect hashing, set seed as -2 and hash map size to 1<<14
             int[] res = new int[2];
-            res[0] = Arrays.hashCode(b);
+            res[0] = hashCode1(b);
             // res[1] = hashCode2(b);
             return res;
+        }
+
+        private static int hashCode1(final byte[] b) {
+            int result = -2;
+            for (int i = 0; i < b.length; i++) {
+                result = 31 * result + b[i];
+            }
+            return result;
         }
 
         private static int hashCode2(final byte[] b) {
