@@ -375,7 +375,7 @@ public class CalculateAverage_godofwharf {
                         + b[i + 3];
             }
             for (; i < b.length; i++) {
-                result = 31 * result + b[i];
+                result = 7 * result + b[i];
             }
             return result;
         }
