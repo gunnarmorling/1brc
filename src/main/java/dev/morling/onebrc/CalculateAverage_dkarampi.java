@@ -178,84 +178,83 @@ public class CalculateAverage_dkarampi {
 
     private record Task(Station[] stations, List<Buffer> buffers) implements Runnable {
 
-        @Override
-        public void run() {
-            for (Buffer buffer : buffers) {
-                process(buffer);
-            }
-        }
-
-        private void process(Buffer buffer) {
-            short nameLen = 0;
-            int hash = 5381;
-            int temperature;
-            byte[] name = new byte[100];
-
-            for (int i = 0; i < buffer.length; i++) {
-                byte c = buffer.byteBuffer.get(i);
-                if (c == ';') {
-                    int sign = 1;
-                    c = buffer.byteBuffer.get(++i);
-                    if (c == '-') {
-                        sign = -1;
-                        c = buffer.byteBuffer.get(++i);
-                        temperature = (c - '0') * 10;
-                        c = buffer.byteBuffer.get(++i);
-                        if (c == '.') {
-                            c = buffer.byteBuffer.get(++i);
-                            temperature = temperature + c - '0';
-                        }
-                        else {
-                            temperature = temperature + c - '0';
-                            ++i; // dot
-                            c = buffer.byteBuffer.get(++i);
-                            temperature = temperature * 10 + c - '0';
-                        }
-                    }
-                    else {
-                        temperature = (c - '0') * 10;
-                        c = buffer.byteBuffer.get(++i);
-                        if (c == '.') {
-                            c = buffer.byteBuffer.get(++i);
-                            temperature = temperature + c - '0';
-                        }
-                        else {
-                            temperature = temperature + c - '0';
-                            ++i; // dot
-                            c = buffer.byteBuffer.get(++i);
-                            temperature = temperature * 10 + c - '0';
-                        }
-                    }
-                    hash = hash & 0x7FFFFFFF;
-                    updateStations(hash, name, nameLen, sign * (double) temperature / 10);
-                    ++i; // For '\n'
-                    nameLen = 0;
-                    hash = 5383;
-                }
-                else {
-                    name[nameLen++] = c;
-                    hash = ((hash << 5) + hash) + c;
-                }
-            }
-        }
-
-        private void updateStations(int hash, byte[] name, short nameLen, double temperature) {
-            int idx;
-            for (idx = hash % HT_SIZE; stations[idx].freq != 0; idx = (idx + 1) % HT_SIZE) {
-                if (areEqual(stations[idx].name, stations[idx].nameLen, name, nameLen)) {
-                    stations[idx].sum += temperature;
-                    stations[idx].min = Math.min(stations[idx].min, temperature);
-                    stations[idx].max = Math.max(stations[idx].max, temperature);
-                    ++stations[idx].freq;
-                    return;
-                }
-            }
-            stations[idx].sum = temperature;
-            stations[idx].min = temperature;
-            stations[idx].max = temperature;
-            stations[idx].nameLen = nameLen;
-            System.arraycopy(name, 0, stations[idx].name, 0, nameLen);
-            stations[idx].freq = 1;
+    @Override
+    public void run() {
+        for (Buffer buffer : buffers) {
+            process(buffer);
         }
     }
-}
+
+    private void process(Buffer buffer) {
+        short nameLen = 0;
+        int hash = 5381;
+        int temperature;
+        byte[] name = new byte[100];
+
+        for (int i = 0; i < buffer.length; i++) {
+            byte c = buffer.byteBuffer.get(i);
+            if (c == ';') {
+                int sign = 1;
+                c = buffer.byteBuffer.get(++i);
+                if (c == '-') {
+                    sign = -1;
+                    c = buffer.byteBuffer.get(++i);
+                    temperature = (c - '0') * 10;
+                    c = buffer.byteBuffer.get(++i);
+                    if (c == '.') {
+                        c = buffer.byteBuffer.get(++i);
+                        temperature = temperature + c - '0';
+                    }
+                    else {
+                        temperature = temperature + c - '0';
+                        ++i; // dot
+                        c = buffer.byteBuffer.get(++i);
+                        temperature = temperature * 10 + c - '0';
+                    }
+                }
+                else {
+                    temperature = (c - '0') * 10;
+                    c = buffer.byteBuffer.get(++i);
+                    if (c == '.') {
+                        c = buffer.byteBuffer.get(++i);
+                        temperature = temperature + c - '0';
+                    }
+                    else {
+                        temperature = temperature + c - '0';
+                        ++i; // dot
+                        c = buffer.byteBuffer.get(++i);
+                        temperature = temperature * 10 + c - '0';
+                    }
+                }
+                hash = hash & 0x7FFFFFFF;
+                updateStations(hash, name, nameLen, sign * (double) temperature / 10);
+                ++i; // For '\n'
+                nameLen = 0;
+                hash = 5383;
+            }
+            else {
+                name[nameLen++] = c;
+                hash = ((hash << 5) + hash) + c;
+            }
+        }
+    }
+
+    private void updateStations(int hash, byte[] name, short nameLen, double temperature) {
+        int idx;
+        for (idx = hash % HT_SIZE; stations[idx].freq != 0; idx = (idx + 1) % HT_SIZE) {
+            if (areEqual(stations[idx].name, stations[idx].nameLen, name, nameLen)) {
+                stations[idx].sum += temperature;
+                stations[idx].min = Math.min(stations[idx].min, temperature);
+                stations[idx].max = Math.max(stations[idx].max, temperature);
+                ++stations[idx].freq;
+                return;
+            }
+        }
+        stations[idx].sum = temperature;
+        stations[idx].min = temperature;
+        stations[idx].max = temperature;
+        stations[idx].nameLen = nameLen;
+        System.arraycopy(name, 0, stations[idx].name, 0, nameLen);
+        stations[idx].freq = 1;
+    }
+}}
