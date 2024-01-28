@@ -17,15 +17,16 @@ package dev.morling.onebrc;
 
 import sun.misc.Unsafe;
 
-import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.reflect.Field;
-import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.TreeMap;
 import java.util.function.Consumer;
 
@@ -49,21 +50,36 @@ public class CalculateAverage_yavuztas {
         }
     }
 
+    /**
+     * Extract bytes from a long
+     */
+    private static long partial(long word, int length) {
+        final long mask = (~0L) << (length << 3);
+        return word & (~mask);
+    }
+
     // Only one object, both for measurements and keys, less object creation in hotpots is always faster
     static class Record {
 
-        final long start; // memory address of the underlying data
-        final byte length;
-        final int hash;
+        long start; // memory address of the underlying data
+        int length;
+        long word1;
+        long word2;
+        long wordLast;
+        int hash;
+        Record next; // linked list to resolve hash collisions
 
         private int min; // calculations over int is faster than double, we convert to double in the end only once
         private int max;
         private long sum;
         private int count;
 
-        public Record(long start, byte length, int hash, int temp) {
+        public Record(long start, int length, long word1, long word2, long wordLast, int hash, int temp) {
             this.start = start;
             this.length = length;
+            this.word1 = word1;
+            this.word2 = word2;
+            this.wordLast = wordLast;
             this.hash = hash;
             this.min = temp;
             this.max = temp;
@@ -74,57 +90,33 @@ public class CalculateAverage_yavuztas {
         @Override
         public boolean equals(Object o) {
             final Record record = (Record) o;
-            return equals(record.start, record.length);
+            return equals(record.start, record.word1, record.word2, record.wordLast, record.length);
         }
 
-        private static long partial(long word, int length) {
-            final long mask = (~0L) << (length << 3);
-            return word & (~mask);
-        }
-
-        private static boolean equalsFor8Bytes(long start1, long start2, int length) {
-            return partial(UNSAFE.getLong(start1), length) == partial(UNSAFE.getLong(start2), length);
-        }
-
-        private static boolean equalsFor16Bytes(long start1, long start2, int length) {
-            return UNSAFE.getLong(start1) == UNSAFE.getLong(start2) && equalsFor8Bytes(start1 + 8, start2 + 8, length - 8);
-        }
-
-        private static boolean equalsFor24Bytes(long start1, long start2, int length) {
-            return UNSAFE.getLong(start1) == UNSAFE.getLong(start2) && equalsFor16Bytes(start1 + 8, start2 + 8, length - 8);
-        }
-
-        private static boolean equalsForBigger(long start1, long start2, byte length) {
-            int i = 0;
-            int step = 0;
-            while (length > 8) { // scan bytes
-                length -= 8;
-                step = i++ << 3; // 8 bytes
+        private static boolean equalsComparingLongs(long start1, long last1, long start2, long last2, int length) {
+            int step = 16; // starting from 4th long
+            length -= step;
+            while (length >= 8) { // scan longs
                 if (UNSAFE.getLong(start1 + step) != UNSAFE.getLong(start2 + step)) {
                     return false;
                 }
+                length -= 8;
+                step += 8; // 8 bytes
             }
-            // check the last part
-            return equalsFor8Bytes(start1 + step, start2 + step, length);
+            return last1 == last2;
         }
 
-        public boolean equals(long start, byte length) {
-            // equals check is done by comparing longs instead of byte by byte check
-            // this is slightly faster
-            if (length <= 8) {
-                // smaller than long, check special
-                return equalsFor8Bytes(this.start, start, length) && (this.length == length);
+        public boolean equals(long start, long word1, long word2, long last, int length) {
+
+            if (this.word1 != word1) {
+                return false;
             }
-            if (length <= 16) {
-                // smaller than two longs, check special
-                return equalsFor16Bytes(this.start, start, length) && (this.length == length);
+            if (this.word2 != word2) {
+                return false;
             }
-            if (length <= 24) {
-                // smaller than three longs, check special
-                return equalsFor24Bytes(this.start, start, length) && (this.length == length);
-            }
-            // check the bigger ones via traverse
-            return equalsForBigger(this.start, start, length) && (this.length == length);
+
+            // equals check is done by comparing longs instead of byte by byte check, this is faster
+            return equalsComparingLongs(this.start, this.wordLast, start, last, length);
         }
 
         @Override
@@ -135,23 +127,19 @@ public class CalculateAverage_yavuztas {
         }
 
         public void collect(int temp) {
-            if (temp < this.min) {
-                this.min = (short) temp;
-            }
-            if (temp > this.max) {
-                this.max = (short) temp;
-            }
+            if (temp < this.min)
+                this.min = temp;
+            if (temp > this.max)
+                this.max = temp;
             this.sum += temp;
             this.count++;
         }
 
         public void merge(Record that) {
-            if (that.min < this.min) {
+            if (that.min < this.min)
                 this.min = that.min;
-            }
-            if (that.max > this.max) {
+            if (that.max > this.max)
                 this.max = that.max;
-            }
             this.sum += that.sum;
             this.count += that.count;
         }
@@ -159,11 +147,9 @@ public class CalculateAverage_yavuztas {
         public String measurements() {
             // here is only executed once for each unique key, so StringBuilder creation doesn't harm
             final StringBuilder sb = new StringBuilder(14);
-            sb.append(this.min / 10.0);
-            sb.append("/");
-            sb.append(round((this.sum / 10.0) / this.count));
-            sb.append("/");
-            sb.append(this.max / 10.0);
+            sb.append(round(this.min)).append("/");
+            sb.append(round(1.0 * this.sum / this.count)).append("/");
+            sb.append(round(this.max));
             return sb.toString();
         }
     }
@@ -174,7 +160,7 @@ public class CalculateAverage_yavuztas {
 
         // Bigger bucket size less collisions, but you have to find a sweet spot otherwise it is becoming slower.
         // Also works good enough for 10K stations
-        static final int SIZE = 1 << 16; // 64kb
+        static final int SIZE = 1 << 14; // 16kb - enough for 10K
         static final int BITMASK = SIZE - 1;
         Record[] keys = new Record[SIZE];
 
@@ -183,48 +169,48 @@ public class CalculateAverage_yavuztas {
             return hash & BITMASK; // fast modulo, to find bucket
         }
 
-        void putAndCollect(long start, byte length, int hash, int temp) {
-            int bucket = hashBucket(hash);
+        void putAndCollect(int hash, int temp, long start, int length, long word1, long word2, long wordLast) {
+            final int bucket = hashBucket(hash);
             Record existing = this.keys[bucket];
             if (existing == null) {
-                this.keys[bucket] = new Record(start, length, hash, temp);
+                this.keys[bucket] = new Record(start, length, word1, word2, wordLast, hash, temp);
                 return;
             }
 
-            if (!existing.equals(start, length)) { // collision
-                int step = 0; // quadratic probing helps to decrease collision in large data set of 10K
-                while ((existing = this.keys[bucket = ((++bucket + ++step) & BITMASK)]) != null && !existing.equals(start, length)) {
-                    // can be stuck here if all the buckets are full :(
-                    // However, since the data set is max 10K (unique) this shouldn't happen
-                    // So, I'm happily leave here branchless :)
+            if (!existing.equals(start, word1, word2, wordLast, length)) { // collision
+                // find possible slot by scanning the slot linked list
+                while (existing.next != null && !existing.next.equals(start, word1, word2, wordLast, length)) {
+                    existing = existing.next; // go on to next
                 }
-                if (existing == null) {
-                    this.keys[bucket] = new Record(start, length, hash, temp);
+                if (existing.next == null) {
+                    existing.next = new Record(start, length, word1, word2, wordLast, hash, temp);
                     return;
                 }
+                existing = existing.next;
             }
             existing.collect(temp);
         }
 
         void putOrMerge(Record key) {
-            int bucket = hashBucket(key.hash);
+            final int bucket = hashBucket(key.hash);
             Record existing = this.keys[bucket];
             if (existing == null) {
+                key.next = null;
                 this.keys[bucket] = key;
                 return;
             }
 
             if (!existing.equals(key)) { // collision
-                int step = 0; // quadratic probing helps to decrease collision in large data set of 10K
-                while ((existing = this.keys[bucket = ((++bucket + ++step) & BITMASK)]) != null && !existing.equals(key)) {
-                    // can be stuck here if all the buckets are full :(
-                    // However, since the data set is max 10K (unique keys) this shouldn't happen
-                    // So, I'm happily leave here branchless :)
+                // find possible slot by scanning the slot linked list
+                while (existing.next != null && !existing.next.equals(key)) {
+                    existing = existing.next;
                 }
-                if (existing == null) {
-                    this.keys[bucket] = key;
+                if (existing.next == null) {
+                    key.next = null;
+                    existing.next = key;
                     return;
                 }
+                existing = existing.next;
             }
             existing.merge(key);
         }
@@ -236,7 +222,13 @@ public class CalculateAverage_yavuztas {
                 if ((key = this.keys[pos++]) == null) {
                     continue;
                 }
+                Record next = key.next;
                 consumer.accept(key);
+                while (next != null) { // also traverse the records in collision list
+                    final Record tmp = next.next;
+                    consumer.accept(next);
+                    next = tmp;
+                }
             }
         }
 
@@ -249,138 +241,138 @@ public class CalculateAverage_yavuztas {
     // One actor for one thread, no synchronization
     static class RegionActor extends Thread {
 
-        final FileChannel channel;
-        final long startPos;
+        final long startPos; // start of region memory address
         final int size;
-        long regionMemoryAddress;
 
         final RecordMap map = new RecordMap();
 
-        public RegionActor(FileChannel channel, long startPos, int size) throws IOException {
-            this.channel = channel;
+        public RegionActor(long startPos, int size) {
             this.startPos = startPos;
             this.size = size;
-            // get the segment memory address, this is the only thing we need for Unsafe
-            this.regionMemoryAddress = this.channel.map(FileChannel.MapMode.READ_ONLY, startPos, size, Arena.global()).address();
+        }
+
+        static long getWord(long address) {
+            return UNSAFE.getLong(address);
+        }
+
+        static long getWord2(long address) {
+            return UNSAFE.getLong(address + 8);
+        }
+
+        // hasvalue & haszero
+        // adapted from https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
+        public static long hasSemicolon(long word) {
+            // semicolon pattern
+            long SEMICOLON = 0x3B3B3B3B3B3B3B3BL;
+            final long hasVal = word ^ SEMICOLON; // hasvalue
+            return ((hasVal - 0x0101010101010101L) & ~hasVal & 0x8080808080808080L); // haszero
+        }
+
+        public static int semicolonPos(long hasVal) {
+            return Long.numberOfTrailingZeros(hasVal) >>> 3;
+        }
+
+        static int decimalPos(long numberWord) {
+            return Long.numberOfTrailingZeros(~numberWord & 0x10101000);
         }
 
         @Override
         public void run() {
-            int keyHash;
-            byte length;
-            byte b;
-            byte b2;
-            byte b3;
-            byte b4;
-            byte b5;
-            byte b6;
-            byte b7;
-            long start;
-            long pointer = this.regionMemoryAddress;
+            long s; // semicolon check word
+            int pos; // semicolon position
+            long hash; // key hash
+            long word1; // first word to read
+            long word2; // second word to read
+            long word; // the rest between 3 - 13. Max key size 13 longs - 13*8 = 104 > 100
+            long pointer = this.startPos;
             final long size = pointer + this.size;
             while (pointer < size) { // line start
-                start = pointer; // save line start position
-                keyHash = UNSAFE.getByte(pointer++); // first byte is guaranteed not to be ';'
+                hash = 0; // reset hash
+                word1 = getWord(pointer);
+                if ((s = hasSemicolon(word1)) != 0) {
+                    pos = semicolonPos(s);
+                    // read temparature
+                    final long numberWord = getWord(pointer + pos + 1);
+                    final int decimalPos = decimalPos(numberWord);
+                    final int temp = convertIntoNumber(decimalPos, numberWord);
 
-                while (true) { // read to the death :)
-                    if ((b = UNSAFE.getByte(pointer++)) != ';') { // unroll level 1
-                        if ((b2 = UNSAFE.getByte(pointer++)) != ';') { // unroll level 2
-                            if ((b3 = UNSAFE.getByte(pointer++)) != ';') { // unroll level 3
-                                if ((b4 = UNSAFE.getByte(pointer++)) != ';') { // unroll level 4
-                                    if ((b5 = UNSAFE.getByte(pointer++)) != ';') { // unroll level 5
-                                        if ((b6 = UNSAFE.getByte(pointer++)) != ';') { // unroll level 6
-                                            if ((b7 = UNSAFE.getByte(pointer++)) != ';') { // unroll level 7. It's not getting faster anymore, let's stop it :)
-                                                keyHash = calculateHash(keyHash, b, b2, b3, b4, b5, b6, b7);
-                                            }
-                                            else {
-                                                keyHash = calculateHash(keyHash, b, b2, b3, b4, b5, b6);
-                                                break;
-                                            }
-                                        }
-                                        else {
-                                            keyHash = calculateHash(keyHash, b, b2, b3, b4, b5);
-                                            break;
-                                        }
-                                    }
-                                    else {
-                                        keyHash = calculateHash(keyHash, b, b2, b3, b4);
-                                        break;
-                                    }
-                                }
-                                else {
-                                    keyHash = calculateHash(keyHash, b, b2, b3);
-                                    break;
-                                }
-                            }
-                            else {
-                                keyHash = calculateHash(keyHash, b, b2);
-                                break;
-                            }
-                        }
-                        else {
-                            keyHash = calculateHash(keyHash, b);
-                            break;
-                        }
+                    word1 = partial(word1, pos); // last word
+                    this.map.putAndCollect(completeHash(hash, word1), temp, pointer, pos, word1, 0, 0);
+
+                    pointer += pos + (decimalPos >>> 3) + 4; // seek to the line end
+                }
+                else {
+                    int length = 8;
+                    word2 = getWord2(pointer);
+                    if ((s = hasSemicolon(word2)) != 0) {
+                        pos = semicolonPos(s);
+                        length += pos;
+                        // read temparature
+                        final long numberWord = getWord(pointer + length + 1);
+                        final int decimalPos = decimalPos(numberWord);
+                        final int temp = convertIntoNumber(decimalPos, numberWord);
+
+                        word2 = partial(word2, pos); // last word
+                        this.map.putAndCollect(completeHash(hash, word1, word2), temp, pointer, length, word1, word2, 0);
+
+                        pointer += length + (decimalPos >>> 3) + 4; // seek to the line end
                     }
                     else {
-                        break;
+                        length = 16;
+                        hash = appendHash(hash, word1, word2);
+                        while ((s = hasSemicolon((word = getWord(pointer + length)))) == 0) {
+                            hash = appendHash(hash, word);
+                            length += 8;
+                        }
+
+                        pos = semicolonPos(s);
+                        length += pos;
+                        // read temparature
+                        final long numberWord = getWord(pointer + length + 1);
+                        final int decimalPos = decimalPos(numberWord);
+                        final int temp = convertIntoNumber(decimalPos, numberWord);
+
+                        word = partial(word, pos); // last word
+                        this.map.putAndCollect(completeHash(hash, word), temp, pointer, length, word1, word2, word);
+
+                        pointer += length + (decimalPos >>> 3) + 4; // seek to the line end
                     }
                 }
-
-                // station length
-                length = (byte) (pointer - start - 1); // "-1" for ';'
-
-                // read temparature
-                final long numberPart = UNSAFE.getLong(pointer);
-                final int decimalPos = Long.numberOfTrailingZeros(~numberPart & 0x10101000);
-                final int temp = convertIntoNumber(decimalPos, numberPart);
-                pointer += (decimalPos >>> 3) + 3;
-
-                this.map.putAndCollect(start, length, keyHash, temp);
             }
         }
 
-        /*
-         * Unrolled hash functions
-         */
-        static int calculateHash(int hash, int b) {
-            return 31 * hash + b;
+        // Hashes are calculated by a Mersenne Prime (1 << 7) -1
+        // This is faster than multiplication in some machines
+        static long appendHash(long hash, long word) {
+            return (hash << 7) - hash + word;
         }
 
-        static int calculateHash(int hash, int b1, int b2) {
-            return (31 * 31 * hash) + calculateHash(b1, b2);
+        static long appendHash(long hash, long word1, long word2) {
+            hash = (hash << 7) - hash + word1;
+            return (hash << 7) - hash + word2;
         }
 
-        static int calculateHash(int hash, int b1, int b2, int b3) {
-            return (31 * 31 * 31 * hash) + calculateHash(b1, b2, b3);
+        static int completeHash(long hash, long partial) {
+            hash = (hash << 7) - hash + partial;
+            return (int) (hash ^ (hash >>> 25));
         }
 
-        static int calculateHash(int hash, int b1, int b2, int b3, int b4) {
-            return (31 * 31 * 31 * 31 * hash) + calculateHash(b1, b2, b3, b4);
-        }
-
-        static int calculateHash(int hash, int b1, int b2, int b3, int b4, int b5) {
-            return (31 * 31 * 31 * 31 * 31 * hash) + calculateHash(b1, b2, b3, b4, b5);
-        }
-
-        static int calculateHash(int hash, int b1, int b2, int b3, int b4, int b5, int b6) {
-            return (31 * 31 * 31 * 31 * 31 * 31 * hash) + calculateHash(b1, b2, b3, b4, b5, b6);
-        }
-
-        static int calculateHash(int hash, int b1, int b2, int b3, int b4, int b5, int b6, int b7) {
-            return (31 * 31 * 31 * 31 * 31 * 31 * 31 * hash) + calculateHash(b1, b2, b3, b4, b5, b6, b7);
+        static int completeHash(long hash, long word1, long word2) {
+            hash = (hash << 7) - hash + word1;
+            hash = (hash << 7) - hash + word2;
+            return (int) hash ^ (int) (hash >>> 25);
         }
 
         // Credits to @merrykitty. Magical solution to parse temparature values branchless!
         // Taken as without modification, comments belong to @merrykitty
         private static int convertIntoNumber(int decimalSepPos, long numberWord) {
-            int shift = 28 - decimalSepPos;
+            final int shift = 28 - decimalSepPos;
             // signed is -1 if negative, 0 otherwise
-            long signed = (~numberWord << 59) >> 63;
-            long designMask = ~(signed & 0xFF);
+            final long signed = (~numberWord << 59) >> 63;
+            final long designMask = ~(signed & 0xFF);
             // Align the number to a specific position and transform the ascii code
             // to actual digit value in each byte
-            long digits = ((numberWord & designMask) << shift) & 0x0F000F0F00L;
+            final long digits = ((numberWord & designMask) << shift) & 0x0F000F0F00L;
             // Now digits is in the form 0xUU00TTHH00 (UU: units digit, TT: tens digit, HH: hundreds digit)
             // 0xUU00TTHH00 * (100 * 0x1000000 + 10 * 0x10000 + 1) =
             // 0x000000UU00TTHH00 +
@@ -389,8 +381,8 @@ public class CalculateAverage_yavuztas {
             // Now TT * 100 has 2 trailing zeroes and HH * 100 + TT * 10 + UU < 0x400
             // This results in our value lies in the bit 32 to 41 of this product
             // That was close :)
-            long absValue = ((digits * 0x640a0001) >>> 32) & 0x3FF;
-            long value = (absValue ^ signed) - signed;
+            final long absValue = ((digits * 0x640a0001) >>> 32) & 0x3FF;
+            final long value = (absValue ^ signed) - signed;
             return (int) value;
         }
 
@@ -404,27 +396,47 @@ public class CalculateAverage_yavuztas {
     }
 
     private static double round(double value) {
-        return Math.round(value * 10.0) / 10.0;
+        return Math.round(value) / 10.0;
     }
 
     /**
      * Scans the given buffer to the left
      */
-    private static long findClosestLineEnd(long start, int size, FileChannel channel) throws IOException {
-        final long position = start + size;
-        final long left = Math.max(position - 101, 0);
-        final ByteBuffer buffer = ByteBuffer.allocate(101); // enough size to find at least one '\n'
-        if (channel.read(buffer.clear(), left) != -1) {
-            int bufferPos = buffer.position() - 1;
-            while (buffer.get(bufferPos) != '\n') {
-                bufferPos--;
-                size--;
-            }
+    private static long findClosestLineEnd(long start, int size) {
+        long position = start + size;
+        while (UNSAFE.getByte(--position) != '\n') {
+            // read until a linebreak
+            size--;
         }
         return size;
     }
 
-    public static void main(String[] args) throws IOException, InterruptedException {
+    private static boolean isWorkerProcess(String[] args) {
+        return Arrays.asList(args).contains("--worker");
+    }
+
+    private static void runAsWorker() throws Exception {
+        final ProcessHandle.Info info = ProcessHandle.current().info();
+        final List<String> commands = new ArrayList<>();
+        info.command().ifPresent(commands::add);
+        info.arguments().ifPresent(args -> commands.addAll(Arrays.asList(args)));
+        commands.add("--worker");
+
+        new ProcessBuilder()
+                .command(commands)
+                .start()
+                .getInputStream()
+                .transferTo(System.out);
+    }
+
+    public static void main(String[] args) throws Exception {
+
+        // Dased on @thomaswue's idea, to cut unmapping delay.
+        // Strangely, unmapping delay doesn't occur on macOS/M1 however in Linux/AMD it's substantial - ~200ms
+        if (!isWorkerProcess(args)) {
+            runAsWorker();
+            return;
+        }
 
         var concurrency = 2 * Runtime.getRuntime().availableProcessors();
         final long fileSize = Files.size(FILE);
@@ -442,14 +454,17 @@ public class CalculateAverage_yavuztas {
 
         long startPos = 0;
         final FileChannel channel = (FileChannel) Files.newByteChannel(FILE, StandardOpenOption.READ);
+        // get the memory address, this is the only thing we need for Unsafe
+        final long memoryAddress = channel.map(FileChannel.MapMode.READ_ONLY, startPos, fileSize, Arena.global()).address();
+
         final RegionActor[] actors = new RegionActor[concurrency];
         for (int i = 0; i < concurrency; i++) {
             // calculate boundaries
             long maxSize = (startPos + regionSize > fileSize) ? fileSize - startPos : regionSize;
             // shift position to back until we find a linebreak
-            maxSize = findClosestLineEnd(startPos, (int) maxSize, channel);
+            maxSize = findClosestLineEnd(memoryAddress + startPos, (int) maxSize);
 
-            final RegionActor region = (actors[i] = new RegionActor(channel, startPos, (int) maxSize));
+            final RegionActor region = (actors[i] = new RegionActor(memoryAddress + startPos, (int) maxSize));
             region.start(); // start processing
 
             startPos += maxSize;
@@ -463,8 +478,11 @@ public class CalculateAverage_yavuztas {
 
         // sort and print the result
         final TreeMap<String, String> sorted = new TreeMap<>();
-        output.forEach(key -> sorted.put(key.toString(), key.measurements()));
+        output.forEach(key -> {
+            sorted.put(key.toString(), key.measurements());
+        });
         System.out.println(sorted);
+        System.out.close(); // closing the stream will trigger the main process to pick up the output early
     }
 
 }
