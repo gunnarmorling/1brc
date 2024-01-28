@@ -59,7 +59,7 @@ public class CalculateAverage_godofwharf {
             -1, -1, -1, -1, -1, -1, -1, -1, 0, 1,
             2, 3, 4, 5, 6, 7, 8, 9, -1, -1 };
     private static final int MAX_STR_LEN = 100;
-    private static final int DEFAULT_HASH_TBL_SIZE = 10007;
+    private static final int DEFAULT_HASH_TBL_SIZE = 8191;
     private static final int DEFAULT_PAGE_SIZE = 8_388_608; // 8 MB
     private static final int PAGE_SIZE = Integer.parseInt(System.getProperty("pageSize", STR."\{DEFAULT_PAGE_SIZE}"));
 
@@ -707,7 +707,7 @@ public class CalculateAverage_godofwharf {
 
         private int mod(final long a,
                         final long b) {
-            return (int) ((a % b + b) % b);
+            return (int) (a & b);
         }
 
         // This method tries to find the next possible idx in hash table which either contains no entry or contains
