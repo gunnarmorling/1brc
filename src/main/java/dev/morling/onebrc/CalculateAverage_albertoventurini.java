@@ -180,8 +180,8 @@ public class CalculateAverage_albertoventurini {
      * Internally, the chunk is further subdivided into "sub-chunks" (byte arrays).
      */
     private static final class ChunkReader {
-        // Byte arrays of size 2^22 seem to have the best performance on my machine.
-        private static final int BYTE_ARRAY_SIZE = 1 << 22;
+        // Byte arrays of size 2^20 seem to have the best performance on my machine.
+        private static final int BYTE_ARRAY_SIZE = 1 << 20;
         private final byte[] bytes;
 
         private final RandomAccessFile file;
