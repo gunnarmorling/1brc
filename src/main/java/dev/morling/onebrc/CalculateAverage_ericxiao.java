@@ -75,8 +75,7 @@ public class CalculateAverage_ericxiao {
         private long readEnd;
         private boolean lastRead;
         private boolean firstRead;
-        byte[] keyBytes = new byte[100];
-        byte[] valueBytes = new byte[100];
+        byte[] entryBytes = new byte[512];
 
         private static final Unsafe UNSAFE = initUnsafe();
 
@@ -101,13 +100,12 @@ public class CalculateAverage_ericxiao {
         }
 
         public void add(long keyStart, long keyEnd, long valueEnd) {
-            int length = (int) (keyEnd - keyStart);
-            UNSAFE.copyMemory(null, keyStart, keyBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, length);
-            String key = new String(keyBytes, 0, length, StandardCharsets.UTF_8);
-            long valueStart = keyEnd + 1;
-            length = (int) (valueEnd - valueStart);
-            UNSAFE.copyMemory(null, valueStart, valueBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, length);
-            double value = Double.parseDouble(new String(valueBytes, 0, length, StandardCharsets.UTF_8));
+            int entryLength = (int) (valueEnd - keyStart);
+            int keyLength = (int) (keyEnd - keyStart);
+            int valueLength = (int) (valueEnd - (keyEnd + 1));
+            UNSAFE.copyMemory(null, keyStart, entryBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, entryLength);
+            String key = new String(entryBytes, 0, keyLength, StandardCharsets.UTF_8);
+            double value = Double.parseDouble(new String(entryBytes, keyLength + 1, valueLength, StandardCharsets.UTF_8));
 
             hashMap.compute(key, (_, v) -> {
                 if (v == null) {
@@ -156,11 +154,8 @@ public class CalculateAverage_ericxiao {
 
             long keyStartAddress = byteStart;
 
-            // while (byteStart % 8 != 0) {
-            // byteStart++;
-            // }
-
-            byteStart = (byteStart + 7) & ~7;
+            // TODO we should align the address to 8 byte boundary here.
+            // byteStart = (byteStart + 7) & ~7;
 
             final int vectorLoops = (int) (endAddress - byteStart) / 8;
 
@@ -303,7 +298,7 @@ public class CalculateAverage_ericxiao {
                 }
                 // print key and values
                 int counter = 1;
-                System.out.println("{");
+                System.out.print("{");
                 for (Map.Entry<String, double[]> entry : mapA.entrySet()) {
                     double[] measurements = entry.getValue();
                     System.out.print(entry.getKey() + "=" + measurements[0] + "/" + String.format("%.1f", measurements[2] / measurements[3]) + "/" + measurements[1]);
