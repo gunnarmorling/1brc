@@ -125,7 +125,7 @@ public class CalculateAverage_godofwharf {
                             futures.add(executorService.submit(() -> {
                                 int tid = (int) Thread.currentThread().threadId();
                                 byte[] currentPage = new byte[PAGE_SIZE + MAX_STR_LEN];
-                                long[] hashCodes = new long[2];
+                                int[] hashCodes = new int[2];
                                 // iterate over each page in split
                                 for (Page page : split.pages) {
                                     // this byte buffer should end with '\n' or EOF
@@ -357,16 +357,16 @@ public class CalculateAverage_godofwharf {
             return pages;
         }
 
-        private static long computeHashCode1(final byte[] b) {
-            long result = -2;
+        private static int computeHashCode1(final byte[] b) {
+            int result = -2;
             for (byte value : b) {
                 result = 31 * result + value;
             }
             return result;
         }
 
-        private static long computeHashCode2(final byte[] b) {
-            long result = -2;
+        private static int computeHashCode2(final byte[] b) {
+            int result = -2;
             for (byte value : b) {
                 result = 127 * result + value;
             }
@@ -416,12 +416,12 @@ public class CalculateAverage_godofwharf {
             private final byte[] station;
             private final int stationLen;
             private final boolean isAscii;
-            private final long[] hashCodes;
+            private final int[] hashCodes;
 
             public AggregationKey(final byte[] station,
                                   final int stationLen,
                                   final boolean isAscii,
-                                  final long[] hashCodes) {
+                                  final int[] hashCodes) {
                 this.station = station;
                 this.stationLen = stationLen;
                 this.isAscii = isAscii;
@@ -435,7 +435,7 @@ public class CalculateAverage_godofwharf {
 
             @Override
             public int hashCode() {
-                return (int) (hashCodes[0] & 0xFFFF);
+                return hashCodes[0];
             }
 
             @Override
@@ -583,7 +583,7 @@ public class CalculateAverage_godofwharf {
                        int stationLen,
                        double value,
                        boolean isAscii,
-                       long[] hashCodes,
+                       int[] hashCodes,
                        State.AggregationKey aggregationKey) {
 
     public Measurement(byte[] station,
@@ -591,7 +591,7 @@ public class CalculateAverage_godofwharf {
                        byte[] temperature,
                        int temperatureLen,
                        boolean isAscii,
-                       long[] hashCodes) {
+                       int[] hashCodes) {
             this(station,
                     stationLen,
                     NumberUtils.parseDouble2(temperature, temperatureLen),
@@ -723,11 +723,9 @@ public class CalculateAverage_godofwharf {
             // we found a non-empty slot
             // check if we can use it
             // to check if a key exists in map, we compare both the hash codes and then check for key equality
-            // boolean exists = tableEntries[curIdx].key.hashCodes[0] == key.hashCodes[0] &&
-            // tableEntries[curIdx].key.hashCodes[1] == key.hashCodes[1] &&
-            // tableEntries[curIdx].key.equals(key);
             boolean exists = tableEntries[curIdx].key.hashCodes[0] == key.hashCodes[0] &&
-                    tableEntries[curIdx].key.hashCodes[1] == key.hashCodes[1];
+                    tableEntries[curIdx].key.hashCodes[1] == key.hashCodes[1] &&
+                    tableEntries[curIdx].key.equals(key);
             if (exists) {
                 return curIdx;
             }
