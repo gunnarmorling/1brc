@@ -28,10 +28,7 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.Arrays;
-import java.util.Objects;
-import java.util.SortedMap;
-import java.util.TreeMap;
+import java.util.*;
 import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -73,7 +70,44 @@ public class CalculateAverage_jonathanaotearoa {
 
     public static void main(final String[] args) throws IOException {
         assert ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN : "Big endian byte order is not supported";
-        System.out.println(processFile(FILE_PATH));
+        System.out.println(resultsToString(processFile(FILE_PATH)));
+    }
+
+    /**
+     * A custom version of AbstractMap's toString() method.
+     * <p>
+     * This should be more performant as we can:
+     * <ul>
+     *     <li>Set the initial capacity of the string builder</li>
+     *     <li>Append double values directly, which avoids string creation</li>
+     * </ul>
+     * </p>
+     *
+     * @param results the results.
+     * @return a string representation of the results.
+     */
+    private static String resultsToString(final Map<String, TemperatureData> results) {
+        final Iterator<Map.Entry<String, TemperatureData>> i = results.entrySet().iterator();
+        if (!i.hasNext()) {
+            System.out.println("{}");
+        }
+        // Capacity based the output for measurements.txt.
+        final StringBuilder sb = new StringBuilder(1100).append('{');
+        while (i.hasNext()) {
+            Map.Entry<String, TemperatureData> e = i.next();
+            sb.append(e.getKey())
+                    .append('=')
+                    .append(e.getValue().getMin())
+                    .append('/')
+                    .append(e.getValue().getMean())
+                    .append('/')
+                    .append(e.getValue().getMax());
+            if (i.hasNext()) {
+                sb.append(',').append(' ');
+            }
+        }
+        sb.append('}');
+        return sb.toString();
     }
 
     /**
@@ -371,9 +405,16 @@ public class CalculateAverage_jonathanaotearoa {
             return this;
         }
 
-        @Override
-        public String toString() {
-            return round(min) + "/" + round(((double) sum) / count) + "/" + round(max);
+        double getMin() {
+            return round(min);
+        }
+
+        double getMax() {
+            return round(max);
+        }
+
+        double getMean() {
+            return round(((double) sum) / count);
         }
 
         private static double round(double value) {
@@ -530,8 +571,9 @@ public class CalculateAverage_jonathanaotearoa {
                     final String expectedResultFileName = filePath.getFileName().toString().replace(".txt", ".out");
                     try {
                         final String expected = Files.readString(SAMPLE_DIR_PATH.resolve(expectedResultFileName));
-                        // Appending new-line to simulate System.out.println().
-                        final String actual = STR."\{processFile(filePath).toString()}\n";
+                        final SortedMap<String, TemperatureData> results = processFile(filePath);
+                        // Appending \n to the results string to mimic println().
+                        final String actual = STR."\{resultsToString(results)}\n";
                         if (actual.equals(expected)) {
                             testResults.append("Passed\n");
                         }
