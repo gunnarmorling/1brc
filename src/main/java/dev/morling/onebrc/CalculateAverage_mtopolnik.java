@@ -217,11 +217,7 @@ public class CalculateAverage_mtopolnik {
                     }
                 }
                 int tableIndex = (int) (hash & TABLE_INDEX_MASK);
-                int loopCount = 0;
                 while (true) {
-                    if (loopCount++ > STATS_TABLE_SIZE) {
-                        throw new RuntimeException("infinite loop");
-                    }
                     stats.gotoIndex(tableIndex);
                     if (stats.hash() == hash && stats.nameLen() == nameLen && nameEquals(
                             stats.nameAddress(), nameStartAddress, nameLen, nameWord0, nameWord1, lastNameWord)) {
@@ -249,8 +245,8 @@ public class CalculateAverage_mtopolnik {
                     && stats.nameWord1() == nameWord1;
         }
 
-        private boolean nameEquals(
-                                   long statsAddr, long inputAddr, long len, long inputWord1, long inputWord2, long lastInputWord) {
+        private static boolean nameEquals(
+                                          long statsAddr, long inputAddr, long len, long inputWord1, long inputWord2, long lastInputWord) {
             boolean mismatch1 = inputWord1 != UNSAFE.getLong(statsAddr);
             boolean mismatch2 = inputWord2 != UNSAFE.getLong(statsAddr + Long.BYTES);
             if (len <= 2 * Long.BYTES) {
