@@ -40,6 +40,7 @@ public class CalculateAverage_roman_r_m {
     private static final long SEMICOLON_MASK = broadcast((byte) ';');
     private static final long LINE_END_MASK = broadcast((byte) '\n');
     private static final long DOT_MASK = broadcast((byte) '.');
+    private static final long ZEROES_MASK = broadcast((byte) '0');
 
     // from netty
 
@@ -62,6 +63,15 @@ public class CalculateAverage_roman_r_m {
             next = ms.get(ValueLayout.JAVA_LONG_UNALIGNED, start);
         }
         return start + Long.numberOfTrailingZeros(i) / 8;
+    }
+
+    static int hashFull(long word) {
+        return (int) (word ^ (word >>> 32));
+    }
+
+    static int hashPartial(long word, int bytes) {
+        long h = Long.reverseBytes(word) >>> (8 * (8 - bytes));
+        return (int) (h ^ (h >>> 32));
     }
 
     public static void main(String[] args) throws Exception {
@@ -96,34 +106,37 @@ public class CalculateAverage_roman_r_m {
                         var station = new ByteString(segment);
                         long offset = segment.address();
                         long end = offset + segment.byteSize();
+                        long tailMask;
                         while (offset < end) {
                             // parsing station name
                             long start = offset;
                             long next = UNSAFE.getLong(offset);
                             long pattern = applyPattern(next, SEMICOLON_MASK);
                             int bytes;
-                            if (pattern != 0) {
-                                bytes = Long.numberOfTrailingZeros(pattern) / 8;
-                                offset += bytes;
-                                long h = Long.reverseBytes(next) >>> (8 * (8 - bytes));
-                                station.hash = (int) (h ^ (h >>> 32));
-                            }
-                            else {
-                                long h = next;
-                                station.hash = (int) (h ^ (h >>> 32));
-                                while (pattern == 0) {
+                            if (pattern == 0) {
+                                station.hash = hashFull(next);
+                                do {
                                     offset += 8;
                                     next = UNSAFE.getLong(offset);
                                     pattern = applyPattern(next, SEMICOLON_MASK);
-                                }
+                                } while (pattern == 0);
+
                                 bytes = Long.numberOfTrailingZeros(pattern) / 8;
                                 offset += bytes;
+                                tailMask = ((1L << (8 * bytes)) - 1);
+                            }
+                            else {
+                                bytes = Long.numberOfTrailingZeros(pattern) / 8;
+                                offset += bytes;
+                                tailMask = ((1L << (8 * bytes)) - 1);
+
+                                station.hash = hashPartial(next, bytes);
                             }
 
                             int len = (int) (offset - start);
                             station.offset = start;
                             station.len = len;
-                            station.tail = next & ((1L << (8 * bytes)) - 1);
+                            station.tail = next & tailMask;
 
                             offset++;
 
@@ -140,7 +153,7 @@ public class CalculateAverage_roman_r_m {
                                 long numLen = applyPattern(encodedVal, DOT_MASK);
                                 numLen = Long.numberOfTrailingZeros(numLen) / 8;
 
-                                encodedVal ^= broadcast((byte) 0x30);
+                                encodedVal ^= ZEROES_MASK;
 
                                 int intPart = (int) (encodedVal & ((1 << (8 * numLen)) - 1));
                                 intPart <<= 8 * (2 - numLen);
@@ -285,24 +298,31 @@ public class CalculateAverage_roman_r_m {
             int h = s.hashCode();
             int idx = (SIZE - 1) & h;
 
+            var keys = this.keys;
+
+            int idx0 = idx;
             int i = 0;
-            while (keys[idx] != null && !keys[idx].equals(s)) {
-                i++;
-                idx = (idx + i * i) % SIZE;
-            }
-            if (keys[idx] == null) {
-                keys[idx] = s.copy();
-                values[idx] = new int[4];
-                values[idx][0] = value;
-                values[idx][1] = value;
-                values[idx][2] = value;
-                values[idx][3] = 1;
-            }
-            else {
-                values[idx][0] = Math.min(values[idx][0], value);
-                values[idx][1] = Math.max(values[idx][1], value);
-                values[idx][2] += value;
-                values[idx][3] += 1;
+            while (true) {
+                if (keys[idx] != null && keys[idx].equals(s)) {
+                    values[idx][0] = Math.min(values[idx][0], value);
+                    values[idx][1] = Math.max(values[idx][1], value);
+                    values[idx][2] += value;
+                    values[idx][3] += 1;
+                    return;
+                }
+                else if (keys[idx] == null) {
+                    keys[idx] = s.copy();
+                    values[idx] = new int[4];
+                    values[idx][0] = value;
+                    values[idx][1] = value;
+                    values[idx][2] = value;
+                    values[idx][3] = 1;
+                    return;
+                }
+                else {
+                    i++;
+                    idx = (idx0 + i * i) % SIZE;
+                }
             }
         }
 
