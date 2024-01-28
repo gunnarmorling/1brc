@@ -29,6 +29,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 
+import static java.lang.ProcessBuilder.Redirect.PIPE;
+import static java.util.Arrays.asList;
+
 public class CalculateAverage_mtopolnik {
     private static final Unsafe UNSAFE = unsafe();
     private static final int MAX_NAME_LEN = 100;
@@ -76,7 +79,22 @@ public class CalculateAverage_mtopolnik {
     }
 
     public static void main(String[] args) throws Exception {
-        calculate();
+        if (args.length >= 1 && args[0].equals("--worker")) {
+            calculate();
+            System.out.close();
+            return;
+        }
+        var curProcInfo = ProcessHandle.current().info();
+        var cmdLine = new ArrayList<String>();
+        cmdLine.add(curProcInfo.command().get());
+        cmdLine.addAll(asList(curProcInfo.arguments().get()));
+        cmdLine.add("--worker");
+        var process = new ProcessBuilder()
+                .command(cmdLine)
+                .inheritIO().redirectOutput(PIPE)
+                .start()
+                .getInputStream().transferTo(System.out);
+
     }
 
     static void calculate() throws Exception {
