@@ -23,8 +23,10 @@ if [[ ! "$(uname -s)" = "Darwin" ]]; then
   JAVA_OPTS="$JAVA_OPTS -XX:+UseTransparentHugePages"
 fi
 
+CONFIGS="USE_SHARED_ARENA=true USE_SHARED_REGION=true CLOSE_STDOUT_ON_RESULT=true"
+
 #echo "Process started at $(date +%s%N | cut -b1-13)"
-eval "exec 3< <({ CLOSE_STDOUT_ON_RESULT=true USE_SHARED_ARENA=true java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_serkan_ozal; })"
+eval "exec 3< <({ $CONFIGS java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_serkan_ozal; })"
 read <&3 result
 echo -e "$result"
 #echo "Process finished at $(date +%s%N | cut -b1-13)"
