@@ -75,8 +75,7 @@ public class CalculateAverage_ericxiao {
         private long readEnd;
         private boolean lastRead;
         private boolean firstRead;
-        byte[] keyBytes = new byte[100];
-        byte[] valueBytes = new byte[100];
+        byte[] entryBytes = new byte[512];
 
         private static final Unsafe UNSAFE = initUnsafe();
 
@@ -101,13 +100,12 @@ public class CalculateAverage_ericxiao {
         }
 
         public void add(long keyStart, long keyEnd, long valueEnd) {
-            int length = (int) (keyEnd - keyStart);
-            UNSAFE.copyMemory(null, keyStart, keyBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, length);
-            String key = new String(keyBytes, 0, length, StandardCharsets.UTF_8);
-            long valueStart = keyEnd + 1;
-            length = (int) (valueEnd - valueStart);
-            UNSAFE.copyMemory(null, valueStart, valueBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, length);
-            double value = Double.parseDouble(new String(valueBytes, 0, length, StandardCharsets.UTF_8));
+            int entryLength = (int) (valueEnd - keyStart);
+            int keyLength = (int) (keyEnd - keyStart);
+            UNSAFE.copyMemory(null, keyStart, entryBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, entryLength);
+            String key = new String(entryBytes, 0, keyLength, StandardCharsets.UTF_8);
+            int valueLength = (int) (valueEnd - (keyEnd + 1));
+            double value = Double.parseDouble(new String(entryBytes, keyLength, valueLength, StandardCharsets.UTF_8));
 
             hashMap.compute(key, (_, v) -> {
                 if (v == null) {
