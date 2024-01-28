@@ -124,13 +124,14 @@ public class CalculateAverage_godofwharf {
                         .forEach(split -> {
                             // process splits concurrently using a thread pool
                             futures.add(executorService.submit(() -> {
+                                MemorySegment splitSegment = globalSegment.asSlice(split.offset, split.length);
+                                splitSegment.load();
                                 int tid = (int) Thread.currentThread().threadId();
                                 byte[] currentPage = new byte[PAGE_SIZE + MAX_STR_LEN];
                                 // iterate over each page in split
                                 for (Page page : split.pages) {
                                     // this byte buffer should end with '\n' or EOF
                                     MemorySegment segment = globalSegment.asSlice(page.offset, page.length);
-                                    segment.load();
                                     MemorySegment.copy(segment, ValueLayout.JAVA_BYTE, 0L, currentPage, 0, (int) page.length);
                                     SearchResult searchResult = findNewLinesVectorized(currentPage, (int) page.length);
                                     int prevOffset = 0;
