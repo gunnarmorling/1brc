@@ -148,10 +148,18 @@ public class CalculateAverage_shipilev {
         public int min;
         public int max;
 
-        public Bucket(byte[] name, long tail1, long tail2, int hash, int temp) {
-            this.name = name;
-            this.tail1 = tail1;
-            this.tail2 = tail2;
+        public Bucket(ByteBuffer slice, int begin, int end, int hash, int temp) {
+            int len = end - begin;
+
+            // We are checking the names on hot-path. Therefore, it is convenient
+            // to keep allocation for names near the buckets.
+            this.name = new byte[len];
+            slice.get(begin, name, 0, len);
+
+            // Also pick up any tail to simplify future matches.
+            this.tail1 = (len < 8) ? 0 : slice.getLong(end - 8);
+            this.tail2 = (len < 16) ? 0 : slice.getLong(end - 16);
+
             this.hash = hash;
             this.sum = temp;
             this.count = 1;
@@ -205,18 +213,8 @@ public class CalculateAverage_shipilev {
             while (true) {
                 Bucket cur = buckets[idx];
                 if (cur == null) {
-                    // No bucket yet, lucky us. Lookup the name and create the bucket with it.
-                    // We are checking the names on hot-path. Therefore, it is convenient
-                    // to keep allocation for names near the buckets.
-                    int len = end - begin;
-                    byte[] copy = new byte[len];
-                    name.get(begin, copy, 0, len);
-
-                    // Also pick up any tail to simplify future matches.
-                    long tail1 = (len < 8) ? 0 : name.getLong(begin + len - 8);
-                    long tail2 = (len < 16) ? 0 : name.getLong(begin + len - 16);
-
-                    buckets[idx] = new Bucket(copy, tail1, tail2, hash, temp);
+                    // No bucket yet, lucky us. Create the bucket with it.
+                    buckets[idx] = new Bucket(name, begin, end, hash, temp);
                     return;
                 }
                 else if ((cur.hash == hash) && nameMatches(cur, name, begin, end)) {
@@ -447,8 +445,8 @@ public class CalculateAverage_shipilev {
     // a given mmap slice, while there is still other work to do. This allows
     // us to unmap slices on the go.
     public static final class RootTask extends CountedCompleter<Void> {
-        public RootTask(CountedCompleter<Void> parent) {
-            super(parent);
+        public RootTask() {
+            super(null);
         }
 
         @Override
@@ -517,8 +515,12 @@ public class CalculateAverage_shipilev {
     // ========================= Invocation =========================
 
     public static void main(String[] args) throws Exception {
+        // Instantiate a separate FJP to match the parallelism accurately, without
+        // relying on common pool defaults.
+        ForkJoinPool pool = new ForkJoinPool(Runtime.getRuntime().availableProcessors());
+
         // This little line carries the whole world
-        new RootTask(null).fork();
+        pool.submit(new RootTask());
 
         // While the root task is working, prepare what we need for the
         // end of the run. Go and try to report something to prepare the
