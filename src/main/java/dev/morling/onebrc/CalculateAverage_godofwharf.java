@@ -60,6 +60,7 @@ public class CalculateAverage_godofwharf {
             2, 3, 4, 5, 6, 7, 8, 9, -1, -1 };
     private static final int MAX_STR_LEN = 100;
     private static final int DEFAULT_HASH_TBL_SIZE = 10010;
+    private static final int DEFAULT_FAST_HASH_TBL_SIZE = (1 << 17);
     private static final int DEFAULT_PAGE_SIZE = 8_388_608; // 8 MB
     private static final int PAGE_SIZE = Integer.parseInt(System.getProperty("pageSize", STR."\{DEFAULT_PAGE_SIZE}"));
 
@@ -152,10 +153,7 @@ public class CalculateAverage_godofwharf {
                                         byte[] station = new byte[stationLen];
                                         System.arraycopy(currentPage, prevOffset, station, 0, stationLen);
                                         System.arraycopy(currentPage, prevOffset + stationLen + 1, temperature, 0, temperatureLen);
-                                        CRC32C c = new CRC32C();
-                                        c.update(station, 0, stationLen);
-                                        int hashCode = (int) (c.getValue() & 0xFFFF);
-                                        //int hashCode = Arrays.hashCode(station);
+                                        int hashCode = Arrays.hashCode(station);
                                         Measurement m = new Measurement(
                                                 station, stationLen, temperature, temperatureLen, false, hashCode);
                                         threadLocalStates[tid].update(m);
@@ -367,7 +365,7 @@ public class CalculateAverage_godofwharf {
 
         public State() {
             // this.state = new HashMap<>(DEFAULT_HASH_TBL_SIZE);
-            this.state = new FastHashMap(DEFAULT_HASH_TBL_SIZE);
+            this.state = new FastHashMap(DEFAULT_FAST_HASH_TBL_SIZE);
         }
 
         // Implementing the logic in update method instead of calling HashMap.compute() has reduced the runtime significantly
@@ -515,11 +513,11 @@ public class CalculateAverage_godofwharf {
                        State.AggregationKey aggregationKey) {
 
     public Measurement(byte[] station,
-                           int stationLen,
-                           byte[] temperature,
-                           int temperatureLen,
-                           boolean isAscii,
-                           int hashCode) {
+                       int stationLen,
+                       byte[] temperature,
+                       int temperatureLen,
+                       boolean isAscii,
+                       int hashCode) {
             this(station,
                     stationLen,
                     NumberUtils.parseDouble2(temperature, temperatureLen),
