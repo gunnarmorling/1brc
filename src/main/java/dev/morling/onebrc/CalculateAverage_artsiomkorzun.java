@@ -34,7 +34,6 @@ public class CalculateAverage_artsiomkorzun {
 
     private static final Path FILE = Path.of("./measurements.txt");
     private static final long SEGMENT_SIZE = 4 * 1024 * 1024;
-    private static final long SEGMENT_OVERLAP = 128;
     private static final long COMMA_PATTERN = 0x3B3B3B3B3B3B3B3BL;
     private static final long DOT_BITS = 0x10101000;
     private static final long MAGIC_MULTIPLIER = (100 * 0x1000000 + 10 * 0x10000 + 1);
@@ -363,15 +362,21 @@ public class CalculateAverage_artsiomkorzun {
 
             for (int segment; (segment = counter.getAndIncrement()) < segmentCount;) {
                 long position = SEGMENT_SIZE * segment;
-                long size = Math.min(SEGMENT_SIZE + SEGMENT_OVERLAP, fileSize - position);
+                long size = Math.min(SEGMENT_SIZE, fileSize - position - 1);
                 long address = fileAddress + position;
-                long limit = address + Math.min(SEGMENT_SIZE, size - 1);
+                long limit = address + size;
 
                 if (segment > 0) {
                     address = next(address);
                 }
 
-                aggregate(aggregates, address, limit);
+                long address1 = address;
+                long limit1 = (address + limit) >>> 1;
+
+                long address2 = next(limit1);
+                long limit2 = limit;
+
+                aggregate(aggregates, address1, limit1, address2, limit2);
             }
 
             while (!result.compareAndSet(null, aggregates)) {
@@ -388,6 +393,55 @@ public class CalculateAverage_artsiomkorzun {
                 // continue
             }
             return position;
+        }
+
+        private static void aggregate(Aggregates aggregates, long position1, long limit1, long position2, long limit2) {
+            while (position1 <= limit1 && position2 <= limit2) {
+                int length1 = 0, length2 = 0;
+                long hash1 = 0, hash2 = 0;
+
+                long word1 = word(position1), word2 = word(position2);
+                long separator1 = separator(word1), separator2 = separator(word2);
+
+                while (separator1 == 0) {
+                    length1 += 8;
+                    hash1 ^= word1;
+                    word1 = word(position1 + length1);
+                    separator1 = separator(word1);
+                }
+
+                while (separator2 == 0) {
+                    length2 += 8;
+                    hash2 ^= word2;
+                    word2 = word(position2 + length2);
+                    separator2 = separator(word2);
+                }
+
+                length1 += length(separator1);
+                length2 += length(separator2);
+
+                word1 = mask(word1, separator1);
+                word2 = mask(word2, separator2);
+
+                hash1 ^= word1;
+                hash2 ^= word2;
+
+                long num1 = word(position1 + length1), num2 = word(position2 + length2);
+                int dot1 = dot(num1), dot2 = dot(num2);
+                int value1 = value(num1, dot1), value2 = value(num2, dot2);
+
+                long ptr1 = aggregates.put(position1, word1, length1, mix(hash1));
+                long ptr2 = aggregates.put(position2, word2, length2, mix(hash2));
+
+                Aggregates.update(ptr1, value1);
+                Aggregates.update(ptr2, value2);
+
+                position1 += length1 + (dot1 >> 3) + 3;
+                position2 += length2 + (dot2 >> 3) + 3;
+            }
+
+            aggregate(aggregates, position1, limit1);
+            aggregate(aggregates, position2, limit2);
         }
 
         private static void aggregate(Aggregates aggregates, long position, long limit) {
