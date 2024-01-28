@@ -166,9 +166,9 @@ public class CalculateAverage_godofwharf {
                                     }
                                     // Explicitly commented out because unload seems to take a lot of time
                                     // segment.unload();
-                                    printDebugMessage("Spent a total of %d ns in reading contents from file".formatted(time));
                                 }
                             }));
+                            printDebugMessage("Spent a total of %d ns in reading contents from file".formatted(time));
                         });
                 for (Future<?> future : futures) {
                     future.get();
