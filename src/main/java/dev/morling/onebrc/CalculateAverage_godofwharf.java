@@ -364,7 +364,7 @@ public class CalculateAverage_godofwharf {
 
         public State() {
             // this.state = new HashMap<>(DEFAULT_HASH_TBL_SIZE);
-            this.state = new FastHashMap(DEFAULT_FAST_HASH_TBL_SIZE);
+            this.state = new FastHashMap(DEFAULT_HASH_TBL_SIZE);
         }
 
         // Implementing the logic in update method instead of calling HashMap.compute() has reduced the runtime significantly
