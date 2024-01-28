@@ -23,33 +23,17 @@ import java.io.RandomAccessFile;
 import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.StringTokenizer;
-import java.util.TreeMap;
-import java.util.Vector;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
-
-class ConcurrentTreeMap<K, V> extends ConcurrentSkipListMap<K, V> {
-    @Override
-    public synchronized V putIfAbsent(K key, V value) {
-        return super.putIfAbsent(key, value);
-    }
-
-    // @Override
-    // public synchronized V get(Object key) {
-    // return super.get(key);
-    // }
-}
 
 public class CalculateAverage_mahadev_k {
 
     private static final String FILE = "./measurements.txt";
 
-    private static List<Map<String, MeasurementAggregator>> intermediateList = new Vector<>();
+    private static Map<String, MeasurementAggregator> stationMap = new ConcurrentSkipListMap<>();
 
     private static double round(double value) {
         return Math.round(value * 10.0) / 10.0;
@@ -58,22 +42,13 @@ public class CalculateAverage_mahadev_k {
     private static class MeasurementAggregator {
         double minima = Double.POSITIVE_INFINITY, maxima = Double.NEGATIVE_INFINITY, total = 0, count = 0;
 
-        public MeasurementAggregator(double temp) {
-            accept(temp);
-        }
-
-        private void accept(double value) {
-            minima = Math.min(minima, value);
-            maxima = Math.max(maxima, value);
+        public synchronized void accept(double value) {
+            if (minima > value)
+                minima = value;
+            if (maxima < value)
+                maxima = value;
             total += value;
             count++;
-        }
-
-        public void merge(MeasurementAggregator agg) {
-            minima = Math.min(minima, agg.minima);
-            maxima = Math.max(maxima, agg.maxima);
-            total += agg.total;
-            count += agg.count;
         }
 
         public double min() {
@@ -121,7 +96,7 @@ public class CalculateAverage_mahadev_k {
                     final long currentStart = start;
                     final long currentEnd = end;
                     executor.submit(() -> {
-                        ByteBuffer buffer = ByteBuffer.allocate((int) (currentEnd - currentStart));
+                        ByteBuffer buffer = ByteBuffer.allocate((int) (currentEnd - currentStart + 1));
                         try {
                             channel.read(buffer, currentStart);
                         }
@@ -130,7 +105,7 @@ public class CalculateAverage_mahadev_k {
                         }
                         buffer.flip();
                         String data = StandardCharsets.UTF_8.decode(buffer).toString();
-                        executor.submit(() -> processData(data));
+                        processData(data);
                     });
                     start = end + 1;
                 }
@@ -143,51 +118,34 @@ public class CalculateAverage_mahadev_k {
     }
 
     public static void processData(String dataBlock) {
-        Map<String, MeasurementAggregator> intermediateAgg = new HashMap<>();
         StringTokenizer tokenizer = new StringTokenizer(dataBlock, "\n");
         while (tokenizer.hasMoreElements()) {
             StringTokenizer tokens = new StringTokenizer(tokenizer.nextToken(), ";");
             String station = tokens.nextToken();
-            double temp = Double.parseDouble(tokens.nextToken());
-            // processMinMaxMean(station, temp);
-            var agg = new MeasurementAggregator(temp);
-            var value = intermediateAgg.getOrDefault(station, agg);
-            if (value != agg) {
-                value.merge(agg);
-            }
-            intermediateAgg.put(station, value);
+            double value = Double.parseDouble(tokens.nextToken());
+            processMinMaxMean(station, value);
         }
-        intermediateList.add(intermediateAgg);
     }
 
-    // private static void processMinMaxMean(String station, double temp) {
-    // if (!stationMap.containsKey(station)) {
-    // stationMap.putIfAbsent(station, new MeasurementAggregator(temp));
-    // }
-    // var values = stationMap.get(station);
-    // values.accept(temp);
-    // }
+    private static void processMinMaxMean(String station, double temp) {
+        var values = stationMap.get(station);
+        if (values == null) {
+            values = new MeasurementAggregator();
+            stationMap.putIfAbsent(station, values);
+        }
+        values.accept(temp);
+    }
 
     public static void print() throws UnsupportedEncodingException {
-        Map<String, MeasurementAggregator> aggMap = new TreeMap<>();
-        for (var intermediateAgg : intermediateList) {
-            for (var kv : intermediateAgg.entrySet()) {
-                var aggVal = aggMap.getOrDefault(kv.getKey(), kv.getValue());
-                if (aggVal != kv.getValue()) {
-                    aggVal.merge(kv.getValue());
-                }
-                aggMap.put(kv.getKey(), aggVal);
-            }
-        }
         System.setOut(new PrintStream(new FileOutputStream(FileDescriptor.out), true, StandardCharsets.UTF_8));
         System.out.print("{");
-        int i = aggMap.size();
-        for (var kv : aggMap.entrySet()) {
+        int i = stationMap.size();
+        for (var kv : stationMap.entrySet()) {
             System.out.printf("%s=%s/%s/%s", kv.getKey(), kv.getValue().min(), kv.getValue().avg(), kv.getValue().max());
             if (i > 1)
                 System.out.print(", ");
             i--;
         }
-        System.out.printf("}\n");
+        System.out.println("}");
     }
 }
