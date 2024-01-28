@@ -365,6 +365,14 @@ public class CalculateAverage_godofwharf {
 
         private static int hashCode1(final byte[] b) {
             int result = -2;
+            for (byte v: b) {
+                result = 31 * result + v;
+            }
+            return result;
+        }
+
+        private static int hashCode1Unrolled(final byte[] b) {
+            int result = -2;
             int i = 0;
             for (; i + 3 < b.length; i += 4) {
                 result = 31 * 31 * 31 * 31 * result
@@ -678,11 +686,11 @@ public class CalculateAverage_godofwharf {
 
         public void put(final State.AggregationKey key,
                         final MeasurementAggregator aggregator) {
-            tableEntries[(int) ((size - 1) & key.hashCodes[0])] = new TableEntry(key, aggregator);
+            tableEntries[(size - 1) & key.hashCodes[0]] = new TableEntry(key, aggregator);
         }
 
         public MeasurementAggregator get(final State.AggregationKey key) {
-            TableEntry entry = tableEntries[(int) ((size - 1) & key.hashCodes[0])];
+            TableEntry entry = tableEntries[(size - 1) & key.hashCodes[0]];
             if (entry != null) {
                 return entry.aggregator;
             }
