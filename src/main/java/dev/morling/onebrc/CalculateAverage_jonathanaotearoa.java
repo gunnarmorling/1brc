@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
@@ -34,9 +35,6 @@ import java.util.TreeMap;
 import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-
-import static java.lang.Math.max;
-import static java.lang.Math.min;
 
 public class CalculateAverage_jonathanaotearoa {
 
@@ -53,6 +51,7 @@ public class CalculateAverage_jonathanaotearoa {
         }
     }
 
+    private static final int WORD_BYTES = Long.BYTES;
     private static final Path FILE_PATH = Path.of("./measurements.txt");
     private static final Path SAMPLE_DIR_PATH = Path.of("./src/test/resources/samples");
     private static final byte MAX_LINE_BYTES = 107;
@@ -73,6 +72,7 @@ public class CalculateAverage_jonathanaotearoa {
     private static final long TEMP_DIGITS_MASK = 0x0f000f0f00L;
 
     public static void main(final String[] args) throws IOException {
+        assert ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN : "Big endian byte order is not supported";
         System.out.println(processFile(FILE_PATH));
     }
 
@@ -86,14 +86,14 @@ public class CalculateAverage_jonathanaotearoa {
      * @return a sorted map of station data keyed by station name.
      * @throws IOException if an error occurs.
      */
-    private static SortedMap<String, StationData> processFile(final Path filePath) throws IOException {
+    private static SortedMap<String, TemperatureData> processFile(final Path filePath) throws IOException {
         assert filePath != null : "filePath cannot be null";
         assert Files.isRegularFile(filePath) : STR."\{filePath.toAbsolutePath()} is not a valid file";
 
         try (final FileChannel fc = FileChannel.open(filePath, StandardOpenOption.READ)) {
             final long fileSize = fc.size();
-            if (fileSize < Long.BYTES) {
-                // The file size is less than our word size!
+            if (fileSize < WORD_BYTES) {
+                // The file size is less than our word size.
                 // Keep it simple and fall back to non-performant processing.
                 return processTinyFile(fc, fileSize);
             }
@@ -112,7 +112,7 @@ public class CalculateAverage_jonathanaotearoa {
      * @return a sorted map of station data keyed by station name.
      * @throws IOException if an error occurs reading from the file channel.
      */
-    private static SortedMap<String, StationData> processTinyFile(final FileChannel fc, final long fileSize) throws IOException {
+    private static SortedMap<String, TemperatureData> processTinyFile(final FileChannel fc, final long fileSize) throws IOException {
         final ByteBuffer byteBuffer = ByteBuffer.allocate((int) fileSize);
         fc.read(byteBuffer);
         return new String(byteBuffer.array(), StandardCharsets.UTF_8)
@@ -120,13 +120,13 @@ public class CalculateAverage_jonathanaotearoa {
                 .map(line -> line.trim().split(";"))
                 .map(tokens -> {
                     final String stationName = tokens[0];
-                    final int temp = Integer.parseInt(tokens[1].replace(".", ""));
-                    return new StationData(stationName, stationName.hashCode(), temp);
+                    final short temp = Short.parseShort(tokens[1].replace(".", ""));
+                    return new SimpleStationData(stationName, temp);
                 })
                 .collect(Collectors.toMap(
                         sd -> sd.name,
                         sd -> sd,
-                        StationData::merge,
+                        TemperatureData::merge,
                         TreeMap::new));
     }
 
@@ -138,8 +138,8 @@ public class CalculateAverage_jonathanaotearoa {
      * @return a sorted map of station data keyed by station name.
      * @throws IOException if an error occurs mapping the file channel into memory.
      */
-    private static SortedMap<String, StationData> processFile(final FileChannel fc, final long fileSize) throws IOException {
-        assert fileSize >= Long.BYTES : STR."File size must be >= \{Long.BYTES} but was \{fileSize}";
+    private static SortedMap<String, TemperatureData> processFile(final FileChannel fc, final long fileSize) throws IOException {
+        assert fileSize >= WORD_BYTES : STR."File size cannot be less than word size \{WORD_BYTES}, but was \{fileSize}";
 
         try (final Arena arena = Arena.ofConfined()) {
             final long fileAddress = fc.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, arena).address();
@@ -148,9 +148,9 @@ public class CalculateAverage_jonathanaotearoa {
                     .map(CalculateAverage_jonathanaotearoa::processChunk)
                     .flatMap(Repository::entries)
                     .collect(Collectors.toMap(
-                            sd -> sd.name,
+                            StationData::getName,
                             sd -> sd,
-                            StationData::merge,
+                            TemperatureData::merge,
                             TreeMap::new));
         }
     }
@@ -213,8 +213,6 @@ public class CalculateAverage_jonathanaotearoa {
             int nameHash = 1;
 
             while (true) {
-                // We don't care about byte order when constructing a hash.
-                // There's no need, therefore, to reverse the bytes if the OS is little endian.
                 nameWord = chunk.getWord(address);
 
                 // Based on the Hacker's Delight "Find First 0-Byte" branch-free, 5-instruction, algorithm.
@@ -225,6 +223,7 @@ public class CalculateAverage_jonathanaotearoa {
                 separatorMask = (separatorXorResult - 0x0101010101010101L) & (~separatorXorResult & 0x8080808080808080L);
                 if (separatorMask == 0) {
                     address += Long.BYTES;
+                    // Multiplicative hashing, as per Arrays.hashCode().
                     // We could use XOR here, but it "might" produce more collisions.
                     nameHash = 31 * nameHash + Long.hashCode(nameWord);
                 }
@@ -234,40 +233,38 @@ public class CalculateAverage_jonathanaotearoa {
             }
 
             // We've found the separator.
-            // The following operations assume little endianness, i.e. the UTF-8 bytes are ordered from right to left.
-            // We therefore use the *trailing* number of zeros to get the number of name bits.
+            // We only support little endian, so we use the *trailing* number of zeros to get the number of name bits.
             final int numberOfNameBits = Long.numberOfTrailingZeros(separatorMask) & ~7;
             final int numberOfNameBytes = numberOfNameBits >> 3;
             final long separatorAddress = address + numberOfNameBytes;
 
             if (numberOfNameBytes > 0) {
                 // Truncate the word, so we only have the portion before the separator, i.e. the name bytes.
-                // As per the separator index step above, this assumes little endianness.
                 final int bitsToDiscard = Long.SIZE - numberOfNameBits;
+                // Little endian.
                 final long truncatedNameWord = (nameWord << bitsToDiscard) >>> bitsToDiscard;
-                // Multiplicative hashing, as per Arrays.hashCode().
                 nameHash = 31 * nameHash + Long.hashCode(truncatedNameWord);
             }
 
             final long tempAddress = separatorAddress + 1;
             final long tempWord = chunk.getWord(tempAddress);
 
+            // "0" in UTF-8 is 48, which is 00110000 in binary.
+            // The first 4 bits of any UTF-8 digit byte are therefore 0011.
+
             // Get the position of the decimal point...
             // "." in UTF-8 is 46, which is 00101110 in binary.
             // We can therefore use the 4th bit to check which byte is the decimal point.
-            // Given we're assuming little endianness, the decimal point index is from right to left.
             final int decimalPointIndex = Long.numberOfTrailingZeros(~tempWord & DECIMAL_POINT_MASK) >> 3;
 
             // Check if we've got a negative or positive number...
-            // "0" in UTF-8 is 48, which is 00110000 in binary.
-            // The first 4 bits of any UTF-8 digit byte are therefore 0011.
             // "-" in UTF-8 is 45, which is 00101101 in binary.
-            // We can, therefore, use the 4th bit to check if the word contains a positive, or negative, temperature.
+            // As per above, we use the 4th bit to check if the word contains a positive, or negative, temperature.
             // If the temperature is negative, the value of "sign" will be -1. If it's positive, it'll be 0.
             final long sign = (~tempWord << 59) >> 63;
 
             // Create a mask that zeros out the minus-sign byte, if present.
-            // Assumes little endianness, i.e. the minus sign is the right-most byte.
+            // Little endian, i.e. the minus sign is the right-most byte.
             final long signMask = ~(sign & 0xFF);
 
             // To get the temperature value, we left-shift the digit bytes into the following, known, positions.
@@ -280,12 +277,11 @@ public class CalculateAverage_jonathanaotearoa {
             final byte b100 = (byte) (digitsWord >> 8);
             final byte b10 = (byte) (digitsWord >> 16);
             final byte b1 = (byte) (digitsWord >> 32);
-            final int unsignedTemp = b100 * 100 + b10 * 10 + b1;
-
-            final int temp = (int) ((unsignedTemp + sign) ^ sign);
+            final short unsignedTemp = (short) (b100 * 100 + b10 * 10 + b1);
+            final short temp = (short) ((unsignedTemp + sign) ^ sign);
 
             final byte nameSize = (byte) (separatorAddress - nameAddress);
-            repo.put(nameAddress, nameSize, nameHash, temp);
+            repo.addTemp(nameAddress, nameSize, nameHash, temp);
 
             // Calculate the address of the next line.
             address = tempAddress + decimalPointIndex + 3;
@@ -306,7 +302,7 @@ public class CalculateAverage_jonathanaotearoa {
 
         public Chunk(final long startAddress, final long lastByteAddress, final boolean isLast) {
             this(startAddress, lastByteAddress, lastByteAddress - (Long.BYTES - 1), isLast);
-            // Enabled when running TestRunner.
+
             assert lastByteAddress > startAddress : STR."lastByteAddress \{lastByteAddress} must be > startAddress \{startAddress}";
             assert lastWordAddress >= startAddress : STR."lastWordAddress \{lastWordAddress} must be >= startAddress \{startAddress}";
         }
@@ -336,47 +332,48 @@ public class CalculateAverage_jonathanaotearoa {
         }
     }
 
-    private static class StationData implements Comparable<StationData> {
+    /**
+     * Abstract class encapsulating temperature data.
+     */
+    private static abstract class TemperatureData {
 
-        private final String name;
-        public final int nameHash;
-        private int tempMin;
-        private int tempMax;
-        private long tempSum;
+        private short min;
+        private short max;
+        private long sum;
         private int count;
 
-        public StationData(final String name, final int nameHash, final int temp) {
-            this.name = name;
-            this.nameHash = nameHash;
-            tempMin = tempMax = temp;
-            tempSum = temp;
+        protected TemperatureData(final short temp) {
+            min = max = temp;
+            sum = temp;
             count = 1;
         }
 
-        public void addTemp(final int temp) {
-            tempMin = min(temp, tempMin);
-            tempMax = max(temp, tempMax);
-            tempSum += temp;
+        void addTemp(final short temp) {
+            if (temp < min) {
+                min = temp;
+            }
+            else if (temp > max) {
+                max = temp;
+            }
+            sum += temp;
             count++;
         }
 
-        public StationData merge(final StationData other) {
-            tempMin = min(tempMin, other.tempMin);
-            tempMax = max(tempMax, other.tempMax);
-            tempSum += other.tempSum;
+        TemperatureData merge(final TemperatureData other) {
+            if (other.min < min) {
+                min = other.min;
+            }
+            if (other.max > max) {
+                max = other.max;
+            }
+            sum += other.sum;
             count += other.count;
             return this;
         }
 
         @Override
-        public int compareTo(final StationData other) {
-            return name.compareTo(other.name);
-        }
-
-        @Override
         public String toString() {
-            // Only include the temp information as we're relying on TreeMap's toString for the rest.
-            return round(tempMin) + "/" + round((1.0 * tempSum) / count) + "/" + round(tempMax);
+            return round(min) + "/" + round(((double) sum) / count) + "/" + round(max);
         }
 
         private static double round(double value) {
@@ -385,12 +382,61 @@ public class CalculateAverage_jonathanaotearoa {
     }
 
     /**
+     * For use with tiny files.
+     *
+     * @see CalculateAverage_jonathanaotearoa#processTinyFile(FileChannel, long).
+     */
+    private static final class SimpleStationData extends TemperatureData implements Comparable<SimpleStationData> {
+
+        private final String name;
+
+        SimpleStationData(final String name, final short temp) {
+            super(temp);
+            this.name = name;
+        }
+
+        @Override
+        public int compareTo(final SimpleStationData other) {
+            return name.compareTo(other.name);
+        }
+    }
+
+    private static final class StationData extends TemperatureData implements Comparable<StationData> {
+
+        private final long nameAddress;
+        private final byte nameSize;
+        private final int nameHash;
+        private String name;
+
+        StationData(final long nameAddress, final byte nameSize, final int nameHash, final short temp) {
+            super(temp);
+            this.nameAddress = nameAddress;
+            this.nameSize = nameSize;
+            this.nameHash = nameHash;
+        }
+
+        @Override
+        public int compareTo(final StationData other) {
+            return getName().compareTo(other.getName());
+        }
+
+        String getName() {
+            if (name == null) {
+                final byte[] nameBytes = new byte[nameSize];
+                UNSAFE.copyMemory(null, nameAddress, nameBytes, UNSAFE.arrayBaseOffset(nameBytes.getClass()), nameSize);
+                this.name = new String(nameBytes, StandardCharsets.UTF_8);
+            }
+            return name;
+        }
+    }
+
+    /**
      * Open addressing, linear probing, hash map repository.
      */
-    private static class Repository {
+    private static final class Repository {
 
-        // First prime number greater than unique keys * 10.
         private static final int CAPACITY = 100_003;
+        private static final int LAST_INDEX = CAPACITY - 1;
 
         private final StationData[] table;
 
@@ -398,13 +444,18 @@ public class CalculateAverage_jonathanaotearoa {
             this.table = new StationData[CAPACITY];
         }
 
-        public void put(final long nameAddress, final byte nameSize, final int nameHash, int temp) {
-            final int index = findIndex(nameHash);
+        /**
+         * Adds a station temperature value to this repository.
+         *
+         * @param nameAddress the station name address in memory.
+         * @param nameSize the station name size in bytes.
+         * @param nameHash the station name hash.
+         * @param temp the temperature value.
+         */
+        public void addTemp(final long nameAddress, final byte nameSize, final int nameHash, short temp) {
+            final int index = findIndex(nameHash, nameAddress, nameSize);
             if (table[index] == null) {
-                final byte[] nameBytes = new byte[nameSize];
-                UNSAFE.copyMemory(null, nameAddress, nameBytes, UNSAFE.arrayBaseOffset(nameBytes.getClass()), nameSize);
-                final String name = new String(nameBytes, StandardCharsets.UTF_8);
-                table[index] = new StationData(name, nameHash, temp);
+                table[index] = new StationData(nameAddress, nameSize, nameHash, temp);
             }
             else {
                 table[index].addTemp(temp);
@@ -415,12 +466,53 @@ public class CalculateAverage_jonathanaotearoa {
             return Arrays.stream(table).filter(Objects::nonNull);
         }
 
-        private int findIndex(int nameHash) {
-            int i = (nameHash & 0x7FFFFFFF) % table.length;
-            while (table[i] != null && table[i].nameHash != nameHash) {
-                i = (i + 1) % table.length;
+        private int findIndex(int nameHash, final long nameAddress, final byte nameSize) {
+            // Think about replacing modulo.
+            // https://lemire.me/blog/2018/08/20/performance-of-ranged-accesses-into-arrays-modulo-multiply-shift-and-masks/
+            int index = (nameHash & 0x7FFFFFFF) % CAPACITY;
+            while (isCollision(index, nameHash, nameAddress, nameSize)) {
+                index = index == LAST_INDEX ? 0 : index + 1;
             }
-            return i;
+            return index;
+        }
+
+        private boolean isCollision(final int index, final int nameHash, final long nameAddress, final byte nameSize) {
+            final StationData existing = table[index];
+            return existing != null
+                    && nameHash != existing.nameHash
+                    && nameSize != existing.nameSize
+                    && !isMemoryEqual(nameAddress, existing.nameAddress, nameSize);
+        }
+
+        /**
+         * Checks if two locations in memory have the same value.
+         *
+         * @param address1 the address of the first location.
+         * @param address2 the address of the second locations.
+         * @param size the number of bytes to check for equality.
+         * @return true if both addresses contain the same bytes.
+         */
+        private static boolean isMemoryEqual(final long address1, final long address2, final byte size) {
+            byte offset = 0;
+            if (size >= Long.BYTES) {
+                while (offset <= size - Long.BYTES) {
+                    final long l1 = UNSAFE.getLong(address1 + offset);
+                    final long l2 = UNSAFE.getLong(address2 + offset);
+                    if (l1 != l2) {
+                        return false;
+                    }
+                    offset += Long.BYTES;
+                }
+            }
+            while (offset < size) {
+                final byte b1 = UNSAFE.getByte(address1 + offset);
+                final byte b2 = UNSAFE.getByte(address2 + offset);
+                if (b1 != b2) {
+                    return false;
+                }
+                offset++;
+            }
+            return true;
         }
     }
 
@@ -438,7 +530,8 @@ public class CalculateAverage_jonathanaotearoa {
                     final String expectedResultFileName = filePath.getFileName().toString().replace(".txt", ".out");
                     try {
                         final String expected = Files.readString(SAMPLE_DIR_PATH.resolve(expectedResultFileName));
-                        final String actual = processFile(filePath).toString();
+                        // Appending new-line to simulate System.out.println().
+                        final String actual = STR."\{processFile(filePath).toString()}\n";
                         if (actual.equals(expected)) {
                             testResults.append("Passed\n");
                         }
