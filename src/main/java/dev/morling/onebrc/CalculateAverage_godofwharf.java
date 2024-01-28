@@ -367,12 +367,17 @@ public class CalculateAverage_godofwharf {
         private static int hashCode2(final byte[] b) {
             int result = 1;
             int i = 0;
-            for (; i + 3 < b.length; i += 4) {
-                result = 7 * 7 * 7 * 7 * result
-                        + 7 * 7 * 7 * b[i]
-                        + 7 * 7 * b[i + 1]
-                        + 7 * b[i + 2]
-                        + b[i + 3];
+            for (; i + 7 < b.length; i += 8) {
+                result =
+                        7 * 7 * 7 * 7 * 7 * 7 * 7 * 7 * result
+                        + 7 * 7 * 7 * 7 * 7 * 7 * 7 * b[i]
+                        + 7 * 7 * 7 * 7 * 7 * 7 * b[i + 1]
+                        + 7 * 7 * 7 * 7 * 7 * b[i + 2]
+                        + 7 * 7 * 7 * 7 * b[i + 3]
+                        + 7 * 7 * 7 * b[i + 4]
+                        + 7 * 7 * b[i + 5]
+                        + 7 * b[i + 6]
+                        + b[i + 7];
             }
             for (; i < b.length; i++) {
                 result = 7 * result + b[i];
