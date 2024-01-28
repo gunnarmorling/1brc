@@ -185,7 +185,7 @@ public class CalculateAverage_iziamos {
 
             byte b = UNSAFE.getByte(pointer);
             for (; b != ';'; ++strLen, b = UNSAFE.getByte(pointer + strLen)) {
-                hash += b << strLen;
+                hash = 31 * hash + b;
             }
             pointer += strLen + 1;
 
@@ -351,22 +351,25 @@ public class CalculateAverage_iziamos {
             }
         }
 
-        private static boolean stringEquals(final long thisNameAddress, final int thisStringLength, final long otherNameAddress, final long otherNameLength) {
+        private static boolean stringEquals(final long thisNameAddress,
+                                            final int thisStringLength,
+                                            final long otherNameAddress,
+                                            final long otherNameLength) {
             if (thisStringLength != otherNameLength) {
                 return false;
             }
 
             int i = 0;
-            for (; i < thisStringLength - 3; i += 4) {
-                if (UNSAFE.getInt(thisNameAddress + i) != UNSAFE.getInt(otherNameAddress + i)) {
+            for (; i < thisStringLength - 7; i += 8) {
+                if (UNSAFE.getLong(thisNameAddress + i) != UNSAFE.getLong(otherNameAddress + i)) {
                     return false;
                 }
             }
 
-            final int remainingToCheck = thisStringLength - i;
-            final int finalBytesMask = ((1 << remainingToCheck * 8)) - 1;
-            final int thisLastWord = UNSAFE.getInt(thisNameAddress + i);
-            final int otherLastWord = UNSAFE.getInt(otherNameAddress + i);
+            final long remainingToCheck = thisStringLength - i;
+            final long finalBytesMask = ((1L << remainingToCheck * 8)) - 1;
+            final long thisLastWord = UNSAFE.getLong(thisNameAddress + i);
+            final long otherLastWord = UNSAFE.getLong(otherNameAddress + i);
 
             return 0 == ((thisLastWord ^ otherLastWord) & finalBytesMask);
         }
