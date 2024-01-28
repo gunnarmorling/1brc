@@ -20,7 +20,6 @@ source "$HOME/.sdkman/bin/sdkman-init.sh"
 sdk use java 21.0.1-graal 1>&2
 
 # used from thomaswue's prepare
-./mvnw clean verify # removes target/ and will re-trigger native image creation.
 if [ ! -f target/CalculateAverage_cb0s_image ]; then
     NATIVE_IMAGE_OPTS="--gc=epsilon -O3 -march=native --enable-preview"
     # Use -H:MethodFilter=CalculateAverage_cb0s.* -H:Dump=:2 -H:PrintGraph=Network for IdealGraphVisualizer graph dumping.
