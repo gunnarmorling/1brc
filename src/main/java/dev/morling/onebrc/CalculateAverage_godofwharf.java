@@ -125,7 +125,6 @@ public class CalculateAverage_godofwharf {
                             futures.add(executorService.submit(() -> {
                                 int tid = (int) Thread.currentThread().threadId();
                                 byte[] currentPage = new byte[PAGE_SIZE + MAX_STR_LEN];
-                                int[] hashCodes = new int[2];
                                 // iterate over each page in split
                                 for (Page page : split.pages) {
                                     // this byte buffer should end with '\n' or EOF
@@ -153,6 +152,7 @@ public class CalculateAverage_godofwharf {
                                         byte[] station = new byte[stationLen];
                                         System.arraycopy(currentPage, prevOffset, station, 0, stationLen);
                                         System.arraycopy(currentPage, prevOffset + stationLen + 1, temperature, 0, temperatureLen);
+                                        int[] hashCodes = new int[2];
                                         hashCodes[0] = computeHashCode1(station);
                                         hashCodes[1] = computeHashCode2(station);
                                         Measurement m = new Measurement(
@@ -358,7 +358,7 @@ public class CalculateAverage_godofwharf {
         }
 
         private static int computeHashCode1(final byte[] b) {
-            // for perfect hasing, set seed as -2 and hash map size to 1<<14
+            // for perfect hashing, set seed as -2 and hash map size to 1<<14
             int result = 1;
             for (byte value : b) {
                 result = 31 * result + value;
@@ -752,9 +752,9 @@ public class CalculateAverage_godofwharf {
                 attempts++;
                 nextIdx = size - mod(idx + (attempts * (long) key.hashCodes[1]), size);
             }
-//            if (attempts > 1) {
-//                System.out.printf("Probe tries = %d%n", attempts);
-//            }
+            // if (attempts > 1) {
+            // System.out.printf("Probe tries = %d%n", attempts);
+            // }
             // if curIdx matches the idx we started with, then a cycle has occurred
             if (nextIdx == idx) {
                 throw new IllegalStateException("Probe failed because we can't find slot for key");
