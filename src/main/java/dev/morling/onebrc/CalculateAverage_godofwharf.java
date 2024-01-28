@@ -161,7 +161,7 @@ public class CalculateAverage_godofwharf {
                                         j++;
                                     }
                                     // Explicitly commented out because unload seems to take a lot of time
-                                    segment.unload();
+                                    // segment.unload();
                                 }
                             }));
                         });
