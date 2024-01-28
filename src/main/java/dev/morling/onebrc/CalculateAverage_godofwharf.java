@@ -746,8 +746,9 @@ public class CalculateAverage_godofwharf {
                     (tableEntries[nextIdx].key.hashCodes[0] != key.hashCodes[0] ||
                             tableEntries[nextIdx].key.hashCodes[1] != key.hashCodes[1] ||
                             !tableEntries[nextIdx].key.equals(key))) {
-                System.out.println("Collision between two strings [Existing key = %s, Given key = %s]".formatted(
-                        tableEntries[nextIdx].key.toString(), key.toString()));
+                System.out.println("Collision between two strings [Existing key = %s, Given key = %s, h1/h1 = %d/%d, h2 = %d/%d]".formatted(
+                        tableEntries[nextIdx].key.toString(), key.toString(), tableEntries[nextIdx].key.hashCodes[0], key.hashCodes[0],
+                        tableEntries[nextIdx].key.hashCodes[1], key.hashCodes[1]));
                 attempts++;
                 nextIdx = size - mod(idx + (attempts * (long) key.hashCodes[1]), size);
             }
