@@ -258,19 +258,27 @@ public class CalculateAverage_godofwharf {
                 int bitCount = Long.bitCount(res);
                 while (res > 0) {
                     int idx = Long.numberOfTrailingZeros(res);
-                    positions[k++] = j + idx;
+                    // positions[k++] = j + idx;
+                    ret.offsets[i + k] = j + idx;
+                    k++;
                     res &= (res - 1);
                     idx = Long.numberOfTrailingZeros(res);
-                    positions[k++] = j + idx;
+                    // positions[k++] = j + idx;
+                    ret.offsets[i + k] = j + idx;
+                    k++;
                     res &= (res - 1);
                     idx = Long.numberOfTrailingZeros(res);
-                    positions[k++] = j + idx;
+                    // positions[k++] = j + idx;
+                    ret.offsets[i + k] = j + idx;
+                    k++;
                     res &= (res - 1);
                     idx = Long.numberOfTrailingZeros(res);
-                    positions[k++] = j + idx;
+                    // positions[k++] = j + idx;
+                    ret.offsets[i + k] = j + idx;
+                    k++;
                     res &= (res - 1);
                 }
-                System.arraycopy(positions, 0, ret.offsets, i, bitCount);
+                //System.arraycopy(positions, 0, ret.offsets, i, bitCount);
                 j += loopLength;
                 i += bitCount;
             }
