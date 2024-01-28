@@ -3,6 +3,7 @@ package dev.morling.onebrc;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.zip.CRC32C;
 
 public class HashTest {
@@ -422,30 +423,43 @@ public class HashTest {
             new CreateMeasurements2.WeatherStation("Zürich", 9.3));
 
     public static void main(String[] args) {
-        int size = 1<<14;
-        FastHashMap collisions = new FastHashMap(size);
+        int size = 10009;
+        FastHashMap2 map = new FastHashMap2(size);
         for (CreateMeasurements2.WeatherStation w: stations) {
-            Key key = new Key(w.id, hashcode1(w.id));
-            if (collisions.get(key) != null) {
-                String first = collisions.get(key);
+            byte[] station = w.id.getBytes(StandardCharsets.UTF_8);
+            Key key = new Key(station, new int[] {hashcode1(station), hashcode2(station)});
+            if (map.get(key) != null) {
+                String first = "NA";
                 String second = w.id;
-                int h1 = hashcode1(first);
-                int h2 = hashcode1(second);
+                int h1 = key.hashCodes[0];
+                int h2 = key.hashCodes[1];
                 int h3 = modulo(h1, size);
                 int h4 = modulo(h2, size);
                 System.out.println(
                         STR."Found one collision: [key1 = \{first}, key2 = \{second}, h1 = \{h1}, h2 = \{h2}, h3 = \{h3}, h4 = \{h4}]");
             } else {
-                collisions.put(key, w.id);
+                map.compute(key, (k, v) -> {
+                    if (v == null) {
+                        return new CalculateAverage_godofwharf.MeasurementAggregator(1, 1, 1, 1);
+                    }
+                    return v;
+                });
             }
         }
     }
 
-    public static int hashcode1(final String s) {
+    public static int hashcode1(final byte[] b) {
         int result = -2;
-        byte[] b = s.getBytes(StandardCharsets.UTF_8);
         for (byte value : b) {
             result = result * 31 + value;
+        }
+        return result;
+    }
+
+    public static int hashcode2(final byte[] b) {
+        int result = -2;
+        for (byte value : b) {
+            result = result * 127 + value;
         }
         return result;
     }
@@ -455,60 +469,159 @@ public class HashTest {
         return (m + (i % m)) % m;
     }
 
-    public static class FastHashMap {
+    // public static class FastHashMap {
+    // private TableEntry[] tableEntries;
+    // private int size;
+    //
+    // public FastHashMap(final int capacity) {
+    // this.size = capacity;
+    // System.out.println(STR."Table size = \{this.size}");
+    // this.tableEntries = new TableEntry[size];
+    // }
+    //
+    // private int tableSizeFor(final int capacity) {
+    // int n = -1 >>> Integer.numberOfLeadingZeros(capacity - 1);
+    // return (n < 0) ? 1 : (n >= Integer.MAX_VALUE) ? Integer.MAX_VALUE : n + 1;
+    // }
+    //
+    // public void put(final Key key,
+    // final String value) {
+    // tableEntries[modulo(key.hashCode, size)] = new TableEntry(key, value);
+    // }
+    //
+    // public String get(final Key key) {
+    // TableEntry entry = tableEntries[modulo(key.hashCode, size)];
+    // if (entry != null) {
+    // return entry.value;
+    // }
+    // return null;
+    // }
+    //
+    // public void forEach(final BiConsumer<Key, String> action) {
+    // for (int i = 0; i < size; i++) {
+    // TableEntry entry = tableEntries[i];
+    // if (entry != null) {
+    // action.accept(entry.key, entry.value);
+    // }
+    // }
+    // }
+    //
+    // record TableEntry(Key key, String value) {
+    // }
+    // }
+
+    public static class FastHashMap2 {
         private TableEntry[] tableEntries;
         private int size;
 
-        public FastHashMap(final int capacity) {
-            this.size = tableSizeFor(capacity);
-            System.out.println(STR."Table size = \{this.size}");
+        public FastHashMap2(final int size) {
+            this.size = size;
             this.tableEntries = new TableEntry[size];
         }
 
-        private int tableSizeFor(final int capacity) {
-            int n = -1 >>> Integer.numberOfLeadingZeros(capacity - 1);
-            return (n < 0) ? 1 : (n >= Integer.MAX_VALUE) ? Integer.MAX_VALUE : n + 1;
-        }
-
-        public void put(final Key key,
-                        final String value) {
-            tableEntries[modulo(key.hashCode, size)] = new TableEntry(key, value);
-        }
-
-        public String get(final Key key) {
-            TableEntry entry = tableEntries[modulo(key.hashCode, size)];
+        public void compute(final Key key,
+                            final BiFunction<Key, CalculateAverage_godofwharf.MeasurementAggregator, CalculateAverage_godofwharf.MeasurementAggregator> function) {
+            int idx = mod(key.hashCodes[0], size);
+            idx = probe(idx, key, key.hashCodes[0], key.hashCodes[1]);
+            TableEntry entry = tableEntries[idx];
             if (entry != null) {
-                return entry.value;
+                entry.aggregator = function.apply(key, entry.aggregator);
             }
-            return null;
+            else {
+                tableEntries[idx] = new TableEntry(key, function.apply(key, null));
+            }
         }
 
-        public void forEach(final BiConsumer<Key, String> action) {
+        public CalculateAverage_godofwharf.MeasurementAggregator get(final Key key) {
+            int idx = mod(key.hashCodes[0], size);
+            TableEntry possibleEntry = tableEntries[idx];
+            if (possibleEntry == null) {
+                return null;
+            }
+            else {
+                Key k = possibleEntry.key;
+                if (k.hashCodes[0] == key.hashCodes[0] &&
+                        Arrays.equals(k.station, key.station)) {
+                    return possibleEntry.aggregator;
+                }
+                idx = probe(idx, key, key.hashCodes[0], key.hashCodes[1]);
+                possibleEntry = tableEntries[idx];
+                return possibleEntry != null &&
+                        possibleEntry.key.hashCodes[0] == key.hashCodes[0] &&
+                        Arrays.equals(possibleEntry.key.station, key.station) ? possibleEntry.aggregator : null;
+            }
+        }
+
+        public void forEach(final BiConsumer<Key, CalculateAverage_godofwharf.MeasurementAggregator> action) {
             for (int i = 0; i < size; i++) {
                 TableEntry entry = tableEntries[i];
                 if (entry != null) {
-                    action.accept(entry.key, entry.value);
+                    action.accept(entry.key, entry.aggregator);
                 }
             }
         }
 
-        record TableEntry(Key key, String value) {
+        private int mod(final int a,
+                        final int b) {
+            return (a % b + b) % b;
         }
+
+        // This method tries to find the next possible idx in hash table which either contains no entry or contains
+        // the key we are looking for
+        // h1 - primary hashcode of key
+        // h2 - secondary hashcode of key
+        private int probe(final int idx,
+                          final Key key,
+                          final int h1,
+                          final int h2) {
+            int curIdx = idx;
+            if (tableEntries[curIdx] == null) {
+                return curIdx;
+            }
+            if (tableEntries[curIdx] != null &&
+                    tableEntries[curIdx].key.hashCodes[0] == h1 &&
+                    Arrays.equals(tableEntries[curIdx].key.station, key.station)) {
+                return curIdx;
+            }
+            curIdx = mod(curIdx + h2, size);
+            while (curIdx != idx &&
+                    tableEntries[curIdx] != null &&
+                    tableEntries[curIdx].key.hashCodes[0] != h1 &&
+                    Arrays.equals(tableEntries[curIdx].key.station, key.station)) {
+                curIdx = mod(curIdx + h2, size);
+            }
+            if (curIdx == idx) {
+                throw new IllegalStateException("Probe failed because we can't find slot for key");
+            }
+            return curIdx;
+        }
+
+        public static class TableEntry {
+            Key key;
+            CalculateAverage_godofwharf.MeasurementAggregator aggregator;
+
+            public TableEntry(final Key key,
+                              final CalculateAverage_godofwharf.MeasurementAggregator aggregator) {
+                this.key = key;
+                this.aggregator = aggregator;
+            }
+        }
+
     }
 
     public static class Key {
-        private String s;
-        private int hashCode;
+        byte[] station;
+        int[] hashCodes;
 
-        public Key(final String s,
-                   final int hashCode) {
-            this.s = s;
-            this.hashCode = hashCode;
+        public Key(final byte[] station,
+                   final int[] hashCodes) {
+            this.station = station;
+            this.hashCodes = hashCodes;
         }
 
         @Override
         public int hashCode() {
-            return hashCode;
+            return hashCodes[0];
         }
 
         @Override
@@ -517,8 +630,8 @@ public class HashTest {
                 return false;
             }
             Key other = (Key) o;
-            return s.length() == other.s.length() &&
-                    s.equals(other.s);
+            return station.length == other.station.length &&
+                    station.equals(other.station);
         }
     }
 }
