@@ -102,10 +102,10 @@ public class CalculateAverage_ericxiao {
         public void add(long keyStart, long keyEnd, long valueEnd) {
             int entryLength = (int) (valueEnd - keyStart);
             int keyLength = (int) (keyEnd - keyStart);
+            int valueLength = (int) (valueEnd - (keyEnd + 1));
             UNSAFE.copyMemory(null, keyStart, entryBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, entryLength);
             String key = new String(entryBytes, 0, keyLength, StandardCharsets.UTF_8);
-            int valueLength = (int) (valueEnd - (keyEnd + 1));
-            double value = Double.parseDouble(new String(entryBytes, keyLength, valueLength, StandardCharsets.UTF_8));
+            double value = Double.parseDouble(new String(entryBytes, keyLength + 1, valueLength, StandardCharsets.UTF_8));
 
             hashMap.compute(key, (_, v) -> {
                 if (v == null) {
@@ -297,7 +297,7 @@ public class CalculateAverage_ericxiao {
                 }
                 // print key and values
                 int counter = 1;
-                System.out.println("{");
+                System.out.print("{");
                 for (Map.Entry<String, double[]> entry : mapA.entrySet()) {
                     double[] measurements = entry.getValue();
                     System.out.print(entry.getKey() + "=" + measurements[0] + "/" + String.format("%.1f", measurements[2] / measurements[3]) + "/" + measurements[1]);
