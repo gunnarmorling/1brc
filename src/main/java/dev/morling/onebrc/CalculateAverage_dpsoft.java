@@ -209,17 +209,6 @@ public class CalculateAverage_dpsoft {
             return measurements;
         }
 
-        // private static int getInt(MappedByteBuffer mbb) {
-        // if (mbb.remaining() >= 4) {
-        // return mbb.getInt();
-        // }
-        // else {
-        // byte[] bytes = new byte[4];
-        // mbb.get(bytes, 0, mbb.remaining());
-        // return ByteBuffer.wrap(bytes).getInt();
-        // }
-        // }
-
         // Skips to the first line in the buffer, used for chunk processing.
         private static void skipToFirstLine(MappedByteBuffer mbb) {
             while ((mbb.get() & 0xFF) >= ' ') {
