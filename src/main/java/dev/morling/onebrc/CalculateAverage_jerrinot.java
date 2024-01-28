@@ -227,7 +227,6 @@ public class CalculateAverage_jerrinot {
 
         // credit: merykitty
         private long parseAndStoreTemperature(long startCursor, long baseEntryPtr, long word) {
-            // long word = UNSAFE.getLong(startCursor);
             long countPtr = baseEntryPtr + MAP_COUNT_OFFSET;
             int cnt = UNSAFE.getInt(countPtr);
             UNSAFE.putInt(countPtr, cnt + 1);
