@@ -406,19 +406,19 @@ public class CalculateAverage_jonathanaotearoa {
         }
 
         double getMin() {
-            return round(min);
+            return round(((double) min) / 10.0);
         }
 
         double getMax() {
-            return round(max);
+            return round(((double) max) / 10.0);
         }
 
         double getMean() {
-            return round(((double) sum) / count);
+            return round((((double) sum) / 10.0) / count);
         }
 
         private static double round(double value) {
-            return Math.round(value) / 10.0;
+            return Math.round(value * 10.0) / 10.0;
         }
     }
 
