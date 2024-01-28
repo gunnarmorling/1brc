@@ -439,12 +439,7 @@ public class CalculateAverage_godofwharf {
                     return true;
                 }
                 // use vectorized code for fast equals comparison
-                if (len < 32) {
-                    return !vectorizedMismatch(SMALL_SPECIES, len, a1, a2);
-                }
-                else {
-                    return !vectorizedMismatch(PREFERRED_SPECIES, len, a1, a2);
-                }
+                return !vectorizedMismatch(SMALL_SPECIES, len, a1, a2);
             }
 
             private static boolean vectorizedMismatch(final VectorSpecies<Byte> species,
