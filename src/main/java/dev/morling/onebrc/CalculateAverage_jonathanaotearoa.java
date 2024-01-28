@@ -281,7 +281,7 @@ public class CalculateAverage_jonathanaotearoa {
             final short temp = (short) ((unsignedTemp + sign) ^ sign);
 
             final byte nameSize = (byte) (separatorAddress - nameAddress);
-            repo.addTemp(nameAddress, nameSize, nameHash, temp);
+            repo.addTemp(nameHash, nameAddress, nameSize, temp);
 
             // Calculate the address of the next line.
             address = tempAddress + decimalPointIndex + 3;
@@ -403,12 +403,12 @@ public class CalculateAverage_jonathanaotearoa {
 
     private static final class StationData extends TemperatureData implements Comparable<StationData> {
 
+        private final int nameHash;
         private final long nameAddress;
         private final byte nameSize;
-        private final int nameHash;
         private String name;
 
-        StationData(final long nameAddress, final byte nameSize, final int nameHash, final short temp) {
+        StationData(final int nameHash, final long nameAddress, final byte nameSize, final short temp) {
             super(temp);
             this.nameAddress = nameAddress;
             this.nameSize = nameSize;
@@ -447,15 +447,15 @@ public class CalculateAverage_jonathanaotearoa {
         /**
          * Adds a station temperature value to this repository.
          *
+         * @param nameHash    the station name hash.
          * @param nameAddress the station name address in memory.
-         * @param nameSize the station name size in bytes.
-         * @param nameHash the station name hash.
-         * @param temp the temperature value.
+         * @param nameSize    the station name size in bytes.
+         * @param temp        the temperature value.
          */
-        public void addTemp(final long nameAddress, final byte nameSize, final int nameHash, short temp) {
+        public void addTemp(final int nameHash, final long nameAddress, final byte nameSize, short temp) {
             final int index = findIndex(nameHash, nameAddress, nameSize);
             if (table[index] == null) {
-                table[index] = new StationData(nameAddress, nameSize, nameHash, temp);
+                table[index] = new StationData(nameHash, nameAddress, nameSize, temp);
             }
             else {
                 table[index].addTemp(temp);
