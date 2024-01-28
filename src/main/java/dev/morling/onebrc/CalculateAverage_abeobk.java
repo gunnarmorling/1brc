@@ -75,7 +75,7 @@ public class CalculateAverage_abeobk {
         }
     }
 
-    // all fields are long, use native type, no conversion
+    // use native type, less conversion
     static class Node {
         long addr;
         long hash;
@@ -188,7 +188,7 @@ public class CalculateAverage_abeobk {
 
     // Thread pool worker
     static final class Worker extends Thread {
-        final int thread_id;
+        final int thread_id; //for debug use only
 
         Worker(int i) {
             thread_id = i;
@@ -205,7 +205,8 @@ public class CalculateAverage_abeobk {
             while ((id = chunk_id.getAndIncrement()) < chunk_cnt) {
                 long addr = start_addr + id * CHUNK_SZ;
                 long end = Math.min(addr + CHUNK_SZ, end_addr);
-                // adjust start
+
+                //find start of line
                 if (id > 0) {
                     while (UNSAFE.getByte(addr++) != '\n')
                         ;
