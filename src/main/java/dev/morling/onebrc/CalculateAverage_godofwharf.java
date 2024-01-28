@@ -36,7 +36,6 @@ import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.stream.IntStream;
 
-import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static jdk.incubator.vector.VectorOperators.NE;
 
@@ -60,7 +59,7 @@ public class CalculateAverage_godofwharf {
             -1, -1, -1, -1, -1, -1, -1, -1, 0, 1,
             2, 3, 4, 5, 6, 7, 8, 9, -1, -1 };
     private static final int MAX_STR_LEN = 100;
-    private static final int DEFAULT_HASH_TBL_SIZE = 1<<14;
+    private static final int DEFAULT_HASH_TBL_SIZE = 1 << 14;
     private static final int DEFAULT_PAGE_SIZE = 8_388_608; // 8 MB
     private static final int PAGE_SIZE = Integer.parseInt(System.getProperty("pageSize", STR."\{DEFAULT_PAGE_SIZE}"));
 
@@ -155,8 +154,7 @@ public class CalculateAverage_godofwharf {
                                         byte[] station = new byte[stationLen];
                                         System.arraycopy(currentPage, prevOffset, station, 0, stationLen);
                                         int[] hashCodes = computeHashCodes(station);
-                                        double temperature =
-                                                NumberUtils.parseDouble2(currentPage, prevOffset + stationLen + 1, temperatureLen);
+                                        double temperature = NumberUtils.parseDouble2(currentPage, prevOffset + stationLen + 1, temperatureLen);
                                         Measurement m = new Measurement(station, temperature, hashCodes);
                                         threadLocalStates[tid].update(m);
                                         prevOffset = curOffset + 1;
@@ -167,9 +165,9 @@ public class CalculateAverage_godofwharf {
                                 }
                                 mergeInternal(threadLocalStates[tid]);
                                 printDebugMessage("Spent a total of %d ns on copy contents from memory to byte array %n".formatted(timer));
-//                                printDebugMessage("Spent a total of %d ns on copying byte arrays %n".formatted(timer1));
-//                                printDebugMessage("Spent a total of %d ns on computing hash code %n".formatted(timer2));
-//                                printDebugMessage("Spent a total of %d ns on updating map %n".formatted(timer3));
+                                // printDebugMessage("Spent a total of %d ns on copying byte arrays %n".formatted(timer1));
+                                // printDebugMessage("Spent a total of %d ns on computing hash code %n".formatted(timer2));
+                                // printDebugMessage("Spent a total of %d ns on updating map %n".formatted(timer3));
                             }));
                         });
                 for (Future<?> future : futures) {
@@ -192,26 +190,6 @@ public class CalculateAverage_godofwharf {
                 });
             });
         }
-
-//        public void merge() {
-//            long time = System.nanoTime();
-//            Arrays.stream(threadLocalStates)
-//                    .parallel()
-//                    .filter(Objects::nonNull)
-//                    .forEach(threadLocalState -> threadLocalState.state
-//                            .forEach((k, v) -> {
-//                                globalMap.compute(k.toString(), (ignored, agg) -> {
-//                                    if (agg == null) {
-//                                        agg = v;
-//                                    }
-//                                    else {
-//                                        agg.merge(v);
-//                                    }
-//                                    return agg;
-//                                });
-//                            }));
-//            printDebugMessage("Merge took %d ns%n", (System.nanoTime() - time));
-//        }
 
         public Map<String, MeasurementAggregator> sort() {
             long time = System.nanoTime();
@@ -271,7 +249,7 @@ public class CalculateAverage_godofwharf {
             int loopBound = PREFERRED_SPECIES.loopBound(pageLen);
             int i = 0;
             int j = 0;
-            //int[] positions = new int[64];
+            // int[] positions = new int[64];
             while (j < loopBound) {
                 Vector<Byte> vec = ByteVector.fromArray(PREFERRED_SPECIES, page, j);
                 long res = NEW_LINE_VEC.eq(vec).toLong();
@@ -299,7 +277,7 @@ public class CalculateAverage_godofwharf {
                     k++;
                     res &= (res - 1);
                 }
-                //System.arraycopy(positions, 0, ret.offsets, i, bitCount);
+                // System.arraycopy(positions, 0, ret.offsets, i, bitCount);
                 j += loopLength;
                 i += bitCount;
             }
@@ -388,8 +366,8 @@ public class CalculateAverage_godofwharf {
         private static int[] computeHashCodes(final byte[] b) {
             // for perfect hashing, set seed as -2 and hash map size to 1<<14
             int[] res = new int[2];
-            //res[0] = Arrays.hashCode(b);
-            res[0] = hashCode1(b);
+            // res[0] = Arrays.hashCode(b);
+            res[0] = hashCode1Unrolled(b);
             // res[1] = hashCode2(b);
             return res;
         }
@@ -440,12 +418,12 @@ public class CalculateAverage_godofwharf {
     }
 
     public static class State {
-        //private final Map<AggregationKey, MeasurementAggregator> state;
+        // private final Map<AggregationKey, MeasurementAggregator> state;
         private final FastHashMap state;
         // private final FastHashMap2 state;
 
         public State() {
-            //this.state = new HashMap<>(DEFAULT_HASH_TBL_SIZE);
+            // this.state = new HashMap<>(DEFAULT_HASH_TBL_SIZE);
             this.state = new FastHashMap(1 << 14);
             // this.state = new FastHashMap2(DEFAULT_HASH_TBL_SIZE);
         }
@@ -513,8 +491,8 @@ public class CalculateAverage_godofwharf {
                 }
                 AggregationKey sk = (AggregationKey) other;
                 return station.length == sk.station.length && Arrays.mismatch(station, sk.station) < 0;
-//                return stationLen == sk.stationLen &&
-//                        && checkArrayEquals(station, sk.station, stationLen);
+                // return stationLen == sk.stationLen &&
+                // && checkArrayEquals(station, sk.station, stationLen);
             }
 
             private boolean checkArrayEquals(final byte[] a1,
@@ -661,6 +639,7 @@ public class CalculateAverage_godofwharf {
                     hashCodes,
                     new State.AggregationKey(station, hashCodes));
         }
+
     }
 
     record LineMetadata(byte[] station,
