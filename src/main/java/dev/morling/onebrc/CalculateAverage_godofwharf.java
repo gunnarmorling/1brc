@@ -59,7 +59,7 @@ public class CalculateAverage_godofwharf {
             -1, -1, -1, -1, -1, -1, -1, -1, 0, 1,
             2, 3, 4, 5, 6, 7, 8, 9, -1, -1 };
     private static final int MAX_STR_LEN = 100;
-    private static final int DEFAULT_HASH_TBL_SIZE = (1 << 20);
+    private static final int DEFAULT_HASH_TBL_SIZE = (1 << 14);
     private static final int DEFAULT_PAGE_SIZE = 8_388_608; // 8 MB
     private static final int PAGE_SIZE = Integer.parseInt(System.getProperty("pageSize", STR."\{DEFAULT_PAGE_SIZE}"));
 
@@ -152,7 +152,7 @@ public class CalculateAverage_godofwharf {
                                         byte[] station = new byte[stationLen];
                                         System.arraycopy(currentPage, prevOffset, station, 0, stationLen);
                                         System.arraycopy(currentPage, prevOffset + stationLen + 1, temperature, 0, temperatureLen);
-                                        int hashCode = Arrays.hashCode(station);
+                                        int hashCode = computeHashCode(station);
                                         Measurement m = new Measurement(
                                                 station, stationLen, temperature, temperatureLen, false, hashCode);
                                         threadLocalStates[tid].update(m);
@@ -354,6 +354,14 @@ public class CalculateAverage_godofwharf {
                 lookahead.unload();
             }
             return pages;
+        }
+
+        private static int computeHashCode(final byte[] b) {
+            int result = -2;
+            for (byte value : b) {
+                result = 31 * result + value;
+            }
+            return result;
         }
     }
 

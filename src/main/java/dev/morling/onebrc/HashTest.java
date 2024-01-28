@@ -422,7 +422,8 @@ public class HashTest {
             new CreateMeasurements2.WeatherStation("Zürich", 9.3));
 
     public static void main(String[] args) {
-        FastHashMap collisions = new FastHashMap(1<<17);
+        int size = 1<<14;
+        FastHashMap collisions = new FastHashMap(size);
         for (CreateMeasurements2.WeatherStation w: stations) {
             Key key = new Key(w.id, hashcode1(w.id));
             if (collisions.get(key) != null) {
@@ -430,8 +431,8 @@ public class HashTest {
                 String second = w.id;
                 int h1 = hashcode1(first);
                 int h2 = hashcode1(second);
-                int h3 = h1 & ((1 << 17) - 1);
-                int h4 = h2 & ((1 << 17) - 1);
+                int h3 = modulo(h1, size);
+                int h4 = modulo(h2, size);
                 System.out.println(
                         STR."Found one collision: [key1 = \{first}, key2 = \{second}, h1 = \{h1}, h2 = \{h2}, h3 = \{h3}, h4 = \{h4}]");
             } else {
@@ -441,12 +442,17 @@ public class HashTest {
     }
 
     public static int hashcode1(final String s) {
-        int result = 0;
+        int result = -2;
         byte[] b = s.getBytes(StandardCharsets.UTF_8);
         for (byte value : b) {
             result = result * 31 + value;
         }
         return result;
+    }
+
+    public static int modulo(final int i,
+                             final int m) {
+        return (m + (i % m)) % m;
     }
 
     public static class FastHashMap {
@@ -466,11 +472,11 @@ public class HashTest {
 
         public void put(final Key key,
                         final String value) {
-            tableEntries[(size - 1) & key.hashCode] = new TableEntry(key, value);
+            tableEntries[modulo(key.hashCode, size)] = new TableEntry(key, value);
         }
 
         public String get(final Key key) {
-            TableEntry entry = tableEntries[(size - 1) & key.hashCode];
+            TableEntry entry = tableEntries[modulo(key.hashCode, size)];
             if (entry != null) {
                 return entry.value;
             }
