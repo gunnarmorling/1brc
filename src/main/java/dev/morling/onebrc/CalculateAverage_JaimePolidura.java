@@ -68,13 +68,15 @@ public final class CalculateAverage_JaimePolidura {
         MemorySegment mmappedFile = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size(), Arena.global());
 
         int nWorkers = channel.size() > 1024 ? Runtime.getRuntime().availableProcessors() : 1;
-
         Worker[] workers = new Worker[nWorkers];
         long quantityPerWorker = Math.floorDiv(channel.size(), nWorkers);
+        long quantityLastWorker = quantityPerWorker + (channel.size() % nWorkers);
 
         for (int i = 0; i < nWorkers; i++) {
+            boolean isLastWorker = i == nWorkers - 1;
+
             long startAddr = mmappedFile.address() + quantityPerWorker * i;
-            long endAddr = startAddr + quantityPerWorker;
+            long endAddr = startAddr + (isLastWorker ? quantityLastWorker : quantityPerWorker);
             workers[i] = new Worker(mmappedFile, channel.size(), startAddr, endAddr);
             workers[i].setPriority(Thread.MAX_PRIORITY);
         }
