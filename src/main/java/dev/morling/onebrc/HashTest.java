@@ -424,8 +424,9 @@ public class HashTest {
     public static void main(String[] args) {
         FastHashMap collisions = new FastHashMap(1<<17);
         for (CreateMeasurements2.WeatherStation w: stations) {
-            if (collisions.get(w.id) != null) {
-                String first = collisions.get(w.id);
+            Key key = new Key(w.id, hashcode1(w.id));
+            if (collisions.get(key) != null) {
+                String first = collisions.get(key);
                 String second = w.id;
                 int h1 = hashcode1(first);
                 int h2 = hashcode1(second);
@@ -434,24 +435,18 @@ public class HashTest {
                 System.out.println(
                         STR."Found one collision: [key1 = \{first}, key2 = \{second}, h1 = \{h1}, h2 = \{h2}, h3 = \{h3}, h4 = \{h4}]");
             } else {
-                collisions.put(w.id, w.id);
+                collisions.put(key, w.id);
             }
         }
     }
 
     public static int hashcode1(final String s) {
         int result = 0;
-        for (int i = 0; i < s.length(); i++) {
-            result = result * 109 + s.charAt(i);
+        byte[] b = s.getBytes(StandardCharsets.UTF_8);
+        for (byte value : b) {
+            result = result * 31 + value;
         }
         return result;
-    }
-
-    public static int hashcode2(final String s) {
-        CRC32C crc32C = new CRC32C();
-        byte[] b = s.getBytes(StandardCharsets.UTF_8);
-        crc32C.update(b, 0, b.length);
-        return (int) (crc32C.getValue() & 0xFFFF);
     }
 
     public static class FastHashMap {
@@ -469,20 +464,20 @@ public class HashTest {
             return (n < 0) ? 1 : (n >= Integer.MAX_VALUE) ? Integer.MAX_VALUE : n + 1;
         }
 
-        public void put(final String key,
+        public void put(final Key key,
                         final String value) {
-            tableEntries[(size - 1) & hashcode1(key)] = new TableEntry(key, value);
+            tableEntries[(size - 1) & key.hashCode] = new TableEntry(key, value);
         }
 
-        public String get(final String key) {
-            TableEntry entry = tableEntries[(size - 1) & hashcode1(key)];
+        public String get(final Key key) {
+            TableEntry entry = tableEntries[(size - 1) & key.hashCode];
             if (entry != null) {
                 return entry.value;
             }
             return null;
         }
 
-        public void forEach(final BiConsumer<String, String> action) {
+        public void forEach(final BiConsumer<Key, String> action) {
             for (int i = 0; i < size; i++) {
                 TableEntry entry = tableEntries[i];
                 if (entry != null) {
@@ -491,7 +486,33 @@ public class HashTest {
             }
         }
 
-        record TableEntry(String key, String value) {
+        record TableEntry(Key key, String value) {
+        }
+    }
+
+    public static class Key {
+        private String s;
+        private int hashCode;
+
+        public Key(final String s,
+                   final int hashCode) {
+            this.s = s;
+            this.hashCode = hashCode;
+        }
+
+        @Override
+        public int hashCode() {
+            return hashCode;
+        }
+
+        @Override
+        public boolean equals(final Object o) {
+            if (!(o instanceof Key)) {
+                return false;
+            }
+            Key other = (Key) o;
+            return s.length() == other.s.length() &&
+                    s.equals(other.s);
         }
     }
 }
