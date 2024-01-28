@@ -723,9 +723,11 @@ public class CalculateAverage_godofwharf {
             // we found a non-empty slot
             // check if we can use it
             // to check if a key exists in map, we compare both the hash codes and then check for key equality
+            // boolean exists = tableEntries[idx].key.hashCodes[0] == key.hashCodes[0] &&
+            // tableEntries[idx].key.hashCodes[1] == key.hashCodes[1] &&
+            // tableEntries[idx].key.equals(key);
             boolean exists = tableEntries[idx].key.hashCodes[0] == key.hashCodes[0] &&
-                    tableEntries[idx].key.hashCodes[1] == key.hashCodes[1] &&
-                    tableEntries[idx].key.equals(key);
+                    tableEntries[idx].key.hashCodes[1] == key.hashCodes[1];
             if (exists) {
                 return idx;
             }
@@ -744,11 +746,13 @@ public class CalculateAverage_godofwharf {
             while (nextIdx != idx &&
                     tableEntries[nextIdx] != null &&
                     (tableEntries[nextIdx].key.hashCodes[0] != key.hashCodes[0] ||
-                            tableEntries[nextIdx].key.hashCodes[1] != key.hashCodes[1] ||
-                            !tableEntries[nextIdx].key.equals(key))) {
-                System.out.println("Collision between two strings [Existing key = %s, Given key = %s, h1/h1 = %d/%d, h2 = %d/%d]".formatted(
-                        tableEntries[nextIdx].key.toString(), key.toString(), tableEntries[nextIdx].key.hashCodes[0], key.hashCodes[0],
-                        tableEntries[nextIdx].key.hashCodes[1], key.hashCodes[1]));
+                            tableEntries[nextIdx].key.hashCodes[1] != key.hashCodes[1])) {
+                // tableEntries[nextIdx].key.hashCodes[0] != key.hashCodes[0] ||
+                // tableEntries[nextIdx].key.hashCodes[1] != key.hashCodes[1] ||
+                // !tableEntries[nextIdx].key.equals(key
+                // System.out.println("Collision between two strings [Existing key = %s, Given key = %s, h1/h1 = %d/%d, h2 = %d/%d]".formatted(
+                // tableEntries[nextIdx].key.toString(), key.toString(), tableEntries[nextIdx].key.hashCodes[0], key.hashCodes[0],
+                // tableEntries[nextIdx].key.hashCodes[1], key.hashCodes[1]));
                 attempts++;
                 nextIdx = size - mod(idx + (attempts * (long) key.hashCodes[1]), size);
             }
