@@ -16,10 +16,8 @@
 
 package dev.morling.onebrc;
 
-import jdk.incubator.vector.ByteVector;
+import jdk.incubator.vector.*;
 import jdk.incubator.vector.Vector;
-import jdk.incubator.vector.VectorOperators;
-import jdk.incubator.vector.VectorSpecies;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -28,7 +26,6 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -37,7 +34,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.function.BiConsumer;
 import java.util.stream.IntStream;
-import java.util.zip.CRC32C;
 
 import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -46,8 +42,10 @@ public class CalculateAverage_godofwharf {
     private static final String FILE = "./measurements.txt";
     private static final boolean DEBUG = Boolean.parseBoolean(System.getProperty("debug", "false"));
 
-    private static final VectorSpecies<Byte> SPECIES = VectorSpecies.ofPreferred(byte.class);
-    private static final Vector<Byte> NEW_LINE_VEC = SPECIES.broadcast('\n');
+    private static final VectorSpecies<Byte> PREFERRED_SPECIES = VectorSpecies.ofPreferred(byte.class);
+    private static final VectorSpecies<Byte> SMALL_SPECIES = VectorSpecies.of(byte.class, VectorShape.S_64_BIT);
+
+    private static final Vector<Byte> NEW_LINE_VEC = PREFERRED_SPECIES.broadcast('\n');
     // This array is used for quick conversion of fractional part
     private static final double[] DOUBLES = new double[]{ 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9 };
     // This array is used for quick conversion from ASCII to digit
@@ -246,13 +244,13 @@ public class CalculateAverage_godofwharf {
         private static SearchResult findNewLinesVectorized(final byte[] page,
                                                            final int pageLen) {
             SearchResult ret = new SearchResult(new int[pageLen / 10], 0);
-            int loopLength = SPECIES.length();
-            int loopBound = SPECIES.loopBound(pageLen);
+            int loopLength = PREFERRED_SPECIES.length();
+            int loopBound = PREFERRED_SPECIES.loopBound(pageLen);
             int i = 0;
             int j = 0;
             int[] positions = new int[64];
             while (j < loopBound) {
-                Vector<Byte> vec = ByteVector.fromArray(SPECIES, page, j);
+                Vector<Byte> vec = ByteVector.fromArray(PREFERRED_SPECIES, page, j);
                 long res = vec.eq(NEW_LINE_VEC).toLong();
                 int k = 0;
                 int bitCount = Long.bitCount(res);
@@ -366,12 +364,12 @@ public class CalculateAverage_godofwharf {
     }
 
     public static class State {
-        //private final Map<AggregationKey, MeasurementAggregator> state;
-        private final FastHashMap state;
+        private final Map<AggregationKey, MeasurementAggregator> state;
+        //private final FastHashMap state;
 
         public State() {
-            //this.state = new HashMap<>(DEFAULT_HASH_TBL_SIZE);
-            this.state = new FastHashMap(DEFAULT_HASH_TBL_SIZE);
+            this.state = new HashMap<>(DEFAULT_HASH_TBL_SIZE);
+            //this.state = new FastHashMap(DEFAULT_HASH_TBL_SIZE);
         }
 
         // Implementing the logic in update method instead of calling HashMap.compute() has reduced the runtime significantly
@@ -420,8 +418,57 @@ public class CalculateAverage_godofwharf {
                     return false;
                 }
                 AggregationKey sk = (AggregationKey) other;
+//                return stationLen == sk.stationLen
+//                        && Arrays.equals(station, 0, stationLen, sk.station, 0, stationLen);
                 return stationLen == sk.stationLen
-                        && Arrays.equals(station, 0, stationLen, sk.station, 0, stationLen);
+                        && checkArrayEquals(station, sk.station, stationLen);
+            }
+
+            private boolean checkArrayEquals(final byte[] a1,
+                                             final byte[] a2,
+                                             final int len) {
+                if (a1[0] != a2[0]) {
+                    return false;
+                }
+                if (len < 8) {
+                    for (int i = 1; i < len; i++) {
+                        if (a1[i] != a2[i]) {
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+                // use vectorized code for fast equals comparison
+                if (len < 32) {
+                    return !vectorizedMismatch(SMALL_SPECIES, len, a1, a2);
+                }
+                else {
+                    return !vectorizedMismatch(PREFERRED_SPECIES, len, a1, a2);
+                }
+            }
+
+            private static boolean vectorizedMismatch(final VectorSpecies<Byte> species,
+                                                      final int len,
+                                                      final byte[] a1,
+                                                      final byte[] a2) {
+                int i = 0;
+                int loopLength = species.length();
+                int loopBound = species.loopBound(len);
+                for (; i < loopBound; i += loopLength) {
+                    Vector<Byte> b1 = ByteVector.fromArray(species, a1, i);
+                    Vector<Byte> b2 = ByteVector.fromArray(species, a2, i);
+                    VectorMask<Byte> result = b1.eq(b2);
+                    if (!result.allTrue()) {
+                        return true;
+                    }
+                }
+                // tail loop
+                for (; i < len; i++) {
+                    if (a1[i] != a2[i]) {
+                        return true;
+                    }
+                }
+                return false;
             }
         }
     }
