@@ -322,14 +322,14 @@ public final class CalculateAverage_JaimePolidura {
                             valueToPut, valueToPut, 1);
                     return;
                 }
-                if (actualEntry.hash == hashToPut) {
+                if (actualEntry.isSameName(nameToPut, nameLength)) {
                     actualEntry.min = Math.min(actualEntry.min, valueToPut);
                     actualEntry.max = Math.max(actualEntry.max, valueToPut);
                     actualEntry.count++;
                     actualEntry.sum = actualEntry.sum + valueToPut;
                     return;
                 }
-                // Dealing with has collisions. We try to go to the next slot
+                // If the name is not the same, we try to go to the next slot
                 if (++index >= this.size) {
                     index = 0;
                 }
@@ -358,6 +358,20 @@ public final class CalculateAverage_JaimePolidura {
             this.max = max;
             this.min = min;
             this.sum = sum;
+        }
+
+        public boolean isSameName(byte[] otherNameBytes, int otherNameLength) {
+            return this.nameLength == otherNameLength && sameNameBytes(otherNameBytes);
+        }
+
+        private boolean sameNameBytes(byte[] otherNameBytes) {
+            for (int i = 0; i < this.nameLength; i++) {
+                if (this.name[i] != otherNameBytes[i]) {
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 
