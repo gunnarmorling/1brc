@@ -669,7 +669,7 @@ public class CalculateAverage_godofwharf {
 
         public FastHashMap2(final int size) {
             this.size = size;
-            this.tableEntries = new TableEntry[size];
+            this.tableEntries = new TableEntry[size + 10];
         }
 
         public void compute(final State.AggregationKey key,
