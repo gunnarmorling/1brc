@@ -422,13 +422,13 @@ public class HashTest {
             new CreateMeasurements2.WeatherStation("Zürich", 9.3));
 
     public static void main(String[] args) {
-        FastHashMap collisions = new FastHashMap(131072);
+        FastHashMap collisions = new FastHashMap(1<<17);
         for (CreateMeasurements2.WeatherStation w: stations) {
             if (collisions.get(w.id) != null) {
                 String first = collisions.get(w.id);
                 String second = w.id;
-                int h1 = first.hashCode();
-                int h2 = second.hashCode();
+                int h1 = hashcode1(first);
+                int h2 = hashcode1(second);
                 int h3 = h1 & ((1 << 17) - 1);
                 int h4 = h2 & ((1 << 17) - 1);
                 System.out.println(
@@ -439,16 +439,17 @@ public class HashTest {
         }
     }
 
-    public static int hashcode1(final byte[] b) {
+    public static int hashcode1(final String s) {
         int result = 0;
-        for (int i = 0; i < b.length; i++) {
-            result = result * 31 + b[i];
+        for (int i = 0; i < s.length(); i++) {
+            result = result * 109 + s.charAt(i);
         }
         return result;
     }
 
-    public static int hashcode2(final byte[] b) {
+    public static int hashcode2(final String s) {
         CRC32C crc32C = new CRC32C();
+        byte[] b = s.getBytes(StandardCharsets.UTF_8);
         crc32C.update(b, 0, b.length);
         return (int) (crc32C.getValue() & 0xFFFF);
     }
@@ -470,11 +471,11 @@ public class HashTest {
 
         public void put(final String key,
                         final String value) {
-            tableEntries[(size - 1) & key.hashCode()] = new TableEntry(key, value);
+            tableEntries[(size - 1) & hashcode1(key)] = new TableEntry(key, value);
         }
 
         public String get(final String key) {
-            TableEntry entry = tableEntries[(size - 1) & key.hashCode()];
+            TableEntry entry = tableEntries[(size - 1) & hashcode1(key)];
             if (entry != null) {
                 return entry.value;
             }
