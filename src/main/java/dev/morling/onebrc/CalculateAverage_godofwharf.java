@@ -266,11 +266,11 @@ public class CalculateAverage_godofwharf {
                     ret.offsets[i + k] = j + idx;
                     k++;
                     res &= (res - 1);
-//                    idx = Long.numberOfTrailingZeros(res);
-//                    // positions[k++] = j + idx;
-//                    ret.offsets[i + k] = j + idx;
-//                    k++;
-//                    res &= (res - 1);
+                    idx = Long.numberOfTrailingZeros(res);
+                    // positions[k++] = j + idx;
+                    ret.offsets[i + k] = j + idx;
+                    k++;
+                    res &= (res - 1);
 //                    idx = Long.numberOfTrailingZeros(res);
 //                    // positions[k++] = j + idx;
 //                    ret.offsets[i + k] = j + idx;
