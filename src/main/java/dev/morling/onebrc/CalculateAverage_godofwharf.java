@@ -44,6 +44,7 @@ public class CalculateAverage_godofwharf {
 
     private static final VectorSpecies<Byte> PREFERRED_SPECIES = VectorSpecies.ofPreferred(byte.class);
     private static final VectorSpecies<Byte> SMALL_SPECIES = VectorSpecies.of(byte.class, VectorShape.S_64_BIT);
+    private static final VectorSpecies<Byte> MEDIUM_SPECIES = VectorSpecies.of(byte.class, VectorShape.S_128_BIT);
 
     private static final Vector<Byte> NEW_LINE_VEC = PREFERRED_SPECIES.broadcast('\n');
     // This array is used for quick conversion of fractional part
@@ -439,7 +440,7 @@ public class CalculateAverage_godofwharf {
                     return true;
                 }
                 // use vectorized code for fast equals comparison
-                return !vectorizedMismatch(SMALL_SPECIES, len, a1, a2);
+                return !vectorizedMismatch(MEDIUM_SPECIES, len, a1, a2);
             }
 
             private static boolean vectorizedMismatch(final VectorSpecies<Byte> species,
