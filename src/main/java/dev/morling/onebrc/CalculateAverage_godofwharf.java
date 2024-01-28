@@ -38,6 +38,7 @@ import java.util.stream.IntStream;
 
 import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static jdk.incubator.vector.VectorOperators.NE;
 
 public class CalculateAverage_godofwharf {
     private static final String FILE = "./measurements.txt";
@@ -365,8 +366,8 @@ public class CalculateAverage_godofwharf {
 
         private static int hashCode1(final byte[] b) {
             int result = -2;
-            for (byte v: b) {
-                result = 31 * result + v;
+            for (int i = 0; i < b.length; i++) {
+                result = result * 31 + b[i];
             }
             return result;
         }
@@ -487,10 +488,9 @@ public class CalculateAverage_godofwharf {
                     return false;
                 }
                 AggregationKey sk = (AggregationKey) other;
-                // return stationLen == sk.stationLen
-                // && Arrays.equals(station, 0, stationLen, sk.station, 0, stationLen);
-                return stationLen == sk.stationLen
-                        && checkArrayEquals(station, sk.station, stationLen);
+                return stationLen == sk.stationLen && Arrays.mismatch(station, sk.station) < 0;
+//                return stationLen == sk.stationLen &&
+//                        && checkArrayEquals(station, sk.station, stationLen);
             }
 
             private boolean checkArrayEquals(final byte[] a1,
@@ -521,8 +521,8 @@ public class CalculateAverage_godofwharf {
                 for (; i < loopBound; i += loopLength) {
                     Vector<Byte> b1 = ByteVector.fromArray(species, a1, i);
                     Vector<Byte> b2 = ByteVector.fromArray(species, a2, i);
-                    VectorMask<Byte> result = b1.eq(b2);
-                    if (!result.allTrue()) {
+                    VectorMask<Byte> result = b1.compare(NE, b2);
+                    if (result.anyTrue()) {
                         return true;
                     }
                 }
