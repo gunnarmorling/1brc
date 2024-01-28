@@ -360,10 +360,24 @@ public class CalculateAverage_godofwharf {
             // for perfect hashing, set seed as -2 and hash map size to 1<<14
             int[] res = new int[2];
             res[0] = Arrays.hashCode(b);
-            CRC32C h2 = new CRC32C();
-            h2.update(b, 0, b.length);
-            res[1] = h2.hashCode();
+            res[1] = hashCode2(b);
             return res;
+        }
+
+        private static int hashCode2(final byte[] b) {
+            int result = 1;
+            int i = 0;
+            for (; i + 3 < b.length; i += 4) {
+                result = 7 * 7 * 7 * 7 * result
+                        + 7 * 7 * 7 * b[i]
+                        + 7 * 7 * b[i + 1]
+                        + 7 * b[i + 2]
+                        + b[i + 3];
+            }
+            for (; i < b.length; i++) {
+                result = 31 * result + b[i];
+            }
+            return result;
         }
     }
 
