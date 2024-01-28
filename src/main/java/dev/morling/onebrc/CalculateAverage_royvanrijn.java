@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import sun.misc.Unsafe;
@@ -99,8 +100,6 @@ public class CalculateAverage_royvanrijn {
     private static final int ENTRY_MAX = (ENTRY_MIN + Integer.BYTES);
     private static final int ENTRY_COUNT = (ENTRY_MAX + Integer.BYTES);
     private static final int ENTRY_NAME = (ENTRY_COUNT + Integer.BYTES);
-    private static final int ENTRY_NAME_8 = ENTRY_NAME + 8;
-    private static final int ENTRY_NAME_16 = ENTRY_NAME + 16;
 
     private static final int ENTRY_BASESIZE_WHITESPACE = ENTRY_NAME + 7; // with enough empty bytes to fill a long
     // ------------------------------------------------------------------------
@@ -108,6 +107,8 @@ public class CalculateAverage_royvanrijn {
     private static final int PREMADE_ENTRIES = 512; // amount of pre-created entries we should use
     private static final int TABLE_SIZE = 1 << 19; // large enough for the contest.
     private static final int TABLE_MASK = (TABLE_SIZE - 1);
+    private static final int SEGMENT_SIZE = 1024 * 1024 * 2;
+    // ------------------------------------------------------------------------
 
     // Idea of thomaswue, don't wait for slow unmap:
     private static void spawnWorker() throws IOException {
@@ -135,7 +136,6 @@ public class CalculateAverage_royvanrijn {
         // Calculate input segments.
         final FileChannel fileChannel = FileChannel.open(Path.of(FILE), StandardOpenOption.READ);
         final long fileSize = fileChannel.size();
-        final long segmentSize = (fileSize + PROCESSORS - 1) / PROCESSORS;
         final long mapAddress = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, Arena.global()).address();
 
         final Thread[] parallelThreads = new Thread[PROCESSORS - 1];
@@ -143,17 +143,15 @@ public class CalculateAverage_royvanrijn {
         // This is where the entries will land:
         final ConcurrentHashMap<String, byte[]> measurements = new ConcurrentHashMap(1 << 10);
 
+        AtomicInteger segmentId = new AtomicInteger(0);
+
         // We create separate threads for twice the amount of processors.
         long lastAddress = mapAddress;
         final long endOfFile = mapAddress + fileSize;
         for (int i = 0; i < PROCESSORS - 1; ++i) {
-
-            final long fromAddress = lastAddress;
-            final long toAddress = Math.min(endOfFile, fromAddress + segmentSize);
-
             final Thread thread = new Thread(() -> {
                 // The actual work is done here:
-                final byte[][] table = processMemoryArea(fromAddress, toAddress, fromAddress == mapAddress);
+                final byte[][] table = processMemoryArea(segmentId, mapAddress, endOfFile);
 
                 for (byte[] entry : table) {
                     if (entry != null) {
@@ -163,11 +161,10 @@ public class CalculateAverage_royvanrijn {
             });
             thread.start(); // start a.s.a.p.
             parallelThreads[i] = thread;
-            lastAddress = toAddress;
         }
 
         // Use the current thread for the part of memory:
-        final byte[][] table = processMemoryArea(lastAddress, mapAddress + fileSize, false);
+        final byte[][] table = processMemoryArea(segmentId, mapAddress, endOfFile);
 
         for (byte[] entry : table) {
             if (entry != null) {
@@ -210,6 +207,16 @@ public class CalculateAverage_royvanrijn {
         UNSAFE.putByte(entry, ENTRY_LENGTH, (byte) entryLength);
         UNSAFE.putLong(entry, ENTRY_NAME + entryLength - 16, readBuffer1);
         UNSAFE.putLong(entry, ENTRY_NAME + entryLength - 8, readBuffer2);
+        return entry;
+    }
+
+    private static byte[] fillEntry8(final byte[] entry, final int entryLength, final int temp, final long readBuffer1) {
+        UNSAFE.putLong(entry, ENTRY_SUM, temp);
+        UNSAFE.putInt(entry, ENTRY_MIN, temp);
+        UNSAFE.putInt(entry, ENTRY_MAX, temp);
+        UNSAFE.putInt(entry, ENTRY_COUNT, 1);
+        UNSAFE.putByte(entry, ENTRY_LENGTH, (byte) entryLength);
+        UNSAFE.putLong(entry, ENTRY_NAME + entryLength - 8, readBuffer1);
         return entry;
     }
 
@@ -307,6 +314,7 @@ public class CalculateAverage_royvanrijn {
         private int entryLength; // in bytes rounded to nearest 16
 
         private final long endAddress;
+        private boolean finished;
 
         Reader(final long startAddress, final long endAddress, final boolean isFileStart) {
 
@@ -324,10 +332,11 @@ public class CalculateAverage_royvanrijn {
             }
         }
 
-        private void processStart() {
+        private void reset() {
             hash = 0;
             entryStart = ptr;
             entryLength = 0;
+            finished = false;
         }
 
         private boolean hasNext() {
@@ -336,55 +345,52 @@ public class CalculateAverage_royvanrijn {
 
         private static final long DELIMITER_MASK = 0x3B3B3B3B3B3B3B3BL;
 
-        private boolean readNext() {
+        private boolean isFinished() {
+            return finished;
+        }
 
-            long lastRead = UNSAFE.getLong(ptr);
+        private void readNext() {
 
             entryLength += 16;
 
-            // Find delimiter and create mask for long1
-            long comparisonResult1 = (lastRead ^ DELIMITER_MASK);
-            long highBitMask1 = (comparisonResult1 - 0x0101010101010101L) & (~comparisonResult1 & 0x8080808080808080L);
+            long lastRead = UNSAFE.getLong(ptr);
 
-            boolean noContent1 = highBitMask1 == 0;
-            long mask1 = noContent1 ? 0 : ~((highBitMask1 >>> 7) - 1);
-            int position1 = noContent1 ? 0 : 1 + (Long.numberOfTrailingZeros(highBitMask1) >> 3);
-
-            readBuffer1 = lastRead & ~mask1;
-            hash ^= readBuffer1;
-
-            int delimiter1 = position1 == 0 ? 0 : position1; // not nnecessary, but faster?
-
-            if (delimiter1 != 0) {
-                hash ^= hash >> 32;
+            // Find delimiter and create mask for first long value"
+            final long highBitMask1 = getHighBitMask(lastRead);
+            if (highBitMask1 != 0) {
+                long mask = ~((highBitMask1 >>> 7) - 1);
+                readBuffer1 = lastRead & ~mask;
                 readBuffer2 = 0;
-                ptr += delimiter1;
-                return false;
+                hash ^= readBuffer1;
+                ptr += 1 + (Long.numberOfTrailingZeros(highBitMask1) >> 3);
+                finished = true;
+                return;
             }
+            readBuffer1 = lastRead;
+            hash ^= readBuffer1;
+            ptr += 8;
 
-            lastRead = UNSAFE.getLong(ptr + 8);
+            lastRead = UNSAFE.getLong(ptr);
 
-            // Repeat for long2
-            long comparisonResult2 = (lastRead ^ DELIMITER_MASK);
-            long highBitMask2 = (comparisonResult2 - 0x0101010101010101L) & (~comparisonResult2 & 0x8080808080808080L);
-            boolean noContent2 = highBitMask2 == 0;
-            long mask2 = noContent2 ? 0 : ~((highBitMask2 >>> 7) - 1);
-            int position2 = noContent2 ? 0 : 1 + (Long.numberOfTrailingZeros(highBitMask2) >> 3);
-
+            // Repeat for second long value
+            final long highBitMask2 = getHighBitMask(lastRead);
+            if (highBitMask2 != 0) {
+                long mask = ~((highBitMask2 >>> 7) - 1);
+                readBuffer2 = lastRead & ~mask;
+                hash ^= readBuffer2;
+                ptr += 1 + (Long.numberOfTrailingZeros(highBitMask2) >> 3);
+                finished = true;
+                return;
+            }
             // Apply masks
-            readBuffer2 = lastRead & ~mask2;
+            readBuffer2 = lastRead;
             hash ^= readBuffer2;
+            ptr += 8;
+        }
 
-            int delimiter2 = position2 == 0 ? 0 : position2 + 8; // not necessary, but faster?
-
-            hash ^= hash >> 32;
-
-            if (delimiter2 != 0) {
-                ptr += delimiter2;
-                return false;
-            }
-            ptr += 16;
-            return true;
+        private static long getHighBitMask(final long lastRead) {
+            long comparisonResult2 = (lastRead ^ DELIMITER_MASK);
+            return (comparisonResult2 - 0x0101010101010101L) & (~comparisonResult2 & 0x8080808080808080L);
         }
 
         private int processEndAndGetTemperature() {
@@ -393,6 +399,7 @@ public class CalculateAverage_royvanrijn {
         }
 
         private void finalizeHash() {
+            hash ^= hash >> 32;
             hash ^= hash >> 17; // extra entropy
         }
 
@@ -452,74 +459,130 @@ public class CalculateAverage_royvanrijn {
         }
     }
 
-    private static byte[][] processMemoryArea(final long startAddress, final long endAddress, boolean isFileStart) {
+    private static byte[][] processMemoryArea(final AtomicInteger segmentCounter, long fileStart, final long fileEnd) {
 
         final byte[][] table = new byte[TABLE_SIZE][];
-        final byte[][] preConstructedEntries = new byte[PREMADE_ENTRIES][ENTRY_BASESIZE_WHITESPACE + PREMADE_MAX_SIZE];
 
-        final Reader reader = new Reader(startAddress, endAddress, isFileStart);
+        while (true) {
+            // Process more local memory:
+            long segementId = segmentCounter.getAndIncrement();
 
-        byte[] entry;
-        int entryCount = 0;
-
-        // Find the correct starting position
-        while (reader.hasNext()) {
-
-            reader.processStart();
-
-            if (!reader.readNext()) {
-                // First 16 bytes:
-
-                int temperature = reader.processEndAndGetTemperature();
-
-                // Find or insert the entry:
-                int index = (int) (reader.hash & TABLE_MASK);
-                while (true) {
-                    entry = table[index];
-                    if (entry == null) {
-                        byte[] entryBytes = (entryCount < PREMADE_ENTRIES) ? preConstructedEntries[entryCount++]
-                                : new byte[ENTRY_BASESIZE_WHITESPACE + 16]; // with enough room
-                        table[index] = fillEntry16(entryBytes, 16, temperature, reader.readBuffer1, reader.readBuffer2);
-                        break;
-                    }
-                    else if (reader.matches16(entry)) {
-                        updateEntry(entry, temperature);
-                        break;
-                    }
-                    else {
-                        // Move to the next index
-                        index = (index + 1) & TABLE_MASK;
-                    }
-                }
-                continue;
+            long fromAddress = fileStart + (segementId * SEGMENT_SIZE);
+            if (fromAddress >= fileEnd) {
+                return table;
             }
-            while (reader.readNext())
-                ;
+
+            long toAddress = Math.min(fileEnd, fromAddress + SEGMENT_SIZE);
+
+            long aThird = (toAddress - fromAddress) / 3;
+
+            // Unrolled the readers... a bit.
+            // Unable to make it as smooth as thomasque/jerrinot haha.
+            final Reader reader1 = new Reader(fromAddress, fromAddress + aThird, fromAddress == fileStart);
+            final Reader reader2 = new Reader(fromAddress + aThird, toAddress - aThird, false);
+            final Reader reader3 = new Reader(toAddress - aThird, toAddress, false);
+
+            // Find the correct starting position
+            while (true) {
+                if (!reader1.hasNext()) {
+                    break;
+                }
+                if (!reader2.hasNext()) {
+                    break;
+                }
+                if (!reader3.hasNext()) {
+                    break;
+                }
+
+                reader1.reset();
+                reader2.reset();
+                reader3.reset();
+                reader1.readNext();
+                reader2.readNext();
+                reader3.readNext();
+                readAndStore(reader1, table);
+                readAndStore(reader2, table);
+                readAndStore(reader3, table);
+            }
+
+            while (reader1.hasNext()) {
+                reader1.reset();
+                reader1.readNext();
+                readAndStore(reader1, table);
+            }
+            while (reader2.hasNext()) {
+                reader2.reset();
+                reader2.readNext();
+                readAndStore(reader2, table);
+            }
+            while (reader3.hasNext()) {
+                reader3.reset();
+                reader3.readNext();
+                readAndStore(reader3, table);
+            }
+
+        }
+    }
+
+    private static void readAndStore(final Reader reader, final byte[][] table) {
+        if (reader.isFinished()) {
+            // First 16 bytes:
+            int temperature = reader.processEndAndGetTemperature();
+            insert16(reader, table, temperature);
+        }
+        else {
+            do {
+                reader.readNext();
+            } while (!reader.isFinished());
 
             int temperature = reader.processEndAndGetTemperature();
+            insertFull(reader, table, temperature);
+        }
+    }
 
-            // Find or insert the entry:
-            int index = (int) (reader.hash & TABLE_MASK);
-            while (true) {
-                entry = table[index];
-                if (entry == null) {
-                    int length = reader.entryLength;
-                    byte[] entryBytes = (length < PREMADE_MAX_SIZE && entryCount < PREMADE_ENTRIES) ? preConstructedEntries[entryCount++]
-                            : new byte[ENTRY_BASESIZE_WHITESPACE + length]; // with enough room
-                    table[index] = fillEntry(entryBytes, reader.entryStart, length, temperature, reader.readBuffer1, reader.readBuffer2);
-                    break;
-                }
-                else if (reader.matches(entry)) {
-                    updateEntry(entry, temperature);
-                    break;
-                }
-                else {
-                    // Move to the next index
-                    index = (index + 1) & TABLE_MASK;
-                }
+    private static void insertFull(final Reader reader, final byte[][] table, final int temperature) {
+        byte[] entry;
+        // Find or insert the entry:
+        int index = (int) (reader.hash & TABLE_MASK);
+        while (true) {
+            entry = table[index];
+            if (entry == null) {
+                int length = reader.entryLength;
+                byte[] entryBytes = new byte[ENTRY_BASESIZE_WHITESPACE + length];
+                table[index] = fillEntry(entryBytes, reader.entryStart, length, temperature, reader.readBuffer1, reader.readBuffer2);
+                return;
+            }
+            else if (reader.matches(entry)) {
+                updateEntry(entry, temperature);
+                return;
+            }
+            else {
+                // Move to the next index
+                index = (index + 1) & TABLE_MASK;
             }
         }
-        return table;
+    }
+
+    private static void insert16(final Reader reader, final byte[][] table, final int temperature) {
+        byte[] entry;
+        // Find or insert the entry:
+        int index = (int) (reader.hash & TABLE_MASK);
+        while (true) {
+            entry = table[index];
+            if (entry == null) {
+                byte[] entryBytes = new byte[ENTRY_BASESIZE_WHITESPACE + 16];
+                table[index] = fillEntry16(entryBytes, 16, temperature, reader.readBuffer1, reader.readBuffer2);
+                return;
+            }
+            else if (reader.matches16(entry)) {
+                updateEntry(entry, temperature);
+                return;
+            }
+            else {
+                // Move to the next index
+                index = (index + 1) & TABLE_MASK;
+            }
+        }
     }
 
     private static boolean compare(final Object object1, final long address1, final Object object2, final long address2) {
