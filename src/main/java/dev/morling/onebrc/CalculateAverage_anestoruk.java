@@ -22,9 +22,7 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -69,14 +67,14 @@ public class CalculateAverage_anestoruk {
 
         TreeMap<String, Record> result = new TreeMap<>();
         try (ExecutorService executor = Executors.newFixedThreadPool(cpus)) {
-            List<CompletableFuture<Map<ByteWrapper, Record>>> futures = new ArrayList<>();
+            List<CompletableFuture<Record[]>> futures = new ArrayList<>();
             for (SegmentRange range : rangeList) {
                 futures.add(supplyAsync(() -> process(range, segment), executor));
             }
-            for (CompletableFuture<Map<ByteWrapper, Record>> future : futures) {
+            for (CompletableFuture<Record[]> future : futures) {
                 try {
-                    Map<ByteWrapper, Record> partialResult = future.get();
-                    combine(result, partialResult);
+                    Record[] partialResult = future.get();
+                    mergeResult(result, partialResult);
                 }
                 catch (InterruptedException | ExecutionException ex) {
                     throw new RuntimeException(ex);
@@ -87,20 +85,19 @@ public class CalculateAverage_anestoruk {
         System.out.println(result);
     }
 
-    private static Map<ByteWrapper, Record> process(SegmentRange range, MemorySegment segment) {
-        Map<ByteWrapper, Record> partialResult = new HashMap<>(1_000);
-        byte[] buffer = new byte[100];
+    private static Record[] process(SegmentRange range, MemorySegment segment) {
+        Record[] records = new Record[1024 * 100];
+        byte[] cityBuffer = new byte[100];
         long offset = range.startOffset;
         byte b;
         while (offset < range.endOffset) {
-            int cityIdx = 0;
+            int cityLength = 0;
+            int hash = 0;
             while ((b = segment.get(JAVA_BYTE, offset++)) != ';') {
-                buffer[cityIdx++] = b;
+                cityBuffer[cityLength++] = b;
+                hash = hash * 31 + b;
             }
-            byte[] city = new byte[cityIdx];
-            System.arraycopy(buffer, 0, city, 0, cityIdx);
-            ByteWrapper cityWrapper = new ByteWrapper(city);
-
+            hash = Math.abs(hash);
             int value = 0;
             boolean negative;
             if ((b = segment.get(JAVA_BYTE, offset++)) == '-') {
@@ -116,43 +113,75 @@ public class CalculateAverage_anestoruk {
                 }
             }
             int temperature = negative ? -value : value;
-
-            partialResult.compute(cityWrapper, (_, record) -> update(record, temperature));
+            byte[] city = new byte[cityLength];
+            System.arraycopy(cityBuffer, 0, city, 0, cityLength);
+            addResult(records, hash, city, temperature);
         }
-        return partialResult;
+        return records;
+    }
+
+    private static void addResult(Record[] records, int hash, byte[] city, int temperature) {
+        int idx = hash % records.length;
+        Record record;
+        while ((record = records[idx]) != null) {
+            if (record.hash == hash && Arrays.equals(record.city, city)) {
+                record.add(temperature);
+                return;
+            }
+            idx = (idx + 1) % records.length;
+        }
+        records[idx] = new Record(hash, city, temperature);
+    }
+
+    private static void mergeResult(TreeMap<String, Record> result, Record[] partialResult) {
+        for (Record partialRecord : partialResult) {
+            if (partialRecord == null) {
+                continue;
+            }
+            String cityName = new String(partialRecord.city, UTF_8);
+            result.compute(cityName, (_, record) -> {
+                if (record == null) {
+                    return partialRecord;
+                }
+                record.merge(partialRecord);
+                return record;
+            });
+        }
     }
 
     private record SegmentRange(long startOffset, long endOffset) {
     }
 
-    private record ByteWrapper(byte[] bytes) {
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            ByteWrapper that = (ByteWrapper) o;
-            return Arrays.equals(bytes, that.bytes);
-        }
-
-        @Override
-        public int hashCode() {
-            return Arrays.hashCode(bytes);
-        }
-    }
-
     private static class Record {
 
+        private final int hash;
+        private final byte[] city;
         private int min;
         private int max;
         private long sum;
         private int count;
 
-        public Record(int temperature) {
+        public Record(int hash, byte[] city, int temperature) {
+            this.hash = hash;
+            this.city = city;
             this.min = temperature;
             this.max = temperature;
             this.sum = temperature;
             this.count = 1;
+        }
+
+        public void add(int temperature) {
+            min = min(min, temperature);
+            max = max(max, temperature);
+            sum += temperature;
+            count++;
+        }
+
+        public void merge(Record other) {
+            min = min(min, other.min);
+            max = max(max, other.max);
+            sum += other.sum;
+            count += other.count;
         }
 
         @Override
@@ -162,32 +191,5 @@ public class CalculateAverage_anestoruk {
                     ((double) sum / count / 10.0),
                     (max / 10.0));
         }
-    }
-
-    private static Record update(Record record, int temperature) {
-        if (record == null) {
-            return new Record(temperature);
-        }
-        record.min = min(record.min, temperature);
-        record.max = max(record.max, temperature);
-        record.sum += temperature;
-        record.count++;
-        return record;
-    }
-
-    private static void combine(TreeMap<String, Record> result, Map<ByteWrapper, Record> partialResult) {
-        partialResult.forEach((wrapper, partialRecord) -> {
-            String city = new String(wrapper.bytes, UTF_8);
-            result.compute(city, (_, record) -> {
-                if (record == null) {
-                    return partialRecord;
-                }
-                record.min = min(record.min, partialRecord.min);
-                record.max = max(record.max, partialRecord.max);
-                record.sum += partialRecord.sum;
-                record.count += partialRecord.count;
-                return record;
-            });
-        });
     }
 }
