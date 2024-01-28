@@ -361,10 +361,10 @@ public final class CalculateAverage_JaimePolidura {
         }
 
         public boolean isSameName(byte[] otherNameBytes, int otherNameLength) {
-            return this.nameLength == otherNameLength && sameNameBytes(otherNameBytes);
+            return this.nameLength == otherNameLength && isSameNameBytes(otherNameBytes);
         }
 
-        private boolean sameNameBytes(byte[] otherNameBytes) {
+        private boolean isSameNameBytes(byte[] otherNameBytes) {
             for (int i = 0; i < this.nameLength; i++) {
                 if (this.name[i] != otherNameBytes[i]) {
                     return false;
