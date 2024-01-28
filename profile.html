@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<style>
+	body {margin: 0; padding: 10px 10px 22px 10px; background-color: #ffffff}
+	h1 {margin: 5px 0 0 0; font-size: 18px; font-weight: normal; text-align: center}
+	header {margin: -24px 0 5px 0; line-height: 24px}
+	button {font: 12px sans-serif; cursor: pointer}
+	p {position: fixed; bottom: 0; margin: 0; padding: 2px 3px 2px 3px; outline: 1px solid #ffc000; display: none; overflow: hidden; white-space: nowrap; background-color: #ffffe0}
+	a {color: #0366d6}
+	#hl {position: absolute; display: none; overflow: hidden; white-space: nowrap; pointer-events: none; background-color: #ffffe0; outline: 1px solid #ffc000; height: 15px}
+	#hl span {padding: 0 3px 0 3px}
+	#status {left: 0}
+	#match {right: 0}
+	#reset {cursor: pointer}
+	#canvas {width: 100%; height: 832px}
+</style>
+</head>
+<body style='font: 12px Verdana, sans-serif'>
+<h1>CPU profile</h1>
+<header style='text-align: left'><button id='reverse' title='Reverse'>&#x1f53b;</button>&nbsp;&nbsp;<button id='search' title='Search'>&#x1f50d;</button></header>
+<header style='text-align: right'>Produced by <a href='https://github.com/async-profiler/async-profiler'>async-profiler</a></header>
+<canvas id='canvas'></canvas>
+<div id='hl'><span></span></div>
+<p id='status'></p>
+<p id='match'>Matched: <span id='matchval'></span> <span id='reset' title='Clear'>&#x274c;</span></p>
+<script>
+	// Copyright The async-profiler authors
+	// SPDX-License-Identifier: Apache-2.0
+	'use strict';
+	let root, rootLevel, px, pattern;
+	let level0 = 0, left0 = 0, width0 = 0;
+	let reverse = false;
+	const levels = Array(52);
+	for (let h = 0; h < levels.length; h++) {
+		levels[h] = [];
+	}
+
+	const canvas = document.getElementById('canvas');
+	const c = canvas.getContext('2d');
+	const hl = document.getElementById('hl');
+	const status = document.getElementById('status');
+
+	const canvasWidth = canvas.offsetWidth;
+	const canvasHeight = canvas.offsetHeight;
+	canvas.style.width = canvasWidth + 'px';
+	canvas.width = canvasWidth * (devicePixelRatio || 1);
+	canvas.height = canvasHeight * (devicePixelRatio || 1);
+	if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+	c.font = document.body.style.font;
+
+	const palette = [
+		[0xb2e1b2, 20, 20, 20],
+		[0x50e150, 30, 30, 30],
+		[0x50cccc, 30, 30, 30],
+		[0xe15a5a, 30, 40, 40],
+		[0xc8c83c, 30, 30, 10],
+		[0xe17d00, 30, 30,  0],
+		[0xcce880, 20, 20, 20],
+	];
+
+	function getColor(p) {
+		const v = Math.random();
+		return '#' + (p[0] + ((p[1] * v) << 16 | (p[2] * v) << 8 | (p[3] * v))).toString(16);
+	}
+
+	function f(key, level, left, width, inln, c1, int) {
+		levels[level0 = level].push({left: left0 += left, width: width0 = width || width0,
+			color: getColor(palette[key & 7]), title: cpool[key >>> 3],
+			details: (int ? ', int=' + int : '') + (c1 ? ', c1=' + c1 : '') + (inln ? ', inln=' + inln : '')
+		});
+	}
+
+	function u(key, width, inln, c1, int) {
+		f(key, level0 + 1, 0, width, inln, c1, int)
+	}
+
+	function n(key, width, inln, c1, int) {
+		f(key, level0, width0, width, inln, c1, int)
+	}
+
+	function samples(n) {
+		return n === 1 ? '1 sample' : n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' samples';
+	}
+
+	function pct(a, b) {
+		return a >= b ? '100' : (100 * a / b).toFixed(2);
+	}
+
+	function findFrame(frames, x) {
+		let left = 0;
+		let right = frames.length - 1;
+
+		while (left <= right) {
+			const mid = (left + right) >>> 1;
+			const f = frames[mid];
+
+			if (f.left > x) {
+				right = mid - 1;
+			} else if (f.left + f.width <= x) {
+				left = mid + 1;
+			} else {
+				return f;
+			}
+		}
+
+		if (frames[left] && (frames[left].left - x) * px < 0.5) return frames[left];
+		if (frames[right] && (x - (frames[right].left + frames[right].width)) * px < 0.5) return frames[right];
+
+		return null;
+	}
+
+	function search(r) {
+		if (r === true && (r = prompt('Enter regexp to search:', '')) === null) {
+			return;
+		}
+
+		pattern = r ? RegExp(r) : undefined;
+		const matched = render(root, rootLevel);
+		document.getElementById('matchval').textContent = pct(matched, root.width) + '%';
+		document.getElementById('match').style.display = r ? 'inline-block' : 'none';
+	}
+
+	function render(newRoot, newLevel) {
+		if (root) {
+			c.fillStyle = '#ffffff';
+			c.fillRect(0, 0, canvasWidth, canvasHeight);
+		}
+
+		root = newRoot || levels[0][0];
+		rootLevel = newLevel || 0;
+		px = canvasWidth / root.width;
+
+		const x0 = root.left;
+		const x1 = x0 + root.width;
+		const marked = [];
+
+		function mark(f) {
+			return marked[f.left] >= f.width || (marked[f.left] = f.width);
+		}
+
+		function totalMarked() {
+			let total = 0;
+			let left = 0;
+			Object.keys(marked).sort(function(a, b) { return a - b; }).forEach(function(x) {
+				if (+x >= left) {
+					total += marked[x];
+					left = +x + marked[x];
+				}
+			});
+			return total;
+		}
+
+		function drawFrame(f, y, alpha) {
+			if (f.left < x1 && f.left + f.width > x0) {
+				c.fillStyle = pattern && f.title.match(pattern) && mark(f) ? '#ee00ee' : f.color;
+				c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+
+				if (f.width * px >= 21) {
+					const chars = Math.floor(f.width * px / 7);
+					const title = f.title.length <= chars ? f.title : f.title.substring(0, chars - 2) + '..';
+					c.fillStyle = '#000000';
+					c.fillText(title, Math.max(f.left - x0, 0) * px + 3, y + 12, f.width * px - 6);
+				}
+
+				if (alpha) {
+					c.fillStyle = 'rgba(255, 255, 255, 0.5)';
+					c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+				}
+			}
+		}
+
+		for (let h = 0; h < levels.length; h++) {
+			const y = reverse ? h * 16 : canvasHeight - (h + 1) * 16;
+			const frames = levels[h];
+			for (let i = 0; i < frames.length; i++) {
+				drawFrame(frames[i], y, h < rootLevel);
+			}
+		}
+
+		return totalMarked();
+	}
+
+	function unpack(cpool) {
+		for (let i = 1; i < cpool.length; i++) {
+			cpool[i] = cpool[i - 1].substring(0, cpool[i].charCodeAt(0) - 32) + cpool[i].substring(1);
+		}
+	}
+
+	canvas.onmousemove = function() {
+		const h = Math.floor((reverse ? event.offsetY : (canvasHeight - event.offsetY)) / 16);
+		if (h >= 0 && h < levels.length) {
+			const f = findFrame(levels[h], event.offsetX / px + root.left);
+			if (f) {
+				if (f !== root) getSelection().removeAllRanges();
+				hl.style.left = (Math.max(f.left - root.left, 0) * px + canvas.offsetLeft) + 'px';
+				hl.style.width = (Math.min(f.width, root.width) * px) + 'px';
+				hl.style.top = ((reverse ? h * 16 : canvasHeight - (h + 1) * 16) + canvas.offsetTop) + 'px';
+				hl.firstChild.textContent = f.title;
+				hl.style.display = 'block';
+				canvas.title = f.title + '\n(' + samples(f.width) + f.details + ', ' + pct(f.width, levels[0][0].width) + '%)';
+				canvas.style.cursor = 'pointer';
+				canvas.onclick = function() {
+					if (f !== root) {
+						render(f, h);
+						canvas.onmousemove();
+					}
+				};
+				status.textContent = 'Function: ' + canvas.title;
+				status.style.display = 'inline-block';
+				return;
+			}
+		}
+		canvas.onmouseout();
+	}
+
+	canvas.onmouseout = function() {
+		hl.style.display = 'none';
+		status.style.display = 'none';
+		canvas.title = '';
+		canvas.style.cursor = '';
+		canvas.onclick = null;
+	}
+
+	canvas.ondblclick = function() {
+		getSelection().selectAllChildren(hl);
+	}
+
+	document.getElementById('reverse').onclick = function() {
+		reverse = !reverse;
+		render();
+	}
+
+	document.getElementById('search').onclick = function() {
+		search(true);
+	}
+
+	document.getElementById('reset').onclick = function() {
+		search(false);
+	}
+
+	window.onkeydown = function() {
+		if (event.ctrlKey && event.keyCode === 70) {
+			event.preventDefault();
+			search(true);
+		} else if (event.keyCode === 27) {
+			search(false);
+		}
+	}
+
+const cpool = [
+'all',
+' AArch64HotSpotLoweringProvider_lower_391bfc76f5afbb4e07fe11b41ab8339eb082b11e',
+'!ccessInternal::PostRuntimeDispatch<G1BarrierSet::AccessBarrier<598116ull, G1BarrierSet>, (AccessInternal::BarrierType)2, 598116ull>::oop_access_barrier',
+' Backend_createInstalledCode_70cec85b076723e1ad7284e75a2ef7f91561d4bf',
+'"rrierSetNMethod::nmethod_stub_entry_barrier',
+'"sePhase_apply_a7a34a5581cb5bc9dd94a67363b0d35949922111',
+'$Tier_run_452c2cb1b8cbe93c2c1e0721e00f05de04a0754a',
+'!lockBegin::iterate_preorder',
+'%List::iterate_forward',
+' CallsiteHolderExplorable_invokeProbability_19558380a19a146998d965e80d26251ee13b1295',
+'!lassLoaderData::holder',
+'%Verifier::verify_anewarray',
+'6class',
+'6method',
+'!odeBuffer::copy_code_to',
+',relocate_code_to',
+',total_content_size',
+'$HeapPool::used_in_bytes',
+'"llectedHeap::array_allocate',
+'/create_heap_space_summary',
+'/fill_with_object',
+'"mpilation::Compilation',
+'-build_hir',
+'-compile_java_method',
+'5method',
+'-emit_lir',
+'+Task$HotSpotCompilationWrapper_performCompilation_26176fc97ea6d28eeb5ead39f5243f562b8f8a7a',
+']427b3010ad884e165b85b188dcc115cc72ac542f',
+'/_installMethod_aee4bf6e7fd4ee6e283a1db3bf6f2f98ff20b787',
+'0runCompilation_b757e01c868ec3e0e8fed71a764850de44da1a1b',
+'?d1bd90bb87908e90179175e8d6c5e780d0547ca2',
+'+Wrapper_run_d730478f4ce8f539b4955ca0a99f3c6f484bea17',
+'&eBroker::compiler_thread_loop',
+'/invoke_compiler_on_method',
+'\'Queue::get',
+'\'dICLocker::CompiledICLocker',
+'2~CompiledICLocker',
+'\'r::compile_method',
+'(ToVM_installCode_4ca98a048c9a512335c23477fe6eb72524502da0',
+'$ositeElapsedCounterSource::now',
+'"ncurrentGCThread::run',
+'#ditionalEliminationPhase_run_71bc72b63fabf4627b8203eac64c3bd3fdda2ad7',
+'@abe6ed8386d1d8b8d46d64b4d0c62117480f48f4',
+'#trolFlowGraph_compute_669901a6ae2cfc46f2f30de6af99f1f9b38e933d',
+'1identifyBlocks_1528316fdf7ce7677bd1187bdf865aecdb8b2aa3',
+' DefaultHotSpotLoweringProvider_lowerWithoutDelegation_cfb545941ded6081a4f6f89d14ba370b4e9faf7b',
+'D_f4c2fd1010b8200db9662348da0bc04cbc4c26e7',
+'\'ICProtectionBehaviour::lock',
+' FixedNodeRelativeFrequencyCache_applyAsDouble_0a73083f08524c77b268fe47c932728dca756328',
+'!reeCSetClosure::do_heap_region',
+'$RegionList::clear',
+' G1Allocator::init_gc_alloc_regions',
+'-survivor_attempt_allocation',
+'-unsafe_max_tlab_alloc',
+'"BatchedTask::work',
+'"CollectedHeap::attempt_allocation',
+'C_slow',
+'1do_collection_pause_at_safepoint',
+'Q_helper',
+'1max_tlab_size',
+'1par_iterate_regions_array',
+'1rebuild_free_region_list',
+'"EvacPhaseWithTrimTimeTracker::~G1EvacPhaseWithTrimTimeTracker',
+'&uateRegionsBaseTask::evacuate_live_objects',
+';work',
+'1Task::scan_roots',
+'"GCPhaseTimes::record_gc_pause_start',
+'"HeapPrinterMark::~G1HeapPrinterMark',
+'&Transition::print',
+'"JFRTracerMark::G1JFRTracerMark',
+'"MonitoringScope::~G1MonitoringScope',
+'%otonicArenaFreeMemoryTask::execute',
+'"NUMA::index_of_current_thread',
+'"PLABAllocator::allocate_direct_or_new_plab',
+'#arEvacuateFollowersClosure::do_void',
+'%ScanThreadState::allocate_copy_slow',
+'6copy_to_survivor_space',
+'#ostEvacuateCollectionSetCleanupTask2::FreeCollectionSetTask::do_work',
+'#repareEvacuationTask::work',
+'"RemSet::scan_collection_set_regions',
+'#ootProcessor::evacuate_roots',
+'1process_java_roots',
+'"ScanCollectionSetRegionClosure::do_heap_region',
+'#erviceThread::run_service',
+'5task',
+'"YoungCollector::collect',
+'2evacuate_initial_collection_set',
+'2post_evacuate_collection_set',
+'3re_evacuate_collection_set',
+'\'GCMonitoringScope::G1YoungGCMonitoringScope',
+')TraceTime::G1YoungGCTraceTime',
+'!CMemoryManager::gc_begin',
+'!enericWaitBarrier::disarm',
+'4wait',
+'!lobalValueNumbering::GlobalValueNumbering',
+'!raalCompiler_compileGraph_f280e33c706d40a0afcca65e1d60adc30f56adda',
+'5_ceb52c95b6a3c674ccaed5facbfe09d5e9f54cc5',
+'.emitFrontEnd_ca4f472adcd3262192293d187aa8b916d506307f',
+' HeapRegionManager::par_iterate',
+'!otSpotAllocationSnippets$Templates_lower_1de91310b5db113204f7ac9fba43a141440ac376',
+'Jd6b49c880376cb559327a0a97ae778a569c465d2',
+'\'CodeCacheProvider_installCode_3a03b5597e27316aa2c6fde9024f8af0e460e84c',
+')mpiledCodeStream_constructor_78704d0006e64a9fe0bbb8e570877d8c75cec689',
+':writeDebugInfo_a657d88b00a6823cd90c50a6af6b8c9a049db05a',
+'?Frame_8edad8c04ee275c2a3666b57c4f4973957f48062',
+'?Method_7993d6e8122c5e1a005412effc7fc268c0518e44',
+'?Sites_f354f469d7626763f1b66f6e28d73047d9e87496',
+'\'GraalCompiler_compileHelper_0a0161871a4bb826d56e510d05c94651b1b1ca6e',
+'<Method_0ff35a48b2496422594578a94354f0ef9b35beb7',
+'C1d8dfc2fbb5478d3b7400bbb97604e7defc50a57',
+'Cfa2dc57660c63e427b85f2d1f6729a672f5660c9',
+'<_1975ef7445a45fb1cdca640e8d6289875c5e729a',
+'\'JVMCIRuntime_compileMethod_d0551eb00a95b4c222b2a67a9746353d2d54cfa9',
+' ImmutableOopMap::oops_do',
+'!nliningData_moveForward_b7d91350e64dbb1981896e43b64db0b8c05dfe9d',
+'-processNextInvoke_64a9bc47b14b993de0d6226a28df35306f7d5acb',
+'(Phase_run_0d2d23dda587f4023fadfdcf4bb044a5b9b7e8cd',
+'28d564573dbddaf9a8430502820dff164777ea734',
+'"stanceKlass::allocate_instance',
+'/link_class_impl',
+'!terativeConditionalEliminationPhase_run_0c326f8e71ccf56e637a5a1a0ed8626fce9be1f2',
+'I7cf39b4e01f84dadbaf9453244f0452003a3f58d',
+' JNIEnv_::CallNonvirtualObjectMethod',
+'#JavaCallVariantWrapperHolder_invokeJJIJIJI_J_VA_LIST_Nonvirtual_6f4000c7b26b332becfc76557b165731801a6b35',
+'+WrapperHolder_invoke_AIJI_A_d4894b0d9270757cd39ed473a65118da6476e0a0',
+'!VMCIEnv::call_HotSpotJVMCIRuntime_compileMethod',
+'%Runtime::compile_method',
+'.new_array_common',
+'2instance_common',
+';or_null',
+'#_GetClassDeclaredConstructors',
+'!avaThread::oops_do_frames',
+',thread_main_inner',
+' LIRCompilerBackend_emitBackEnd_a54c59324f9fd431297cec276b25f19491888c6d',
+'7LIR0_c096467aee01961813bd7a5ee02f31a7740311ed',
+':_5a1d67efe06974514e1bfbc0ca7c180efcf37db0',
+'8owLevel_ede5cdd27aeb67eebff0ae177b2ade6c0dd6e3c9',
+'#FrameState_forEachState_787fa975b569c13e7557e6d07c0f9f77db8e7550',
+'.processValues_74305ab32a03c785feaefaa7c3598cea76a9089d',
+'#Generator::block_do',
+'.do_ArithmeticOp_Int',
+'#InsertionBuffer_finish_8aff51703ae704a8b8c632ac96318a3ee5567faf',
+'&tructionClass_forEachState_0f643001149e8829057e3c8d5169f792e1dd13f2',
+'#PhaseSuite_run_9cddc92170efe0084e0ca63abc797866785fc034',
+'(_apply_0abe16f130971cb2c2bcb3c0f4021bdff4124891',
+'!SStackSlotAllocator$Allocator$3_doValue_d0d60c2b50e80a051c6a1768ca81b5471bf1a636',
+'>_allocate_96d41d4b613f6ce196ee0cddad778d2fe7f1d87d',
+'@ssignStackSlots_cf1fd36e3b489cbef5197f24a35f51830d2956f2',
+'4_allocateStackSlots_b4e5a820490b3beabb4ebe9ed1a15185cda4f89d',
+'5run_77d02314289c59f1b3a3b2716621c89512f638ef',
+'9d4a6c510d0ff1e8651a0d6de852a270c33070983',
+'!inearScanAllocationPhase_apply_0f8205cebf9bde531c92d49e4e20eabf617855ad',
+'*Phase_run_3f892f37981c2cadab0669e09926284ea4f5b98d',
+'46f0119fc1771156cc65e3a52f5cd5be0fb352bc6',
+'*ResolveDataFlowPhase_optimizeEmptyBlocks_eeb1f6103c886d8504a1fa8c6ba385088b4891de',
+'?resolveDataFlow_94d4a4556c52e0237db63902e3cead8312249a0b',
+'@un_c2f0845eefd36a0f7861d2f219a420361128389a',
+'*_allocate_845da561cafe3d4c9ce664f5527073b68f8cdd86',
+'!owerable_lower_a496cff1f5b148ec4e1bf979d8feb740f58be411',
+'%ingPhase$ProcessFrame_preprocess_21e3788fbeaab4c95277ad0f42fdb67f8dbf383f',
+'-_lower_4c5bde07a86f3c2198e155b3c26ebfdc6cafe6ef',
+'.processBlock_c7e2fed1d1816ede6e836976211e3a311408fd28',
+'5_fac61d2d98155da7315d12f46cd6eccf83310ec5',
+'.run_750042402ca9279471f6ea6386601e212ff07524',
+' MemAllocator::Allocation::check_out_of_memory',
+'.allocate',
+'.mem_allocate_inside_tlab_slow',
+'"taspaceCounters::update_performance_counters',
+')Utils::get_combined_statistics',
+'4statistics',
+'!onitor::wait',
+'-_without_safepoint_check',
+'\'DeflationThread::monitor_deflation_thread_entry',
+'"veResolver_appendInsertionBuffer_f1c14b413dda672c0fc51efbccc0dc0b36536e02',
+'-resolveAndAppendMoves_b8038661205810f463c12b7e343d1b40df49dd9a',
+'!utex::Mutex',
+'\'lock',
+'+_without_safepoint_check',
+' ObjAllocator::initialize',
+' PlatformMonitor::wait',
+' RelocIterator::initialize',
+'%ation::pd_set_call_destination',
+' SafepointMechanism::process',
+')Synchronize::begin',
+'7lock',
+'6disarm_safepoint',
+'6end',
+'6handle_polling_page_exception',
+'6synchronize_threads',
+'!chedulePhase$Instance_processNodes_04027faa8b434aa8b824e4419845bb256f3f84ac',
+'>Stack_b9fa6372cd65da34a50a248168055e927bfab9bd',
+'7run_7e73e271807aba71da4cb7355ab6e9f58cd76cae',
+'7scheduleEarliestIterative_144c4eda6d5c2facf65580cd281e8f542533d339',
+'-_run_5ecf94e1cc15110764cade05bd1e67992f8cbec2',
+'2f19d7b05b2ea319c51aa14418566626476b918a7',
+'!haredRuntime::handle_wrong_method',
+'/reresolve_call_site',
+'!nippetTemplate$AbstractTemplates_template_bed32b8b81ba04b59b9c4b4a12890488b0ee1acc',
+'/_constructor_c1ab98bc728a8dcfd1dc75ac49ed1ebff3cff762',
+'!pinPause',
+'!tub<IntrinsicStubsGen.stringCodingCountPositives>',
+'%new_array_or_null(KlassPointer,int)Object>',
+'!ubstitutionResolver::block_do',
+'"spendibleThreadSet::join',
+' TaskTerminator::TaskTerminator',
+'0offer_termination',
+'!hread::call_run',
+'(oops_do',
+'&LocalAllocBuffer::fill',
+'8print_stats',
+'8retire_before_allocation',
+'&SafepointState::handle_polling_page_exception',
+'&s::possibly_parallel_oops_do',
+';threads_do',
+'!raceMemoryManagerStats::TraceMemoryManagerStats',
+' Unsafe_AllocateInstance',
+' VMThread::evaluate_operation',
+'+xecute',
+'*inner_execute',
+'*run',
+'*wait_until_executed',
+'"_G1CollectForAllocation::doit',
+'#Operation::evaluate',
+'!alueProcedure_doValue_fd8fd086da10b1bc6e020bbbb589696003e84a28',
+'%Stack::values_do',
+'!erifier::verify',
+' WorkerDataArray<double>::reset',
+'&Policy::calc_active_workers',
+'&Thread::run',
+',s::run_task',
+' [unknown_Java]',
+' __psynch_cvwait',
+')mutexdrop',
+'.wait',
+'"semwait_signal',
+'"vfprintf',
+'!pthread_cond_wait',
+')mutex_firstfit_lock_slow',
+'8unlock_slow',
+')start',
+'!vsnprintf',
+' ciEnv::register_method',
+' dev/morling/onebrc/CalculateAverage_ericxiao$ProcessFileMap$$Lambda.0x000000e00100ace8.apply',
+'\\KeySlice.<init>',
+'eequals',
+'ehashCode',
+'[.add',
+'\\call',
+'\\delimiterMask',
+'\\lambda$add$0',
+'\\readMemory',
+'L.main',
+' frame::oops_code_blob_do',
+' get_class_declared_methods_helper',
+' java/lang/AbstractStringBuilder.append',
+'@ensureCapacityInternal',
+'*Class.getConstructor0',
+'3DeclaredConstructors0',
+'0newInstance',
+'0privateGetDeclaredConstructors',
+'*Double.parseDouble',
+'*Long.numberOfTrailingZeros',
+'*Math.min',
+'*String.<init>',
+'1charAt',
+'3eckBoundsOffCount',
+'6Index',
+'1format',
+'1hashCode',
+'1isLatin1',
+'1trim',
+'0Builder.append',
+'0Coding.countPositives',
+'0Latin1.charAt',
+'7trim',
+'+ystem.arraycopy',
+'*Thread.run',
+'4With',
+'*invoke/DirectMethodHandle.allocateInstance',
+'1Invokers$Holder.linkToTargetMethod',
+'1LambdaForm$DMH.0x000000e00100e000.newInvokeSpecial',
+'%security/AccessController.doPrivileged',
+'?executePrivileged',
+'%text/DecimalFormatSymbols.<init>',
+'?getInstance',
+'?initialize',
+'%util/Arrays.checkLength',
+'2opyOfRange',
+'<Byte',
+'*Formatter$FormatSpecifier.<init>',
+'DlocalizedMagnitude',
+'Dprint',
+'IFloat',
+'3.format',
+'4getDecimalFormatSymbols',
+'7Zero',
+'4parse',
+'*HashMap.compute',
+'2hash',
+'*concurrent/FutureTask.run',
+'5ThreadPoolExecutor$Worker.run',
+'G.runWorker',
+'*regex/Matcher.checkGroup',
+'8start',
+'!dk/internal/math/FloatingDecimal$ASCIIToBinaryBuffer.doubleValue',
+'A.parseDouble',
+'BreadJavaFormatString',
+'.isc/Unsafe.allocateInstance',
+'9copyMemory',
+'C0',
+'9getLong',
+'-util/Preconditions.checkFromIndexSize',
+'EIndex',
+' mach_absolute_time',
+' nanov2_malloc_zero_on_alloc',
+'!method::new_nmethod',
+'*method',
+' os::elapsed_counter',
+'$javaTimeNanos',
+'$malloc',
+'$naked_short_nanosleep',
+'$snprintf',
+'%trdup',
+'$vsnprintf',
+'"_unfair_lock_lock',
+' pthread_jit_write_protect_np',
+'(mutex_trylock',
+' semaphore_signal_trap',
+'*wait_trap',
+'!un/misc/Unsafe.copyMemory',
+'0getLong',
+'$util/locale/provider/DecimalFormatSymbolsProviderImpl.getInstance',
+'9LocaleResources.getDecimalFormatSymbolsData',
+')resources/Bundles$2.run',
+':.findBundleOf',
+';loadBundleFromProviders',
+'EOf',
+';of',
+'3LocaleData$1.run',
+'=.getBundle',
+'ANumberFormatData',
+'3provider/LocaleDataProvider.getBundle',
+'OloadResourceBundle',
+'!wtch_pri',
+' thread_native_entry',
+'\'start',
+' void G1ParCopyClosure<(G1Barrier)0, false>::do_oop_work<oopDesc*>',
+'%OopMapDo<OopClosure, DerivedOopClosure, SkipNullValue>::iterate_oops_do<RegisterMap>'
+];
+unpack(cpool);
+
+n(3,10333)
+u(1843,30)
+u(1603,28)
+n(1966,2,0,2,0)
+f(2009,1,2,4)
+u(2137)
+u(36,1)
+u(2603)
+f(2345,3,1,3)
+u(2345)
+u(2329,2)
+u(2337)
+u(2329)
+u(2329)
+u(2321)
+u(2169,1)
+u(2033)
+u(2046,1,0,1,0)
+f(2361,10,1)
+u(2353)
+u(2273)
+u(2649)
+u(2265)
+u(2281)
+u(2657)
+u(2721)
+u(2713)
+u(2249)
+u(2257)
+u(2705)
+u(2705)
+u(2697)
+u(2689)
+u(2673)
+u(2681)
+u(2249)
+u(2257)
+u(2665)
+u(2665)
+u(2729)
+u(2737)
+u(2065)
+u(2049)
+u(2073)
+u(2056)
+u(1043)
+u(2028)
+u(956)
+u(1804)
+u(100)
+u(108)
+u(92)
+u(2572)
+u(2588)
+u(1923)
+u(1883)
+u(2595)
+f(2369,5,1)
+u(2313)
+u(2425)
+u(2422,1,0,1,0)
+f(2209,1,1,10248)
+u(2217)
+u(2401)
+u(2409)
+f(2393,5,3,10245)
+u(1977)
+u(1977)
+u(1969,22)
+u(2082)
+u(2442)
+u(2434)
+f(2001,8,22,10223,0,5,2)
+f(1969,9,574,7509)
+f(1564,10,441,3)
+u(1572)
+u(284,2)
+u(380)
+u(1420)
+u(1899)
+u(1867)
+f(292,12,2,1)
+u(1907)
+u(1859)
+f(1946,10,1,1722,1715,0,1)
+f(1028,11,1717,4)
+u(84,1)
+n(948,2)
+u(1324)
+u(1332)
+u(164,1)
+n(444)
+u(452)
+u(1740)
+u(1764)
+u(1364)
+u(1436)
+u(1851)
+f(2603,12,1)
+f(1036,11,1)
+f(2081,10,1,2014,304,0,0)
+u(2441,2014,304,0,0)
+f(20,12,25,1)
+n(84)
+n(1028,4)
+u(20,1)
+n(948,3)
+u(1324)
+u(1332,2)
+u(1668,1)
+n(1676)
+f(1428,15,1)
+f(1036,12,1)
+n(1500,2)
+u(1692)
+u(1460)
+u(1476)
+u(748)
+u(2627)
+f(2105,12,2,13)
+n(2434,336,279,0,0)
+f(2098,13,271,8)
+n(2377,57)
+f(2449,12,57,1631,0,4,1)
+f(1020,13,1391,6)
+f(148,14,1,4)
+u(1324)
+u(1332)
+u(428,1)
+u(476)
+f(444,17,1)
+n(1676)
+n(1684)
+f(2603,14,1)
+f(1028,13,1,5)
+u(948,4)
+u(1324)
+u(1332,3)
+u(444,2)
+u(452,1)
+u(2611)
+f(1412,18,1)
+f(580,17,1)
+f(1428,16,1)
+f(1324,14,1)
+f(1611,13,1)
+n(2114,153,151,0,0)
+f(2154,14,50,1)
+n(2186,102)
+f(2130,15,71,31)
+f(2498,16,1,30)
+f(2162,13,30,75)
+f(2194,14,28,47)
+f(2105,10,47,1022,145,0,0)
+f(2105,11,82,877)
+f(1603,12,418,5)
+n(2178,61)
+n(2298,393,207,0,0)
+f(1020,13,13,2)
+u(148)
+u(1324)
+u(1316,1)
+n(1332)
+u(580)
+f(2306,13,1,378,194,0,0)
+f(2201,14,98,253,69,0,0)
+n(2290,27)
+f(2122,11,27,63)
+u(2490)
+f(2234,10,63,56,52,0,0)
+u(2242,56,52,0,0)
+u(2226,56,52,0,0)
+u(2458,56,52,0,0)
+f(1724,14,53,3)
+u(2603)
+f(2377,10,3,1579,0,1,0)
+f(1500,11,1268,1)
+u(1692)
+u(1460)
+u(1476)
+u(748)
+u(2627)
+f(1938,11,1,100,99,0,0)
+f(1994,12,72,28,27,1,0)
+f(1954,11,28,74)
+n(1966,62,0,62,0)
+n(2386,74,68,0,0)
+f(1966,12,66,6,0,6,0)
+n(2146,2)
+f(2633,10,2,672,124,0,0)
+u(2465,672,124,0,1)
+f(2473,12,21,651,104,0,0)
+f(1986,9,651,163,162,0,0)
+n(2094,2,0,1,0)
+f(1500,10,1,1)
+u(1692)
+u(1460)
+u(1476)
+u(748)
+u(2627)
+f(2105,9,1,46)
+u(2298)
+f(2642,9,46,1929,1923,0,0)
+f(2482,10,1928,1)
+f(2763,1,1,51)
+u(1915)
+u(2756)
+u(1652)
+u(324,2)
+u(668)
+u(676)
+u(572)
+u(1628)
+u(1372)
+u(1436)
+u(1851)
+f(1060,5,2,13)
+u(260,11)
+u(268,10)
+u(300,4)
+u(172)
+u(196)
+u(188,2)
+u(180,1)
+u(756)
+u(60)
+u(60)
+u(1620)
+u(1796)
+f(204,12,1)
+u(68)
+u(1116)
+u(1124)
+f(1932,11,1,2)
+u(2524)
+u(2532)
+u(116,1)
+u(124)
+u(1452)
+u(1444)
+f(132,14,1)
+f(1012,8,1,6)
+u(1004)
+u(980)
+u(987)
+u(995)
+u(899)
+u(883)
+u(875)
+u(867)
+u(243)
+u(235)
+u(251)
+u(211)
+u(219)
+u(227,1)
+u(27)
+u(811)
+u(307)
+u(819)
+u(851)
+u(827)
+u(835)
+u(835)
+u(835)
+u(835)
+u(835)
+u(835)
+u(835)
+u(843)
+f(891,22,1,5)
+u(859)
+u(763)
+u(771)
+u(779,3)
+u(43)
+u(51)
+u(43)
+u(931,1)
+u(939)
+u(915)
+u(923)
+u(75)
+u(387)
+u(387)
+f(1307,30,1,2)
+u(1283)
+u(1291)
+u(1275)
+u(1299)
+u(1267)
+u(11)
+u(371)
+u(363)
+u(795,1)
+u(1579)
+u(1587)
+u(43)
+u(1307)
+u(1283)
+u(43)
+u(1547)
+u(1555)
+u(1531)
+u(1539)
+u(1515)
+u(1523)
+f(803,39,1)
+u(1579)
+u(1587)
+u(43)
+u(963)
+u(971)
+u(43)
+u(331)
+u(339)
+u(347)
+u(355)
+f(1067,26,1,2)
+u(1083)
+u(1075)
+u(1091)
+u(1155)
+u(1147)
+u(1155)
+u(1195,1)
+u(1203)
+u(1187)
+u(1171)
+u(1179)
+u(1139)
+u(1099)
+u(1107)
+u(1787)
+u(1163)
+f(1227,33,1)
+u(1219)
+u(1259)
+u(1211)
+u(1251)
+u(1243)
+u(1235)
+u(1395)
+u(1387)
+u(1131)
+f(276,7,1)
+u(1364)
+u(1436)
+u(1851)
+f(1380,6,1,2)
+u(1372)
+u(1436)
+u(1851)
+f(1756,5,2,22)
+u(1748)
+u(1468,5)
+u(1508)
+u(2564)
+u(1875)
+f(1492,7,5,3)
+u(1484)
+u(740)
+f(2747,10,2,1)
+f(1732,7,1,14)
+u(1780)
+u(1772)
+u(460)
+u(468)
+u(684,13)
+u(532,1)
+u(1812)
+f(540,13,1)
+u(548)
+u(1348)
+f(556,13,1)
+u(156)
+f(564,13,1)
+u(1340)
+u(1356)
+f(692,13,1)
+u(1636)
+u(1404)
+u(2580)
+u(2556)
+u(2515)
+f(700,13,1,3)
+u(492,1)
+u(404)
+f(1836,14,1,2)
+u(2619)
+f(708,13,2,3)
+u(412,1)
+n(1836,2)
+u(2627)
+f(716,13,2,1)
+u(1716)
+u(732)
+u(140)
+f(1820,13,1)
+f(724,12,1)
+f(1828,5,1,14)
+u(436,1)
+u(620)
+u(484)
+u(396)
+u(316)
+u(2540)
+u(2507)
+f(516,6,1,8)
+u(508,5)
+u(596)
+u(1644)
+u(1372,1)
+u(1436)
+u(1891)
+u(1899)
+u(1867)
+f(1420,10,1,2)
+u(1899)
+u(1867)
+f(1595,10,2)
+f(524,7,2)
+u(644)
+u(652)
+u(1700)
+u(1708)
+u(1660)
+u(1052)
+u(2020)
+u(908)
+u(2780)
+u(2772)
+u(612)
+u(604)
+u(588)
+u(420)
+u(1420,1)
+u(1899)
+u(1867)
+f(1907,22,1)
+u(1859)
+f(636,7,1)
+u(484)
+u(660)
+u(500)
+u(316)
+u(2540)
+u(2548)
+f(628,6,1)
+u(788)
+f(2619,6,1)
+n(2627,3)
+
+search();
+</script></body></html>

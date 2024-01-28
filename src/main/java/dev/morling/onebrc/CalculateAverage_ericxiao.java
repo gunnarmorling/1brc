@@ -17,7 +17,6 @@ package dev.morling.onebrc;
 
 import sun.misc.Unsafe;
 
-import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.reflect.Field;
@@ -70,7 +69,7 @@ public class CalculateAverage_ericxiao {
 
     }
 
-    static class ProcessFileMap implements Callable<Map<String, double[]>> {
+    static class ProcessFileMap implements Callable<Map<ProcessFileMap.KeySlice, double[]>> {
         private long readStart;
         private long readEnd;
         private boolean lastRead;
@@ -86,7 +85,7 @@ public class CalculateAverage_ericxiao {
             this.firstRead = firstRead;
         }
 
-        private final HashMap<String, double[]> hashMap = new HashMap<>();
+        private final HashMap<KeySlice, double[]> hashMap = new HashMap<>();
 
         private static Unsafe initUnsafe() {
             try {
@@ -99,16 +98,51 @@ public class CalculateAverage_ericxiao {
             }
         }
 
+        private static class KeySlice {
+            private byte[] keyData;
+            private final int length;
+            private int hash = 0;
+            private String key;
+
+            public KeySlice(byte[] keyData, int length) {
+                this.keyData = keyData;
+                this.length = length;
+                for (int i = 0; i < length; i++) {
+                    hash = 31 * hash + keyData[i];
+                }
+            }
+
+            public int hashCode() {
+                return hash;
+            }
+
+            public boolean equals(Object o) {
+                KeySlice other = (KeySlice) o;
+                if (hash != other.hash || length != other.length) {
+                    return false;
+                }
+                // TODO: this is technically not correct, we don't account for hash collisions.
+                return true;
+            }
+
+            public void materialize() {
+                key = new String(keyData, 0, length, StandardCharsets.UTF_8);
+                keyData = null;
+            }
+        }
+
         public void add(long keyStart, long keyEnd, long valueEnd) {
             int entryLength = (int) (valueEnd - keyStart);
             int keyLength = (int) (keyEnd - keyStart);
             int valueLength = (int) (valueEnd - (keyEnd + 1));
             UNSAFE.copyMemory(null, keyStart, entryBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, entryLength);
-            String key = new String(entryBytes, 0, keyLength, StandardCharsets.UTF_8);
+            // String key = new String(entryBytes, 0, keyLength, StandardCharsets.UTF_8);
+            KeySlice key = new KeySlice(entryBytes, keyLength);
             double value = Double.parseDouble(new String(entryBytes, keyLength + 1, valueLength, StandardCharsets.UTF_8));
 
-            hashMap.compute(key, (_, v) -> {
+            hashMap.compute(key, (k, v) -> {
                 if (v == null) {
+                    k.materialize();
                     return new double[]{ value, value, value, 1 };
                 }
                 else {
@@ -126,11 +160,11 @@ public class CalculateAverage_ericxiao {
             return (mask - 0x0101010101010101L) & (~mask & 0x8080808080808080L);
         }
 
-        public Map<String, double[]> call() {
+        public Map<KeySlice, double[]> call() {
             return readMemory(readStart, readEnd);
         }
 
-        private Map<String, double[]> readMemory(long startAddress, long endAddress) {
+        private Map<KeySlice, double[]> readMemory(long startAddress, long endAddress) {
             int packedBytes = 0;
             final long singleSemiColonPattern = 0x3BL;
             final long semiColonPattern = 0x3B3B3B3B3B3B3B3BL;
@@ -242,7 +276,7 @@ public class CalculateAverage_ericxiao {
     public static void main(String[] args) throws Exception {
         int numThreads = Runtime.getRuntime().availableProcessors() - 1; // Use the number of available processors
         ExecutorService executorService = Executors.newFixedThreadPool(numThreads);
-        List<Callable<Map<String, double[]>>> callableTasks = new ArrayList<>();
+        List<Callable<Map<ProcessFileMap.KeySlice, double[]>>> callableTasks = new ArrayList<>();
         Path filePath = Path.of(FILE);
 
         try (FileChannel fileChannel = (FileChannel) Files.newByteChannel(filePath, EnumSet.of(StandardOpenOption.READ))) {
@@ -263,10 +297,10 @@ public class CalculateAverage_ericxiao {
 
             callableTasks.add(new ProcessFileMap(readStart, readStart + readLength, false, true));
 
-            List<Map<String, double[]>> results = new ArrayList<>();
+            List<Map<ProcessFileMap.KeySlice, double[]>> results = new ArrayList<>();
             try {
-                List<Future<Map<String, double[]>>> futures = executorService.invokeAll(callableTasks);
-                for (Future<Map<String, double[]>> future : futures) {
+                List<Future<Map<ProcessFileMap.KeySlice, double[]>>> futures = executorService.invokeAll(callableTasks);
+                for (Future<Map<ProcessFileMap.KeySlice, double[]>> future : futures) {
                     try {
                         results.add(future.get());
                     }
@@ -281,7 +315,7 @@ public class CalculateAverage_ericxiao {
             finally {
                 executorService.shutdown();
                 // fileChannel.close();
-                Map<String, double[]> mapA = results.getFirst();
+                Map<ProcessFileMap.KeySlice, double[]> mapA = results.getFirst();
                 for (int i = 1; i < numThreads; ++i) {
                     results.get(i).forEach((station, stationMeasurements) -> {
                         if (mapA.containsKey(station)) {
@@ -299,9 +333,9 @@ public class CalculateAverage_ericxiao {
                 // print key and values
                 int counter = 1;
                 System.out.print("{");
-                for (Map.Entry<String, double[]> entry : mapA.entrySet()) {
+                for (Map.Entry<ProcessFileMap.KeySlice, double[]> entry : mapA.entrySet()) {
                     double[] measurements = entry.getValue();
-                    System.out.print(entry.getKey() + "=" + measurements[0] + "/" + String.format("%.1f", measurements[2] / measurements[3]) + "/" + measurements[1]);
+                    System.out.print(entry.getKey().key + "=" + measurements[0] + "/" + String.format("%.1f", measurements[2] / measurements[3]) + "/" + measurements[1]);
                     if (counter++ < mapA.size())
                         System.out.print(", ");
                 }
