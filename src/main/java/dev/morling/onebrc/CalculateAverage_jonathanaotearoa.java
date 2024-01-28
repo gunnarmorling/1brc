@@ -465,7 +465,7 @@ public class CalculateAverage_jonathanaotearoa {
             if (name == null) {
                 final byte[] nameBytes = new byte[nameSize];
                 UNSAFE.copyMemory(null, nameAddress, nameBytes, UNSAFE.arrayBaseOffset(nameBytes.getClass()), nameSize);
-                this.name = new String(nameBytes, StandardCharsets.UTF_8);
+                name = new String(nameBytes, StandardCharsets.UTF_8);
             }
             return name;
         }
@@ -521,7 +521,6 @@ public class CalculateAverage_jonathanaotearoa {
             final StationData existing = table[index];
             return existing != null
                     && nameHash != existing.nameHash
-                    && nameSize != existing.nameSize
                     && !isMemoryEqual(nameAddress, existing.nameAddress, nameSize);
         }
 
