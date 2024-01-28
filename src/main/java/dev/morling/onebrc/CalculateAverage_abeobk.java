@@ -188,7 +188,7 @@ public class CalculateAverage_abeobk {
 
     // Thread pool worker
     static final class Worker extends Thread {
-        final int thread_id; //for debug use only
+        final int thread_id; // for debug use only
 
         Worker(int i) {
             thread_id = i;
@@ -206,7 +206,7 @@ public class CalculateAverage_abeobk {
                 long addr = start_addr + id * CHUNK_SZ;
                 long end = Math.min(addr + CHUNK_SZ, end_addr);
 
-                //find start of line
+                // find start of line
                 if (id > 0) {
                     while (UNSAFE.getByte(addr++) != '\n')
                         ;
