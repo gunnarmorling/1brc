@@ -153,13 +153,14 @@ public class CalculateAverage_godofwharf {
                                         }
                                         int lineLength = curOffset - prevOffset;
                                         int stationLen = lineLength - temperatureLen - 1;
-                                        byte[] temperature = new byte[temperatureLen];
                                         byte[] station = new byte[stationLen];
                                         System.arraycopy(currentPage, prevOffset, station, 0, stationLen);
-                                        System.arraycopy(currentPage, prevOffset + stationLen + 1, temperature, 0, temperatureLen);
+                                        //System.arraycopy(currentPage, prevOffset + stationLen + 1, temperature, 0, temperatureLen);
                                         int[] hashCodes = computeHashCodes(station);
+                                        double temperature =
+                                                NumberUtils.parseDouble2(currentPage, prevOffset + stationLen + 1, temperatureLen);
                                         Measurement m = new Measurement(
-                                                station, stationLen, temperature, temperatureLen, false, hashCodes);
+                                                station, stationLen, temperature, false, hashCodes);
                                         threadLocalStates[tid].update(m);
                                         prevOffset = curOffset + 1;
                                         j++;
@@ -454,13 +455,13 @@ public class CalculateAverage_godofwharf {
         public void update(final Measurement m) {
             MeasurementAggregator agg = state.get(m.aggregationKey);
             if (agg == null) {
-                state.put(m.aggregationKey, new MeasurementAggregator(m.value, m.value, m.value, 1L));
+                state.put(m.aggregationKey, new MeasurementAggregator(m.temperature, m.temperature, m.temperature, 1L));
                 return;
             }
             agg.count++;
-            agg.min = m.value <= agg.min ? m.value : agg.min;
-            agg.max = m.value >= agg.max ? m.value : agg.max;
-            agg.sum += m.value;
+            agg.min = m.temperature <= agg.min ? m.temperature : agg.min;
+            agg.max = m.temperature >= agg.max ? m.temperature : agg.max;
+            agg.sum += m.temperature;
             // state.compute(m.aggregationKey, (ignored, agg) -> {
             // if (agg == null) {
             // return new MeasurementAggregator(m.value, m.value, m.value, 1L);
@@ -598,13 +599,15 @@ public class CalculateAverage_godofwharf {
             return (i << 1) + (i << 3);
         }
 
-        public static double parseDouble2(final byte[] b, final int len) {
+        public static double parseDouble2(final byte[] b,
+                                          final int offset,
+                                          final int len) {
             try {
-                char ch0 = (char) b[0];
-                char ch1 = (char) b[1];
-                char ch2 = (char) b[2];
-                char ch3 = len > 3 ? (char) b[3] : ' ';
-                char ch4 = len > 4 ? (char) b[4] : ' ';
+                char ch0 = (char) b[offset];
+                char ch1 = (char) b[offset + 1];
+                char ch2 = (char) b[offset + 2];
+                char ch3 = len > 3 ? (char) b[offset + 3] : ' ';
+                char ch4 = len > 4 ? (char) b[offset + 4] : ' ';
                 if (len == 3) {
                     int decimal = toDigit(ch0);
                     double fractional = DOUBLES[toDigit(ch2)];
@@ -641,20 +644,19 @@ public class CalculateAverage_godofwharf {
     // record classes
     record Measurement(byte[] station,
                        int stationLen,
-                       double value,
+                       double temperature,
                        boolean isAscii,
                        int[] hashCodes,
                        State.AggregationKey aggregationKey) {
 
     public Measurement(byte[] station,
                        int stationLen,
-                       byte[] temperature,
-                       int temperatureLen,
+                       double temperature,
                        boolean isAscii,
                        int[] hashCodes) {
             this(station,
                     stationLen,
-                    NumberUtils.parseDouble2(temperature, temperatureLen),
+                    temperature,
                     isAscii,
                     hashCodes,
                     new State.AggregationKey(station, stationLen, isAscii, hashCodes));
