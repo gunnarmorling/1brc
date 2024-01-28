@@ -49,9 +49,9 @@ public class CalculateAverage_ianopolousfast {
     public static final int MAX_LINE_LENGTH = 107;
     public static final int MAX_STATIONS = 1 << 14;
     private static final OfLong LONG_LAYOUT = JAVA_LONG_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
-    private static final VectorSpecies<Byte> BYTE_SPECIES = ByteVector.SPECIES_PREFERRED.length() >= 32
-            ? ByteVector.SPECIES_256
-            : ByteVector.SPECIES_128;
+    private static final VectorSpecies<Byte> BYTE_SPECIES = ByteVector.SPECIES_PREFERRED.length() >= 16
+            ? ByteVector.SPECIES_128
+            : ByteVector.SPECIES_64;
 
     public static void main(String[] args) throws Exception {
         Arena arena = Arena.global();
@@ -132,7 +132,7 @@ public class CalculateAverage_ianopolousfast {
         if (keySize <= 8) {
             first8 = maskHighBytes(first8, keySize & 0x07);
         }
-        else if (keySize <= 16) {
+        else if (keySize < 16) {
             second8 = maskHighBytes(buffer.get(LONG_LAYOUT, lineStart + 8), keySize & 0x07);
         }
         else if (keySize == BYTE_SPECIES.vectorByteSize()) {
@@ -182,7 +182,7 @@ public class CalculateAverage_ianopolousfast {
         if (keySize <= 8) {
             first8 = maskHighBytes(first8, keySize & 0x07);
         }
-        else if (keySize <= 16) {
+        else if (keySize < 16) {
             second8 = maskHighBytes(buffer.get(LONG_LAYOUT, lineStart + 8), keySize & 0x07);
         }
         else if (keySize == BYTE_SPECIES.vectorByteSize()) {
