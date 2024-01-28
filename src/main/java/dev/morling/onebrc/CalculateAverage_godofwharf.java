@@ -152,9 +152,7 @@ public class CalculateAverage_godofwharf {
                                         byte[] station = new byte[stationLen];
                                         System.arraycopy(currentPage, prevOffset, station, 0, stationLen);
                                         System.arraycopy(currentPage, prevOffset + stationLen + 1, temperature, 0, temperatureLen);
-                                        int[] hashCodes = new int[2];
-                                        hashCodes[0] = computeHashCode1(station);
-                                        hashCodes[1] = computeHashCode2(station);
+                                        int[] hashCodes = computeHashCodes(station);
                                         Measurement m = new Measurement(
                                                 station, stationLen, temperature, temperatureLen, false, hashCodes);
                                         threadLocalStates[tid].update(m);
@@ -357,19 +355,23 @@ public class CalculateAverage_godofwharf {
             return pages;
         }
 
-        private static int computeHashCode1(final byte[] b) {
+        private static int[] computeHashCodes(final byte[] b) {
             // for perfect hashing, set seed as -2 and hash map size to 1<<14
-            int result = 1;
+            int[] res = new int[2];
+            int result1 = 1;
+            int result2 = 1;
             for (byte value : b) {
-                result = 31 * result + value;
+                result1 = 31 * result1 + value;
+                result2 = 127 * result2 + value;
             }
-            return result;
+            res[0] = result1;
+            res[1] = result2;
+            return res;
         }
 
         private static int computeHashCode2(final byte[] b) {
             int result = 1;
             for (byte value : b) {
-                result = 127 * result + value;
             }
             return result;
         }
