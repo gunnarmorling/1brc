@@ -24,6 +24,8 @@ import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.stream.IntStream;
@@ -35,6 +37,16 @@ public class CalculateAverage_vikasmb {
         // Instant startTime = Instant.now();
         var numProcessors = Runtime.getRuntime().availableProcessors();
         int numPartitions = Math.max(numProcessors, 8);
+        long fileSize = 0L;
+        try {
+            fileSize = Files.size(Path.of(FILE));
+        }
+        catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        if (fileSize <= 256) {
+            numPartitions = 1;
+        }
         FileChunker fileChunker = new FileChunker(numPartitions, Path.of(FILE));
         ConcurrentHashMap<String, StationSummary> stationStats = new ConcurrentHashMap<>(100);
         IntStream.range(0, numPartitions)
@@ -46,6 +58,7 @@ public class CalculateAverage_vikasmb {
         String[] stations = stationStats.keySet().toArray(new String[0]);
         Arrays.sort(stations);
         System.out.print("{");
+
         for (int i = 0; i < stations.length; i++) {
             System.out.print(stations[i]);
             System.out.print("=");
@@ -54,14 +67,14 @@ public class CalculateAverage_vikasmb {
                 System.out.print(", ");
             }
         }
-        System.out.print("}");
+        System.out.print("}\n");
         // Instant endTime = Instant.now();
         // Duration elapsedTime = Duration.between(startTime, endTime);
         // System.out.println(STR."Elapsed time \{elapsedTime}");
     }
 
     private static class FileChunker {
-        private final int numPartitions;
+        private int numPartitions;
         private final Path filePath;
         private ByteBuffer[] chunks;
 
@@ -88,12 +101,17 @@ public class CalculateAverage_vikasmb {
             try (FileChannel fileChannel = FileChannel.open(filePath, StandardOpenOption.READ)) {
                 // Map the entire file into memory
                 var partitionSize = fileSize / numPartitions;
+
                 long pos = 0L;
-                for (int i = 0; i < numPartitions; i++) {
+                for (int i = 0; i < numPartitions - 1; i++) {
                     var chunkedBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, pos, partitionSize);
                     pos = adjustPos(chunkedBuffer, pos, (int) partitionSize - 1);
                     chunks[i] = chunkedBuffer;
                 }
+
+                var chunkedBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, pos, fileSize - pos);
+                chunks[numPartitions - 1] = chunkedBuffer;
+
             }
             catch (IOException e) {
                 throw new RuntimeException(e);
