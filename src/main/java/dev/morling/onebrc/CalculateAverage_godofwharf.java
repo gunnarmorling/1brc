@@ -81,7 +81,6 @@ public class CalculateAverage_godofwharf {
         printDebugMessage("Running program with %d threads %n", nThreads);
         Job job = new Job(nThreads - 1);
         job.compute(FILE);
-        job.merge();
         return job.sort();
     }
 
@@ -166,6 +165,7 @@ public class CalculateAverage_godofwharf {
                                     // Explicitly commented out because unload seems to take a lot of time
                                     // segment.unload();
                                 }
+                                mergeInternal(threadLocalStates[tid]);
                                 printDebugMessage("Spent a total of %d ns on copy contents from memory to byte array %n".formatted(timer));
 //                                printDebugMessage("Spent a total of %d ns on copying byte arrays %n".formatted(timer1));
 //                                printDebugMessage("Spent a total of %d ns on computing hash code %n".formatted(timer2));
@@ -179,25 +179,39 @@ public class CalculateAverage_godofwharf {
             }
         }
 
-        public void merge() {
-            long time = System.nanoTime();
-            Arrays.stream(threadLocalStates)
-                    .parallel()
-                    .filter(Objects::nonNull)
-                    .forEach(threadLocalState -> threadLocalState.state
-                            .forEach((k, v) -> {
-                                globalMap.compute(k.toString(), (ignored, agg) -> {
-                                    if (agg == null) {
-                                        agg = v;
-                                    }
-                                    else {
-                                        agg.merge(v);
-                                    }
-                                    return agg;
-                                });
-                            }));
-            printDebugMessage("Merge took %d ns%n", (System.nanoTime() - time));
+        private void mergeInternal(final State state) {
+            state.state.forEach((k, v) -> {
+                globalMap.compute(k.toString(), (ignored, agg) -> {
+                    if (agg == null) {
+                        agg = v;
+                    }
+                    else {
+                        agg.merge(v);
+                    }
+                    return agg;
+                });
+            });
         }
+
+//        public void merge() {
+//            long time = System.nanoTime();
+//            Arrays.stream(threadLocalStates)
+//                    .parallel()
+//                    .filter(Objects::nonNull)
+//                    .forEach(threadLocalState -> threadLocalState.state
+//                            .forEach((k, v) -> {
+//                                globalMap.compute(k.toString(), (ignored, agg) -> {
+//                                    if (agg == null) {
+//                                        agg = v;
+//                                    }
+//                                    else {
+//                                        agg.merge(v);
+//                                    }
+//                                    return agg;
+//                                });
+//                            }));
+//            printDebugMessage("Merge took %d ns%n", (System.nanoTime() - time));
+//        }
 
         public Map<String, MeasurementAggregator> sort() {
             long time = System.nanoTime();
@@ -647,7 +661,6 @@ public class CalculateAverage_godofwharf {
                     hashCodes,
                     new State.AggregationKey(station, hashCodes));
         }
-
     }
 
     record LineMetadata(byte[] station,
