@@ -360,7 +360,7 @@ public class CalculateAverage_godofwharf {
             // for perfect hashing, set seed as -2 and hash map size to 1<<14
             int[] res = new int[2];
             res[0] = Arrays.hashCode(b);
-            res[1] = hashCode2(b);
+            // res[1] = hashCode2(b);
             return res;
         }
 
@@ -368,8 +368,7 @@ public class CalculateAverage_godofwharf {
             int result = 1;
             int i = 0;
             for (; i + 7 < b.length; i += 8) {
-                result =
-                        7 * 7 * 7 * 7 * 7 * 7 * 7 * 7 * result
+                result = 7 * 7 * 7 * 7 * 7 * 7 * 7 * 7 * result
                         + 7 * 7 * 7 * 7 * 7 * 7 * 7 * b[i]
                         + 7 * 7 * 7 * 7 * 7 * 7 * b[i + 1]
                         + 7 * 7 * 7 * 7 * 7 * b[i + 2]
@@ -388,13 +387,13 @@ public class CalculateAverage_godofwharf {
 
     public static class State {
         // private final Map<AggregationKey, MeasurementAggregator> state;
-        // private final FastHashMap state;
-        private final FastHashMap2 state;
+        private final FastHashMap state;
+        // private final FastHashMap2 state;
 
         public State() {
             // this.state = new HashMap<>(DEFAULT_HASH_TBL_SIZE);
-            // this.state = new FastHashMap(1 << 14);
-            this.state = new FastHashMap2(DEFAULT_HASH_TBL_SIZE);
+            this.state = new FastHashMap(1 << 14);
+            // this.state = new FastHashMap2(DEFAULT_HASH_TBL_SIZE);
         }
 
         // Implementing the logic in update method instead of calling HashMap.compute() has reduced the runtime significantly
@@ -412,16 +411,25 @@ public class CalculateAverage_godofwharf {
         // }
 
         public void update(final Measurement m) {
-            state.compute(m.aggregationKey, (ignored, agg) -> {
-                if (agg == null) {
-                    return new MeasurementAggregator(m.value, m.value, m.value, 1L);
-                }
-                agg.count++;
-                agg.min = m.value <= agg.min ? m.value : agg.min;
-                agg.max = m.value >= agg.max ? m.value : agg.max;
-                agg.sum += m.value;
-                return agg;
-            });
+            MeasurementAggregator agg = state.get(m.aggregationKey);
+            if (agg == null) {
+                state.put(m.aggregationKey, new MeasurementAggregator(m.value, m.value, m.value, 1L));
+                return;
+            }
+            agg.count++;
+            agg.min = m.value <= agg.min ? m.value : agg.min;
+            agg.max = m.value >= agg.max ? m.value : agg.max;
+            agg.sum += m.value;
+            // state.compute(m.aggregationKey, (ignored, agg) -> {
+            // if (agg == null) {
+            // return new MeasurementAggregator(m.value, m.value, m.value, 1L);
+            // }
+            // agg.count++;
+            // agg.min = m.value <= agg.min ? m.value : agg.min;
+            // agg.max = m.value >= agg.max ? m.value : agg.max;
+            // agg.sum += m.value;
+            // return agg;
+            // });
         }
 
         public static class AggregationKey {
