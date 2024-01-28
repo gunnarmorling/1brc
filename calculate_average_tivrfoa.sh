@@ -15,5 +15,10 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="-Xnoclassgc"
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_albertoventurini
+if [ -f target/CalculateAverage_tivrfoa_image ]; then
+    target/CalculateAverage_tivrfoa_image
+else
+    JAVA_OPTS="--enable-preview"
+    java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_tivrfoa
+fi
+
