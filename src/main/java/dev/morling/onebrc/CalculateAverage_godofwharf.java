@@ -128,12 +128,15 @@ public class CalculateAverage_godofwharf {
                                 splitSegment.load();
                                 int tid = (int) Thread.currentThread().threadId();
                                 byte[] currentPage = new byte[PAGE_SIZE + MAX_STR_LEN];
+                                long timer = 0;
                                 // iterate over each page in split
                                 for (Page page : split.pages) {
                                     // this byte buffer should end with '\n' or EOF
                                     MemorySegment segment = globalSegment.asSlice(page.offset, page.length);
                                     MemorySegment.copy(segment, ValueLayout.JAVA_BYTE, 0L, currentPage, 0, (int) page.length);
+                                    long time2 = System.nanoTime();
                                     SearchResult searchResult = findNewLinesVectorized(currentPage, (int) page.length);
+                                    timer += System.nanoTime() - time2;
                                     int prevOffset = 0;
                                     int j = 0;
                                     // iterate over search results
@@ -163,6 +166,7 @@ public class CalculateAverage_godofwharf {
                                     }
                                     // Explicitly commented out because unload seems to take a lot of time
                                     // segment.unload();
+                                    printDebugMessage("Spent a total of %d ns in reading contents from file".formatted(time));
                                 }
                             }));
                         });
