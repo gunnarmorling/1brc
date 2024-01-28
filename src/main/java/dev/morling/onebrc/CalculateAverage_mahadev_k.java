@@ -133,6 +133,7 @@ public class CalculateAverage_mahadev_k {
             values = new MeasurementAggregator();
             stationMap.putIfAbsent(station, values);
         }
+        values = stationMap.get(station);
         values.accept(temp);
     }
 
