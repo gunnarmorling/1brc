@@ -16,7 +16,7 @@
 #
 
 if [ -f target/CalculateAverage_JaimePolidura_image ]; then
-	echo "Running in native mode" 
+#	echo "Running in native mode" 
 	target/CalculateAverage_JaimePolidura_image
 else
 	echo "Native image not found. Running in JVM mode"

@@ -67,7 +67,7 @@ public final class CalculateAverage_JaimePolidura {
         FileChannel channel = new RandomAccessFile(FILE, "r").getChannel();
         MemorySegment mmappedFile = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size(), Arena.global());
 
-        int nWorkers = Runtime.getRuntime().availableProcessors();
+        int nWorkers = channel.size() > 1024 ? Runtime.getRuntime().availableProcessors() : 1;
 
         Worker[] workers = new Worker[nWorkers];
         long quantityPerWorker = Math.floorDiv(channel.size(), nWorkers);
@@ -120,11 +120,11 @@ public final class CalculateAverage_JaimePolidura {
             Result result = entry.getValue();
             stringBuilder.append(entry.getKey())
                     .append('=')
-                    .append(round(result.min))
+                    .append(round(((double) result.min) / 10.0))
                     .append('/')
                     .append(round((double) result.sum / (result.count * 10)))
                     .append('/')
-                    .append(round(result.max));
+                    .append(round(((double) result.max) / 10.0d));
 
         }
 
@@ -329,7 +329,6 @@ public final class CalculateAverage_JaimePolidura {
                     actualEntry.sum = actualEntry.sum + valueToPut;
                     return;
                 }
-
                 // Dealing with has collisions. We try to go to the next slot
                 if (++index >= this.size) {
                     index = 0;
@@ -363,7 +362,7 @@ public final class CalculateAverage_JaimePolidura {
     }
 
     private static double round(double value) {
-        return Math.round(value / 10.0);
+        return Math.round(value * 10.0) / 10.0;
     }
 
     private static int roundUpToPowerOfTwo(int number) {
