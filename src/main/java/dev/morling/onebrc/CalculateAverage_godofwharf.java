@@ -194,10 +194,9 @@ public class CalculateAverage_godofwharf {
 
         public Map<String, MeasurementAggregator> sort() {
             long time = System.nanoTime();
-            Map<String, MeasurementAggregator> ret2 = new TreeMap<>();
-            ret.forEach((k, v) -> ret2.put(k.toString(), v));
+            Map<String, MeasurementAggregator> sortedMap = new TreeMap<>(globalMap);
             printDebugMessage("Tree map construction took %d ns%n", (System.nanoTime() - time));
-            return ret2;
+            return sortedMap;
         }
 
         private static LineMetadata findNextOccurrenceOfNewLine(final ByteBuffer buffer,
@@ -360,11 +359,11 @@ public class CalculateAverage_godofwharf {
 
     public static class State {
         private final Map<AggregationKey, MeasurementAggregator> state;
-        //private final FastHashMap state;
+        // private final FastHashMap state;
 
         public State() {
             this.state = new HashMap<>(DEFAULT_HASH_TBL_SIZE);
-            //this.state = new FastHashMap(DEFAULT_HASH_TBL_SIZE);
+            // this.state = new FastHashMap(DEFAULT_HASH_TBL_SIZE);
         }
 
         // Implementing the logic in update method instead of calling HashMap.compute() has reduced the runtime significantly
