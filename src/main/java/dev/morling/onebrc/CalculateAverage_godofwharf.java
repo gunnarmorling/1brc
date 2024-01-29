@@ -255,15 +255,15 @@ public class CalculateAverage_godofwharf {
                     int idx = mask.firstTrue();
                     ret.offsets[i + k] = j + idx;
                     k++;
-                    mask = mask.indexInRange(-(idx + 1), mask.length());
+                    mask = mask.indexInRange(-(idx + 1), loopLength);
                     idx = mask.firstTrue();
                     ret.offsets[i + k] = j + idx;
                     k++;
-                    mask = mask.indexInRange(-(idx + 1), mask.length());
+                    mask = mask.indexInRange(-(idx + 1), loopLength);
                     idx = mask.firstTrue();
                     ret.offsets[i + k] = j + idx;
                     k++;
-                    mask = mask.indexInRange(-(idx + 1), mask.length());
+                    mask = mask.indexInRange(-(idx + 1), loopLength);
                 }
 //                long res = NEW_LINE_VEC.eq(vec).toLong();
 //                int k = 0;
