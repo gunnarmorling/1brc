@@ -162,23 +162,20 @@ public class CalculateAverage_yavuztas {
     }
 
     // Inspired by @spullara - customized hashmap on purpose
-    // The main difference is we hold only one array instead of two, fewer objects is faster
+    // Currently, it turned into a static helper class to utilize map operations
+    // The Recrod array is stored in RegionActor for faster access
     private static final class RecordMap {
 
         // Bigger bucket size less collisions, but you have to find a sweet spot otherwise it is becoming slower.
         // Also works good enough for 10K stations
         private static final int SIZE = 1 << 14; // 16kb - enough for 10K
         private static final int BITMASK = SIZE - 1;
-        private final Record[] keys = new Record[SIZE];
+        // private final Record[] keys = new Record[SIZE];
 
         // int collision;
 
-        private boolean hasNoRecord(int index) {
-            return this.keys[index] == null;
-        }
-
-        private Record getRecord(int index) {
-            return this.keys[index];
+        private static boolean hasNoRecord(Record[] records, int index) {
+            return records[index] == null;
         }
 
         private static int hashBucket(int hash) {
@@ -186,14 +183,14 @@ public class CalculateAverage_yavuztas {
             return hash & BITMASK; // fast modulo, to find bucket
         }
 
-        private void putAndCollect(int hash, int temp, long start, int length, long word1, long word2, long wordLast) {
+        private static void putAndCollect(Record[] records, int hash, int temp, long start, int length, long word1, long word2, long wordLast) {
             final int bucket = hashBucket(hash);
-            if (hasNoRecord(bucket)) {
-                this.keys[bucket] = new Record(start, length, word1, word2, wordLast, hash, temp);
+            if (hasNoRecord(records, bucket)) {
+                records[bucket] = new Record(start, length, word1, word2, wordLast, hash, temp);
                 return;
             }
 
-            Record existing = getRecord(bucket);
+            Record existing = records[bucket];
             if (existing.equals(start, word1, word2, wordLast, length)) {
                 existing.collect(temp);
                 return;
@@ -212,15 +209,15 @@ public class CalculateAverage_yavuztas {
             existing.next = new Record(start, length, word1, word2, wordLast, hash, temp);
         }
 
-        private void putOrMerge(Record key) {
+        private static void putOrMerge(Record[] records, Record key) {
             final int bucket = hashBucket(key.hash);
-            if (hasNoRecord(bucket)) {
+            if (hasNoRecord(records, bucket)) {
                 key.next = null;
-                this.keys[bucket] = key;
+                records[bucket] = key;
                 return;
             }
 
-            Record existing = getRecord(bucket);
+            Record existing = records[bucket];
             if (existing.equals(key)) {
                 existing.merge(key);
                 return;
@@ -240,11 +237,11 @@ public class CalculateAverage_yavuztas {
             existing.next = key;
         }
 
-        private void forEach(Consumer<Record> consumer) {
+        private static void forEach(Record[] records, Consumer<Record> consumer) {
             int pos = 0;
             Record key;
             while (pos < SIZE) {
-                if ((key = this.keys[pos++]) == null) {
+                if ((key = records[pos++]) == null) {
                     continue;
                 }
                 Record next = key.next;
@@ -257,8 +254,8 @@ public class CalculateAverage_yavuztas {
             }
         }
 
-        private void merge(RecordMap other) {
-            other.forEach(this::putOrMerge);
+        private static void merge(Record[] records, Record[] other) {
+            forEach(other, key -> putOrMerge(records, key));
         }
 
     }
@@ -269,7 +266,9 @@ public class CalculateAverage_yavuztas {
         private final long startPos; // start of region memory address
         private final int size;
 
-        private final RecordMap map = new RecordMap();
+        // private final RecordMap map = new RecordMap();
+
+        private Record[] aggregations;
 
         public RegionActor(long startPos, int size) {
             this.startPos = startPos;
@@ -300,6 +299,10 @@ public class CalculateAverage_yavuztas {
 
         @Override
         public void run() {
+
+            // local vars is faster than field access, so we carried record array here
+            final Record[] records = new Record[RecordMap.SIZE];
+
             long pointer = this.startPos;
             final long size = pointer + this.size;
             while (pointer < size) { // line start
@@ -315,7 +318,7 @@ public class CalculateAverage_yavuztas {
                     final int temp = convertIntoNumber(decimalPos, numberWord);
 
                     word1 = partial(word1, pos); // last word
-                    this.map.putAndCollect(completeHash(hash, word1), temp, pointer, pos, word1, 0, 0);
+                    RecordMap.putAndCollect(records, completeHash(hash, word1), temp, pointer, pos, word1, 0, 0);
 
                     pointer += pos + (decimalPos >>> 3) + 4;
                 }
@@ -330,7 +333,7 @@ public class CalculateAverage_yavuztas {
                         final int temp = convertIntoNumber(decimalPos, numberWord);
 
                         word2 = partial(word2, pos); // last word
-                        this.map.putAndCollect(completeHash(hash, word1, word2), temp, pointer, length, word1, word2, 0);
+                        RecordMap.putAndCollect(records, completeHash(hash, word1, word2), temp, pointer, length, word1, word2, 0);
 
                         pointer += length + (decimalPos >>> 3) + 4; // seek to the line end
                     }
@@ -357,12 +360,14 @@ public class CalculateAverage_yavuztas {
                         final int temp = convertIntoNumber(decimalPos, numberWord);
 
                         word = partial(word, pos); // last word
-                        this.map.putAndCollect(completeHash(hash, word), temp, pointer, length, word1, word2, word);
+                        RecordMap.putAndCollect(records, completeHash(hash, word), temp, pointer, length, word1, word2, word);
 
                         pointer += length + (decimalPos >>> 3) + 4; // seek to the line end
                     }
                 }
             }
+
+            this.aggregations = records; // to expose records after the job is done
         }
 
         // Hashes are calculated by a Mersenne Prime (1 << 7) -1
@@ -410,13 +415,6 @@ public class CalculateAverage_yavuztas {
             return (int) value;
         }
 
-        /**
-         * blocks until the map is fully collected
-         */
-        private RecordMap get() throws InterruptedException {
-            join();
-            return this.map;
-        }
     }
 
     private static double round(double value) {
@@ -494,18 +492,19 @@ public class CalculateAverage_yavuztas {
             startPos += maxSize;
         }
 
-        final RecordMap output = new RecordMap(); // output to merge all records
+        // final RecordMap output = new RecordMap(); // output to merge all records
+        final Record[] output = new Record[RecordMap.SIZE];
         for (RegionActor actor : actors) {
-            final RecordMap partial = actor.get(); // blocks until get the result
-            output.merge(partial);
+
+            actor.join(); // blocks until we get the result from thread
+            RecordMap.merge(output, actor.aggregations);
             // System.out.println("collisions: " + partial.collision);
         }
 
         // sort and print the result
         final TreeMap<String, String> sorted = new TreeMap<>();
-        output.forEach(key -> {
-            sorted.put(key.toString(), key.measurements());
-        });
+        RecordMap.forEach(output,
+                key -> sorted.put(key.toString(), key.measurements()));
         System.out.println(sorted);
         System.out.close(); // closing the stream will trigger the main process to pick up the output early
     }
