@@ -159,7 +159,7 @@ public class CalculateAverage_mtopolnik {
                     temperature = parseTemperature(tempWord, dotPos);
                     cursor += (dotPos >> 3) + 3;
                     hash = hash(nameWord0);
-                    if (stats.gotoName0(hash, nameWord0, nameLen)) {
+                    if (stats.gotoName0(hash, nameWord0)) {
                         stats.observe(temperature);
                         continue;
                     }
@@ -177,7 +177,7 @@ public class CalculateAverage_mtopolnik {
                         int dotPos = dotPos(tempWord);
                         temperature = parseTemperature(tempWord, dotPos);
                         cursor += (dotPos >> 3) + 3;
-                        if (stats.gotoName1(hash, nameWord0, nameWord1, nameLen)) {
+                        if (stats.gotoName1(hash, nameWord0, nameWord1)) {
                             stats.observe(temperature);
                             continue;
                         }
@@ -295,14 +295,14 @@ public class CalculateAverage_mtopolnik {
             slotBase = address + index * SIZEOF;
         }
 
-        private boolean gotoName0(long hash, long nameWord0, long nameLen) {
+        private boolean gotoName0(long hash, long nameWord0) {
             gotoIndex((int) (hash & TABLE_INDEX_MASK));
-            return hash() == hash && nameLen() == nameLen && nameWord0() == nameWord0;
+            return hash() == hash && nameWord0() == nameWord0;
         }
 
-        private boolean gotoName1(long hash, long nameWord0, long nameWord1, long nameLen) {
+        private boolean gotoName1(long hash, long nameWord0, long nameWord1) {
             gotoIndex((int) (hash & TABLE_INDEX_MASK));
-            return hash() == hash && nameLen() == nameLen && nameWord0() == nameWord0 && nameWord1() == nameWord1;
+            return hash() == hash && nameWord0() == nameWord0 && nameWord1() == nameWord1;
         }
 
         long hash() {
