@@ -474,6 +474,8 @@ public class CalculateAverage_yavuztas {
             regionSize = fileSize;
         }
 
+        long time = System.currentTimeMillis();
+
         long startPos = 0;
         final FileChannel channel = (FileChannel) Files.newByteChannel(FILE, StandardOpenOption.READ);
         // get the memory address, this is the only thing we need for Unsafe
@@ -492,21 +494,27 @@ public class CalculateAverage_yavuztas {
             startPos += maxSize;
         }
 
-        // final RecordMap output = new RecordMap(); // output to merge all records
+        for (RegionActor actor : actors) {
+            actor.join(); // blocks until we get the result from thread
+        }
+        System.out.println("aggregation took: " + (System.currentTimeMillis() - time));
+
+        time = System.currentTimeMillis();
         final Record[] output = new Record[RecordMap.SIZE];
         for (RegionActor actor : actors) {
-
-            actor.join(); // blocks until we get the result from thread
             RecordMap.merge(output, actor.aggregations);
-            // System.out.println("collisions: " + partial.collision);
         }
+        System.out.println("merge took: " + (System.currentTimeMillis() - time));
 
+        time = System.currentTimeMillis();
         // sort and print the result
         final TreeMap<String, String> sorted = new TreeMap<>();
         RecordMap.forEach(output,
                 key -> sorted.put(key.toString(), key.measurements()));
         System.out.println(sorted);
+        System.out.println("sorting took: " + (System.currentTimeMillis() - time));
         System.out.close(); // closing the stream will trigger the main process to pick up the output early
+
     }
 
 }
