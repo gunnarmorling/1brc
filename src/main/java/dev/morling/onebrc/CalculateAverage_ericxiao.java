@@ -47,8 +47,6 @@ public class CalculateAverage_ericxiao {
         private boolean firstRead;
         byte[] entryBytes = new byte[512];
 
-        private final Station[] stations = new Station[10000];
-
         private static final Unsafe UNSAFE = initUnsafe();
 
         public ProcessFileMap(long readStart, long readEnd, boolean firstRead, boolean lastRead) {
@@ -57,6 +55,8 @@ public class CalculateAverage_ericxiao {
             this.lastRead = lastRead;
             this.firstRead = firstRead;
         }
+
+        private final Station[] stations = new Station[10000];
 
         private static Unsafe initUnsafe() {
             try {
@@ -72,11 +72,10 @@ public class CalculateAverage_ericxiao {
         public void add(long keyStart, long keyEnd, long valueEnd) {
             int entryLength = (int) (valueEnd - keyStart);
             int keyLength = (int) (keyEnd - keyStart);
-            int valueLength = (int) (valueEnd - (keyEnd + 1));
-
             UNSAFE.copyMemory(null, keyStart, entryBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, entryLength);
 
             // Calculate measurement
+            int valueLength = (int) (valueEnd - (keyEnd + 1));
             final byte negativeSign = '-';
             final byte periodSign = '.';
 
