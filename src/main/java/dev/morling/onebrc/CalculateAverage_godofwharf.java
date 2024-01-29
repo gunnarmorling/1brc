@@ -418,13 +418,13 @@ public class CalculateAverage_godofwharf {
     }
 
     public static class State {
-        // private final Map<AggregationKey, MeasurementAggregator> state;
-        private final FastHashMap state;
+        private final Map<AggregationKey, MeasurementAggregator> state;
+        //private final FastHashMap state;
         // private final FastHashMap2 state;
 
         public State() {
-            // this.state = new HashMap<>(DEFAULT_HASH_TBL_SIZE);
-            this.state = new FastHashMap(1 << 14);
+            this.state = new HashMap<>(DEFAULT_HASH_TBL_SIZE);
+            //this.state = new FastHashMap(1 << 14);
             // this.state = new FastHashMap2(DEFAULT_HASH_TBL_SIZE);
         }
 
