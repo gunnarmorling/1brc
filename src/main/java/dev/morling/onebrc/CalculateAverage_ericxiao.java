@@ -112,7 +112,7 @@ public class CalculateAverage_ericxiao {
             }
             else {
                 stations[stationHash % 10000].min = Math.min(stations[stationHash % 10000].min, value);
-                stations[stationHash % 10000].max = Math.max(stations[stationHash % 10000].min, value);
+                stations[stationHash % 10000].max = Math.max(stations[stationHash % 10000].max, value);
                 stations[stationHash % 10000].sum += value;
                 stations[stationHash % 10000].count++;
             }
@@ -285,8 +285,8 @@ public class CalculateAverage_ericxiao {
                         if (currMap[j] != null) {
                             if (mapA[j] != null) {
                                 mapA[j].min = Math.min(mapA[j].min, currMap[j].min);
-                                mapA[j].min = Math.max(mapA[j].max, currMap[j].min);
-                                mapA[j].count += currMap[j].sum;
+                                mapA[j].max = Math.max(mapA[j].max, currMap[j].max);
+                                mapA[j].sum += currMap[j].sum;
                                 mapA[j].count += currMap[j].count;
                             }
                             else {
