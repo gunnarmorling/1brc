@@ -558,7 +558,7 @@ public class CalculateAverage_godofwharf {
         public String toString() {
             double min1 = round(min);
             double max1 = round(max);
-            double mean = round(sum / count);
+            double mean = round(round(sum) / count);
             return min1 + "/" + mean + "/" + max1;
         }
 
