@@ -130,7 +130,8 @@ public class CalculateAverage_PawelAdamski {
         while (pointer < fileLength) {
             if (pointer + READ_SIZE > fileLength) {
                 nextPointer = fileLength;
-            } else {
+            }
+            else {
                 nextPointer = findNextLine(raf, pointer + READ_SIZE);
             }
             parts.add(new FilePart(pointer, nextPointer - pointer));
@@ -143,7 +144,8 @@ public class CalculateAverage_PawelAdamski {
         try {
             byte[] bytes = readBytesFromFile(filePart, raf);
             return parseBytesIntoStationsMap(bytes);
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
@@ -155,7 +157,8 @@ public class CalculateAverage_PawelAdamski {
         for (int i = 0; i < bytes.length; i++) {
             if (bytes[i] == ';') {
                 semicolonIndex = i;
-            } else if (bytes[i] == '\n') {
+            }
+            else if (bytes[i] == '\n') {
                 byte[] station = Arrays.copyOfRange(bytes, newLineIndex + 1, semicolonIndex);
                 long temp = parseDouble(bytes, semicolonIndex + 1, i);
                 MeasurementAggregator measurement = new MeasurementAggregator(temp);
@@ -180,21 +183,24 @@ public class CalculateAverage_PawelAdamski {
             byte c = text[i];
             if (c == '-') {
                 negative = true;
-            } else if (c != '.') {
+            }
+            else if (c != '.') {
                 result *= 10;
                 result += c - '0';
             }
         }
         if (negative) {
             return -result;
-        } else {
+        }
+        else {
             return result;
         }
     }
 
     private static long findNextLine(RandomAccessFile raf, long currentPosition) throws IOException {
         raf.seek(currentPosition);
-        while (raf.readByte() != '\n') ;
+        while (raf.readByte() != '\n')
+            ;
         return raf.getFilePointer();
     }
 
