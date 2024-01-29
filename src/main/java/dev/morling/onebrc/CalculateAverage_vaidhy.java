@@ -146,12 +146,6 @@ public class CalculateAverage_vaidhy<I, T> {
                 }
                 entryIndex += 8;
             }
-            // for (; lookupIndex < endAddress; lookupIndex++) {
-            // if (UNSAFE.getByte(entryIndex) != UNSAFE.getByte(lookupIndex)) {
-            // return false;
-            // }
-            // entryIndex++;
-            // }
 
             return true;
         }
@@ -177,9 +171,6 @@ public class CalculateAverage_vaidhy<I, T> {
 
     private static final String FILE = "./measurements.txt";
 
-    private static final long C1 = 0x87c37b91114253d5L;
-    private static final long C2 = 0x4cf5ad432745937fL;
-    private static final int R1 = 31;
     private static final long DEFAULT_SEED = 104729;
 
     private static long simpleHash(long hash, long nextData) {
@@ -199,24 +190,6 @@ public class CalculateAverage_vaidhy<I, T> {
     }
 
     private static final Unsafe UNSAFE = initUnsafe();
-
-    private static int parseDoubleFromLong(long data, int len) {
-        int normalized = 0;
-        boolean negative = false;
-        for (int i = 0; i < len; i++) {
-            long ch = data & 0xff;
-            data >>>= 1;
-            if (ch == '-') {
-                negative = true;
-                continue;
-            }
-            if (ch == '.') {
-                continue;
-            }
-            normalized = (normalized * 10) + (normalized ^ 0x30);
-        }
-        return negative ? -normalized : normalized;
-    }
 
     private static int parseDouble(long startAddress, long endAddress) {
         int normalized;
