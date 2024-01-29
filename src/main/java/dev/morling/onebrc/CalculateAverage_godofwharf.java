@@ -249,20 +249,17 @@ public class CalculateAverage_godofwharf {
                 Vector<Byte> vec = ByteVector.fromArray(PREFERRED_SPECIES, page, j);
                 VectorMask<Byte> mask = NEW_LINE_VEC.eq(vec);
                 long res = mask.toLong();
-                int k = 0;
+                int k = i;
                 int bitCount = Long.bitCount(res);
                 while (res > 0) {
                     int idx = Long.numberOfTrailingZeros(res);
-                    ret.offsets[i + k] = j + idx;
-                    k++;
+                    ret.offsets[k++] = j + idx;
                     res &= (res - 1);
                     idx = Long.numberOfTrailingZeros(res);
-                    ret.offsets[i + k] = j + idx;
-                    k++;
+                    ret.offsets[k++] = j + idx;
                     res &= (res - 1);
                     idx = Long.numberOfTrailingZeros(res);
-                    ret.offsets[i + k] = j + idx;
-                    k++;
+                    ret.offsets[k++] = j + idx;
                     res &= (res - 1);
                 }
                 j += loopLength;
