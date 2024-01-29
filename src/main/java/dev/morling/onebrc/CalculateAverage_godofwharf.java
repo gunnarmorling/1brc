@@ -563,10 +563,7 @@ public class CalculateAverage_godofwharf {
         }
 
         private double round(double value) {
-            System.out.println("Value before rounding = %f".formatted(value));
-            double ret = Math.round(value * 10.0) / 10.0;
-            System.out.println("Value after rounding = %f".formatted(ret));
-            return ret;
+            return Math.round(value * 10.0) / 10.0;
         }
 
         private void merge(final MeasurementAggregator m2) {
