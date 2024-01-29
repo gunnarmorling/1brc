@@ -120,7 +120,7 @@ public class CalculateAverage_abeobk {
         final void add(long val) {
             sum += val;
             count++;
-            if (val >= max) {
+            if (val > max) {
                 max = val;
             }
             if (val < min) {
