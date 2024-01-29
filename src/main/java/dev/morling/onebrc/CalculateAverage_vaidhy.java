@@ -85,7 +85,7 @@ public class CalculateAverage_vaidhy<I, T> {
                 if (entry.suffix == suffix) {
                     long entryLength = entry.endAddress - entry.startAddress;
                     if (entryLength == lookupLength) {
-                        boolean found = compareEntryKeys(startAddress, endAddress, entry);
+                        boolean found = lookupLength <= 8 || compareEntryKeys(startAddress, endAddress, entry);
                         if (found) {
                             return entry.value;
                         }
@@ -121,7 +121,7 @@ public class CalculateAverage_vaidhy<I, T> {
                     if (entry.suffix == suffix) {
                         long entryLength = entry.endAddress - entry.startAddress;
                         if (entryLength == lookupLength) {
-                            boolean found = compareEntryKeys(startAddress, endAddress, entry);
+                            boolean found = lookupLength <= 8 || compareEntryKeys(startAddress, endAddress, entry);
                             if (found) {
                                 return entry.value;
                             }
