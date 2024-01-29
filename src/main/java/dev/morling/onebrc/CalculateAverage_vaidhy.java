@@ -38,7 +38,7 @@ public class CalculateAverage_vaidhy<I, T> {
 
     private static final class HashEntry {
         private long startAddress;
-        private long endAddress;
+        private long keyLength;
         private long suffix;
         private int next;
         IntSummaryStatistics value;
@@ -72,8 +72,7 @@ public class CalculateAverage_vaidhy<I, T> {
             if (hashEntry == hash) {
                 HashEntry entry = entries[i];
                 if (entry.suffix == suffix) {
-                    long entryLength = entry.endAddress - entry.startAddress;
-                    if (entryLength == lookupLength) {
+                    if (entry.keyLength == lookupLength) {
                         boolean found = lookupLength <= 8 || compareEntryKeys(startAddress, endAddress, entry);
                         if (found) {
                             return entry.value;
@@ -85,7 +84,7 @@ public class CalculateAverage_vaidhy<I, T> {
             if (hashEntry == 0) {
                 HashEntry entry = entries[i];
                 entry.startAddress = startAddress;
-                entry.endAddress = endAddress;
+                entry.keyLength = lookupLength;
                 hashes[i] = hash;
                 entry.suffix = suffix;
                 entry.next = next;
@@ -105,10 +104,21 @@ public class CalculateAverage_vaidhy<I, T> {
 
             do {
                 hashEntry = hashes[i];
+                if (hashEntry == hash) {
+                    HashEntry entry = entries[i];
+                    if (entry.suffix == suffix) {
+                        if (entry.keyLength == lookupLength) {
+                            boolean found = lookupLength <= 8 || compareEntryKeys(startAddress, endAddress, entry);
+                            if (found) {
+                                return entry.value;
+                            }
+                        }
+                    }
+                }
                 if (hashEntry == 0) {
                     HashEntry entry = entries[i];
                     entry.startAddress = startAddress;
-                    entry.endAddress = endAddress;
+                    entry.keyLength = lookupLength;
                     hashes[i] = hash;
                     entry.suffix = suffix;
                     entry.next = next;
@@ -117,18 +127,6 @@ public class CalculateAverage_vaidhy<I, T> {
                     return entry.value;
                 }
 
-                if (hashEntry == hash) {
-                    HashEntry entry = entries[i];
-                    if (entry.suffix == suffix) {
-                        long entryLength = entry.endAddress - entry.startAddress;
-                        if (entryLength == lookupLength) {
-                            boolean found = lookupLength <= 8 || compareEntryKeys(startAddress, endAddress, entry);
-                            if (found) {
-                                return entry.value;
-                            }
-                        }
-                    }
-                }
                 i++;
                 if (i == len) {
                     i = 0;
@@ -601,7 +599,8 @@ public class CalculateAverage_vaidhy<I, T> {
         for (PrimitiveHashMap map : list) {
             for (HashEntry entry : map.entrySet()) {
                 if (entry.value != null) {
-                    String keyStr = unsafeToString(entry.startAddress, entry.endAddress);
+                    String keyStr = unsafeToString(entry.startAddress,
+                            entry.startAddress + entry.keyLength);
 
                     output.compute(keyStr, (ignore, val) -> {
                         if (val == null) {
