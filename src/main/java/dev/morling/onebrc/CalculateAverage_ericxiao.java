@@ -32,12 +32,22 @@ public class CalculateAverage_ericxiao {
 
     private static final String FILE = "./measurements.txt";
 
-    static class ProcessFileMap implements Callable<Map<ProcessFileMap.KeySlice, int[]>> {
+    private static class Station {
+        private String station;
+        private int min;
+        private int max;
+        private int sum;
+        private int count;
+    }
+
+    static class ProcessFileMap implements Callable<Station[]> {
         private long readStart;
         private long readEnd;
         private boolean lastRead;
         private boolean firstRead;
         byte[] entryBytes = new byte[512];
+
+        private final Station[] stations = new Station[10000];
 
         private static final Unsafe UNSAFE = initUnsafe();
 
@@ -100,13 +110,11 @@ public class CalculateAverage_ericxiao {
 
         public void add(long keyStart, long keyEnd, long valueEnd) {
             int entryLength = (int) (valueEnd - keyStart);
-
             int keyLength = (int) (keyEnd - keyStart);
-            UNSAFE.copyMemory(null, keyStart, entryBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, entryLength);
             KeySlice key = new KeySlice(entryBytes, keyLength);
-
             int valueLength = (int) (valueEnd - (keyEnd + 1));
 
+            // Calculate measurement
             final byte negativeSign = '-';
             final byte periodSign = '.';
 
@@ -125,19 +133,30 @@ public class CalculateAverage_ericxiao {
             }
             int value = multiplier * accumulator;
 
-            hashMap.compute(key, (k, v) -> {
-                if (v == null) {
-                    k.materialize();
-                    return new int[]{ value, value, value, 1 };
-                }
-                else {
-                    v[0] = Math.min(v[0], value);
-                    v[1] = Math.max(v[1], value);
-                    v[2] += value;
-                    v[3]++;
-                    return v;
-                }
-            });
+            // Calculate station
+            UNSAFE.copyMemory(null, keyStart, entryBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, entryLength);
+
+            int stationHash = entryBytes[0];
+            for (int i = 0; i < keyLength; i++) {
+                stationHash = stationHash + 31 * entryBytes[i];
+            }
+
+            // Insert / Update Map
+            if (stations[stationHash % 10000] == null) {
+                Station station = new Station();
+                station.station = new String(entryBytes, 0, keyLength, StandardCharsets.UTF_8);
+                station.min = value;
+                station.sum = value;
+                station.max = value;
+                station.count = 1;
+                stations[stationHash % 10000] = station;
+            }
+            else {
+                stations[stationHash % 10000].min = Math.min(stations[stationHash % 10000].min, value);
+                stations[stationHash % 10000].max = Math.max(stations[stationHash % 10000].min, value);
+                stations[stationHash % 10000].sum += value;
+                stations[stationHash % 10000].count++;
+            }
         }
 
         private static long delimiterMask(long word, long delimiter) {
@@ -145,11 +164,11 @@ public class CalculateAverage_ericxiao {
             return (mask - 0x0101010101010101L) & (~mask & 0x8080808080808080L);
         }
 
-        public Map<KeySlice, int[]> call() {
+        public Station[] call() {
             return readMemory(readStart, readEnd);
         }
 
-        private Map<KeySlice, int[]> readMemory(long startAddress, long endAddress) {
+        private Station[] readMemory(long startAddress, long endAddress) {
             int packedBytes = 0;
             final long singleSemiColonPattern = 0x3BL;
             final long semiColonPattern = 0x3B3B3B3B3B3B3B3BL;
@@ -254,14 +273,14 @@ public class CalculateAverage_ericxiao {
                 add(keyStartAddress, keyEndAddress, valueEndAddress);
             }
 
-            return hashMap;
+            return stations;
         }
     }
 
     public static void main(String[] args) throws Exception {
         int numThreads = Runtime.getRuntime().availableProcessors() - 1; // Use the number of available processors
         ExecutorService executorService = Executors.newFixedThreadPool(numThreads);
-        List<Callable<Map<ProcessFileMap.KeySlice, int[]>>> callableTasks = new ArrayList<>();
+        List<Callable<Station[]>> callableTasks = new ArrayList<>();
         Path filePath = Path.of(FILE);
 
         try (FileChannel fileChannel = (FileChannel) Files.newByteChannel(filePath, EnumSet.of(StandardOpenOption.READ))) {
@@ -282,10 +301,10 @@ public class CalculateAverage_ericxiao {
 
             callableTasks.add(new ProcessFileMap(readStart, readStart + readLength, false, true));
 
-            List<Map<ProcessFileMap.KeySlice, int[]>> results = new ArrayList<>();
+            List<Station[]> results = new ArrayList<>();
             try {
-                List<Future<Map<ProcessFileMap.KeySlice, int[]>>> futures = executorService.invokeAll(callableTasks);
-                for (Future<Map<ProcessFileMap.KeySlice, int[]>> future : futures) {
+                List<Future<Station[]>> futures = executorService.invokeAll(callableTasks);
+                for (Future<Station[]> future : futures) {
                     try {
                         results.add(future.get());
                     }
@@ -300,32 +319,35 @@ public class CalculateAverage_ericxiao {
             finally {
                 executorService.shutdown();
                 // fileChannel.close();
-                Map<ProcessFileMap.KeySlice, int[]> mapA = results.getFirst();
+                Station[] mapA = results.getFirst();
                 for (int i = 1; i < numThreads; ++i) {
-                    results.get(i).forEach((station, stationMeasurements) -> {
-                        if (mapA.containsKey(station)) {
-                            int[] measurements = mapA.get(station);
-                            measurements[0] = Math.min(measurements[0], stationMeasurements[0]);
-                            measurements[1] = Math.max(measurements[1], stationMeasurements[1]);
-                            measurements[2] = measurements[2] + stationMeasurements[2];
-                            measurements[3] = measurements[3] + stationMeasurements[3];
+                    Station[] currMap = results.get(i);
+                    for (int j = 0; j < 10000; j++) {
+                        if (currMap[j] != null) {
+                            if (mapA[j] != null) {
+                                mapA[j].min = Math.min(mapA[j].min, currMap[j].min);
+                                mapA[j].min = Math.max(mapA[j].max, currMap[j].min);
+                                mapA[j].count += currMap[j].sum;
+                                mapA[j].count += currMap[j].count;
+                            }
+                            else {
+                                mapA[j] = currMap[j];
+                            }
                         }
-                        else {
-                            mapA.put(station, stationMeasurements);
-                        }
-                    });
+                    }
                 }
                 // print key and values
                 int counter = 1;
                 System.out.print("{");
-                for (Map.Entry<ProcessFileMap.KeySlice, int[]> entry : mapA.entrySet()) {
-                    int[] measurements = entry.getValue();
-                    double mean = (double) measurements[2] / (double) measurements[3];
-                    System.out.print(entry.getKey().key + "=" + (measurements[0] / 10.0) + "/"
-                            + (Math.round(mean) / 10.0) + "/"
-                            + (measurements[1]) / 10.0);
-                    if (counter++ < mapA.size())
-                        System.out.print(", ");
+                for (Station entry : mapA) {
+                    if (entry != null) {
+                        double mean = (double) entry.sum / (double) entry.count;
+                        System.out.print(entry.station + "=" + (entry.min / 10.0) + "/"
+                                + (Math.round(mean) / 10.0) + "/"
+                                + (entry.max / 10.0));
+                        if (counter++ < 403) // TODO: hard coding for now.
+                            System.out.print(", ");
+                    }
                 }
                 System.out.print("}");
             }
