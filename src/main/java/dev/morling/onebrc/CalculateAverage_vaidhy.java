@@ -381,26 +381,9 @@ public class CalculateAverage_vaidhy<I, T> {
         }
     }
 
-    private int findByteOctet(long data, long pattern) {
+    private long findByteOctet(long data, long pattern) {
         long match = data ^ pattern;
-        long mask = (match - START_BYTE_INDICATOR) & ((~match) & END_BYTE_INDICATOR);
-
-        if (mask == 0) {
-            // Not Found
-            return -1;
-        }
-        else {
-            // Found
-            return Long.numberOfTrailingZeros(mask) >>> 3;
-        }
-    }
-
-    private int findSemi(long data, int readOffsetBits) {
-        return findByte(data, SEMI_DETECTION, readOffsetBits);
-    }
-
-    private int findNewLine(long data, int readOffsetBits) {
-        return findByte(data, NEW_LINE_DETECTION, readOffsetBits);
+        return (match - START_BYTE_INDICATOR) & ((~match) & END_BYTE_INDICATOR);
     }
 
     private void bigWorker(long offset, long chunkSize, MapReduce<I> lineConsumer) {
@@ -414,8 +397,9 @@ public class CalculateAverage_vaidhy<I, T> {
 
             if (skip) {
                 long data = UNSAFE.getLong(position);
-                int newLinePosition = findByteOctet(data, NEW_LINE_DETECTION);
-                if (newLinePosition != -1) {
+                long newLineMask = findByteOctet(data, NEW_LINE_DETECTION);
+                if (newLineMask != 0) {
+                    int newLinePosition = Long.numberOfTrailingZeros(newLineMask) >>> 3;
                     skip = false;
                     position = position + newLinePosition + 1;
                 }
@@ -431,8 +415,9 @@ public class CalculateAverage_vaidhy<I, T> {
             long suffix = 0;
             do {
                 long data = UNSAFE.getLong(position);
-                int semiPosition = findByteOctet(data, SEMI_DETECTION);
-                if (semiPosition != -1) {
+                long semiMask = findByteOctet(data, SEMI_DETECTION);
+                if (semiMask != 0) {
+                    int semiPosition = Long.numberOfTrailingZeros(semiMask) >>> 3;
                     stationEnd = position + semiPosition;
                     position = stationEnd + 1;
 
@@ -475,155 +460,6 @@ public class CalculateAverage_vaidhy<I, T> {
             }
 
             lineConsumer.process(stationStart, stationEnd, hash, suffix, temperature);
-        }
-    }
-
-    private void bigWorkerAligned(long offset, long chunkSize, MapReduce<I> lineConsumer) {
-        long fileStart = fileService.address();
-        long chunkEnd = fileStart + offset + chunkSize;
-        long newRecordStart = fileStart + offset;
-        long position = fileStart + offset;
-        long fileEnd = fileStart + fileService.length();
-
-        int nextReadOffsetBits = 0;
-
-        long data = UNSAFE.getLong(position);
-
-        if (offset != 0) {
-            boolean foundNewLine = false;
-            for (; position < chunkEnd; position += 8) {
-                data = UNSAFE.getLong(position);
-                int newLinePositionBits = findNewLine(data, nextReadOffsetBits);
-                if (newLinePositionBits != -1) {
-                    nextReadOffsetBits = newLinePositionBits + 8;
-                    newRecordStart = position + (nextReadOffsetBits >>> 3);
-
-                    if (nextReadOffsetBits == 64) {
-                        position += 8;
-                        nextReadOffsetBits = 0;
-                        data = UNSAFE.getLong(position);
-                    }
-                    foundNewLine = true;
-                    break;
-                }
-            }
-            if (!foundNewLine) {
-                return;
-            }
-        }
-
-        boolean newLineToken = false;
-        // false means looking for semi Colon
-        // true means looking for new line.
-
-        long stationEnd = offset;
-
-        long hash = DEFAULT_SEED;
-        long prevRelevant = 0;
-        int prevBits = 0;
-        long suffix = 0;
-
-        long crossPoint = Math.min(chunkEnd + 1, fileEnd);
-
-        while (true) {
-            if (newLineToken) {
-                int newLinePositionBits = findNewLine(data, nextReadOffsetBits);
-                if (newLinePositionBits == -1) {
-                    nextReadOffsetBits = 0;
-                    position += 8;
-                    data = UNSAFE.getLong(position);
-                }
-                else {
-                    long temperatureEnd = position + (newLinePositionBits >>> 3);
-                    int temperature = parseDouble(stationEnd + 1, temperatureEnd);
-                    lineConsumer.process(newRecordStart, stationEnd, hash, suffix, temperature);
-                    newLineToken = false;
-
-                    nextReadOffsetBits = newLinePositionBits + 8;
-                    newRecordStart = temperatureEnd + 1;
-
-                    if (newRecordStart >= crossPoint) {
-                        break;
-                    }
-
-                    hash = DEFAULT_SEED;
-
-                    if (nextReadOffsetBits == 64) {
-                        nextReadOffsetBits = 0;
-                        position += 8;
-                        data = UNSAFE.getLong(position);
-                    }
-                }
-            }
-            else {
-                int semiPositionBits = findSemi(data, nextReadOffsetBits);
-
-                if (semiPositionBits == -1) {
-                    long currRelevant = data >>> (nextReadOffsetBits - prevBits);
-
-                    prevRelevant = prevRelevant | currRelevant;
-                    int newPrevBits = prevBits + (64 - nextReadOffsetBits);
-
-                    if (newPrevBits >= 64) {
-                        hash = simpleHash(hash, prevRelevant);
-
-                        prevBits = (newPrevBits - 64);
-                        if (prevBits != 0) {
-                            prevRelevant = (data >>> (64 - prevBits));
-                        }
-                        else {
-                            prevRelevant = 0;
-                        }
-                    }
-                    else {
-                        prevBits = newPrevBits;
-                    }
-
-                    nextReadOffsetBits = 0;
-                    position += 8;
-                    data = UNSAFE.getLong(position);
-                }
-                else {
-                    // currentData = xxxx_x;aaN
-                    if (semiPositionBits != 0) {
-                        long currRelevant = (data & (ALL_ONES >>> (64 - semiPositionBits))) >>> nextReadOffsetBits;
-                        // 0000_00aa
-
-                        // 0aaa_0000;
-                        long currUsable = currRelevant << prevBits;
-
-                        long toHash = prevRelevant | currUsable;
-
-                        hash = simpleHash(hash, toHash);
-
-                        int newPrevBits = prevBits + (semiPositionBits - nextReadOffsetBits);
-                        if (newPrevBits >= 64) {
-                            suffix = currRelevant >>> (64 - prevBits);
-                            hash = simpleHash(hash, suffix);
-                        }
-                        else {
-                            suffix = toHash;
-                        }
-                    }
-                    else {
-                        suffix = prevRelevant;
-                        hash = simpleHash(hash, prevRelevant);
-                    }
-
-                    prevRelevant = 0;
-                    prevBits = 0;
-
-                    stationEnd = position + (semiPositionBits >>> 3);
-                    nextReadOffsetBits = semiPositionBits + 8;
-                    newLineToken = true;
-
-                    if (nextReadOffsetBits == 64) {
-                        nextReadOffsetBits = 0;
-                        position += 8;
-                        data = UNSAFE.getLong(position);
-                    }
-                }
-            }
         }
     }
 
