@@ -74,6 +74,8 @@ public class CalculateAverage_ericxiao {
             int keyLength = (int) (keyEnd - keyStart);
             int valueLength = (int) (valueEnd - (keyEnd + 1));
 
+            UNSAFE.copyMemory(null, keyStart, entryBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, entryLength);
+
             // Calculate measurement
             final byte negativeSign = '-';
             final byte periodSign = '.';
@@ -94,8 +96,6 @@ public class CalculateAverage_ericxiao {
             int value = multiplier * accumulator;
 
             // Calculate station
-            UNSAFE.copyMemory(null, keyStart, entryBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, entryLength);
-
             int stationHash = entryBytes[0];
             for (int i = 0; i < keyLength; i++) {
                 stationHash = stationHash + 31 * entryBytes[i];
