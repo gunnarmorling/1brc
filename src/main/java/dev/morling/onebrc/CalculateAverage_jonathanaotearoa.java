@@ -47,12 +47,6 @@ public class CalculateAverage_jonathanaotearoa {
         }
     }
 
-    // It's possible, due to hash collisions, that two different names have the same size and hash.
-    // To account for this, we also need to check if the station names themselves are equal.
-    // However, checking all the bytes in both names is costly.
-    // We therefore set a threshold for the maximum number of bytes, at the start and end of the name, to check.
-    // If two names with the same size and hash have the same first N and last N bytes, we're happy they are the equal.
-    private static final byte COLLISION_CHECK_BYTES = 2;
     private static final Path FILE_PATH = Path.of("./measurements.txt");
     private static final Path SAMPLE_DIR_PATH = Path.of("./src/test/resources/samples");
     private static final byte MAX_LINE_BYTES = 107;
@@ -534,6 +528,13 @@ public class CalculateAverage_jonathanaotearoa {
 
         /**
          * Checks if the names at the specified locations meet our threshold for equality.
+         * <p>
+         * It's possible, due to hash collisions, that two different names have the same size and hash.
+         * To account for this, we also need to check if the station names themselves are equal.
+         * However, checking all the bytes in both names is costly.
+         * We therefore set a threshold for the maximum number of bytes, at the start and end of the name, to check.
+         * If two names with the same size and hash have the same first N and last N bytes, we're happy they are the equal.
+         * </p>
          *
          * @param address1 the address of the first name.
          * @param address2 the address of the second name.
@@ -541,8 +542,8 @@ public class CalculateAverage_jonathanaotearoa {
          * @return true the names meet our equality threshold.
          */
         private static boolean meetsEqualityThreshold(final long address1, final long address2, final byte size) {
-            if (size < COLLISION_CHECK_BYTES * 2) {
-                // Check the whole word.
+            if (size < 4) {
+                // Check the whole name.
                 for (int offset = 0; offset < size; offset++) {
                     final byte b1 = UNSAFE.getByte(address1 + offset);
                     final byte b2 = UNSAFE.getByte(address2 + offset);
@@ -552,22 +553,15 @@ public class CalculateAverage_jonathanaotearoa {
                 }
                 return true;
             }
-            // Only check the start and the end of the name.
-            for (int startOffset = 0, endOffset = size - 1; startOffset < COLLISION_CHECK_BYTES; startOffset++, endOffset--) {
-                // Check the start.
-                final byte sb1 = UNSAFE.getByte(address1 + startOffset);
-                final byte sb2 = UNSAFE.getByte(address2 + startOffset);
-                if (sb1 != sb2) {
-                    return false;
-                }
-                // Check the end.
-                final byte eb1 = UNSAFE.getByte(address1 + endOffset);
-                final byte eb2 = UNSAFE.getByte(address2 + endOffset);
-                if (eb1 != eb2) {
-                    return false;
-                }
+            // Check first and last two bytes of the name.
+            final short s1 = UNSAFE.getShort(address1);
+            final short s2 = UNSAFE.getShort(address2);
+            if (s1 != s2) {
+                return false;
             }
-            return true;
+            final byte s3 = UNSAFE.getByte(address1 + size - Short.BYTES);
+            final byte s4 = UNSAFE.getByte(address2 + size - Short.BYTES);
+            return s3 == s4;
         }
     }
 
