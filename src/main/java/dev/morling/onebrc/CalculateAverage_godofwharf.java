@@ -241,7 +241,7 @@ public class CalculateAverage_godofwharf {
         private static SearchResult findNewLinesVectorized(final byte[] page,
                                                            final int pageLen) {
             SearchResult ret = new SearchResult(new int[pageLen / 5], 0);
-            int loopBound = PREFERRED_SPECIES.loopBound(pageLen);
+            int loopBound = pageLen - PREFERRED_SPECIES.length() * 4;
             int i = 0;
             int j = 0;
             while (j < loopBound) {
