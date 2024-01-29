@@ -397,6 +397,9 @@ public class CalculateAverage_jerrinot {
                 long currentWordA = UNSAFE.getLong(cursorA);
                 long currentWordB = UNSAFE.getLong(cursorB);
 
+                long candidateWordA = UNSAFE.getLong(cursorA + 8);
+                long candidateWordB = UNSAFE.getLong(cursorB + 8);
+
                 long startA = cursorA;
                 long startB = cursorB;
 
@@ -412,8 +415,8 @@ public class CalculateAverage_jerrinot {
                 cursorA += newExpA & 8;
                 cursorB += newExpB & 8;
 
-                long nextWordA = UNSAFE.getLong(cursorA);
-                long nextWordB = UNSAFE.getLong(cursorB);
+                long nextWordA = (newExpA & candidateWordA) | (~newExpA & currentWordA);
+                long nextWordB = (newExpB & candidateWordB) | (~newExpB & currentWordB);
 
                 long firstWordMaskA = maskWithDelimiterA >>> 8;
                 long firstWordMaskB = maskWithDelimiterB >>> 8;
