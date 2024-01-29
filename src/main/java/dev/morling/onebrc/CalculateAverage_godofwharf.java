@@ -251,7 +251,7 @@ public class CalculateAverage_godofwharf {
                 VectorMask<Byte> mask = NEW_LINE_VEC.eq(vec);
                 int bitCount = mask.trueCount();
                 int k = 0;
-                while (mask.anyTrue()) {
+                while (mask.firstTrue() < 0) {
                     int idx = mask.firstTrue();
                     ret.offsets[i + k] = j + idx;
                     k++;
