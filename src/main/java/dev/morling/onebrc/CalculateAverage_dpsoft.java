@@ -65,18 +65,18 @@ public class CalculateAverage_dpsoft {
         return sorted;
     }
 
-    // Credits to @spullara
+    // Inspired by @spullara
     private static List<FileSegment> getMemorySegments(int numberOfSegments) throws IOException {
         var file = new File(FILE);
         long fileSize = file.length();
         long segmentSize = fileSize / numberOfSegments;
         List<FileSegment> segments = new ArrayList<>(numberOfSegments);
 
-        // Pointless to split small files
-        if (segmentSize < 1_000_000) {
+        if (fileSize < 1_000_000) {
             segments.add(new FileSegment(0, fileSize));
             return segments;
         }
+
         try (RandomAccessFile randomAccessFile = new RandomAccessFile(file, "r")) {
             for (int i = 0; i < numberOfSegments; i++) {
                 long segStart = i * segmentSize;
