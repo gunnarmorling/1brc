@@ -46,6 +46,13 @@ public class CalculateAverage_jonathanaotearoa {
             throw new RuntimeException(STR."Error getting instance of \{Unsafe.class.getName()}");
         }
     }
+
+    // It's possible, due to hash collisions, that two different names have the same size and hash.
+    // To account for this, we also need to check if the station names themselves are equal.
+    // However, checking all the bytes in both names is costly.
+    // We therefore set a threshold for the maximum number of bytes, at the start and end of the name, to check.
+    // If two names with the same size and hash have the same first N and last N bytes, we're happy they are the equal.
+    private static final byte COLLISION_CHECK_BYTES = 2;
     private static final Path FILE_PATH = Path.of("./measurements.txt");
     private static final Path SAMPLE_DIR_PATH = Path.of("./src/test/resources/samples");
     private static final byte MAX_LINE_BYTES = 107;
@@ -424,7 +431,7 @@ public class CalculateAverage_jonathanaotearoa {
      *
      * @see CalculateAverage_jonathanaotearoa#processTinyFile(FileChannel, long).
      */
-    private static final class SimpleStationData extends TemperatureData{
+    private static final class SimpleStationData extends TemperatureData {
 
         private final String name;
 
@@ -450,12 +457,16 @@ public class CalculateAverage_jonathanaotearoa {
 
         String getName() {
             if (name == null) {
-                final byte[] nameBytes = new byte[nameSize];
-                UNSAFE.copyMemory(null, nameAddress, nameBytes, UNSAFE.arrayBaseOffset(nameBytes.getClass()), nameSize);
-                name = new String(nameBytes, StandardCharsets.UTF_8);
+                name = loadStringFromMemory(nameAddress, nameSize);
             }
             return name;
         }
+    }
+
+    private static String loadStringFromMemory(final long address, final int size) {
+        final byte[] nameBytes = new byte[size];
+        UNSAFE.copyMemory(null, address, nameBytes, UNSAFE.arrayBaseOffset(nameBytes.getClass()), size);
+        return new String(nameBytes, StandardCharsets.UTF_8);
     }
 
     /**
@@ -498,42 +509,61 @@ public class CalculateAverage_jonathanaotearoa {
             // Think about replacing modulo.
             // https://lemire.me/blog/2018/08/20/performance-of-ranged-accesses-into-arrays-modulo-multiply-shift-and-masks/
             int index = (nameHash & 0x7FFFFFFF) % CAPACITY;
-            while (isCollision(index, nameHash, nameAddress, nameSize)) {
+            while (isMismatch(index, nameHash, nameAddress, nameSize)) {
                 index = index == LAST_INDEX ? 0 : index + 1;
             }
             return index;
         }
 
-        private boolean isCollision(final int index, final long nameHash, final long nameAddress, final byte nameSize) {
+        private boolean isMismatch(final int index, final long nameHash, final long nameAddress, final byte nameSize) {
             final StationData existing = table[index];
             if (existing == null) {
                 return false;
             }
-            if (nameHash != existing.nameHash) {
-                return true;
+            if (nameHash == existing.nameHash) {
+                if (nameSize == existing.nameSize && meetsEqualityThreshold(nameAddress, existing.nameAddress, nameSize)) {
+                    return false;
+                }
+                // We've got a hash collision :(
+                // final String name1 = loadStringFromMemory(nameAddress, nameSize);
+                // final String name2 = loadStringFromMemory(existing.nameAddress, existing.nameSize);
+                // System.out.printf("Collision. Hash: %d, Name1: '%s', Name2: '%s'%n", nameHash, name1, name2);
             }
-            if (nameSize != existing.nameSize) {
-                return true;
-            }
-            // Last resort; check if the names are the same.
-            // This is real performance hit :(
-            return !isMemoryEqual(nameAddress, existing.nameAddress, nameSize);
+            return true;
         }
 
         /**
-         * Checks if two locations in memory have the same value.
+         * Checks if the names at the specified locations meet our threshold for equality.
          *
-         * @param address1 the address of the first location.
-         * @param address2 the address of the second locations.
-         * @param size     the number of bytes to check for equality.
-         * @return true if both addresses contain the same bytes.
+         * @param address1 the address of the first name.
+         * @param address2 the address of the second name.
+         * @param size     the name size in bytes.
+         * @return true the names meet our equality threshold.
          */
-        private static boolean isMemoryEqual(final long address1, final long address2, final byte size) {
-            // Checking 1 byte at a time, so we can bail as early as possible.
-            for (int offset = 0; offset < size; offset++) {
-                final byte b1 = UNSAFE.getByte(address1 + offset);
-                final byte b2 = UNSAFE.getByte(address2 + offset);
-                if (b1 != b2) {
+        private static boolean meetsEqualityThreshold(final long address1, final long address2, final byte size) {
+            if (size < COLLISION_CHECK_BYTES * 2) {
+                // Check the whole word.
+                for (int offset = 0; offset < size; offset++) {
+                    final byte b1 = UNSAFE.getByte(address1 + offset);
+                    final byte b2 = UNSAFE.getByte(address2 + offset);
+                    if (b1 != b2) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            // Only check the start and the end of the name.
+            for (int startOffset = 0, endOffset = size - 1; startOffset < COLLISION_CHECK_BYTES; startOffset++, endOffset--) {
+                // Check the start.
+                final byte sb1 = UNSAFE.getByte(address1 + startOffset);
+                final byte sb2 = UNSAFE.getByte(address2 + startOffset);
+                if (sb1 != sb2) {
+                    return false;
+                }
+                // Check the end.
+                final byte eb1 = UNSAFE.getByte(address1 + endOffset);
+                final byte eb2 = UNSAFE.getByte(address2 + endOffset);
+                if (eb1 != eb2) {
                     return false;
                 }
             }
