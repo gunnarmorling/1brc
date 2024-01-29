@@ -183,8 +183,8 @@ public class CalculateAverage_vaidhy<I, T> {
     private static final long DEFAULT_SEED = 104729;
 
     private static long simpleHash(long hash, long nextData) {
-        // return hash ^ nextData;
-        return (hash ^ Long.rotateLeft((nextData * C1), R1)) * C2;
+        return hash ^ nextData;
+        // return (hash ^ Long.rotateLeft((nextData * C1), R1)) * C2;
     }
 
     private static Unsafe initUnsafe() {
