@@ -191,7 +191,7 @@ public class CalculateAverage_mtopolnik {
                     temperature = parseTemperature(tempWord, dotPos);
                     cursor += (dotPos >> 3) + 3;
                     hash = hash(nameWord0);
-                    if (gotoStats0(hash, nameWord0, nameLen)) {
+                    if (stats.gotoName0(hash, nameWord0, nameLen)) {
                         stats.observe(temperature);
                         continue;
                     }
@@ -209,7 +209,7 @@ public class CalculateAverage_mtopolnik {
                         int dotPos = dotPos(tempWord);
                         temperature = parseTemperature(tempWord, dotPos);
                         cursor += (dotPos >> 3) + 3;
-                        if (gotoStats1(hash, nameWord0, nameWord1, nameLen)) {
+                        if (stats.gotoName1(hash, nameWord0, nameWord1, nameLen)) {
                             stats.observe(temperature);
                             continue;
                         }
@@ -218,11 +218,11 @@ public class CalculateAverage_mtopolnik {
                     else { // nameLen > 16
                         nameLen = 2 * Long.BYTES;
                         while (true) {
-                            long nameWordN = UNSAFE.getLong(nameStartAddress + nameLen);
-                            matchBits = semicolonMatchBits(nameWordN);
+                            lastNameWord = UNSAFE.getLong(nameStartAddress + nameLen);
+                            matchBits = semicolonMatchBits(lastNameWord);
                             if (matchBits != 0) {
                                 nameLen += nameLen(matchBits);
-                                lastNameWord = maskWord(nameWordN, matchBits);
+                                lastNameWord = maskWord(lastNameWord, matchBits);
                                 cursor += nameLen;
                                 long tempWord = UNSAFE.getLong(inputBase + cursor);
                                 int dotPos = dotPos(tempWord);
@@ -234,49 +234,8 @@ public class CalculateAverage_mtopolnik {
                         }
                     }
                 }
-                int tableIndex = (int) (hash & TABLE_INDEX_MASK);
-                while (true) {
-                    stats.gotoIndex(tableIndex);
-                    if (stats.hash() == hash && stats.nameLen() == nameLen && nameEquals(
-                            stats.nameAddress(), nameStartAddress, nameLen, nameWord0, nameWord1, lastNameWord)) {
-                        stats.observe(temperature);
-                        break;
-                    }
-                    if (stats.nameLen() != 0) {
-                        tableIndex = (tableIndex + 1) & TABLE_INDEX_MASK;
-                        continue;
-                    }
-                    stats.initialize(hash, nameLen, nameStartAddress, temperature);
-                    break;
-                }
+                stats.gotoAndObserve(hash, nameStartAddress, nameLen, nameWord0, nameWord1, lastNameWord, temperature);
             }
-        }
-
-        private boolean gotoStats0(long hash, long nameWord0, long nameLen) {
-            stats.gotoIndex((int) (hash & TABLE_INDEX_MASK));
-            return stats.hash() == hash && stats.nameLen() == nameLen && stats.nameWord0() == nameWord0;
-        }
-
-        private boolean gotoStats1(long hash, long nameWord0, long nameWord1, long nameLen) {
-            stats.gotoIndex((int) (hash & TABLE_INDEX_MASK));
-            return stats.hash() == hash && stats.nameLen() == nameLen && stats.nameWord0() == nameWord0
-                    && stats.nameWord1() == nameWord1;
-        }
-
-        private static boolean nameEquals(
-                                          long statsAddr, long inputAddr, long len, long inputWord1, long inputWord2, long lastInputWord) {
-            boolean mismatch1 = inputWord1 != UNSAFE.getLong(statsAddr);
-            boolean mismatch2 = inputWord2 != UNSAFE.getLong(statsAddr + Long.BYTES);
-            if (len <= 2 * Long.BYTES) {
-                return !(mismatch1 | mismatch2);
-            }
-            int i = 2 * Long.BYTES;
-            for (; i <= len - Long.BYTES; i += Long.BYTES) {
-                if (UNSAFE.getLong(inputAddr + i) != UNSAFE.getLong(statsAddr + i)) {
-                    return false;
-                }
-            }
-            return i == len || lastInputWord == UNSAFE.getLong(statsAddr + i);
         }
 
         private static final long BROADCAST_SEMICOLON = 0x3B3B3B3B3B3B3B3BL;
@@ -375,6 +334,16 @@ public class CalculateAverage_mtopolnik {
             slotBase = address + index * SIZEOF;
         }
 
+        private boolean gotoName0(long hash, long nameWord0, long nameLen) {
+            gotoIndex((int) (hash & TABLE_INDEX_MASK));
+            return hash() == hash && nameLen() == nameLen && nameWord0() == nameWord0;
+        }
+
+        private boolean gotoName1(long hash, long nameWord0, long nameWord1, long nameLen) {
+            gotoIndex((int) (hash & TABLE_INDEX_MASK));
+            return hash() == hash && nameLen() == nameLen && nameWord0() == nameWord0 && nameWord1() == nameWord1;
+        }
+
         long hash() {
             return UNSAFE.getLong(slotBase + HASH_OFFSET);
         }
@@ -441,6 +410,26 @@ public class CalculateAverage_mtopolnik {
             UNSAFE.putShort(slotBase + MAX_OFFSET, max);
         }
 
+        void gotoAndObserve(
+                            long hash, long nameStartAddress, int nameLen, long nameWord0, long nameWord1, long lastNameWord,
+                            int temperature) {
+            int tableIndex = (int) (hash & TABLE_INDEX_MASK);
+            while (true) {
+                gotoIndex(tableIndex);
+                if (hash() == hash && nameLen() == nameLen && nameEquals(
+                        nameAddress(), nameStartAddress, nameLen, nameWord0, nameWord1, lastNameWord)) {
+                    observe(temperature);
+                    break;
+                }
+                if (nameLen() != 0) {
+                    tableIndex = (tableIndex + 1) & TABLE_INDEX_MASK;
+                    continue;
+                }
+                initialize(hash, nameLen, nameStartAddress, temperature);
+                break;
+            }
+        }
+
         void initialize(long hash, long nameLen, long nameStartAddress, int temperature) {
             setHash(hash);
             setNameLen((int) nameLen);
@@ -456,6 +445,22 @@ public class CalculateAverage_mtopolnik {
             setCount(count() + 1);
             setMin((short) Integer.min(min(), temperature));
             setMax((short) Integer.max(max(), temperature));
+        }
+
+        private static boolean nameEquals(
+                                          long statsAddr, long inputAddr, long len, long inputWord1, long inputWord2, long lastInputWord) {
+            boolean mismatch1 = inputWord1 != UNSAFE.getLong(statsAddr);
+            boolean mismatch2 = inputWord2 != UNSAFE.getLong(statsAddr + Long.BYTES);
+            if (len <= 2 * Long.BYTES) {
+                return !(mismatch1 | mismatch2);
+            }
+            int i = 2 * Long.BYTES;
+            for (; i <= len - Long.BYTES; i += Long.BYTES) {
+                if (UNSAFE.getLong(inputAddr + i) != UNSAFE.getLong(statsAddr + i)) {
+                    return false;
+                }
+            }
+            return i == len || lastInputWord == UNSAFE.getLong(statsAddr + i);
         }
     }
 
