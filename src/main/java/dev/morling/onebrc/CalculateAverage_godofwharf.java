@@ -248,7 +248,7 @@ public class CalculateAverage_godofwharf {
             while (j < loopBound) {
                 Vector<Byte> vec = ByteVector.fromArray(PREFERRED_SPECIES, page, j);
                 VectorMask<Byte> mask = NEW_LINE_VEC.eq(vec);
-                int res = (int) mask.toLong() & 0xFFFF0000;
+                int res = (int) (mask.toLong() >> 31);
                 int k = i;
                 int bitCount = Integer.bitCount(res);
                 while (res > 0) {
