@@ -68,17 +68,6 @@ public class CalculateAverage_vaidhy<I, T> {
             long lookupLength = endAddress - startAddress;
 
             long hashEntry = hashes[i];
-            if (hashEntry == 0) {
-                HashEntry entry = entries[i];
-                entry.startAddress = startAddress;
-                entry.endAddress = endAddress;
-                hashes[i] = hash;
-                entry.suffix = suffix;
-                entry.next = next;
-                this.next = i;
-                entry.value = new IntSummaryStatistics();
-                return entry.value;
-            }
 
             if (hashEntry == hash) {
                 HashEntry entry = entries[i];
@@ -91,6 +80,18 @@ public class CalculateAverage_vaidhy<I, T> {
                         }
                     }
                 }
+            }
+
+            if (hashEntry == 0) {
+                HashEntry entry = entries[i];
+                entry.startAddress = startAddress;
+                entry.endAddress = endAddress;
+                hashes[i] = hash;
+                entry.suffix = suffix;
+                entry.next = next;
+                this.next = i;
+                entry.value = new IntSummaryStatistics();
+                return entry.value;
             }
 
             i++;
