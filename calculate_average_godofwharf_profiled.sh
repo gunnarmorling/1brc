@@ -14,6 +14,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
 PROFILER_OPTS="-agentpath:/root/async-profiler/lib/libasyncProfiler.so=start,event=cpu,file=/tmp/1brc/profile.html,interval=100000,minwidth=0.05,title=1brc,jstackdepth=512"
 JAVA_OPTS="$PROFILER_OPTS --enable-preview --add-modules jdk.incubator.vector -XX:+UnlockDiagnosticVMOptions -XX:+DebugNonSafepoints -XX:+UseParallelGC -Xms2600m -Xmx2600m -XX:ParallelGCThreads=8 -XX:Tier4CompileThreshold=1000 -XX:Tier3CompileThreshold=500 -XX:Tier2CompileThreshold=250 -XX:MaxDirectMemorySize=13g -Dthreads=9 -Djava.util.concurrent.ForkJoinPool.common.parallelism=9"
 java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_godofwharf 2>/dev/null
