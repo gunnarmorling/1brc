@@ -58,8 +58,6 @@ public class CalculateAverage_ericxiao {
             this.firstRead = firstRead;
         }
 
-        private final HashMap<KeySlice, int[]> hashMap = new HashMap<>();
-
         private static Unsafe initUnsafe() {
             try {
                 final Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
@@ -71,47 +69,9 @@ public class CalculateAverage_ericxiao {
             }
         }
 
-        private static class KeySlice {
-            private byte[] keyData;
-            private final int length;
-            private int hash = 0;
-            private String key;
-
-            public KeySlice(byte[] keyData, int length) {
-                this.keyData = keyData;
-                this.length = length;
-                int calcHash = 0;
-                for (int i = 0; i < length; i++) {
-                    calcHash = 31 * calcHash + keyData[i];
-                }
-                this.hash = calcHash;
-            }
-
-            @Override
-            public int hashCode() {
-                return hash;
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                KeySlice other = (KeySlice) o;
-                if (hash != other.hash || length != other.length) {
-                    return false;
-                }
-                // TODO: this is technically not correct, we don't account for hash collisions.
-                return true;
-            }
-
-            public void materialize() {
-                key = new String(keyData, 0, length, StandardCharsets.UTF_8);
-                keyData = null;
-            }
-        }
-
         public void add(long keyStart, long keyEnd, long valueEnd) {
             int entryLength = (int) (valueEnd - keyStart);
             int keyLength = (int) (keyEnd - keyStart);
-            KeySlice key = new KeySlice(entryBytes, keyLength);
             int valueLength = (int) (valueEnd - (keyEnd + 1));
 
             // Calculate measurement
