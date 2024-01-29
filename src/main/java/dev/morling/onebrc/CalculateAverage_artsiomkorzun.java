@@ -34,7 +34,6 @@ public class CalculateAverage_artsiomkorzun {
 
     private static final Path FILE = Path.of("./measurements.txt");
     private static final long SEGMENT_SIZE = 4 * 1024 * 1024;
-    private static final long SEGMENT_OVERLAP = 128;
     private static final long COMMA_PATTERN = 0x3B3B3B3B3B3B3B3BL;
     private static final long DOT_BITS = 0x10101000;
     private static final long MAGIC_MULTIPLIER = (100 * 0x1000000 + 10 * 0x10000 + 1);
@@ -363,15 +362,19 @@ public class CalculateAverage_artsiomkorzun {
 
             for (int segment; (segment = counter.getAndIncrement()) < segmentCount;) {
                 long position = SEGMENT_SIZE * segment;
-                long size = Math.min(SEGMENT_SIZE + SEGMENT_OVERLAP, fileSize - position);
-                long address = fileAddress + position;
-                long limit = address + Math.min(SEGMENT_SIZE, size - 1);
+                long size = Math.min(SEGMENT_SIZE, fileSize - position - 1);
+                long start = fileAddress + position;
+                long end = start + size;
 
                 if (segment > 0) {
-                    address = next(address);
+                    start = next(start);
                 }
 
-                aggregate(aggregates, address, limit);
+                long chunk = (end - start) / 3;
+                long left = next(start + chunk);
+                long right = next(start + chunk + chunk);
+
+                aggregate(aggregates, start, left - 1, left, right - 1, right, end);
             }
 
             while (!result.compareAndSet(null, aggregates)) {
@@ -390,94 +393,117 @@ public class CalculateAverage_artsiomkorzun {
             return position;
         }
 
-        private static void aggregate(Aggregates aggregates, long position, long limit) {
-            // this parsing can produce seg fault at page boundaries
-            // e.g. file size is 4096 and the last entry is X=0.0, which is less than 8 bytes
-            // as a result a read will be split across pages, where one of them is not mapped
-            // but for some reason it works on my machine, leaving to investigate
+        private static void aggregate(Aggregates aggregates, long position1, long limit1, long position2, long limit2, long position3, long limit3) {
+            while (position1 <= limit1 && position2 <= limit2 && position3 <= limit3) {
+                long word1 = word(position1);
+                long word2 = word(position2);
+                long word3 = word(position3);
 
-            while (position <= limit) { // branchy version, credit: thomaswue
-                int length;
-                int hash;
-                int value;
+                long separator1 = separator(word1);
+                long separator2 = separator(word2);
+                long separator3 = separator(word3);
 
-                long word = word(position);
-                long separator = separator(word);
-                long end = position;
+                position1 = process(aggregates, position1, word1, separator1);
+                position2 = process(aggregates, position2, word2, separator2);
+                position3 = process(aggregates, position3, word3, separator3);
+            }
+
+            while (position1 <= limit1) {
+                long word1 = word(position1);
+                long separator1 = separator(word1);
+                position1 = process(aggregates, position1, word1, separator1);
+            }
+
+            while (position2 <= limit2) {
+                long word2 = word(position2);
+                long separator2 = separator(word2);
+                position2 = process(aggregates, position2, word2, separator2);
+            }
+
+            while (position3 <= limit3) {
+                long word3 = word(position3);
+                long separator3 = separator(word3);
+                position3 = process(aggregates, position3, word3, separator3);
+            }
+        }
+
+        private static long process(Aggregates aggregates, long position, long word, long separator) {
+            long end = position;
+
+            int length;
+            int hash;
+            int value;
+
+            if (separator != 0) {
+                length = length(separator);
+                word = mask(word, separator);
+                hash = mix(word);
+                end += length;
+
+                long num = word(end);
+                int dot = dot(num);
+                value = value(num, dot);
+                end += (dot >> 3) + 3;
+                long pointer = aggregates.find(word, hash);
+
+                if (pointer != 0) {
+                    Aggregates.update(pointer, value);
+                    return end;
+                }
+            }
+            else {
+                long word0 = word;
+                word = word(end + 8);
+                separator = separator(word);
 
                 if (separator != 0) {
-                    length = length(separator);
+                    length = length(separator) + 8;
                     word = mask(word, separator);
-                    hash = mix(word);
+                    hash = mix(word ^ word0);
                     end += length;
 
                     long num = word(end);
                     int dot = dot(num);
                     value = value(num, dot);
                     end += (dot >> 3) + 3;
-                    long ptr = aggregates.find(word, hash);
+                    long pointer = aggregates.find(word0, word, hash);
 
-                    if (ptr != 0) {
-                        Aggregates.update(ptr, value);
-                        position = end;
-                        continue;
+                    if (pointer != 0) {
+                        Aggregates.update(pointer, value);
+                        return end;
                     }
                 }
                 else {
-                    long word0 = word;
-                    word = word(position + 8);
-                    separator = separator(word);
+                    length = 16;
+                    long h = word ^ word0;
 
-                    if (separator != 0) {
-                        length = length(separator) + 8;
+                    while (true) {
+                        word = word(end + length);
+                        separator = separator(word);
+
+                        if (separator == 0) {
+                            length += 8;
+                            h ^= word;
+                            continue;
+                        }
+
+                        length += length(separator);
                         word = mask(word, separator);
-                        hash = mix(word ^ word0);
+                        hash = mix(h ^ word);
                         end += length;
 
                         long num = word(end);
                         int dot = dot(num);
                         value = value(num, dot);
                         end += (dot >> 3) + 3;
-                        long ptr = aggregates.find(word0, word, hash);
-
-                        if (ptr != 0) {
-                            Aggregates.update(ptr, value);
-                            position = end;
-                            continue;
-                        }
-                    }
-                    else {
-                        length = 16;
-                        long h = word ^ word0;
-
-                        while (true) {
-                            word = word(position + length);
-                            separator = separator(word);
-
-                            if (separator == 0) {
-                                length += 8;
-                                h ^= word;
-                                continue;
-                            }
-
-                            length += length(separator);
-                            word = mask(word, separator);
-                            hash = mix(h ^ word);
-                            end += length;
-
-                            long num = word(end);
-                            int dot = dot(num);
-                            value = value(num, dot);
-                            end += (dot >> 3) + 3;
-                            break;
-                        }
+                        break;
                     }
                 }
-
-                long ptr = aggregates.put(position, word, length, hash);
-                Aggregates.update(ptr, value);
-                position = end;
             }
+
+            long pointer = aggregates.put(position, word, length, hash);
+            Aggregates.update(pointer, value);
+            return end;
         }
 
         private static long separator(long word) {
