@@ -671,13 +671,13 @@ public class CalculateAverage_godofwharf {
         public void put(final State.AggregationKey key,
                         final MeasurementAggregator aggregator) {
             int h1 = key.hashCode;
-            int hash = h1 ^ (h1 >>> 16);
+            int hash = h1 ^ (h1 >>> 20);
             tableEntries[(size - 1) & hash] = new TableEntry(key, aggregator);
         }
 
         public MeasurementAggregator get(final State.AggregationKey key) {
             int h1 = key.hashCode;
-            int hash = h1 ^ (h1 >>> 16);
+            int hash = h1 ^ (h1 >>> 20);
             TableEntry entry = tableEntries[(size - 1) & hash];
             if (entry != null) {
                 return entry.aggregator;
