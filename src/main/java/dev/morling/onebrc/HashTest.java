@@ -18,7 +18,9 @@ package dev.morling.onebrc;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class HashTest {
     final static List<CreateMeasurements2.WeatherStation> stations = Arrays.asList(
@@ -460,12 +462,20 @@ public class HashTest {
         // });
         // }
         // }
-        int h1 = hashcode1("Kansas City".getBytes(StandardCharsets.UTF_8));
-        int h2 = hashcode2("Kansas City".getBytes(StandardCharsets.UTF_8));
-        int h3 = hashcode1("Batumi".getBytes(StandardCharsets.UTF_8));
-        int h4 = hashcode2("Batumi".getBytes(StandardCharsets.UTF_8));
-        System.out.println("h1 = %d/%d, h2 = %d/%d".formatted(h1, h2, h3, h4));
 
+        int size = 4096;
+        int collisions = 0;
+        Set<Integer> seen = new HashSet<>();
+        for (CreateMeasurements2.WeatherStation w : stations) {
+            byte[] station = w.id.getBytes(StandardCharsets.UTF_8);
+            int h1 = hashcode1(station);
+            int h2 = (h1 & (size - 1)) ^ (h1 >>> 16);
+            if (seen.contains(h2)) {
+                collisions++;
+            }
+            seen.add(h2);
+        }
+        System.out.println("Number of collisions = %d, pct = %f%%%n".formatted(collisions, collisions * 100.0 / stations.size()));
     }
 
     public static int hashcode1(final byte[] b) {
@@ -482,11 +492,6 @@ public class HashTest {
             result = result * 127 + value;
         }
         return result;
-    }
-
-    public static int modulo(final int i,
-                             final int m) {
-        return (m + (i % m)) % m;
     }
 
     // public static class FastHashMap {
