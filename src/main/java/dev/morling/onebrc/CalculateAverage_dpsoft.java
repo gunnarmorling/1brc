@@ -15,11 +15,9 @@
  */
 package dev.morling.onebrc;
 
+import java.io.File;
 import java.io.IOException;
-import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
-
+import java.io.RandomAccessFile;
 import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -69,52 +67,42 @@ public class CalculateAverage_dpsoft {
 
     // Credits to @spullara
     private static List<FileSegment> getMemorySegments(int numberOfSegments) throws IOException {
+        var file = new File(FILE);
+        long fileSize = file.length();
+        long segmentSize = fileSize / numberOfSegments;
+        List<FileSegment> segments = new ArrayList<>(numberOfSegments);
 
-        try (var fileChannel = FileChannel.open(Path.of(FILE), StandardOpenOption.READ)) {
-            var memorySegment = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size(), Arena.global());
-            long fileSize = memorySegment.byteSize();
-
-            long segmentSize = fileSize / numberOfSegments;
-
-            List<FileSegment> segments = new ArrayList<>(numberOfSegments);
-
-            if (segmentSize < 1_000_000) {
-                segments.add(new FileSegment(0, fileSize));
-                return segments;
-            }
-
-            while (segmentSize >= Integer.MAX_VALUE) {
-                numberOfSegments += 1;
-                segmentSize = fileSize / numberOfSegments;
-            }
-
+        // Pointless to split small files
+        if (segmentSize < 1_000_000) {
+            segments.add(new FileSegment(0, fileSize));
+            return segments;
+        }
+        try (RandomAccessFile randomAccessFile = new RandomAccessFile(file, "r")) {
             for (int i = 0; i < numberOfSegments; i++) {
                 long segStart = i * segmentSize;
                 long segEnd = (i == numberOfSegments - 1) ? fileSize : segStart + segmentSize;
-                segStart = findSegment(i, 0, memorySegment, segStart, segEnd);
-                segEnd = findSegment(i, numberOfSegments - 1, memorySegment, segEnd, fileSize);
+                segStart = findSegment(i, 0, randomAccessFile, segStart, segEnd);
+                segEnd = findSegment(i, numberOfSegments - 1, randomAccessFile, segEnd, fileSize);
+
                 segments.add(new FileSegment(segStart, segEnd));
             }
-
-            return segments;
         }
+        return segments;
     }
 
-    record FileSegment(long start, long end) {
-    }
-
-    private static long findSegment(int i, int skipSegment, MemorySegment memSeg, long location, long fileSize) {
+    private static long findSegment(int i, int skipSegment, RandomAccessFile raf, long location, long fileSize) throws IOException {
         if (i != skipSegment) {
-            long remaining = fileSize - location;
-            int bufferSize = remaining < 64 ? (int) remaining : 64;
-            MemorySegment slice = memSeg.asSlice(location, bufferSize);
-            for (int offset = 0; offset < slice.byteSize(); offset++) {
-                if (slice.get(ValueLayout.OfChar.JAVA_BYTE, offset) == '\n') {
-                    return location + offset + 1;
-                }
+            raf.seek(location);
+            while (location < fileSize) {
+                location++;
+                if (raf.read() == '\n')
+                    break;
             }
         }
         return location;
+    }
+
+    record FileSegment(long start, long end) {
     }
 
     static final class MeasurementExtractor implements Runnable {
