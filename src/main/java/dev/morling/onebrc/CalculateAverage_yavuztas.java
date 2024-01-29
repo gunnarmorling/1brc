@@ -59,15 +59,15 @@ public class CalculateAverage_yavuztas {
     }
 
     // Only one object, both for measurements and keys, less object creation in hotpots is always faster
-    static class Record {
+    private static final class Record {
 
-        long start; // memory address of the underlying data
-        int length;
-        long word1;
-        long word2;
-        long wordLast;
-        int hash;
-        Record next; // linked list to resolve hash collisions
+        private final long start; // memory address of the underlying data
+        private final int length;
+        private final long word1;
+        private final long word2;
+        private final long wordLast;
+        private final int hash;
+        private Record next; // linked list to resolve hash collisions
 
         private int min; // calculations over int is faster than double, we convert to double in the end only once
         private int max;
@@ -93,30 +93,37 @@ public class CalculateAverage_yavuztas {
             return equals(record.start, record.word1, record.word2, record.wordLast, record.length);
         }
 
-        private static boolean equalsComparingLongs(long start1, long last1, long start2, long last2, int length) {
-            int step = 16; // starting from 4th long
+        private static boolean notEquals(long address1, long address2, int step) {
+            return UNSAFE.getLong(address1 + step) != UNSAFE.getLong(address2 + step);
+        }
+
+        private static boolean equalsComparingLongs(long start1, long start2, int length) {
+            // first shortcuts
+            if (length < 24)
+                return true;
+            if (length < 32)
+                return !notEquals(start1, start2, 16);
+
+            int step = 24; // starting from 3rd long
             length -= step;
             while (length >= 8) { // scan longs
-                if (UNSAFE.getLong(start1 + step) != UNSAFE.getLong(start2 + step)) {
+                if (notEquals(start1, start2, step)) {
                     return false;
                 }
                 length -= 8;
                 step += 8; // 8 bytes
             }
-            return last1 == last2;
+            return true;
         }
 
-        public boolean equals(long start, long word1, long word2, long last, int length) {
-
-            if (this.word1 != word1) {
+        private boolean equals(long start, long word1, long word2, long last, int length) {
+            if (this.word1 != word1)
                 return false;
-            }
-            if (this.word2 != word2) {
+            if (this.word2 != word2)
                 return false;
-            }
 
             // equals check is done by comparing longs instead of byte by byte check, this is faster
-            return equalsComparingLongs(this.start, this.wordLast, start, last, length);
+            return equalsComparingLongs(this.start, start, length) && this.wordLast == last;
         }
 
         @Override
@@ -126,7 +133,7 @@ public class CalculateAverage_yavuztas {
             return new String(bytes, StandardCharsets.UTF_8);
         }
 
-        public void collect(int temp) {
+        private void collect(int temp) {
             if (temp < this.min)
                 this.min = temp;
             if (temp > this.max)
@@ -135,7 +142,7 @@ public class CalculateAverage_yavuztas {
             this.count++;
         }
 
-        public void merge(Record that) {
+        private void merge(Record that) {
             if (that.min < this.min)
                 this.min = that.min;
             if (that.max > this.max)
@@ -144,7 +151,7 @@ public class CalculateAverage_yavuztas {
             this.count += that.count;
         }
 
-        public String measurements() {
+        private String measurements() {
             // here is only executed once for each unique key, so StringBuilder creation doesn't harm
             final StringBuilder sb = new StringBuilder(14);
             sb.append(round(this.min)).append("/");
@@ -156,66 +163,84 @@ public class CalculateAverage_yavuztas {
 
     // Inspired by @spullara - customized hashmap on purpose
     // The main difference is we hold only one array instead of two, fewer objects is faster
-    static class RecordMap {
+    private static final class RecordMap {
 
         // Bigger bucket size less collisions, but you have to find a sweet spot otherwise it is becoming slower.
         // Also works good enough for 10K stations
-        static final int SIZE = 1 << 14; // 16kb - enough for 10K
-        static final int BITMASK = SIZE - 1;
-        Record[] keys = new Record[SIZE];
+        private static final int SIZE = 1 << 14; // 16kb - enough for 10K
+        private static final int BITMASK = SIZE - 1;
+        private final Record[] keys = new Record[SIZE];
 
-        static int hashBucket(int hash) {
+        // int collision;
+
+        private boolean hasNoRecord(int index) {
+            return this.keys[index] == null;
+        }
+
+        private Record getRecord(int index) {
+            return this.keys[index];
+        }
+
+        private static int hashBucket(int hash) {
             hash = hash ^ (hash >>> 16); // naive bit spreading but surprisingly decreases collision :)
             return hash & BITMASK; // fast modulo, to find bucket
         }
 
-        void putAndCollect(int hash, int temp, long start, int length, long word1, long word2, long wordLast) {
+        private void putAndCollect(int hash, int temp, long start, int length, long word1, long word2, long wordLast) {
             final int bucket = hashBucket(hash);
-            Record existing = this.keys[bucket];
-            if (existing == null) {
+            if (hasNoRecord(bucket)) {
                 this.keys[bucket] = new Record(start, length, word1, word2, wordLast, hash, temp);
                 return;
             }
 
-            if (!existing.equals(start, word1, word2, wordLast, length)) { // collision
-                // find possible slot by scanning the slot linked list
-                while (existing.next != null && !existing.next.equals(start, word1, word2, wordLast, length)) {
-                    existing = existing.next; // go on to next
-                }
-                if (existing.next == null) {
-                    existing.next = new Record(start, length, word1, word2, wordLast, hash, temp);
+            Record existing = getRecord(bucket);
+            if (existing.equals(start, word1, word2, wordLast, length)) {
+                existing.collect(temp);
+                return;
+            }
+
+            // collision++;
+            // find possible slot by scanning the slot linked list
+            while (existing.next != null) {
+                if (existing.next.equals(start, word1, word2, wordLast, length)) {
+                    existing.next.collect(temp);
                     return;
                 }
-                existing = existing.next;
+                existing = existing.next; // go on to next
+                // collision++;
             }
-            existing.collect(temp);
+            existing.next = new Record(start, length, word1, word2, wordLast, hash, temp);
         }
 
-        void putOrMerge(Record key) {
+        private void putOrMerge(Record key) {
             final int bucket = hashBucket(key.hash);
-            Record existing = this.keys[bucket];
-            if (existing == null) {
+            if (hasNoRecord(bucket)) {
                 key.next = null;
                 this.keys[bucket] = key;
                 return;
             }
 
-            if (!existing.equals(key)) { // collision
-                // find possible slot by scanning the slot linked list
-                while (existing.next != null && !existing.next.equals(key)) {
-                    existing = existing.next;
-                }
-                if (existing.next == null) {
-                    key.next = null;
-                    existing.next = key;
+            Record existing = getRecord(bucket);
+            if (existing.equals(key)) {
+                existing.merge(key);
+                return;
+            }
+
+            // collision++;
+            // find possible slot by scanning the slot linked list
+            while (existing.next != null) {
+                if (existing.next.equals(key)) {
+                    existing.next.merge(key);
                     return;
                 }
-                existing = existing.next;
+                existing = existing.next; // go on to next
+                // collision++;
             }
-            existing.merge(key);
+            key.next = null;
+            existing.next = key;
         }
 
-        void forEach(Consumer<Record> consumer) {
+        private void forEach(Consumer<Record> consumer) {
             int pos = 0;
             Record key;
             while (pos < SIZE) {
@@ -224,7 +249,7 @@ public class CalculateAverage_yavuztas {
                 }
                 Record next = key.next;
                 consumer.accept(key);
-                while (next != null) { // also traverse the records in collision list
+                while (next != null) { // also traverse the records in the collision list
                     final Record tmp = next.next;
                     consumer.accept(next);
                     next = tmp;
@@ -232,63 +257,56 @@ public class CalculateAverage_yavuztas {
             }
         }
 
-        void merge(RecordMap other) {
+        private void merge(RecordMap other) {
             other.forEach(this::putOrMerge);
         }
 
     }
 
     // One actor for one thread, no synchronization
-    static class RegionActor extends Thread {
+    private static final class RegionActor extends Thread {
 
-        final long startPos; // start of region memory address
-        final int size;
+        private final long startPos; // start of region memory address
+        private final int size;
 
-        final RecordMap map = new RecordMap();
+        private final RecordMap map = new RecordMap();
 
         public RegionActor(long startPos, int size) {
             this.startPos = startPos;
             this.size = size;
         }
 
-        static long getWord(long address) {
+        private static long getWord(long address) {
             return UNSAFE.getLong(address);
-        }
-
-        static long getWord2(long address) {
-            return UNSAFE.getLong(address + 8);
         }
 
         // hasvalue & haszero
         // adapted from https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
-        public static long hasSemicolon(long word) {
+        private static long hasSemicolon(long word) {
             // semicolon pattern
-            long SEMICOLON = 0x3B3B3B3B3B3B3B3BL;
-            final long hasVal = word ^ SEMICOLON; // hasvalue
+            final long hasVal = word ^ 0x3B3B3B3B3B3B3B3BL; // hasvalue
             return ((hasVal - 0x0101010101010101L) & ~hasVal & 0x8080808080808080L); // haszero
         }
 
-        public static int semicolonPos(long hasVal) {
+        private static int semicolonPos(long hasVal) {
             return Long.numberOfTrailingZeros(hasVal) >>> 3;
         }
 
-        static int decimalPos(long numberWord) {
+        private static int decimalPos(long numberWord) {
             return Long.numberOfTrailingZeros(~numberWord & 0x10101000);
         }
 
+        private static final int MAX_INNER_LOOP_SIZE = 11;
+
         @Override
         public void run() {
-            long s; // semicolon check word
-            int pos; // semicolon position
-            long hash; // key hash
-            long word1; // first word to read
-            long word2; // second word to read
-            long word; // the rest between 3 - 13. Max key size 13 longs - 13*8 = 104 > 100
             long pointer = this.startPos;
             final long size = pointer + this.size;
             while (pointer < size) { // line start
-                hash = 0; // reset hash
-                word1 = getWord(pointer);
+                long hash = 0; // reset hash
+                long s; // semicolon check word
+                final int pos; // semicolon position
+                long word1 = getWord(pointer);
                 if ((s = hasSemicolon(word1)) != 0) {
                     pos = semicolonPos(s);
                     // read temparature
@@ -299,15 +317,14 @@ public class CalculateAverage_yavuztas {
                     word1 = partial(word1, pos); // last word
                     this.map.putAndCollect(completeHash(hash, word1), temp, pointer, pos, word1, 0, 0);
 
-                    pointer += pos + (decimalPos >>> 3) + 4; // seek to the line end
+                    pointer += pos + (decimalPos >>> 3) + 4;
                 }
                 else {
-                    int length = 8;
-                    word2 = getWord2(pointer);
+                    long word2 = getWord(pointer + 8);
                     if ((s = hasSemicolon(word2)) != 0) {
                         pos = semicolonPos(s);
-                        length += pos;
                         // read temparature
+                        final int length = pos + 8;
                         final long numberWord = getWord(pointer + length + 1);
                         final int decimalPos = decimalPos(numberWord);
                         final int temp = convertIntoNumber(decimalPos, numberWord);
@@ -318,9 +335,16 @@ public class CalculateAverage_yavuztas {
                         pointer += length + (decimalPos >>> 3) + 4; // seek to the line end
                     }
                     else {
-                        length = 16;
+                        long word = 0;
+                        int length = 16;
                         hash = appendHash(hash, word1, word2);
-                        while ((s = hasSemicolon((word = getWord(pointer + length)))) == 0) {
+                        // Let the compiler know the loop size ahead
+                        // Then it's automatically unrolled
+                        // Max key length is 13 longs, 2 we've read before, 11 left
+                        for (int i = 0; i < MAX_INNER_LOOP_SIZE; i++) {
+                            if ((s = hasSemicolon((word = getWord(pointer + length)))) != 0) {
+                                break;
+                            }
                             hash = appendHash(hash, word);
                             length += 8;
                         }
@@ -343,21 +367,21 @@ public class CalculateAverage_yavuztas {
 
         // Hashes are calculated by a Mersenne Prime (1 << 7) -1
         // This is faster than multiplication in some machines
-        static long appendHash(long hash, long word) {
+        private static long appendHash(long hash, long word) {
             return (hash << 7) - hash + word;
         }
 
-        static long appendHash(long hash, long word1, long word2) {
+        private static long appendHash(long hash, long word1, long word2) {
             hash = (hash << 7) - hash + word1;
             return (hash << 7) - hash + word2;
         }
 
-        static int completeHash(long hash, long partial) {
+        private static int completeHash(long hash, long partial) {
             hash = (hash << 7) - hash + partial;
             return (int) (hash ^ (hash >>> 25));
         }
 
-        static int completeHash(long hash, long word1, long word2) {
+        private static int completeHash(long hash, long word1, long word2) {
             hash = (hash << 7) - hash + word1;
             hash = (hash << 7) - hash + word2;
             return (int) hash ^ (int) (hash >>> 25);
@@ -389,7 +413,7 @@ public class CalculateAverage_yavuztas {
         /**
          * blocks until the map is fully collected
          */
-        RecordMap get() throws InterruptedException {
+        private RecordMap get() throws InterruptedException {
             join();
             return this.map;
         }
@@ -474,6 +498,7 @@ public class CalculateAverage_yavuztas {
         for (RegionActor actor : actors) {
             final RecordMap partial = actor.get(); // blocks until get the result
             output.merge(partial);
+            // System.out.println("collisions: " + partial.collision);
         }
 
         // sort and print the result
