@@ -26,12 +26,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class CalculateAverage_zerninv {
     private static final String FILE = "./measurements.txt";
     private static final int CORES = Runtime.getRuntime().availableProcessors();
-    private static final int CHUNK_SIZE = 1024 * 1024 * 8;
+    private static final int CHUNK_SIZE = 1024 * 1024 * 32;
 
     private static final Unsafe UNSAFE = initUnsafe();
 
@@ -49,14 +48,22 @@ public class CalculateAverage_zerninv {
     public static void main(String[] args) throws IOException, InterruptedException {
         try (var channel = FileChannel.open(Path.of(FILE), StandardOpenOption.READ)) {
             var fileSize = channel.size();
-            var chunkSize = Math.min(fileSize, CHUNK_SIZE);
+            var minChunkSize = Math.min(fileSize, CHUNK_SIZE);
             var segment = channel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, Arena.global());
-            var chunkCount = new AtomicInteger(0);
 
             var tasks = new TaskThread[CORES];
             for (int i = 0; i < tasks.length; i++) {
-                tasks[i] = new TaskThread(chunkCount, segment.address(), chunkSize, fileSize);
-                tasks[i].start();
+                tasks[i] = new TaskThread((int) (fileSize / minChunkSize / CORES + 1));
+            }
+
+            var chunks = splitByChunks(segment.address(), segment.address() + fileSize, minChunkSize);
+            for (int i = 0; i < chunks.size() - 1; i++) {
+                var task = tasks[i % tasks.length];
+                task.addChunk(chunks.get(i), chunks.get(i + 1));
+            }
+
+            for (var task : tasks) {
+                task.start();
             }
 
             var results = new HashMap<String, TemperatureAggregation>();
@@ -70,6 +77,19 @@ public class CalculateAverage_zerninv {
             bos.write('\n');
             bos.flush();
         }
+    }
+
+    private static List<Long> splitByChunks(long address, long end, long minChunkSize) {
+        // split by chunks
+        List<Long> result = new ArrayList<>((int) ((end - address) / minChunkSize + 1));
+        result.add(address);
+        while (address < end) {
+            address += Math.min(end - address, minChunkSize);
+            while (address < end && UNSAFE.getByte(address++) != '\n') {
+            }
+            result.add(address);
+        }
+        return result;
     }
 
     private static final class TemperatureAggregation {
@@ -218,59 +238,49 @@ public class CalculateAverage_zerninv {
         };
 
         private final MeasurementContainer container;
-        private final AtomicInteger chunkCount;
-        private final long address;
-        private final long chunkSize;
-        private final long fileSize;
+        private final List<Long> begins;
+        private final List<Long> ends;
 
-        private TaskThread(AtomicInteger chunkCount, long address, long chunkSize, long fileSize) {
-            this.chunkCount = chunkCount;
-            this.address = address;
-            this.chunkSize = chunkSize;
-            this.fileSize = fileSize;
+        private TaskThread(int chunks) {
             this.container = new MeasurementContainer();
+            this.begins = new ArrayList<>(chunks);
+            this.ends = new ArrayList<>(chunks);
+        }
+
+        public void addChunk(long begin, long end) {
+            begins.add(begin);
+            ends.add(end);
         }
 
         @Override
         public void run() {
-            long chunk;
-            while ((chunk = chunkCount.getAndIncrement()) * chunkSize < fileSize) {
-                long offset = chunk * chunkSize;
-                long end = Math.min(offset + chunkSize, fileSize) - 1;
-                offset += address;
-                end += address;
-
-                while (offset > address && UNSAFE.getByte(offset - 1) != '\n') {
-                    offset--;
-                }
-                while (end > offset && UNSAFE.getByte(end - 1) != '\n') {
+            for (int i = 0; i < begins.size(); i++) {
+                var begin = begins.get(i);
+                var end = ends.get(i) - 1;
+                while (end > begin && UNSAFE.getByte(end - 1) != '\n') {
                     end--;
                 }
-                while (end > offset && UNSAFE.getByte(end - 1) != '\n') {
-                    end--;
-                }
-
-                calcFast(offset, end);
+                calcForChunk(begin, end);
                 calcLastLine(end);
             }
         }
 
         private void calcLastLine(long offset) {
             long cityOffset = offset;
-            byte cityNameSize = 0;
             long lastBytes = 0;
             int hashCode = 0;
-            byte b;
+            byte cityNameSize = 0;
 
+            byte b;
             while ((b = UNSAFE.getByte(offset++)) != ';') {
                 lastBytes = (lastBytes << 8) | b;
                 hashCode = hashCode * 31 + b;
                 cityNameSize++;
             }
 
+            int temperature;
             int word = UNSAFE.getInt(offset);
             offset += 4;
-            int temperature;
 
             if ((word & TWO_NEGATIVE_DIGITS_MASK) == TWO_NEGATIVE_DIGITS_MASK) {
                 word >>>= 8;
@@ -290,7 +300,7 @@ public class CalculateAverage_zerninv {
             container.put(cityOffset, cityNameSize, hashCode, lastBytes, (short) temperature);
         }
 
-        private void calcFast(long offset, long end) {
+        private void calcForChunk(long offset, long end) {
             long cityOffset, lastBytes, city, masked, hashCode;
             int temperature, word, delimiterIdx;
             byte cityNameSize;
