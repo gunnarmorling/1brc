@@ -59,7 +59,7 @@ public class CalculateAverage_godofwharf {
             -1, -1, -1, -1, -1, -1, -1, -1, 0, 1,
             2, 3, 4, 5, 6, 7, 8, 9, -1, -1 };
     private static final int MAX_STR_LEN = 108;
-    private static final int DEFAULT_HASH_TBL_SIZE = 1 << 14;
+    private static final int DEFAULT_HASH_TBL_SIZE = 1 << 10;
     private static final int DEFAULT_PAGE_SIZE = 8_388_608; // 8 MB
     private static final int PAGE_SIZE = Integer.parseInt(System.getProperty("pageSize", STR."\{DEFAULT_PAGE_SIZE}"));
 
