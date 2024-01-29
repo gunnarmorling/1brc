@@ -255,9 +255,9 @@ public class CalculateAverage_jonathanaotearoa {
                 separatorMask = (separatorXorResult - 0x0101010101010101L) & (~separatorXorResult & 0x8080808080808080L);
                 if (separatorMask == 0) {
                     address += Long.BYTES;
-                    // Multiplicative hashing, as per Arrays.hashCode().
-                    // We could use XOR here, but it "might" produce more collisions.
-                    nameHash = 31 * nameHash + Long.hashCode(nameWord);
+                    // Multiplicative hashing, as per Arrays.hashCode(long[]).
+                    // We could use XOR, but it would produce more collisions.
+                    nameHash = 31 * nameHash + (int) (nameWord ^ (nameWord >>> 32));
                 }
                 else {
                     break;
@@ -274,8 +274,8 @@ public class CalculateAverage_jonathanaotearoa {
                 // Truncate the word, so we only have the portion before the separator, i.e. the name bytes.
                 final int bitsToDiscard = Long.SIZE - numberOfNameBits;
                 // Little endian.
-                final long truncatedNameWord = (nameWord << bitsToDiscard) >>> bitsToDiscard;
-                nameHash = 31 * nameHash + Long.hashCode(truncatedNameWord);
+                nameWord = (nameWord << bitsToDiscard) >>> bitsToDiscard;
+                nameHash = 31 * nameHash + (int) (nameWord ^ (nameWord >>> 32));
             }
 
             final long tempAddress = separatorAddress + 1;
@@ -515,7 +515,7 @@ public class CalculateAverage_jonathanaotearoa {
                 return false;
             }
             if (nameHash == existing.nameHash) {
-                if (nameSize == existing.nameSize && meetsEqualityThreshold(nameAddress, existing.nameAddress, nameSize)) {
+                if (nameSize == existing.nameSize && isMemoryEqual(nameAddress, existing.nameAddress, nameSize)) {
                     return false;
                 }
                 // We've got a hash collision :(
@@ -527,41 +527,35 @@ public class CalculateAverage_jonathanaotearoa {
         }
 
         /**
-         * Checks if the names at the specified locations meet our threshold for equality.
-         * <p>
-         * It's possible, due to hash collisions, that two different names have the same size and hash.
-         * To account for this, we also need to check if the station names themselves are equal.
-         * However, checking all the bytes in both names is costly.
-         * We therefore set a threshold for the maximum number of bytes, at the start and end of the name, to check.
-         * If two names with the same size and hash have the same first N and last N bytes, we're happy they are the equal.
-         * </p>
+         * Checks if two memory addresses contain the same bytes.
          *
-         * @param address1 the address of the first name.
-         * @param address2 the address of the second name.
-         * @param size     the name size in bytes.
-         * @return true the names meet our equality threshold.
+         * @param address1 the first address.
+         * @param address2 the second address.
+         * @param size the number of bytes to check.
+         * @return true if both memory addresses contain the same bytes.
          */
-        private static boolean meetsEqualityThreshold(final long address1, final long address2, final byte size) {
-            if (size < 4) {
-                // Check the whole name.
-                for (int offset = 0; offset < size; offset++) {
-                    final byte b1 = UNSAFE.getByte(address1 + offset);
-                    final byte b2 = UNSAFE.getByte(address2 + offset);
-                    if (b1 != b2) {
-                        return false;
-                    }
+        private static boolean isMemoryEqual(final long address1, final long address2, final byte size) {
+            final int wordCount = size >> 3;
+            final int byteCount = size & 7;
+            long ptr1 = address1;
+            long ptr2 = address2;
+            for (int i = 0; i < wordCount; i++) {
+                final long l1 = UNSAFE.getLong(ptr1);
+                final long l2 = UNSAFE.getLong(ptr2);
+                if (l1 != l2) {
+                    return false;
                 }
-                return true;
+                ptr1 += Long.BYTES;
+                ptr2 += Long.BYTES;
             }
-            // Check first and last two bytes of the name.
-            final short s1 = UNSAFE.getShort(address1);
-            final short s2 = UNSAFE.getShort(address2);
-            if (s1 != s2) {
-                return false;
+            for (int i = 0; i < byteCount; i++) {
+                final byte b1 = UNSAFE.getByte(ptr1++);
+                final byte b2 = UNSAFE.getByte(ptr2++);
+                if (b1 != b2) {
+                    return false;
+                }
             }
-            final byte s3 = UNSAFE.getByte(address1 + size - Short.BYTES);
-            final byte s4 = UNSAFE.getByte(address2 + size - Short.BYTES);
-            return s3 == s4;
+            return true;
         }
     }
 
