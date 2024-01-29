@@ -32,44 +32,7 @@ public class CalculateAverage_ericxiao {
 
     private static final String FILE = "./measurements.txt";
 
-    private static class Station {
-        private int min;
-        private int max;
-        private long sum;
-        private int count;
-
-        private Station(int temp) {
-            this.min = temp;
-            this.max = temp;
-            this.sum = temp;
-            this.count = 1;
-        }
-
-        public void setMeasurement(int value) {
-            this.min = Math.min(this.min, value);
-            this.max = Math.max(this.max, value);
-            this.sum += value;
-            this.count++;
-        }
-
-        public void mergeStation(Station station) {
-            this.min = Math.min(this.min, station.min);
-            this.max = Math.max(this.max, station.max);
-            this.sum += station.sum;
-            this.count += station.count;
-        }
-
-        public String toString() {
-            return round(min / 10.0) + "/" + round((double) this.sum / this.count / 10.0) + "/" + round(max / 10.0);
-        }
-
-        private double round(double value) {
-            return Math.round(value * 10.0) / 10.0;
-        }
-
-    }
-
-    static class ProcessFileMap implements Callable<Map<ProcessFileMap.KeySlice, double[]>> {
+    static class ProcessFileMap implements Callable<Map<ProcessFileMap.KeySlice, int[]>> {
         private long readStart;
         private long readEnd;
         private boolean lastRead;
@@ -85,7 +48,7 @@ public class CalculateAverage_ericxiao {
             this.firstRead = firstRead;
         }
 
-        private final HashMap<KeySlice, double[]> hashMap = new HashMap<>();
+        private final HashMap<KeySlice, int[]> hashMap = new HashMap<>();
 
         private static Unsafe initUnsafe() {
             try {
@@ -137,23 +100,41 @@ public class CalculateAverage_ericxiao {
 
         public void add(long keyStart, long keyEnd, long valueEnd) {
             int entryLength = (int) (valueEnd - keyStart);
+
             int keyLength = (int) (keyEnd - keyStart);
-            int valueLength = (int) (valueEnd - (keyEnd + 1));
             UNSAFE.copyMemory(null, keyStart, entryBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET, entryLength);
-            // String key = new String(entryBytes, 0, keyLength, StandardCharsets.UTF_8);
             KeySlice key = new KeySlice(entryBytes, keyLength);
-            double value = Double.parseDouble(new String(entryBytes, keyLength + 1, valueLength, StandardCharsets.UTF_8));
+
+            int valueLength = (int) (valueEnd - (keyEnd + 1));
+
+            final byte negativeSign = '-';
+            final byte periodSign = '.';
+
+            int accumulator = 0;
+            short multiplier = 1;
+            if (entryBytes[keyLength + 1] == negativeSign) {
+                multiplier = -1;
+            }
+            else {
+                accumulator = entryBytes[keyLength + 1] - '0';
+            }
+
+            for (int i = keyLength + 2; i <= keyLength + valueLength; ++i) {
+                if (entryBytes[i] != periodSign)
+                    accumulator = accumulator * 10 + entryBytes[i] - '0';
+            }
+            int value = multiplier * accumulator;
 
             hashMap.compute(key, (k, v) -> {
                 if (v == null) {
                     k.materialize();
-                    return new double[]{ value, value, value, 1 };
+                    return new int[]{ value, value, value, 1 };
                 }
                 else {
                     v[0] = Math.min(v[0], value);
                     v[1] = Math.max(v[1], value);
-                    v[2] = v[2] + value;
-                    v[3] = v[3] + 1;
+                    v[2] += value;
+                    v[3]++;
                     return v;
                 }
             });
@@ -164,11 +145,11 @@ public class CalculateAverage_ericxiao {
             return (mask - 0x0101010101010101L) & (~mask & 0x8080808080808080L);
         }
 
-        public Map<KeySlice, double[]> call() {
+        public Map<KeySlice, int[]> call() {
             return readMemory(readStart, readEnd);
         }
 
-        private Map<KeySlice, double[]> readMemory(long startAddress, long endAddress) {
+        private Map<KeySlice, int[]> readMemory(long startAddress, long endAddress) {
             int packedBytes = 0;
             final long singleSemiColonPattern = 0x3BL;
             final long semiColonPattern = 0x3B3B3B3B3B3B3B3BL;
@@ -280,7 +261,7 @@ public class CalculateAverage_ericxiao {
     public static void main(String[] args) throws Exception {
         int numThreads = Runtime.getRuntime().availableProcessors() - 1; // Use the number of available processors
         ExecutorService executorService = Executors.newFixedThreadPool(numThreads);
-        List<Callable<Map<ProcessFileMap.KeySlice, double[]>>> callableTasks = new ArrayList<>();
+        List<Callable<Map<ProcessFileMap.KeySlice, int[]>>> callableTasks = new ArrayList<>();
         Path filePath = Path.of(FILE);
 
         try (FileChannel fileChannel = (FileChannel) Files.newByteChannel(filePath, EnumSet.of(StandardOpenOption.READ))) {
@@ -301,10 +282,10 @@ public class CalculateAverage_ericxiao {
 
             callableTasks.add(new ProcessFileMap(readStart, readStart + readLength, false, true));
 
-            List<Map<ProcessFileMap.KeySlice, double[]>> results = new ArrayList<>();
+            List<Map<ProcessFileMap.KeySlice, int[]>> results = new ArrayList<>();
             try {
-                List<Future<Map<ProcessFileMap.KeySlice, double[]>>> futures = executorService.invokeAll(callableTasks);
-                for (Future<Map<ProcessFileMap.KeySlice, double[]>> future : futures) {
+                List<Future<Map<ProcessFileMap.KeySlice, int[]>>> futures = executorService.invokeAll(callableTasks);
+                for (Future<Map<ProcessFileMap.KeySlice, int[]>> future : futures) {
                     try {
                         results.add(future.get());
                     }
@@ -319,11 +300,11 @@ public class CalculateAverage_ericxiao {
             finally {
                 executorService.shutdown();
                 // fileChannel.close();
-                Map<ProcessFileMap.KeySlice, double[]> mapA = results.getFirst();
+                Map<ProcessFileMap.KeySlice, int[]> mapA = results.getFirst();
                 for (int i = 1; i < numThreads; ++i) {
                     results.get(i).forEach((station, stationMeasurements) -> {
                         if (mapA.containsKey(station)) {
-                            double[] measurements = mapA.get(station);
+                            int[] measurements = mapA.get(station);
                             measurements[0] = Math.min(measurements[0], stationMeasurements[0]);
                             measurements[1] = Math.max(measurements[1], stationMeasurements[1]);
                             measurements[2] = measurements[2] + stationMeasurements[2];
@@ -337,9 +318,12 @@ public class CalculateAverage_ericxiao {
                 // print key and values
                 int counter = 1;
                 System.out.print("{");
-                for (Map.Entry<ProcessFileMap.KeySlice, double[]> entry : mapA.entrySet()) {
-                    double[] measurements = entry.getValue();
-                    System.out.print(entry.getKey().key + "=" + measurements[0] + "/" + String.format("%.1f", measurements[2] / measurements[3]) + "/" + measurements[1]);
+                for (Map.Entry<ProcessFileMap.KeySlice, int[]> entry : mapA.entrySet()) {
+                    int[] measurements = entry.getValue();
+                    double mean = (double) measurements[2] / (double) measurements[3];
+                    System.out.print(entry.getKey().key + "=" + (measurements[0] / 10.0) + "/"
+                            + (Math.round(mean) / 10.0) + "/"
+                            + (measurements[1]) / 10.0);
                     if (counter++ < mapA.size())
                         System.out.print(", ");
                 }
