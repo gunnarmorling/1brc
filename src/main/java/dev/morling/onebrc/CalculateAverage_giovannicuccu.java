@@ -185,15 +185,16 @@ public class CalculateAverage_giovannicuccu {
 
         private final MemorySegment dataSegment = MemorySegment.ofArray(keyData);
 
-        public void addWithByteVector(ByteVector chunk1, int len, int hash, int value, MemorySegment memorySegment, long offset) {
+        private final byte[] lineData = new byte[SIZE];
+
+        private final MemorySegment lineSegment = MemorySegment.ofArray(lineData);
+
+        public void add(int len, int hash, int value, MemorySegment memorySegment, long offset) {
+            MemorySegment.copy(memorySegment, offset, lineSegment, 0, len);
             int index = hash & (SIZE - 1);
-            int i = 0;
             while (measurements[index] != null) {
-                if (measurements[index].getLen() == len && measurements[index].getHash() == hash) {
-                    var nodeKey = ByteVector.fromArray(BYTE_SPECIES, keyData, index * KEY_SIZE);
-                    long eqMask = chunk1.compare(VectorOperators.EQ, nodeKey).toLong();
-                    long validMask = -1L >>> (64 - len);
-                    if ((eqMask & validMask) == validMask) {
+                if (measurements[index].getHash() == hash && measurements[index].getLen() == len) {
+                    if (Arrays.equals(keyData, index * KEY_SIZE, index * KEY_SIZE + len, lineData, 0, len)) {
                         measurements[index].add(value);
                         return;
                     }
@@ -204,15 +205,14 @@ public class CalculateAverage_giovannicuccu {
             measurements[index] = new MeasurementAggregatorVectorized(keyData, index * KEY_SIZE, len, hash, value);
         }
 
-        public void add(int len, int hash, int value, MemorySegment memorySegment, long offset) {
+        public void addWithByteVector(ByteVector chunk1, int len, int hash, int value, MemorySegment memorySegment, long offset) {
             int index = hash & (SIZE - 1);
             while (measurements[index] != null) {
                 if (measurements[index].getLen() == len && measurements[index].getHash() == hash) {
-                    int i = 0;
-                    while (i < len && keyData[index * KEY_SIZE + i] == memorySegment.get(ValueLayout.JAVA_BYTE, offset + i)) {
-                        i++;
-                    }
-                    if (i == len) {
+                    var nodeKey = ByteVector.fromArray(BYTE_SPECIES, keyData, index * KEY_SIZE);
+                    long eqMask = chunk1.compare(VectorOperators.EQ, nodeKey).toLong();
+                    long validMask = -1L >>> (64 - len);
+                    if ((eqMask & validMask) == validMask) {
                         measurements[index].add(value);
                         return;
                     }
@@ -248,8 +248,6 @@ public class CalculateAverage_giovannicuccu {
         private final Path path;
         private final List<PartitionBoundary> boundaries;
         private final boolean serial;
-        private static final byte SEPARATOR = ';';
-        ByteVector separators = ByteVector.broadcast(BYTE_SPECIES, SEPARATOR);
         private static final ValueLayout.OfLong JAVA_LONG_LT = ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
 
         public MMapReaderMemorySegment(Path path, PartitionCalculator partitionCalculator, boolean serial) {
@@ -311,6 +309,12 @@ public class CalculateAverage_giovannicuccu {
             }
         }
 
+        private final long ALL_ONE = -1L;
+        private static final long DELIMITER_MASK = 0x3B3B3B3B3B3B3B3BL;
+
+        private static final byte SEPARATOR = ';';
+        private final static ByteVector SEPARATORS = ByteVector.broadcast(BYTE_SPECIES, SEPARATOR);
+
         private MeasurementListVectorized computeListForPartition(FileChannel fileChannel, PartitionBoundary boundary) {
             try (var arena = Arena.ofConfined()) {
                 var memorySegment = fileChannel.map(FileChannel.MapMode.READ_ONLY, boundary.start(), boundary.end() - boundary.start(), arena);
@@ -318,58 +322,50 @@ public class CalculateAverage_giovannicuccu {
                 long size = memorySegment.byteSize();
                 long offset = 0;
                 long safe = size - KEY_SIZE;
-                // ByteBuffer byteBuffer = memorySegment.asByteBuffer();
-                // byteBuffer.order(ByteOrder.LITTLE_ENDIAN);
-                ByteVector chunk1 = ByteVector.zero(BYTE_SPECIES);
-                ByteVector chunk2 = ByteVector.zero(BYTE_SPECIES);
                 while (offset < safe) {
                     int len = 0;
-                    chunk1 = ByteVector.fromMemorySegment(BYTE_SPECIES, memorySegment, offset, NATIVE_ORDER);
-                    int equals = chunk1.compare(VectorOperators.EQ, separators).firstTrue();
-                    len += equals;
-                    if (equals == BYTE_SPECIES_LANES) {
-                        while (memorySegment.get(ValueLayout.JAVA_BYTE, offset + len) != ';') {
-                            len++;
+                    var line = ByteVector.fromMemorySegment(BYTE_SPECIES, memorySegment, offset, NATIVE_ORDER);
+                    len = line.compare(VectorOperators.EQ, SEPARATORS).firstTrue();
+                    if (len == BYTE_SPECIES_LANES) {
+                        int position1 = -1;
+                        int incr = BYTE_SPECIES_LANES;
+                        while (position1 == -1) {
+                            long readBuffer = memorySegment.get(JAVA_LONG_LT, offset + incr);
+                            long comparisonResult1 = (readBuffer ^ DELIMITER_MASK);
+                            long highBitMask1 = (comparisonResult1 - 0x0101010101010101L) & (~comparisonResult1 & 0x8080808080808080L);
+
+                            boolean noContent1 = highBitMask1 == 0;
+                            position1 = noContent1 ? -1 : Long.numberOfTrailingZeros(highBitMask1) >> 3;
+                            len += noContent1 ? 8 : position1;
+                            incr += 8;
                         }
-                    }
+                        int hash = hash(memorySegment, offset, len);
+                        long prevOffset = offset;
+                        offset += len + 1;
 
-                    int hash = hash(memorySegment, offset, len);
-                    long prevOffset = offset;
-                    offset += len + 1;
-
-                    long numberWord = memorySegment.get(JAVA_LONG_LT, offset);
-                    int decimalSepPos = Long.numberOfTrailingZeros(~numberWord & 0x10101000);
-                    int value = convertIntoNumber(decimalSepPos, numberWord);
-                    offset += (decimalSepPos >>> 3) + 3;
-                    // System.out.println("Value=" + value);
-                    if (len < BYTE_SPECIES_LANES) {
-                        list.addWithByteVector(chunk1, len, hash, value, memorySegment, prevOffset);
+                        long numberWord = memorySegment.get(JAVA_LONG_LT, offset);
+                        int decimalSepPos = Long.numberOfTrailingZeros(~numberWord & 0x10101000);
+                        int value = convertIntoNumber(decimalSepPos, numberWord);
+                        offset += (decimalSepPos >>> 3) + 3;
+                        list.add(len, hash, value, memorySegment, prevOffset);
                     }
                     else {
-                        list.add(len, hash, value, memorySegment, prevOffset);
+                        int hash = hash(memorySegment, offset, len);
+                        long prevOffset = offset;
+                        offset += len + 1;
+
+                        long numberWord = memorySegment.get(JAVA_LONG_LT, offset);
+                        int decimalSepPos = Long.numberOfTrailingZeros(~numberWord & 0x10101000);
+                        int value = convertIntoNumber(decimalSepPos, numberWord);
+                        offset += (decimalSepPos >>> 3) + 3;
+                        list.addWithByteVector(line, len, hash, value, memorySegment, prevOffset);
                     }
                 }
 
                 while (offset < size) {
                     int len = 0;
-                    int equals = BYTE_SPECIES_LANES;
-                    if (offset + BYTE_SPECIES_LANES < size) {
-                        chunk1 = ByteVector.fromMemorySegment(BYTE_SPECIES, memorySegment, offset, NATIVE_ORDER);
-                        equals = chunk1.compare(VectorOperators.EQ, separators).firstTrue();
-                        len += equals;
-                        if (equals == BYTE_SPECIES_LANES) {
-                            while (memorySegment.get(ValueLayout.JAVA_BYTE, offset + len) != ';') {
-                                len++;
-                            }
-                        }
-                    }
-                    else {
-                        byte[] bytes = new byte[BYTE_SPECIES_LANES];
-                        MemorySegment.copy(memorySegment, offset + len, MemorySegment.ofArray(bytes), 0, (size - offset - len));
-                        // byteBuffer.get(offset + len, bytes, 0, (int) (size - offset - len));
-                        chunk1 = ByteVector.fromArray(BYTE_SPECIES, bytes, 0);
-                        equals = chunk1.compare(VectorOperators.EQ, separators).firstTrue();
-                        len += equals;
+                    while (memorySegment.get(ValueLayout.JAVA_BYTE, offset + len) != ';') {
+                        len++;
                     }
                     int hash = hash(memorySegment, offset, len);
                     long prevOffset = offset;
@@ -402,12 +398,7 @@ public class CalculateAverage_giovannicuccu {
                         }
                         offset = currentPosition + 2;
                     }
-                    if (len < BYTE_SPECIES_LANES) {
-                        list.addWithByteVector(chunk1, len, hash, value, memorySegment, prevOffset);
-                    }
-                    else {
-                        list.add(len, hash, value, memorySegment, prevOffset);
-                    }
+                    list.add(len, hash, value, memorySegment, prevOffset);
                 }
                 return list;
             }
