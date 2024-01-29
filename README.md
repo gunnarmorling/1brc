@@ -41,17 +41,19 @@ These are the results from running all entries into the challenge on eight cores
 
 | # | Result (m:s.ms) | Implementation     | JDK | Submitter     | Notes     |
 |---|-----------------|--------------------|-----|---------------|-----------|
-| 1 | 00:02.019 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_artsiomkorzun.java)| 21.0.2-graal | [Artsiom Korzun](https://github.com/artsiomkorzun) | GraalVM native binary, uses Unsafe |
-|   | 00:02.169 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_abeobk.java)| 21.0.2-graal | [Van Phu DO](https://github.com/abeobk) | GraalVM native binary, uses Unsafe |
-| 3* | 00:02.195 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_thomaswue.java)| 21.0.2-graal | [Thomas Wuerthinger](https://github.com/thomaswue), [Quan Anh Mai](https://github.com/merykitty), [Alfonso² Peterssen](https://github.com/mukel) | GraalVM native binary, uses Unsafe |
-| 3* | 00:02.196 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_royvanrijn.java)| 21.0.2-graal | [Roy van Rijn](https://github.com/royvanrijn) | GraalVM native binary, uses Unsafe |
-|   | 00:02.374 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_jerrinot.java)| 21.0.1-graal | [Jaromir Hamala](https://github.com/jerrinot) | uses Unsafe |
+| 1 | 00:01.893 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_thomaswue.java)| 21.0.2-graal | [Thomas Wuerthinger](https://github.com/thomaswue), [Quan Anh Mai](https://github.com/merykitty), [Alfonso² Peterssen](https://github.com/mukel) | GraalVM native binary, uses Unsafe |
+| 2 | 00:01.990 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_artsiomkorzun.java)| 21.0.2-graal | [Artsiom Korzun](https://github.com/artsiomkorzun) | GraalVM native binary, uses Unsafe |
+| 3* | 00:02.081 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_jerrinot.java)| 21.0.2-graal | [Jaromir Hamala](https://github.com/jerrinot) | GraalVM native binary, uses Unsafe |
+| 3* | 00:02.091 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_abeobk.java)| 21.0.2-graal | [Van Phu DO](https://github.com/abeobk) | GraalVM native binary, uses Unsafe |
+|   | 00:02.157 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_royvanrijn.java)| 21.0.2-graal | [Roy van Rijn](https://github.com/royvanrijn) | GraalVM native binary, uses Unsafe |
+|   | 00:02.440 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_serkan_ozal.java)| 21.0.1-open | [Serkan ÖZAL](https://github.com/serkan-ozal) | uses Unsafe |
 |   | 00:02.575 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_merykittyunsafe.java)| 21.0.1-open | [Quan Anh Mai](https://github.com/merykitty) | uses Unsafe |
 |   | 00:02.984 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_yourwass.java)| 21.0.1-open | [yourwass](https://github.com/yourwass) | uses Unsafe |
+|   | 00:03.013 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_linl33.java)| 22.ea.31-open | [Li Lin](https://github.com/linl33) | uses Unsafe |
 |   | 00:03.258 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_merykitty.java)| 21.0.1-open | [Quan Anh Mai](https://github.com/merykitty) |  |
-|   | 00:03.298 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_vemana.java)| 21.0.1-graal | [Subrahmanyam (non-idiomatic)](https://github.com/vemana) | uses Unsafe |
+|   | 00:03.298 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_vemanaNonIdiomatic.java)| 21.0.1-graal | [Subrahmanyam (non-idiomatic)](https://github.com/vemana) | uses Unsafe |
 |   | 00:03.376 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_mtopolnik.java)| 21.0.1-graal | [Marko Topolnik](https://github.com/mtopolnik) | uses Unsafe |
-|   | 00:03.510 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_roman_r_m.java)| 21.0.1-graal | [Roman Musin](https://github.com/roman-r-m) | GraalVM native binary |
+|   | 00:03.431 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_roman_r_m.java)| 21.0.1-graal | [Roman Musin](https://github.com/roman-r-m) | GraalVM native binary, uses Unsafe |
 |   | 00:03.518 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_JamalMulla.java)| 21.0.1-graal | [Jamal Mulla](https://github.com/JamalMulla) | GraalVM native binary, uses Unsafe |
 |   | 00:03.594 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_yavuztas.java)| 21.0.2-graal | [Yavuz Tas](https://github.com/yavuztas) | GraalVM native binary, uses Unsafe |
 |   | 00:03.698 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_hundredwatt.java)| 21.0.1-graal | [Jason Nochlin](https://github.com/hundredwatt) |  |
@@ -61,19 +63,26 @@ These are the results from running all entries into the challenge on eight cores
 |   | 00:03.902 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_jparera.java)| 21.0.1-open | [Juan Parera](https://github.com/jparera) |  |
 |   | 00:03.966 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_jincongho.java)| 21.0.1-open | [Jin Cong Ho](https://github.com/jincongho) | uses Unsafe |
 |   | 00:04.066 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_JesseVanRooy.java)| 21.0.1-open | [JesseVanRooy](https://github.com/JesseVanRooy) | uses Unsafe |
-|   | 00:04.154 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_iziamos.java)| 21.0.1-open | [John Ziamos](https://github.com/iziamos) | uses Unsafe |
+|   | 00:04.230 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_iziamos.java)| 21.0.1-open | [John Ziamos](https://github.com/iziamos) | uses Unsafe |
+|   | 00:04.255 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_tivrfoa.java)| 21.0.2-graal | [tivrfoa](https://github.com/tivrfoa) | GraalVM native binary, uses Unsafe |
+|   | 00:04.684 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_gigiblender.java)| 21.0.1-open | [Florin Blanaru](https://github.com/gigiblender) | uses Unsafe |
+|   | 00:04.719 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_giovannicuccu.java)| java | [Giovanni Cuccu](https://github.com/giovannicuccu) |  |
 |   | 00:04.741 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_cliffclick.java)| 21.0.1-open | [Cliff Click](https://github.com/cliffclick) | uses Unsafe |
 |   | 00:04.800 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_parkertimmins.java)| 21.0.1-open | [Parker Timmins](https://github.com/parkertimmins) |  |
+|   | 00:04.884 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_shipilev.java)| 21.0.1-open | [Aleksey Shipilëv](https://github.com/shipilev) |  |
 |   | 00:04.920 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_vemana.java)| 21.0.1-graal | [Subrahmanyam](https://github.com/vemana) |  |
+|   | 00:05.069 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_JaimePolidura.java)| 21.0.2-graal | [Jaime Polidura](https://github.com/JaimePolidura) | GraalVM native binary, uses Unsafe |
+|   | 00:05.077 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_jonathanaotearoa.java)| 21.0.2-graal | [Jonathan Wright](https://github.com/jonathan-aotearoa) | GraalVM native binary, uses Unsafe |
 |   | 00:05.142 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_arjenw.java)| 21.0.1-open | [Arjen Wisse](https://github.com/arjenw) |  |
 |   | 00:05.235 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_unbounded.java)| 21.0.1-open | [unbounded](https://github.com/unbounded) |  |
 |   | 00:05.336 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_plevart.java)| 21.0.1-tem | [Peter Levart](https://github.com/plevart) |  |
-|   | 00:05.400 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_ianopolousfast.java)| 21.0.1-open | [Dr Ian Preston](https://github.com/ianopolousfast) |  |
+|   | 00:05.180 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_ianopolousfast.java)| 21.0.1-open | [Dr Ian Preston](https://github.com/ianopolousfast) |  |
 |   | 00:05.478 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_obourgain.java)| 21.0.1-open | [Olivier Bourgain](https://github.com/obourgain) | uses Unsafe |
 |   | 00:05.705 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_gamlerhart.java)| 21.0.1-open | [Roman Stoffel](https://github.com/gamlerhart) |  |
 |   | 00:05.709 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_armandino.java)| 21.0.2-graal | [Arman Sharif](https://github.com/armandino) | GraalVM native binary, uses Unsafe |
 |   | 00:05.887 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_charlibot.java)| 21.0.1-graal | [Charlie Evans](https://github.com/charlibot) | uses Unsafe |
 |   | 00:05.960 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_vaidhy.java)| 21.0.1-graal | [Vaidhy Mayilrangam](https://github.com/vaidhy) | uses Unsafe |
+|   | 00:05.971 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_melgenek.java)| 21.0.2-open | [Yevhenii Melnyk](https://github.com/melgenek) |  |
 |   | 00:05.979 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_spullara.java)| 21.0.1-graal | [Sam Pullara](https://github.com/spullara) |  |
 |   | 00:06.166 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_isolgpus.java)| 21.0.1-open | [Jamie Stansfield](https://github.com/isolgpus) |  |
 |   | 00:06.257 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_flippingbits.java)| 21.0.1-graal | [Stefan Sprenger](https://github.com/flippingbits) | uses Unsafe |
@@ -81,7 +90,7 @@ These are the results from running all entries into the challenge on eight cores
 |   | 00:06.635 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_justplainlaake.java)| 21.0.1-graal | [Laake Scates-Gervasi](https://github.com/justplainlaake) | GraalVM native binary, uses Unsafe |
 |   | 00:06.654 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_jbachorik.java)| 21.0.1-graal | [Jaroslav Bachorik](https://github.com/jbachorik) |  |
 |   | 00:06.715 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_algirdasrascius.java)| 21.0.1-open | [Algirdas Raščius](https://github.com/algirdasrascius) |  |
-|   | 00:07.240 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_giovannicuccu.java)| java | [giovannicuccu](https://github.com/giovannicuccu) |  |
+|   | 00:06.884 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_rcasteltrione.java)| 21.0.1-graal | [rcasteltrione](https://github.com/rcasteltrione) |  |
 |   | 00:07.563 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_3j5a.java)| 21.0.1-graal | [3j5a](https://github.com/3j5a) |  |
 |   | 00:07.680 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_C5H12O5.java)| 21.0.1-graal | [Xylitol](https://github.com/C5H12O5) | uses Unsafe |
 |   | 00:07.730 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_jotschi.java)| 21.0.1-open | [Johannes Schüth](https://github.com/jotschi) |  |
@@ -94,7 +103,7 @@ These are the results from running all entries into the challenge on eight cores
 |   | 00:08.489 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_gnabyl.java)| 21.0.1-graal | [Bang NGUYEN](https://github.com/gnabyl) |  |
 |   | 00:08.517 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_ags313.java)| 21.0.1-graal | [ags](https://github.com/ags313) | uses Unsafe |
 |   | 00:08.557 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_adriacabeza.java)| 21.0.1-graal | [Adrià Cabeza](https://github.com/adriacabeza) |  |
-|   | 00:08.622 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_kuduwa-keshavram.java)| 21.0.1-graal | [Keshavram Kuduwa](https://github.com/kuduwa-keshavram) |  |
+|   | 00:08.622 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_kuduwa_keshavram.java)| 21.0.1-graal | [Keshavram Kuduwa](https://github.com/kuduwa-keshavram) | uses Unsafe |
 |   | 00:08.752 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_anitasv.java)| 21.0.1-graal | [Anita SV](https://github.com/anitasv) |  |
 |   | 00:08.892 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_fatroom.java)| 21.0.1-open | [Roman Romanchuk](https://github.com/fatroom) |  |
 |   | 00:09.020 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_yemreinci.java)| 21.0.1-open | [yemreinci](https://github.com/yemreinci) |  |
@@ -113,12 +122,13 @@ These are the results from running all entries into the challenge on eight cores
 |   | 00:11.405 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_imrafaelmerino.java)| 21.0.1-graal | [Rafael Merino García](https://github.com/imrafaelmerino) |  |
 |   | 00:11.406 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_gabrielfoo.java)| 21.0.1-graal | [gabrielfoo](https://github.com/gabrielfoo) |  |
 |   | 00:11.433 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_jatingala.java)| 21.0.1-graal | [Jatin Gala](https://github.com/jatingala) |  |
-|   | 00:11.505 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_dmitry-midokura.java)| 21.0.1-open | [Dmitry Bufistov](https://github.com/dmitry-midokura) |  |
+|   | 00:11.505 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_bufistov.java)| 21.0.1-open | [Dmitry Bufistov](https://github.com/dmitry-midokura) | uses Unsafe |
 |   | 00:11.805 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_coolmineman.java)| 21.0.1-graal | [Cool_Mineman](https://github.com/coolmineman) |  |
 |   | 00:11.934 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_arjenvaneerde.java)| 21.0.1-open | [arjenvaneerde](https://github.com/arjenvaneerde) |  |
 |   | 00:12.220 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_richardstartin.java)| 21.0.1-open | [Richard Startin](https://github.com/richardstartin) |  |
 |   | 00:12.495 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_SamuelYvon.java)| 21.0.1-graal | [Samuel Yvon](https://github.com/SamuelYvon) | GraalVM native binary |
 |   | 00:12.568 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_MeanderingProgrammer.java)| 21.0.1-graal | [Vlad](https://github.com/MeanderingProgrammer) |  |
+|   | 00:12.736 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_anestoruk.java)| 21.0.1-open | [Andrzej Nestoruk](https://github.com/anestoruk) |  |
 |   | 00:12.800 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_yonatang.java)| java | [Yonatan Graber](https://github.com/yonatang) |  |
 |   | 00:13.013 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_thanhtrinity.java)| 21.0.1-graal | [Thanh Duong](https://github.com/thanhtrinity) |  |
 |   | 00:13.071 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_ianopolous.java)| 21.0.1-open | [Dr Ian Preston](https://github.com/ianopolous) |  |
@@ -128,8 +138,9 @@ These are the results from running all entries into the challenge on eight cores
 |   | 00:14.867 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_berry120.java)| 21.0.1-open | [Michael Berry](https://github.com/berry120) |  |
 |   | 00:15.662 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_semotpan.java)| 21.0.1-open | [Serghei Motpan](https://github.com/semotpan) |  |
 |   | 00:16.063 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_makohn.java)| 21.0.1-open | [Marek Kohn](https://github.com/makohn) |  |
+|   | 00:16.457 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_bytesfellow.java)| 21.0.1-open | [Aleksei](https://github.com/bytesfellow) |  |
 |   | 00:16.953 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_gauravdeshmukh.java)| 21.0.1-open | [Gaurav Anantrao Deshmukh](https://github.com/gauravdeshmukh) |  |
-|   | 00:17.179 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_jgrateron.java)| 21.0.1-open | [Jairo Graterón](https://github.com/jgrateron) |  |
+|   | 00:17.046 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_dkarampi.java)| 21.0.1-open | [Dimitris Karampinas](https://github.com/dkarampi) |  |
 |   | 00:17.490 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_kgeri.java)| 21.0.1-open | [Gergely Kiss](https://github.com/kgeri) |  |
 |   | 00:17.255 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_tkosachev.java)| 21.0.1-open | [tkosachev](https://github.com/tkosachev) |  |
 |   | 00:17.520 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_faridtmammadov.java)| 21.0.1-open | [Farid](https://github.com/faridtmammadov) |  |
@@ -143,23 +154,27 @@ These are the results from running all entries into the challenge on eight cores
 |   | 00:19.357 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_truelive.java)| 21.0.1-graalce | [Roman Schweitzer](https://github.com/truelive) |  |
 |   | 00:20.691 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_Kidlike.java)| 21.0.1-graal | [Kidlike](https://github.com/Kidlike) | GraalVM native binary |
 |   | 00:21.989 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_couragelee.java)| 21.0.1-open | [couragelee](https://github.com/couragelee) |  |
+|   | 00:22.188 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_jgrateron.java)| 21.0.1-open | [Jairo Graterón](https://github.com/jgrateron) |  |
+|   | 00:22.334 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_albertoventurini.java)| 21.0.1-open | [Alberto Venturini](https://github.com/albertoventurini) |  |
 |   | 00:22.457 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_rby.java)| 21.0.1-open | [Ramzi Ben Yahya](https://github.com/rby) |  |
 |   | 00:22.471 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_0xshivamagarwal.java)| 21.0.1-open | [Shivam Agarwal](https://github.com/0xshivamagarwal) |  |
+|   | 00:24.550 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_PanagiotisDrakatos.java)| 21.0.1-graal | [PanosDR](https://github.com/PanagiotisDrakatos) | GraalVM native binary |
 |   | 00:24.986 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_kumarsaurav123.java)| 21.0.1-open | [kumarsaurav123](https://github.com/kumarsaurav123) |  |
 |   | 00:26.500 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_felix19350.java)| 21.0.1-open | [Bruno Félix](https://github.com/felix19350) |  |
 |   | 00:28.381 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_bjhara.java)| 21.0.1-open | [Hampus](https://github.com/bjhara) |  |
 |   | 00:29.741 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_xpmatteo.java)| 21.0.1-open | [Matteo Vaccari](https://github.com/xpmatteo) |  |
-|   | 00:30.635 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_albertoventurini.java)| 21.0.1-open | [Alberto Venturini](https://github.com/albertoventurini) |  |
 |   | 00:32.018 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_padreati.java)| 21.0.1-open | [Aurelian Tutuianu](https://github.com/padreati) |  |
 |   | 00:34.388 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_twobiers.java)| 21.0.1-tem | [Tobi](https://github.com/twobiers) |  |
 |   | 00:35.875 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_MahmoudFawzyKhalil.java)| 21.0.1-open | [MahmoudFawzyKhalil](https://github.com/MahmoudFawzyKhalil) |  |
 |   | 00:36.180 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_hchiorean.java)| 21.0.1-open | [Horia Chiorean](https://github.com/hchiorean) |  |
+|   | 00:36.424 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_manishgarg90.java)| java | [Manish Garg](https://github.com/manishgarg90) |  |
 |   | 00:38.340 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_AbstractKamen.java)| 21.0.1-open | [AbstractKamen](https://github.com/AbstractKamen) |  |
 |   | 00:41.982 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_criccomini.java)| 21.0.1-open | [Chris Riccomini](https://github.com/criccomini) |  |
 |   | 00:42.893 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_javamak.java)| 21.0.1-open | [javamak](https://github.com/javamak) |  |
 |   | 00:46.597 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_maeda6uiui.java)| 21.0.1-open | [Maeda-san](https://github.com/maeda6uiui) |  |
 |   | 00:58.811 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_Ujjwalbharti.java)| 21.0.1-open | [Ujjwal Bharti](https://github.com/Ujjwalbharti) |  |
-|   | 01:05.094 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_mudit-saxena.java)| 21.0.1-open | [Mudit Saxena](https://github.com/mudit-saxena) |  |
+|   | 01:05.094 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_muditsaxena.java)| 21.0.1-open | [Mudit Saxena](https://github.com/mudit-saxena) |  |
+|   | 01:05.979 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_dqhieuu.java)| 21.0.1-graal | [Hieu Dao Quang](https://github.com/dqhieuu) |  |
 |   | 01:06.790 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_khmarbaise.java)| 21.0.1-open | [Karl Heinz Marbaise](https://github.com/khmarbaise) |  |
 |   | 01:06.944 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_santanu.java)| 21.0.1-open | [santanu](https://github.com/santanu) |  |
 |   | 01:07.014 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_pedestrianlove.java)| 21.0.1-open | [pedestrianlove](https://github.com/pedestrianlove) |  |
@@ -171,6 +186,7 @@ These are the results from running all entries into the challenge on eight cores
 |   | 01:14.815 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_anandmattikopp.java)| 21.0.1-open | [twohardthings](https://github.com/anandmattikopp) |  |
 |   | 01:25.801 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_ivanklaric.java)| 21.0.1-open | [ivanklaric](https://github.com/ivanklaric) |  |
 |   | 01:33.594 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_gnmathur.java)| 21.0.1-open | [Gaurav Mathur](https://github.com/gnmathur) |  |
+|   | 01:53.208 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_mahadev_k.java)| java | [Mahadev K](https://github.com/mahadev-k) |  |
 |   | 01:56.607 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_abfrmblr.java)| 21.0.1-open | [Abhilash](https://github.com/abfrmblr) |  |
 |   | 03:43.521 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_yehwankim23.java)| 21.0.1-open | [김예환 Ye-Hwan Kim (Sam)](https://github.com/yehwankim23) |  |
 |   | 03:59.760 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_fragmede.java)| 21.0.1-open | [Samson](https://github.com/fragmede) |  |
@@ -225,27 +241,33 @@ Here are the results from running the top 15 entries (as of commit [2c26b511](ht
 #### 10K Key Set
 
 The 1BRC challenge data set contains 413 distinct weather stations, whereas the rules allow for 10,000 different station names to occur.
-Here are the results from running the top 15 entries (as of commit [2c26b511](https://github.com/gunnarmorling/1brc/commit/2c26b511e741f4d96a51dda831001946ea27a591)) against 1,000,000,000 measurement values across 10K stations (created via _./create_measurements3.sh 1000000000_),
+Here are the results from running the top 15 entries (as of commit [f1209f2b](https://github.com/gunnarmorling/1brc/commit/f1209f2ba8e286474f08762f9e4f161981e39cee), Jan 27) against 1,000,000,000 measurement values across 10K stations (created via _./create_measurements3.sh 1000000000_),
 using eight cores on the evaluation machine:
 
 | # | Result (m:s.ms) | Implementation     | JDK | Submitter     | Notes     |
 |---|-----------------|--------------------|-----|---------------|-----------|
-| 1 | 00:04.589 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_artsiomkorzun.java)| 21.0.1-graal | [Artsiom Korzun](https://github.com/artsiomkorzun) |  |
-| 2 | 00:05.296 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_royvanrijn.java)| 21.0.1-graal | [Roy van Rijn](https://github.com/royvanrijn) | GraalVM native binary |
-| 3 | 00:05.308 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_thomaswue.java)| 21.0.1-graal | [Thomas Wuerthinger](https://github.com/thomaswue) | GraalVM native binary |
-|   | 00:05.881 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_mtopolnik.java)| 21.0.1-graal | [Marko Topolnik](https://github.com/mtopolnik) |  |
-|   | 00:07.120 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_JamalMulla.java)| 21.0.1-graal | [Jamal Mulla](https://github.com/JamalMulla) |  |
-|   | 00:07.915 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_cliffclick.java)| 21.0.1-open | [Cliff Click](https://github.com/cliffclick) |  |
-|   | 00:08.979 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_yavuztas.java)| 21.0.1-graal | [Yavuz Tas](https://github.com/yavuztas) |  |
-|   | 00:10.052 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_merykittyunsafe.java)| 21.0.1-open | [merykittyunsafe](https://github.com/merykittyunsafe) |  |
-|   | 00:10.134 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_vaidhy.java)| 21.0.1-graal | [Vaidhy Mayilrangam](https://github.com/vaidhy) |  |
-|   | 00:10.599 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_ebarlas.java)| 21.0.1-graal | [Elliot Barlas](https://github.com/ebarlas) |  |
-|   | 00:12.750 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_merykitty.java)| 21.0.1-open | [Quan Anh Mai](https://github.com/merykitty) |  |
+| 1 | 00:02.741 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_artsiomkorzun.java)| 21.0.2-graal | [Artsiom Korzun](https://github.com/artsiomkorzun) | GraalVM native binary, uses Unsafe |
+| 2 | 00:04.001 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_royvanrijn.java)| 21.0.2-graal | [Roy van Rijn](https://github.com/royvanrijn) | GraalVM native binary, uses Unsafe |
+| 3 | 00:04.516 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_thomaswue.java)| 21.0.2-graal | [Thomas Wuerthinger](https://github.com/thomaswue), [Quan Anh Mai](https://github.com/merykitty), [Alfonso² Peterssen](https://github.com/mukel) | GraalVM native binary, uses Unsafe |
+|   | 00:04.816 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_vemanaNonIdiomatic.java)| 21.0.1-graal | [Subrahmanyam](https://github.com/vemana) | uses Unsafe |
+|   | 00:04.848 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_jerrinot.java)| 21.0.1-graal | [Jaromir Hamala](https://github.com/jerrinot) | uses Unsafe |
+|   | 00:05.127 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_mtopolnik.java)| 21.0.1-graal | [Marko Topolnik](https://github.com/mtopolnik) | uses Unsafe |
+|   | 00:05.614 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_gonix.java)| 21.0.1-open | [gonix](https://github.com/gonix) |  |
+|   | 00:05.670 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_abeobk.java)| 21.0.2-graal | [Van Phu DO](https://github.com/abeobk) | GraalVM native binary, uses Unsafe |
+|   | 00:06.111 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_ebarlas.java)| 21.0.1-graal | [Elliot Barlas](https://github.com/ebarlas) | uses Unsafe |
+|   | 00:06.929 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_JamalMulla.java)| 21.0.1-graal | [Jamal Mulla](https://github.com/JamalMulla) | uses Unsafe |
+|   | 00:09.018 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_yavuztas.java)| 21.0.1-graal | [Yavuz Tas](https://github.com/yavuztas) | uses Unsafe |
+|   | 00:10.038 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_merykittyunsafe.java)| 21.0.1-open | [merykittyunsafe](https://github.com/merykittyunsafe) | uses Unsafe |
+|   | 00:10.197 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_yourwass.java)| 21.0.1-open | [yourwass](https://github.com/yourwass) | uses Unsafe |
+|   | 00:12.567 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_jparera.java)| 21.0.1-open | [Juan Parera](https://github.com/jparera) |  |
+|   | 00:12.602 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_merykitty.java)| 21.0.1-open | [Quan Anh Mai](https://github.com/merykitty) |  |
+|   | 00:15.896 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_jincongho.java)| 21.0.1-open | [Jin Cong Ho](https://github.com/jincongho) | uses Unsafe |
+|   | 00:18.064 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_hundredwatt.java)| 21.0.1-graal | [Jason Nochlin](https://github.com/hundredwatt) |  |
+|   | 00:20.374 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_roman-r-m.java)| 21.0.1-graal | [Roman Musin](https://github.com/roman-r-m) | GraalVM native binary |
 |   | ---       | | | | |
-|   | DNF | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_hundredwatt.java)| 21.0.1-graal | [Jason Nochlin](https://github.com/hundredwatt) | Didn't complete in 60 sec |
-|   | DNF | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_abeobk.java)| 21.0.1-open | [Van Phu DO](https://github.com/abeobk) | Didn't complete in 60 sec |
+|   | DNF | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_JesseVanRooy.java)| 21.0.1-open | [JesseVanRooy](https://github.com/JesseVanRooy) | Incorrect output |
 |   | DNF | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_iziamos.java)| 21.0.1-open | [John Ziamos](https://github.com/iziamos) | Didn't complete in 60 sec |
-|   | DNF | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_obourgain.java)| 21.0.1-open | [Olivier Bourgain](https://github.com/obourgain) | Failed with java.lang.OutOfMemoryError: Java heap space |
+|   | DNF | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_zerninv.java)| 21.0.1-graal | [zerninv](https://github.com/zerninv) | Seg fault |
 
 ## Prerequisites
 
@@ -406,6 +428,7 @@ A: It's the abbreviation of the project name: **One** **B**illion **R**ow **C**h
 
 A list of external resources such as blog posts and videos, discussing 1BRC and specific implementations:
 
+* [The One Billion Row Challenge Shows That Java Can Process a One Billion Rows File in Two Seconds ](https://www.infoq.com/news/2024/01/1brc-fast-java-processing), by Olimpiu Pop (interview)
 * [Cliff Click discussing his 1BRC solution on the Coffee Compiler Club](https://www.youtube.com/watch?v=NJNIbgV6j-Y) (video)
 * [1️⃣🐝🏎️🦆 (1BRC in SQL with DuckDB)](https://rmoff.net/2024/01/03/1%EF%B8%8F%E2%83%A3%EF%B8%8F-1brc-in-sql-with-duckdb/), by Robin Moffatt (blog post)
 * [1 billion rows challenge in PostgreSQL and ClickHouse](https://ftisiot.net/posts/1brows/), by Francesco Tisiot (blog post)
@@ -417,6 +440,8 @@ A list of external resources such as blog posts and videos, discussing 1BRC and 
 * [The One Billion Row Challenge - .NET Edition](https://dev.to/mergeconflict/392-the-one-billion-row-challenge-net-edition), by Frank A. Krueger (podcast)
 * [One Billion Row Challenge](https://curiouscoding.nl/posts/1brc/), by Ragnar Groot Koerkamp (blog post)
 * [ClickHouse and The One Billion Row Challenge](https://clickhouse.com/blog/clickhouse-one-billion-row-challenge), by Dale McDiarmid (blog post)
+* [One Billion Row Challenge & Azure Data Explorer](https://nielsberglund.com/post/2024-01-28-one-billion-row-challenge--azure-data-explorer/), by Niels Berglund (blog post)
+* [One Billion Row Challenge - view from sidelines](https://www.chashnikov.dev/post/one-billion-row-challenge-view-from-sidelines), by Leo Chashnikov (blog post)
 
 ## Sponsorship
 
