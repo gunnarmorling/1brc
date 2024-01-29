@@ -58,7 +58,7 @@ public class CalculateAverage_godofwharf {
             -1, -1, -1, -1, -1, -1, -1, -1, 0, 1,
             2, 3, 4, 5, 6, 7, 8, 9, -1, -1 };
     private static final int MAX_STR_LEN = 108;
-    private static final int DEFAULT_HASH_TBL_SIZE = 4096;
+    private static final int DEFAULT_HASH_TBL_SIZE = 2048;
     private static final int DEFAULT_PAGE_SIZE = 8_388_608; // 8 MB
     private static final int PAGE_SIZE = Integer.parseInt(System.getProperty("pageSize", STR."\{DEFAULT_PAGE_SIZE}"));
 
@@ -411,6 +411,7 @@ public class CalculateAverage_godofwharf {
 
         public State() {
             this.state = new HashMap<>(DEFAULT_HASH_TBL_SIZE);
+            // insert a DUMMY key to prime the hashmap for usage
             AggregationKey dummy = new AggregationKey("DUMMY".getBytes(UTF_8), -1);
             this.state.put(dummy, null);
             this.state.remove(dummy);

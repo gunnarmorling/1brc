@@ -17,10 +17,9 @@
 package dev.morling.onebrc;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 public class HashTest {
     final static List<CreateMeasurements2.WeatherStation> stations = Arrays.asList(
@@ -463,19 +462,29 @@ public class HashTest {
         // }
         // }
 
-        int size = 4096;
-        int collisions = 0;
-        Set<Integer> seen = new HashSet<>();
+        int size = 1<<13;
+        Map<Integer, Integer> seen = new HashMap<>(size);
         for (CreateMeasurements2.WeatherStation w : stations) {
             byte[] station = w.id.getBytes(StandardCharsets.UTF_8);
             int h1 = hashcode1(station);
-            int h2 = (h1 & (size - 1)) ^ (h1 >>> 16);
-            if (seen.contains(h2)) {
-                collisions++;
+            int h2 = ((size - 1) & (h1 ^ (h1 >>> 16)));
+            //int h2 = (size - 1) & h1;
+            System.out.println("Hash key for station: %s is h1 = %d, h2 = %d".formatted(w.id, h1, h2));
+            if (seen.containsKey(h2)) {
+                System.out.println("Collision detected: %d".formatted(h2));
+                seen.put(h2, seen.get(h2) + 1);
+            } else {
+                seen.put(h2, 1);
             }
-            seen.add(h2);
         }
+        int collisions = seen.entrySet()
+                .stream()
+                .filter(entry -> entry.getValue() >= 2)
+                .mapToInt(entry -> entry.getValue() - 1)
+                .sum();
         System.out.println("Number of collisions = %d, pct = %f%%%n".formatted(collisions, collisions * 100.0 / stations.size()));
+        System.out.println("Collisions by key: %s".formatted(seen.entrySet().stream().filter(entry -> entry.getValue() >= 2)
+                .collect(Collectors.toMap(entry -> entry.getKey(), entry -> entry.getValue()))));
     }
 
     public static int hashcode1(final byte[] b) {
