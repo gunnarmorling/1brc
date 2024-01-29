@@ -363,8 +363,8 @@ public class CalculateAverage_godofwharf {
         private static int[] computeHashCodes(final byte[] b) {
             // for perfect hashing, set seed as -2 and hash map size to 1<<14
             int[] res = new int[2];
-            res[0] = Arrays.hashCode(b);
-            //res[0] = hashCode1(b);
+            //res[0] = Arrays.hashCode(b);
+            res[0] = hashCode1(b);
             // res[1] = hashCode2(b);
             return res;
         }
