@@ -19,6 +19,7 @@ import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
 
+import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
@@ -41,16 +42,16 @@ import static java.lang.foreign.ValueLayout.*;
  *
  * Timings on 4 core i7-7500U CPU @ 2.70GHz:
  * average_baseline: 4m48s
- * ianopolous:         14s
+ * ianopolous:         13.8s
 */
 public class CalculateAverage_ianopolousfast {
 
     public static final int MAX_LINE_LENGTH = 107;
     public static final int MAX_STATIONS = 1 << 14;
     private static final OfLong LONG_LAYOUT = JAVA_LONG_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
-    private static final VectorSpecies<Byte> BYTE_SPECIES = ByteVector.SPECIES_PREFERRED.length() >= 32
-            ? ByteVector.SPECIES_256
-            : ByteVector.SPECIES_128;
+    private static final VectorSpecies<Byte> BYTE_SPECIES = ByteVector.SPECIES_PREFERRED.length() >= 16
+            ? ByteVector.SPECIES_128
+            : ByteVector.SPECIES_64;
 
     public static void main(String[] args) throws Exception {
         Arena arena = Arena.global();
@@ -107,22 +108,15 @@ public class CalculateAverage_ianopolousfast {
     public static Stat dedupeStation(long start, long end, long hash, MemorySegment buffer, Stat[] stations) {
         int index = hashToIndex(hash, MAX_STATIONS);
         Stat match = stations[index];
-        if (match == null) {
-            Stat res = createStation(start, end, buffer);
-            stations[index] = res;
-            return res;
+        while (match != null) {
+            if (matchingStationBytes(start, end, buffer, match))
+                return match;
+            index = (index + 1) % stations.length;
+            match = stations[index];
         }
-        else {
-            while (match != null) {
-                if (matchingStationBytes(start, end, buffer, match))
-                    return match;
-                index = (index + 1) % stations.length;
-                match = stations[index];
-            }
-            Stat res = createStation(start, end, buffer);
-            stations[index] = res;
-            return res;
-        }
+        Stat res = createStation(start, end, buffer);
+        stations[index] = res;
+        return res;
     }
 
     static long maskHighBytes(long d, int nbytes) {
@@ -138,7 +132,7 @@ public class CalculateAverage_ianopolousfast {
         if (keySize <= 8) {
             first8 = maskHighBytes(first8, keySize & 0x07);
         }
-        else if (keySize <= 16) {
+        else if (keySize < 16) {
             second8 = maskHighBytes(buffer.get(LONG_LAYOUT, lineStart + 8), keySize & 0x07);
         }
         else if (keySize == BYTE_SPECIES.vectorByteSize()) {
@@ -188,7 +182,7 @@ public class CalculateAverage_ianopolousfast {
         if (keySize <= 8) {
             first8 = maskHighBytes(first8, keySize & 0x07);
         }
-        else if (keySize <= 16) {
+        else if (keySize < 16) {
             second8 = maskHighBytes(buffer.get(LONG_LAYOUT, lineStart + 8), keySize & 0x07);
         }
         else if (keySize == BYTE_SPECIES.vectorByteSize()) {

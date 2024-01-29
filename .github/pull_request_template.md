@@ -1,4 +1,6 @@
 #### Check List:
+
+- [ ] You have run `./mvnw verify` and the project builds successfully
 - [ ] Tests pass (`./test.sh <username>` shows no differences between expected and actual outputs)
 - [ ] All formatting changes by the build are committed
 - [ ] Your launch script is named `calculate_average_<username>.sh` (make sure to match casing of your GH user name) and is executable
