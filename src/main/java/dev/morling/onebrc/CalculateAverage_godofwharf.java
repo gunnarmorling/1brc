@@ -245,53 +245,26 @@ public class CalculateAverage_godofwharf {
             int loopBound = PREFERRED_SPECIES.loopBound(pageLen);
             int i = 0;
             int j = 0;
-            // int[] positions = new int[64];
             while (j < loopBound) {
                 Vector<Byte> vec = ByteVector.fromArray(PREFERRED_SPECIES, page, j);
                 VectorMask<Byte> mask = NEW_LINE_VEC.eq(vec);
-                int bitCount = mask.trueCount();
+                long res = mask.toLong();
                 int k = 0;
-                int idx = 0;
-                while (idx < loopLength) {
-                    idx = mask.firstTrue();
+                int bitCount = Long.bitCount(res);
+                while (res > 0) {
+                    int idx = Long.numberOfTrailingZeros(res);
                     ret.offsets[i + k] = j + idx;
                     k++;
-                    mask = mask.indexInRange(-(idx + 1), loopLength);
-                    idx = mask.firstTrue();
+                    res &= (res - 1);
+                    idx = Long.numberOfTrailingZeros(res);
                     ret.offsets[i + k] = j + idx;
                     k++;
-                    mask = mask.indexInRange(-(idx + 1), loopLength);
-                    idx = mask.firstTrue();
+                    res &= (res - 1);
+                    idx = Long.numberOfTrailingZeros(res);
                     ret.offsets[i + k] = j + idx;
                     k++;
-                    mask = mask.indexInRange(-(idx + 1), loopLength);
+                    res &= (res - 1);
                 }
-//                long res = NEW_LINE_VEC.eq(vec).toLong();
-//                int k = 0;
-//                int bitCount = Long.bitCount(res);
-//                while (res > 0) {
-//                    int idx = Long.numberOfTrailingZeros(res);
-//                    // positions[k++] = j + idx;
-//                    ret.offsets[i + k] = j + idx;
-//                    k++;
-//                    res &= (res - 1);
-//                    idx = Long.numberOfTrailingZeros(res);
-//                    // positions[k++] = j + idx;
-//                    ret.offsets[i + k] = j + idx;
-//                    k++;
-//                    res &= (res - 1);
-//                    idx = Long.numberOfTrailingZeros(res);
-//                    // positions[k++] = j + idx;
-//                    ret.offsets[i + k] = j + idx;
-//                    k++;
-//                    res &= (res - 1);
-//                    // idx = Long.numberOfTrailingZeros(res);
-//                    // // positions[k++] = j + idx;
-//                    // ret.offsets[i + k] = j + idx;
-//                    // k++;
-//                    // res &= (res - 1);
-//                }
-                // System.arraycopy(positions, 0, ret.offsets, i, bitCount);
                 j += loopLength;
                 i += bitCount;
             }
