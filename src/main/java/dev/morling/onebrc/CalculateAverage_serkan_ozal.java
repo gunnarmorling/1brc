@@ -59,8 +59,9 @@ public class CalculateAverage_serkan_ozal {
             ? ByteVector.SPECIES_128
             : ByteVector.SPECIES_64;
     private static final int BYTE_SPECIES_SIZE = BYTE_SPECIES.vectorByteSize();
-
+    private static final MemorySegment ALL = MemorySegment.NULL.reinterpret(Long.MAX_VALUE);
     private static final ByteOrder NATIVE_BYTE_ORDER = ByteOrder.nativeOrder();
+
     private static final char NEW_LINE_SEPARATOR = '\n';
     private static final char KEY_VALUE_SEPARATOR = ';';
     private static final int MAX_LINE_LENGTH = 128;
@@ -341,7 +342,7 @@ public class CalculateAverage_serkan_ozal {
 
             // Read and process region - main
             for (regionPtr = regionStart; regionPtr < regionMainLimit;) {
-                regionPtr = doProcessLine(region, regionAddress, regionPtr, vectorSize);
+                regionPtr = doProcessLine(regionPtr, vectorSize);
             }
 
             // Read and process region - tail
@@ -358,13 +359,14 @@ public class CalculateAverage_serkan_ozal {
             }
         }
 
-        private long doProcessLine(MemorySegment region, long regionAddress, long regionPtr, int vectorSize) {
+        private long doProcessLine(long regionPtr, int vectorSize) {
             // Find key/value separator
             ////////////////////////////////////////////////////////////////////////////////////////////////////////
             long keyStartPtr = regionPtr;
 
             // Vectorized search for key/value separator
-            ByteVector keyVector = ByteVector.fromMemorySegment(BYTE_SPECIES, region, regionPtr - regionAddress, NATIVE_BYTE_ORDER);
+            ByteVector keyVector = ByteVector.fromMemorySegment(BYTE_SPECIES, ALL, regionPtr, NATIVE_BYTE_ORDER);
+
             int keyLength = keyVector.compare(VectorOperators.EQ, KEY_VALUE_SEPARATOR).firstTrue();
             // Check whether key/value separator is found in the first vector (city name is <= vector size)
             if (keyLength != vectorSize) {
