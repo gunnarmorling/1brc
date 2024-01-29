@@ -241,29 +241,68 @@ public class CalculateAverage_godofwharf {
         private static SearchResult findNewLinesVectorized(final byte[] page,
                                                            final int pageLen) {
             SearchResult ret = new SearchResult(new int[pageLen / 5], 0);
-            int loopLength = PREFERRED_SPECIES.length();
             int loopBound = PREFERRED_SPECIES.loopBound(pageLen);
             int i = 0;
             int j = 0;
             while (j < loopBound) {
-                Vector<Byte> vec = ByteVector.fromArray(PREFERRED_SPECIES, page, j);
-                VectorMask<Byte> mask = NEW_LINE_VEC.eq(vec);
-                int res = (int) (mask.toLong() >> 31);
+                Vector<Byte> v1 = ByteVector.fromArray(PREFERRED_SPECIES, page, j);
+                Vector<Byte> v2 = ByteVector.fromArray(PREFERRED_SPECIES, page, j + PREFERRED_SPECIES.length());
+                Vector<Byte> v3 = ByteVector.fromArray(PREFERRED_SPECIES, page, j + PREFERRED_SPECIES.length() * 2);
+                Vector<Byte> v4 = ByteVector.fromArray(PREFERRED_SPECIES, page, j + PREFERRED_SPECIES.length() * 3);
+                VectorMask<Byte> m1 = NEW_LINE_VEC.eq(v1);
+                VectorMask<Byte> m2 = NEW_LINE_VEC.eq(v2);
+                VectorMask<Byte> m3 = NEW_LINE_VEC.eq(v3);
+                VectorMask<Byte> m4 = NEW_LINE_VEC.eq(v4);
+                long r1 = m1.toLong() | (m2.toLong() << 32);
+                long r2 = m3.toLong() | (m4.toLong() << 32);
                 int k = i;
-                int bitCount = Integer.bitCount(res);
-                while (res > 0) {
-                    int idx = Integer.numberOfTrailingZeros(res);
+                int b1 = Long.bitCount(r1);
+                int b2 = Long.bitCount(r2);
+                while (r1 > 0) {
+                    int idx = Long.numberOfTrailingZeros(r1);
                     ret.offsets[k++] = j + idx;
-                    res &= (res - 1);
-                    idx = Integer.numberOfTrailingZeros(res);
+                    r1 &= (r1 - 1);
+                    idx = Long.numberOfTrailingZeros(r1);
                     ret.offsets[k++] = j + idx;
-                    res &= (res - 1);
-                    idx = Integer.numberOfTrailingZeros(res);
+                    r1 &= (r1 - 1);
+                    idx = Long.numberOfTrailingZeros(r1);
                     ret.offsets[k++] = j + idx;
-                    res &= (res - 1);
+                    r1 &= (r1 - 1);
+                    idx = Long.numberOfTrailingZeros(r1);
+                    ret.offsets[k++] = j + idx;
+                    r1 &= (r1 - 1);
+                    idx = Long.numberOfTrailingZeros(r1);
+                    ret.offsets[k++] = j + idx;
+                    r1 &= (r1 - 1);
+                    idx = Long.numberOfTrailingZeros(r1);
+                    ret.offsets[k++] = j + idx;
+                    r1 &= (r1 - 1);
                 }
-                j += loopLength;
-                i += bitCount;
+                j += PREFERRED_SPECIES.length() * 2;
+                i += b1;
+                k = i;
+                while (r2 > 0) {
+                    int idx = Long.numberOfTrailingZeros(r2);
+                    ret.offsets[k++] = j + idx;
+                    r2 &= (r2 - 1);
+                    idx = Long.numberOfTrailingZeros(r2);
+                    ret.offsets[k++] = j + idx;
+                    r2 &= (r2 - 1);
+                    idx = Long.numberOfTrailingZeros(r2);
+                    ret.offsets[k++] = j + idx;
+                    r2 &= (r2 - 1);
+                    idx = Long.numberOfTrailingZeros(r2);
+                    ret.offsets[k++] = j + idx;
+                    r2 &= (r2 - 1);
+                    idx = Long.numberOfTrailingZeros(r2);
+                    ret.offsets[k++] = j + idx;
+                    r2 &= (r2 - 1);
+                    idx = Long.numberOfTrailingZeros(r2);
+                    ret.offsets[k++] = j + idx;
+                    r2 &= (r2 - 1);
+                }
+                j += PREFERRED_SPECIES.length() * 2;
+                i += b2;
             }
 
             // tail loop
