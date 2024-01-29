@@ -15,5 +15,12 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="--enable-preview --add-modules=jdk.incubator.vector -XX:-TieredCompilation"
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_giovannicuccu
+if [ -f target/CalculateAverage_JaimePolidura_image ]; then
+	target/CalculateAverage_JaimePolidura_image
+else
+	echo "Native image not found. Running in JVM mode"
+	JAVA_OPTS="--enable-preview -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -XX:+UseTransparentHugePages -XX:+TrustFinalNonStaticFields"
+	java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_JaimePolidura
+fi
+
+

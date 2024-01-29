@@ -18,9 +18,11 @@
 source "$HOME/.sdkman/bin/sdkman-init.sh"
 sdk use java 21.0.2-graal 1>&2
 
-# ./mvnw clean verify removes target/ and will re-trigger native image creation.
-if [ ! -f target/CalculateAverage_thomaswue_image ]; then
-    NATIVE_IMAGE_OPTS="--gc=epsilon -O3 -H:-GenLoopSafepoints -march=native --enable-preview -H:InlineAllBonus=10 -H:-ParseRuntimeOptions --initialize-at-build-time=dev.morling.onebrc.CalculateAverage_thomaswue\$Scanner"
-    # Use -H:MethodFilter=CalculateAverage_thomaswue.* -H:Dump=:2 -H:PrintGraph=Network for IdealGraphVisualizer graph dumping.
-    native-image $NATIVE_IMAGE_OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o target/CalculateAverage_thomaswue_image dev.morling.onebrc.CalculateAverage_thomaswue
+if [ ! -f target/CalculateAverage_jonathan-aotearoa_image ]; then
+    # Enable preview features and disable system assertions.
+    JAVA_OPTS="--enable-preview -dsa"
+    # Use the no-op GC.
+    # Enable CPU features (-march=native) and level-3 optimisations (-O3)
+    NATIVE_IMAGE_OPTS="--initialize-at-build-time=dev.morling.onebrc.CalculateAverage_jonathanaotearoa --gc=epsilon -O3 -march=native --strict-image-heap $JAVA_OPTS"
+    native-image $NATIVE_IMAGE_OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o target/CalculateAverage_jonathan-aotearoa_image dev.morling.onebrc.CalculateAverage_jonathanaotearoa
 fi

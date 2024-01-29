@@ -55,7 +55,7 @@ public class CreateMeasurements3 {
                 out.write(station.name);
                 out.write(';');
                 out.write(Double.toString(Math.round(temp * 10.0) / 10.0));
-                out.newLine();
+                out.write('\n');
                 if (i % 50_000_000 == 0) {
                     System.out.printf("Wrote %,d measurements in %,d ms%n", i, System.currentTimeMillis() - start);
                 }
