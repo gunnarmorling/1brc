@@ -139,8 +139,9 @@ public class CalculateAverage_vaidhy<I, T> {
         private static boolean compareEntryKeys(long startAddress, long endAddress, HashEntry entry) {
             long entryIndex = entry.startAddress;
             long lookupIndex = startAddress;
+            long endAddressStop = endAddress - 7;
 
-            for (; (lookupIndex + 7) < endAddress; lookupIndex += 8) {
+            for (; lookupIndex < endAddressStop; lookupIndex += 8) {
                 if (UNSAFE.getLong(entryIndex) != UNSAFE.getLong(lookupIndex)) {
                     return false;
                 }
@@ -377,7 +378,6 @@ public class CalculateAverage_vaidhy<I, T> {
 
         boolean skip = offset != 0;
         for (long position = chunkStart; position < stopPoint;) {
-
             if (skip) {
                 long data = UNSAFE.getLong(position);
                 long newLineMask = findByteOctet(data, NEW_LINE_DETECTION);
