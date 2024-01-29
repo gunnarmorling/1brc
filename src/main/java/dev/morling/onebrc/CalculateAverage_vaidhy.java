@@ -71,12 +71,11 @@ public class CalculateAverage_vaidhy<I, T> {
 
             if (hashEntry == hash) {
                 HashEntry entry = entries[i];
-                if (entry.suffix == suffix) {
-                    if (entry.keyLength == lookupLength) {
-                        boolean found = lookupLength <= 8 || compareEntryKeys(startAddress, endAddress, entry);
-                        if (found) {
-                            return entry.value;
-                        }
+                if (entry.keyLength == lookupLength) {
+                    boolean found = lookupLength <= 8 ||
+                            (entry.suffix == suffix && compareEntryKeys(startAddress, endAddress, entry));
+                    if (found) {
+                        return entry.value;
                     }
                 }
             }
