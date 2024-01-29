@@ -32,6 +32,8 @@ public class CalculateAverage_ericxiao {
 
     private static final String FILE = "./measurements.txt";
 
+    private static final int MAP_SIZE = 2 << 14; // ceiling(log(10k) / log(2))
+
     private static class Station {
         private String station;
         private int min;
@@ -56,7 +58,7 @@ public class CalculateAverage_ericxiao {
             this.firstRead = firstRead;
         }
 
-        private final Station[] stations = new Station[10000];
+        private final Station[] stations = new Station[MAP_SIZE];
 
         private static Unsafe initUnsafe() {
             try {
@@ -103,7 +105,7 @@ public class CalculateAverage_ericxiao {
             // System.out.println("stop");
             // }
 
-            int stationHash = (int) (Math.abs(hash) % 10000);
+            int stationHash = (int) (Math.abs(hash) % MAP_SIZE);
             // Insert / Update Map
             if (stations[stationHash] == null) {
                 Station station = new Station();
@@ -289,7 +291,7 @@ public class CalculateAverage_ericxiao {
                 Station[] mapA = results.getFirst();
                 for (int i = 1; i < numThreads; ++i) {
                     Station[] currMap = results.get(i);
-                    for (int j = 0; j < 10000; j++) {
+                    for (int j = 0; j < MAP_SIZE; j++) {
                         if (currMap[j] != null) {
                             if (mapA[j] != null) {
                                 mapA[j].min = Math.min(mapA[j].min, currMap[j].min);
