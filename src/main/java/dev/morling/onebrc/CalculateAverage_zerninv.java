@@ -258,10 +258,12 @@ public class CalculateAverage_zerninv {
         private void calcLastLine(long offset) {
             long cityOffset = offset;
             byte cityNameSize = 0;
+            long lastBytes = 0;
             int hashCode = 0;
             byte b;
 
             while ((b = UNSAFE.getByte(offset++)) != ';') {
+                lastBytes = (lastBytes << 8) | b;
                 hashCode = hashCode * 31 + b;
                 cityNameSize++;
             }
@@ -285,7 +287,7 @@ public class CalculateAverage_zerninv {
                 word = (word >>> 8) | (UNSAFE.getByte(offset) << 24);
                 temperature = ZERO * 111 - ((word & BYTE_MASK) * 100 + ((word >>> 8) & BYTE_MASK) * 10 + ((word >>> 24) & BYTE_MASK));
             }
-            container.put(cityOffset, cityNameSize, Long.hashCode(hashCode), 0, (short) temperature);
+            container.put(cityOffset, cityNameSize, Long.hashCode(hashCode), lastBytes, (short) temperature);
         }
 
         private void calcFast(long offset, long end) {
