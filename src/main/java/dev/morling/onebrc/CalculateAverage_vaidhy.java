@@ -63,7 +63,8 @@ public class CalculateAverage_vaidhy<I, T> {
         public HashEntry find(long startAddress, long endAddress, long hash, long suffix) {
             int len = entries.length;
             int h = Long.hashCode(hash);
-            int i = (h ^ (h >> twoPow)) & (len - 1);
+            int initialIndex = (h ^ (h >> twoPow)) & (len - 1);
+            int i = initialIndex;
             long lookupLength = endAddress - startAddress;
 
             long hashEntry = hashes[i];
@@ -96,6 +97,10 @@ public class CalculateAverage_vaidhy<I, T> {
                 i = 0;
             }
 
+            if (i == initialIndex) {
+                return null;
+            }
+
             do {
                 hashEntry = hashes[i];
                 if (hashEntry == 0) {
@@ -125,7 +130,7 @@ public class CalculateAverage_vaidhy<I, T> {
                 if (i == len) {
                     i = 0;
                 }
-            } while (i != hash);
+            } while (i != initialIndex);
             return null;
         }
 
