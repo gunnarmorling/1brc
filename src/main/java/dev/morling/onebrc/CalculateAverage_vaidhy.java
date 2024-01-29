@@ -364,23 +364,6 @@ public class CalculateAverage_vaidhy<I, T> {
 
     private static final long ALL_ONES = 0xffff_ffff_ffff_ffffL;
 
-    // Influenced by roy's SIMD as a register technique.
-    private int findByte(long data, long pattern, int readOffsetBits) {
-        data >>>= readOffsetBits;
-        long match = data ^ pattern;
-        long mask = (match - START_BYTE_INDICATOR) & ((~match) & END_BYTE_INDICATOR);
-
-        if (mask == 0) {
-            // Not Found
-            return -1;
-        }
-        else {
-            // Found
-            int trailingZeroes = Long.numberOfTrailingZeros(mask) - 7;
-            return readOffsetBits + trailingZeroes;
-        }
-    }
-
     private long findByteOctet(long data, long pattern) {
         long match = data ^ pattern;
         return (match - START_BYTE_INDICATOR) & ((~match) & END_BYTE_INDICATOR);
