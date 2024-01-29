@@ -46,8 +46,6 @@ public class CalculateAverage_jonathanaotearoa {
             throw new RuntimeException(STR."Error getting instance of \{Unsafe.class.getName()}");
         }
     }
-
-    private static final int WORD_BYTES = Long.BYTES;
     private static final Path FILE_PATH = Path.of("./measurements.txt");
     private static final Path SAMPLE_DIR_PATH = Path.of("./src/test/resources/samples");
     private static final byte MAX_LINE_BYTES = 107;
@@ -125,7 +123,7 @@ public class CalculateAverage_jonathanaotearoa {
 
         try (final FileChannel fc = FileChannel.open(filePath, StandardOpenOption.READ)) {
             final long fileSize = fc.size();
-            if (fileSize < WORD_BYTES) {
+            if (fileSize < Long.BYTES) {
                 // The file size is less than our word size.
                 // Keep it simple and fall back to non-performant processing.
                 return processTinyFile(fc, fileSize);
@@ -172,7 +170,7 @@ public class CalculateAverage_jonathanaotearoa {
      * @throws IOException if an error occurs mapping the file channel into memory.
      */
     private static SortedMap<String, TemperatureData> processFile(final FileChannel fc, final long fileSize) throws IOException {
-        assert fileSize >= WORD_BYTES : STR."File size cannot be less than word size \{WORD_BYTES}, but was \{fileSize}";
+        assert fileSize >= Long.BYTES : STR."File size cannot be less than word size \{Long.BYTES}, but was \{fileSize}";
 
         try (final Arena arena = Arena.ofConfined()) {
             final long fileAddress = fc.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, arena).address();
@@ -240,7 +238,7 @@ public class CalculateAverage_jonathanaotearoa {
 
         while (address <= chunk.lastByteAddress) {
             // Read station name.
-            long nameAddress = address;
+            final long nameAddress = address;
             long nameWord;
             long separatorMask;
             int nameHash = 1;
@@ -426,7 +424,7 @@ public class CalculateAverage_jonathanaotearoa {
      *
      * @see CalculateAverage_jonathanaotearoa#processTinyFile(FileChannel, long).
      */
-    private static final class SimpleStationData extends TemperatureData implements Comparable<SimpleStationData> {
+    private static final class SimpleStationData extends TemperatureData{
 
         private final String name;
 
@@ -434,14 +432,9 @@ public class CalculateAverage_jonathanaotearoa {
             super(temp);
             this.name = name;
         }
-
-        @Override
-        public int compareTo(final SimpleStationData other) {
-            return name.compareTo(other.name);
-        }
     }
 
-    private static final class StationData extends TemperatureData implements Comparable<StationData> {
+    private static final class StationData extends TemperatureData {
 
         private final int nameHash;
         private final long nameAddress;
@@ -453,11 +446,6 @@ public class CalculateAverage_jonathanaotearoa {
             this.nameAddress = nameAddress;
             this.nameSize = nameSize;
             this.nameHash = nameHash;
-        }
-
-        @Override
-        public int compareTo(final StationData other) {
-            return getName().compareTo(other.getName());
         }
 
         String getName() {
