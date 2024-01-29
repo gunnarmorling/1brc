@@ -324,16 +324,6 @@ public class CalculateAverage_giovannicuccu {
                 long safe = size - KEY_SIZE;
                 while (offset < safe) {
                     int len = 0;
-                    /*
-                     * int equals = BYTE_SPECIES_LANES;
-                     * int step=0;
-                     * while(equals==BYTE_SPECIES_LANES) {
-                     * var line = ByteVector.fromMemorySegment(BYTE_SPECIES, memorySegment, offset + step, NATIVE_ORDER);
-                     * equals = line.compare(VectorOperators.EQ, SEPARATORS).firstTrue();
-                     * len += equals;
-                     * step+=BYTE_SPECIES_LANES;
-                     * }
-                     */
                     var line = ByteVector.fromMemorySegment(BYTE_SPECIES, memorySegment, offset, NATIVE_ORDER);
                     len = line.compare(VectorOperators.EQ, SEPARATORS).firstTrue();
                     if (len == BYTE_SPECIES_LANES) {
