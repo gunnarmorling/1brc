@@ -214,7 +214,7 @@ public class CalculateAverage_jerrinot {
         private long slowMap;
         private long slowMapNamesPtr;
         private long slowMapNamesLo;
-        private long fastMap;
+        // private long fastMap;
         private long cursorA;
         private long endA;
         private long cursorB;
@@ -227,7 +227,6 @@ public class CalculateAverage_jerrinot {
 
         // credit: merykitty
         private long parseAndStoreTemperature(long startCursor, long baseEntryPtr, long word) {
-            // long word = UNSAFE.getLong(startCursor);
             long countPtr = baseEntryPtr + MAP_COUNT_OFFSET;
             int cnt = UNSAFE.getInt(countPtr);
             UNSAFE.putInt(countPtr, cnt + 1);
@@ -297,18 +296,18 @@ public class CalculateAverage_jerrinot {
             this.endC = endC;
         }
 
-        private void doTail() {
+        private void doTail(long fastMAp) {
             doOne(cursorA, endA);
             doOne(cursorB, endB);
             doOne(cursorC, endC);
 
-            transferToHeap();
+            transferToHeap(fastMAp);
             // UNSAFE.freeMemory(fastMap);
             // UNSAFE.freeMemory(slowMap);
             // UNSAFE.freeMemory(slowMapNamesLo);
         }
 
-        private void transferToHeap() {
+        private void transferToHeap(long fastMap) {
             for (long baseAddress = slowMap; baseAddress < slowMap + SLOW_MAP_SIZE_BYTES; baseAddress += SLOW_MAP_ENTRY_SIZE_BYTES) {
                 long len = UNSAFE.getInt(baseAddress + MAP_LEN_OFFSET);
                 if (len == 0) {
@@ -398,7 +397,7 @@ public class CalculateAverage_jerrinot {
             this.slowMap = UNSAFE.allocateMemory(SLOW_MAP_SIZE_BYTES);
             this.slowMapNamesPtr = UNSAFE.allocateMemory(SLOW_MAP_MAP_NAMES_BYTES);
             this.slowMapNamesLo = slowMapNamesPtr;
-            this.fastMap = UNSAFE.allocateMemory(FAST_MAP_SIZE_BYTES);
+            long fastMap = UNSAFE.allocateMemory(FAST_MAP_SIZE_BYTES);
             UNSAFE.setMemory(slowMap, SLOW_MAP_SIZE_BYTES, (byte) 0);
             UNSAFE.setMemory(fastMap, FAST_MAP_SIZE_BYTES, (byte) 0);
             UNSAFE.setMemory(slowMapNamesPtr, SLOW_MAP_MAP_NAMES_BYTES, (byte) 0);
@@ -528,38 +527,38 @@ public class CalculateAverage_jerrinot {
                         baseEntryPtrA = getOrCreateEntryBaseOffsetSlow(lenA, startA, hashA, maskedLastWordA);
                     }
                     else {
-                        baseEntryPtrA = getOrCreateEntryBaseOffsetFast(mapIndexA, lenA, maskedLastWordA, maskedFirstWordA);
+                        baseEntryPtrA = getOrCreateEntryBaseOffsetFast(mapIndexA, lenA, maskedLastWordA, maskedFirstWordA, fastMap);
                     }
 
                     if (slowB) {
                         baseEntryPtrB = getOrCreateEntryBaseOffsetSlow(lenB, startB, hashB, maskedLastWordB);
                     }
                     else {
-                        baseEntryPtrB = getOrCreateEntryBaseOffsetFast(mapIndexB, lenB, maskedLastWordB, maskedFirstWordB);
+                        baseEntryPtrB = getOrCreateEntryBaseOffsetFast(mapIndexB, lenB, maskedLastWordB, maskedFirstWordB, fastMap);
                     }
 
                     if (slowC) {
                         baseEntryPtrC = getOrCreateEntryBaseOffsetSlow(lenC, startC, hashC, maskedLastWordC);
                     }
                     else {
-                        baseEntryPtrC = getOrCreateEntryBaseOffsetFast(mapIndexC, lenC, maskedLastWordC, maskedFirstWordC);
+                        baseEntryPtrC = getOrCreateEntryBaseOffsetFast(mapIndexC, lenC, maskedLastWordC, maskedFirstWordC, fastMap);
                     }
                 }
                 else {
-                    baseEntryPtrA = getOrCreateEntryBaseOffsetFast(mapIndexA, lenA, maskedLastWordA, maskedFirstWordA);
-                    baseEntryPtrB = getOrCreateEntryBaseOffsetFast(mapIndexB, lenB, maskedLastWordB, maskedFirstWordB);
-                    baseEntryPtrC = getOrCreateEntryBaseOffsetFast(mapIndexC, lenC, maskedLastWordC, maskedFirstWordC);
+                    baseEntryPtrA = getOrCreateEntryBaseOffsetFast(mapIndexA, lenA, maskedLastWordA, maskedFirstWordA, fastMap);
+                    baseEntryPtrB = getOrCreateEntryBaseOffsetFast(mapIndexB, lenB, maskedLastWordB, maskedFirstWordB, fastMap);
+                    baseEntryPtrC = getOrCreateEntryBaseOffsetFast(mapIndexC, lenC, maskedLastWordC, maskedFirstWordC, fastMap);
                 }
 
                 cursorA = parseAndStoreTemperature(digitStartA, baseEntryPtrA, temperatureWordA);
                 cursorB = parseAndStoreTemperature(digitStartB, baseEntryPtrB, temperatureWordB);
                 cursorC = parseAndStoreTemperature(digitStartC, baseEntryPtrC, temperatureWordC);
             }
-            doTail();
+            doTail(fastMap);
             // System.out.println("Longest chain: " + longestChain);
         }
 
-        private long getOrCreateEntryBaseOffsetFast(int mapIndexA, int lenA, long maskedLastWord, long maskedFirstWord) {
+        private static long getOrCreateEntryBaseOffsetFast(int mapIndexA, int lenA, long maskedLastWord, long maskedFirstWord, long fastMap) {
             for (;;) {
                 long basePtr = mapIndexA * FAST_MAP_ENTRY_SIZE_BYTES + fastMap;
                 long namePart1 = UNSAFE.getLong(basePtr + FAST_MAP_NAME_PART1);
@@ -596,7 +595,7 @@ public class CalculateAverage_jerrinot {
                 int len = UNSAFE.getInt(lenPtr);
                 if (len == lenA) {
                     namePtr = UNSAFE.getLong(basePtr + SLOW_MAP_NAME_OFFSET);
-                    if (nameMatch(startPtr, maskedLastWord, namePtr, fullLen)) {
+                    if (nameMatchSlow(startPtr, namePtr, fullLen, maskedLastWord)) {
                         return basePtr;
                     }
                 }
@@ -612,10 +611,6 @@ public class CalculateAverage_jerrinot {
                 }
                 mapIndexA = ++mapIndexA & MAP_MASK;
             }
-        }
-
-        private static boolean nameMatch(long start, long maskedLastWord, long namePtr, long fullLen) {
-            return nameMatchSlow(start, namePtr, fullLen, maskedLastWord);
         }
 
         private static boolean nameMatchSlow(long start, long namePtr, long fullLen, long maskedLastWord) {
