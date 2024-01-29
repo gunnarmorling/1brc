@@ -20,7 +20,7 @@ sdk use java 21.0.2-graal 1>&2
 
 # ./mvnw clean verify removes target/ and will re-trigger native image creation.
 if [ ! -f target/CalculateAverage_tivrfoa_image ]; then
-    NATIVE_IMAGE_OPTS="--gc=epsilon -O3 -march=native --enable-preview -H:InlineAllBonus=10 -H:-ParseRuntimeOptions --initialize-at-build-time=dev.morling.onebrc.CalculateAverage_tivrfoa\$Scanner"
+    NATIVE_IMAGE_OPTS="--gc=epsilon -O3 -H:-GenLoopSafepoints -march=native --enable-preview -H:InlineAllBonus=10 -H:-ParseRuntimeOptions --initialize-at-build-time=dev.morling.onebrc.CalculateAverage_tivrfoa\$Scanner"
     # Use -H:MethodFilter=CalculateAverage_tivrfoa.* -H:Dump=:2 -H:PrintGraph=Network for IdealGraphVisualizer graph dumping.
     native-image $NATIVE_IMAGE_OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o target/CalculateAverage_tivrfoa_image dev.morling.onebrc.CalculateAverage_tivrfoa
 fi
