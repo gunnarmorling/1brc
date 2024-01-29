@@ -126,14 +126,11 @@ public class CalculateAverage_godofwharf {
                                 splitSegment.load();
                                 int tid = (int) Thread.currentThread().threadId();
                                 byte[] currentPage = new byte[PAGE_SIZE + MAX_STR_LEN];
-                                long timer = 0;
                                 // iterate over each page in split
                                 for (Page page : split.pages) {
                                     // this byte buffer should end with '\n' or EOF
                                     MemorySegment segment = globalSegment.asSlice(page.offset, page.length);
-                                    long time2 = System.nanoTime();
                                     MemorySegment.copy(segment, ValueLayout.JAVA_BYTE, 0L, currentPage, 0, (int) page.length);
-                                    timer += System.nanoTime() - time2;
                                     SearchResult searchResult = findNewLinesVectorized(currentPage, (int) page.length);
                                     int prevOffset = 0;
                                     int j = 0;
@@ -164,7 +161,7 @@ public class CalculateAverage_godofwharf {
                                     // segment.unload();
                                 }
                                 mergeInternal(threadLocalStates[tid]);
-                                printDebugMessage("Spent a total of %d ns on copy contents from memory to byte array %n".formatted(timer));
+                                // printDebugMessage("Spent a total of %d ns on copy contents from memory to byte array %n".formatted(timer));
                                 // printDebugMessage("Spent a total of %d ns on copying byte arrays %n".formatted(timer1));
                                 // printDebugMessage("Spent a total of %d ns on computing hash code %n".formatted(timer2));
                                 // printDebugMessage("Spent a total of %d ns on updating map %n".formatted(timer3));
