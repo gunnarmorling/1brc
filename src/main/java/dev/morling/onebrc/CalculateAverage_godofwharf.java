@@ -253,8 +253,8 @@ public class CalculateAverage_godofwharf {
                 VectorMask<Byte> m2 = NEW_LINE_VEC.eq(v2);
                 VectorMask<Byte> m3 = NEW_LINE_VEC.eq(v3);
                 VectorMask<Byte> m4 = NEW_LINE_VEC.eq(v4);
-                long r1 = m1.toLong() | (m2.toLong() << PREFERRED_SPECIES.length());
-                long r2 = m3.toLong() | (m4.toLong() << PREFERRED_SPECIES.length());
+                long r1 = (m1.toLong() & 0xffffffffL) | (m2.toLong() << PREFERRED_SPECIES.length());
+                long r2 = (m3.toLong() & 0xffffffffL) | (m4.toLong() << PREFERRED_SPECIES.length());
                 int b1 = Long.bitCount(r1);
                 int b2 = Long.bitCount(r2);
                 int k = i;
