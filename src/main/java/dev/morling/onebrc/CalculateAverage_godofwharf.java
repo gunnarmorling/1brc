@@ -411,7 +411,7 @@ public class CalculateAverage_godofwharf {
 
         public State() {
             this.state = new HashMap<>(DEFAULT_HASH_TBL_SIZE);
-            AggregationKey dummy = new AggregationKey("DUMMY".getBytes(UTF_8);
+            AggregationKey dummy = new AggregationKey("DUMMY".getBytes(UTF_8), -1);
             this.state.put(dummy, null);
             this.state.remove(dummy);
 
