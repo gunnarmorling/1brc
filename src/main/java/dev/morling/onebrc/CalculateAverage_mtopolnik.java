@@ -38,11 +38,6 @@ public class CalculateAverage_mtopolnik {
     private static final int STATS_TABLE_SIZE = 1 << 16;
     private static final int TABLE_INDEX_MASK = STATS_TABLE_SIZE - 1;
     private static final String MEASUREMENTS_TXT = "measurements.txt";
-    private static final byte SEMICOLON = ';';
-
-    // These two are just informative, I let the IDE calculate them for me
-    private static final long NATIVE_MEM_PER_THREAD = StatsAccessor.SIZEOF * STATS_TABLE_SIZE;
-    private static final long NATIVE_MEM_ON_8_THREADS = 8 * NATIVE_MEM_PER_THREAD;
 
     private static Unsafe unsafe() {
         try {
@@ -52,29 +47,6 @@ public class CalculateAverage_mtopolnik {
         }
         catch (NoSuchFieldException | IllegalAccessException e) {
             throw new RuntimeException(e);
-        }
-    }
-
-    static class StationStats implements Comparable<StationStats> {
-        String name;
-        long sum;
-        int count;
-        int min;
-        int max;
-
-        @Override
-        public String toString() {
-            return String.format("%s=%.1f/%.1f/%.1f", name, min / 10.0, Math.round((double) sum / count) / 10.0, max / 10.0);
-        }
-
-        @Override
-        public boolean equals(Object that) {
-            return that.getClass() == StationStats.class && ((StationStats) that).name.equals(this.name);
-        }
-
-        @Override
-        public int compareTo(StationStats that) {
-            return name.compareTo(that.name);
         }
     }
 
@@ -130,7 +102,6 @@ public class CalculateAverage_mtopolnik {
     }
 
     private static class ChunkProcessor implements Runnable {
-        private static final long NAMEBUF_SIZE = 2 * Long.BYTES;
         private static final int CACHELINE_SIZE = 64;
 
         private final long inputBase;
@@ -153,7 +124,7 @@ public class CalculateAverage_mtopolnik {
                 long totalAllocated = 0;
                 String threadName = Thread.currentThread().getName();
                 long statsByteSize = STATS_TABLE_SIZE * StatsAccessor.SIZEOF;
-                var diagnosticString = String.format("Thread %s needs %,d bytes", threadName, statsByteSize + NAMEBUF_SIZE);
+                var diagnosticString = String.format("Thread %s needs %,d bytes", threadName, statsByteSize);
                 try {
                     stats = new StatsAccessor(confinedArena.allocate(statsByteSize, CACHELINE_SIZE));
                 }
@@ -165,9 +136,6 @@ public class CalculateAverage_mtopolnik {
                 exportResults();
             }
         }
-
-        private static final int MAX_TEMPERATURE_LEN = 5;
-        private static final int MAX_ROW_LEN = MAX_NAME_LEN + 1 + MAX_TEMPERATURE_LEN + 1;
 
         private void processChunk() {
             final long inputSize = this.inputSize;
@@ -247,6 +215,13 @@ public class CalculateAverage_mtopolnik {
             return (diff - BROADCAST_0x01) & (~diff & BROADCAST_0x80);
         }
 
+        // credit: artsiomkorzun
+        private static long maskWord(long word, long matchBits) {
+            long mask = matchBits ^ (matchBits - 1);
+            return word & mask;
+        }
+
+        // credit: merykitty
         private static int dotPos(long word) {
             return Long.numberOfTrailingZeros(~word & 0x10101000);
         }
@@ -260,26 +235,12 @@ public class CalculateAverage_mtopolnik {
             return (int) ((absValue ^ signed) - signed);
         }
 
-        // credit: artsiomkorzun
-        private static long maskWord(long word, long matchBits) {
-            long mask = matchBits ^ (matchBits - 1);
-            return word & mask;
-        }
-
         private static int nameLen(long separator) {
             return (Long.numberOfTrailingZeros(separator) >>> 3) + 1;
         }
 
         private static long hash(long word) {
             return Long.rotateLeft(word * 0x51_7c_c1_b7_27_22_0a_95L, 17);
-        }
-
-        private final ByteBuffer buf = ByteBuffer.allocate(8).order(ByteOrder.nativeOrder());
-
-        private String longToString(long word) {
-            buf.clear();
-            buf.putLong(word);
-            return new String(buf.array(), StandardCharsets.UTF_8); // + "|" + Arrays.toString(buf.array());
         }
 
         // Copies the results from native memory to Java heap and puts them into the results array.
@@ -514,5 +475,35 @@ public class CalculateAverage_mtopolnik {
             }
         }
         System.out.println('}');
+    }
+
+    static class StationStats implements Comparable<StationStats> {
+        String name;
+        long sum;
+        int count;
+        int min;
+        int max;
+
+        @Override
+        public String toString() {
+            return String.format("%s=%.1f/%.1f/%.1f", name, min / 10.0, Math.round((double) sum / count) / 10.0, max / 10.0);
+        }
+
+        @Override
+        public boolean equals(Object that) {
+            return that.getClass() == StationStats.class && ((StationStats) that).name.equals(this.name);
+        }
+
+        @Override
+        public int compareTo(StationStats that) {
+            return name.compareTo(that.name);
+        }
+    }
+
+    private static String longToString(long word) {
+        final ByteBuffer buf = ByteBuffer.allocate(8).order(ByteOrder.nativeOrder());
+        buf.clear();
+        buf.putLong(word);
+        return new String(buf.array(), StandardCharsets.UTF_8);
     }
 }
