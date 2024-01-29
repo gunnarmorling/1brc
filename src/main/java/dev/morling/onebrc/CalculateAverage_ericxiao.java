@@ -32,7 +32,7 @@ public class CalculateAverage_ericxiao {
 
     private static final String FILE = "./measurements.txt";
 
-    private static final int MAP_SIZE = 2 << 14; // ceiling(log(10k) / log(2))
+    private static final int MAP_SIZE = 2 << 10; // ceiling(log(10k) / log(2))
 
     private static class Station {
         private String station;
@@ -97,34 +97,27 @@ public class CalculateAverage_ericxiao {
             int value = multiplier * accumulator;
 
             // Calculate station
-            long hash = 0;
+            int stationHash = 0;
             for (int i = 0; i < keyLength; i++) {
-                hash = 31 * hash + (int) entryBytes[i];
+                stationHash = 31 * stationHash + (entryBytes[i] & 0xff);
             }
-            // if (hash < 0) {
-            // System.out.println("stop");
-            // }
 
-            int stationHash = (int) (Math.abs(hash) % MAP_SIZE);
+            int idx = Math.abs(stationHash) % MAP_SIZE;
             // Insert / Update Map
-            if (stations[stationHash] == null) {
+            if (stations[idx] == null) {
                 Station station = new Station();
                 station.station = new String(entryBytes, 0, keyLength, StandardCharsets.UTF_8);
                 station.min = value;
                 station.sum = value;
                 station.max = value;
                 station.count = 1;
-                stations[stationHash] = station;
+                stations[idx] = station;
             }
             else {
-                // String temp = new String(entryBytes, 0, keyLength, StandardCharsets.UTF_8);
-                // if (stations[stationHash].station.equals("Tijuana") & !temp.equals("Tijuana")) {
-                // System.out.println("Current Key: " + stations[stationHash].station + ", New Key: " + temp);
-                // }
-                stations[stationHash].min = Math.min(stations[stationHash].min, value);
-                stations[stationHash].max = Math.max(stations[stationHash].max, value);
-                stations[stationHash].sum += value;
-                stations[stationHash].count++;
+                stations[idx].min = Math.min(stations[idx].min, value);
+                stations[idx].max = Math.max(stations[idx].max, value);
+                stations[idx].sum += value;
+                stations[idx].count++;
             }
         }
 
@@ -314,7 +307,7 @@ public class CalculateAverage_ericxiao {
                         System.out.print(entry.station + "=" + (entry.min / 10.0) + "/"
                                 + (Math.round(mean) / 10.0) + "/"
                                 + (entry.max / 10.0));
-                        if (counter++ < 408) // TODO: hard coding for now.
+                        if (counter++ < 412) // TODO: hard coding for now.
                             System.out.print(", ");
                     }
                 }
