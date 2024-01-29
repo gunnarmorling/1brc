@@ -309,16 +309,14 @@ public final class CalculateAverage_JaimePolidura {
         }
 
         public void put(long hashToPut, byte[] nameToPut, int nameLength, int valueToPut) {
-            int index = hashToIndex(hashToPut);
+            int index = toIndex(hashToPut);
 
             for (;;) {
                 Result actualEntry = entries[index];
 
                 if (actualEntry == null) {
                     byte[] nameToPutCopy = new byte[nameLength];
-                    for (int i = 0; i < nameLength; i++) {
-                        nameToPutCopy[i] = nameToPut[i];
-                    }
+                    UNSAFE.copyMemory(nameToPut, Unsafe.ARRAY_BYTE_BASE_OFFSET, nameToPutCopy, Unsafe.ARRAY_BYTE_BASE_OFFSET, nameLength);
 
                     entries[index] = new Result(hashToPut, nameToPutCopy, nameLength, valueToPut,
                             valueToPut, valueToPut, 1);
@@ -331,14 +329,12 @@ public final class CalculateAverage_JaimePolidura {
                     actualEntry.sum = actualEntry.sum + valueToPut;
                     return;
                 }
-                // If the name is not the same, we try to go to the next slot
-                if (++index >= this.size) {
-                    index = 0;
-                }
+
+                index = toIndex(index + 31);
             }
         }
 
-        private int hashToIndex(long hash) {
+        private int toIndex(long hash) {
             return (int) (((hash >> 32) ^ ((int) hash)) & (this.size - 1));
         }
     }
@@ -367,8 +363,15 @@ public final class CalculateAverage_JaimePolidura {
         }
 
         private boolean isSameNameBytes(byte[] otherNameBytes) {
-            for (int i = 0; i < this.nameLength; i++) {
-                if (this.name[i] != otherNameBytes[i]) {
+            for (int i = 0; i < this.nameLength; i += 8) {
+                long thisNameBytesAsLong = UNSAFE.getLong(this.name, Unsafe.ARRAY_BYTE_BASE_OFFSET + i);
+                long otherNameBytesAsLong = UNSAFE.getLong(otherNameBytes, Unsafe.ARRAY_BYTE_BASE_OFFSET + i);
+
+                int isPositiveAsInt = (((8 - nameLength + i) >> 31) & 1) ^ 0x01;
+                int shift = ((8 - nameLength + i) * isPositiveAsInt) * 8;
+                otherNameBytesAsLong = (otherNameBytesAsLong << shift) >>> shift;
+
+                if (thisNameBytesAsLong != otherNameBytesAsLong) {
                     return false;
                 }
             }
