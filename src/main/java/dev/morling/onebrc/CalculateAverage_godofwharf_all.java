@@ -900,7 +900,7 @@ public class CalculateAverage_godofwharf_all {
                         FileChannel.MapMode.READ_ONLY, 0, file.length(), Arena.global());
                 long fileLength = file.length();
                 int splitLength = (int) Math.min(Integer.MAX_VALUE, Math.rint(fileLength * 1.0 / nThreads));
-                System.err.printf("fileLength = %d, splitLength = %d%n", file.length(), splitLength);
+                System.err.printf("FileLength = %d, SplitLength = %d%n", file.length(), splitLength);
                 long time1 = System.nanoTime();
                 // iterate over the memory mapped file
                 List<Split2> splits = breakFileIntoSplits(file, splitLength, pageSize, memorySegment);
