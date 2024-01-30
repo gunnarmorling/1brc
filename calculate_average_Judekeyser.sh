@@ -16,4 +16,4 @@
 #
 
 JAVA_OPTS="--enable-preview --add-modules jdk.incubator.vector"
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_justin
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_Judekeyser

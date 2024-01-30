@@ -35,7 +35,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-public class CalculateAverage_justin {
+public class CalculateAverage_Judekeyser {
     private static final String FILE = "./measurements.txt";
     private static final int chunkSize = (1 << 7) << 13; // This can't go beyond 2^21, because otherwise we might exceed int capacity
 
@@ -43,8 +43,6 @@ public class CalculateAverage_justin {
     private static final int numberOfParallelWorkers = 2 * Runtime.getRuntime().availableProcessors() - 1;
 
     public static void main(String[] args) throws Exception {
-        var tic = System.currentTimeMillis();
-
         class SimpleStatistics {
             int min, max, sum, count;
             SimpleStatistics() {
