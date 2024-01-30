@@ -275,12 +275,12 @@ public class CalculateAverage_godofwharf {
                     idx = Long.numberOfTrailingZeros(r1);
                     ret.offsets[k++] = j + idx;
                     r1 &= (r1 - 1);
-                    idx = Long.numberOfTrailingZeros(r1);
-                    ret.offsets[k++] = j + idx;
-                    r1 &= (r1 - 1);
-                    idx = Long.numberOfTrailingZeros(r1);
-                    ret.offsets[k++] = j + idx;
-                    r1 &= (r1 - 1);
+//                    idx = Long.numberOfTrailingZeros(r1);
+//                    ret.offsets[k++] = j + idx;
+//                    r1 &= (r1 - 1);
+//                    idx = Long.numberOfTrailingZeros(r1);
+//                    ret.offsets[k++] = j + idx;
+//                    r1 &= (r1 - 1);
                 }
                 ret.offsets[k++] = j + s2;
                 j += PREFERRED_SPECIES.length() * 2;
@@ -299,12 +299,12 @@ public class CalculateAverage_godofwharf {
                     idx = Long.numberOfTrailingZeros(r2);
                     ret.offsets[k++] = j + idx;
                     r2 &= (r2 - 1);
-                    idx = Long.numberOfTrailingZeros(r2);
-                    ret.offsets[k++] = j + idx;
-                    r2 &= (r2 - 1);
-                    idx = Long.numberOfTrailingZeros(r2);
-                    ret.offsets[k++] = j + idx;
-                    r2 &= (r2 - 1);
+//                    idx = Long.numberOfTrailingZeros(r2);
+//                    ret.offsets[k++] = j + idx;
+//                    r2 &= (r2 - 1);
+//                    idx = Long.numberOfTrailingZeros(r2);
+//                    ret.offsets[k++] = j + idx;
+//                    r2 &= (r2 - 1);
                 }
                 ret.offsets[k++] = j + (s4 & 1);
                 j += PREFERRED_SPECIES.length() * 2;
