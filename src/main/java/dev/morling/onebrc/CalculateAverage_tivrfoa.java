@@ -48,12 +48,18 @@ import java.util.concurrent.atomic.AtomicInteger;
  * stay idle, so:
  *   1) Create more chunks than threads, so the ones that finish first
  * can do something;
- *   2) Decrease chunk sizes as we get closer to the end of the file.
+ *   2) Decrease chunk sizes as we get closer to the end of the file;
+ *   3) Make a cache of long[] name to String, to avoid `ByteBuffer.allocate`
+ * and creating new UTF-8 strings. I didn't profile, so it's just a guess
+ * that this map will be a bit faster. Although it's outside the main loop, so
+ * not a big difference ...;
+ *   4) Exit earlier from loop if a new entry was created.
  */
 public class CalculateAverage_tivrfoa {
     private static final String FILE = "./measurements.txt";
-    private static final int MIN_TEMP = -999;
-    private static final int MAX_TEMP = 999;
+
+    private static final int MAX_CITIES = 10_000;
+    private static final HashMap<Key, String> mapToCityName = new HashMap<>(MAX_CITIES);
 
     // Holding the current result for a single city.
     private static class Result {
@@ -63,9 +69,11 @@ public class CalculateAverage_tivrfoa {
         short min, max;
         long sum;
 
-        private Result() {
-            this.min = MAX_TEMP;
-            this.max = MIN_TEMP;
+        private Result(short number) {
+            this.min = number;
+            this.max = number;
+            this.sum = number;
+            this.count = 1;
         }
 
         public String toString() {
@@ -88,14 +96,50 @@ public class CalculateAverage_tivrfoa {
             count += other.count;
         }
 
+        private void add(short number) {
+            if (number < min) {
+                min = number;
+            }
+            if (number > max) {
+                max = number;
+            }
+            sum += number;
+            count++;
+        }
+
         public String calcName() {
+            var key = new Key(name);
+            var cityName = mapToCityName.get(key);
+            if (cityName != null) {
+                return cityName;
+            }
             ByteBuffer bb = ByteBuffer.allocate(name.length * Long.BYTES).order(ByteOrder.nativeOrder());
             bb.asLongBuffer().put(name);
             byte[] array = bb.array();
             int i = 0;
             while (array[i++] != ';')
                 ;
-            return new String(array, 0, i - 1, StandardCharsets.UTF_8);
+            cityName = new String(array, 0, i - 1, StandardCharsets.UTF_8);
+            mapToCityName.put(key, cityName);
+            return cityName;
+        }
+    }
+
+    private static class Key {
+        private long[] name;
+
+        public Key(long[] name) {
+            this.name = name;
+        }
+
+        @Override
+        public final int hashCode() {
+            return Arrays.hashCode(name);
+        }
+
+        @Override
+        public final boolean equals(Object o) {
+            return Arrays.equals(name, ((Key) o).name);
         }
     }
 
@@ -106,7 +150,7 @@ public class CalculateAverage_tivrfoa {
 
     private static final class SolveChunk extends Thread {
         private long chunkStart, chunkEnd;
-        private Result[] results = new Result[10_000];
+        private Result[] results = new Result[MAX_CITIES];
         private Result[] buckets = new Result[1 << 17];
         private int resIdx = 0;
 
@@ -141,15 +185,15 @@ public class CalculateAverage_tivrfoa {
                     word = mask(word, pos);
                     hash = word;
 
-                    int number = scanNumber(scanner);
+                    short number = scanNumber(scanner);
                     long nextWord = scanner.getLong();
                     long nextPos = findDelimiter(nextWord);
 
                     Result existingResult = buckets[hashToIndex(hash, buckets)];
                     if (existingResult != null && existingResult.lastNameLong == word) {
+                        existingResult.add(number);
                         word = nextWord;
                         pos = nextPos;
-                        record(existingResult, number);
                         continue;
                     }
 
@@ -169,10 +213,9 @@ public class CalculateAverage_tivrfoa {
 
                         Result existingResult = buckets[hashToIndex(hash, buckets)];
                         if (existingResult != null && existingResult.lastNameLong == word && existingResult.secondLastNameLong == prevWord) {
-                            int number = scanNumber(scanner);
+                            existingResult.add(scanNumber(scanner));
                             word = scanner.getLong();
                             pos = findDelimiter(word);
-                            record(existingResult, number);
                             continue;
                         }
                     }
@@ -199,15 +242,16 @@ public class CalculateAverage_tivrfoa {
 
                 // Save length of name for later.
                 int nameLength = (int) (scanner.pos() - nameAddress);
-                int number = scanNumber(scanner);
+                short number = scanNumber(scanner);
 
                 // Final calculation for index into hash table.
                 int tableIndex = hashToIndex(hash, buckets);
                 outer: while (true) {
                     Result existingResult = buckets[tableIndex];
                     if (existingResult == null) {
-                        existingResult = newEntry(buckets, nameAddress, tableIndex, nameLength, scanner);
+                        existingResult = newEntry(buckets, number, nameAddress, tableIndex, nameLength, scanner);
                         results[resIdx++] = existingResult;
+                        break;
                     }
                     // Check for collision.
                     int i = 0;
@@ -221,7 +265,7 @@ public class CalculateAverage_tivrfoa {
 
                     int remainingShift = (64 - (nameLength + 1 - i) << 3);
                     if (((existingResult.lastNameLong ^ (scanner.getLongAt(nameAddress + i) << remainingShift)) == 0)) {
-                        record(existingResult, number);
+                        existingResult.add(number);
                         break;
                     }
                     else {
@@ -294,24 +338,13 @@ public class CalculateAverage_tivrfoa {
                 .transferTo(System.out);
     }
 
-    private static int scanNumber(Scanner scanPtr) {
+    private static short scanNumber(Scanner scanPtr) {
         scanPtr.add(1);
         long numberWord = scanPtr.getLong();
         int decimalSepPos = Long.numberOfTrailingZeros(~numberWord & 0x10101000);
         int number = convertIntoNumber(decimalSepPos, numberWord);
         scanPtr.add((decimalSepPos >>> 3) + 3);
-        return number;
-    }
-
-    private static void record(Result existingResult, int number) {
-        if (number < existingResult.min) {
-            existingResult.min = (short) number;
-        }
-        if (number > existingResult.max) {
-            existingResult.max = (short) number;
-        }
-        existingResult.sum += number;
-        existingResult.count++;
+        return (short) number;
     }
 
     private static int hashToIndex(long hash, Result[] results) {
@@ -346,8 +379,8 @@ public class CalculateAverage_tivrfoa {
         return tmp;
     }
 
-    private static Result newEntry(Result[] results, long nameAddress, int hash, int nameLength, Scanner scanner) {
-        Result r = new Result();
+    private static Result newEntry(Result[] results, short number, long nameAddress, int hash, int nameLength, Scanner scanner) {
+        var r = new Result(number);
         results[hash] = r;
         long[] name = new long[(nameLength / Long.BYTES) + 1];
         int pos = 0;
