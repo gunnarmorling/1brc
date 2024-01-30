@@ -241,7 +241,8 @@ public class CalculateAverage_godofwharf {
         private static SearchResult findNewLinesVectorized(final byte[] page,
                                                            final int pageLen) {
             SearchResult ret = new SearchResult(new int[pageLen / 5], 0);
-            VectorSpecies<Byte> species = MEDIUM_SPECIES;
+            VectorSpecies<Byte> species = PREFERRED_SPECIES;
+            Vector<Byte> newLineVec = species.broadcast('\n');
             int loopBound = pageLen - species.length() * 4;
             int i = 0;
             int j = 0;
@@ -250,10 +251,10 @@ public class CalculateAverage_godofwharf {
                 Vector<Byte> v2 = ByteVector.fromArray(species, page, j + species.length());
                 Vector<Byte> v3 = ByteVector.fromArray(species, page, j + species.length() * 2);
                 Vector<Byte> v4 = ByteVector.fromArray(species, page, j + species.length() * 3);
-                long l1 = NEW_LINE_VEC.eq(v1).toLong();
-                long l2 = NEW_LINE_VEC.eq(v2).toLong();
-                long l3 = NEW_LINE_VEC.eq(v3).toLong();
-                long l4 = NEW_LINE_VEC.eq(v4).toLong();
+                long l1 = newLineVec.eq(v1).toLong();
+                long l2 = newLineVec.eq(v2).toLong();
+                long l3 = newLineVec.eq(v3).toLong();
+                long l4 = newLineVec.eq(v4).toLong();
                 int s2 = (int) (l2 & (1 << 31)) >> 31;
                 int s4 = (int) (l4 & (1 << 31)) >> 31;
                 l2 = l2 & 0x7FFFFFFF;
@@ -283,9 +284,10 @@ public class CalculateAverage_godofwharf {
                     ret.offsets[k++] = j + idx;
                     r1 &= (r1 - 1);
                 }
-                ret.offsets[k++] = j + s2;
+                i += b1;
+                ret.offsets[i] = j + s2;
                 j += species.length() * 2;
-                i += b1 + s2;
+                i += s2;
                 k = i;
                 while (r2 > 0) {
                     int idx = Long.numberOfTrailingZeros(r2);
@@ -307,9 +309,10 @@ public class CalculateAverage_godofwharf {
                     ret.offsets[k++] = j + idx;
                     r2 &= (r2 - 1);
                 }
-                ret.offsets[k++] = j + (s4 & 1);
+                i += b2;
+                ret.offsets[i] = j + (s4 & 1);
                 j += species.length() * 2;
-                i += b2 + s4;
+                i += s4;
             }
 
             // tail loop
