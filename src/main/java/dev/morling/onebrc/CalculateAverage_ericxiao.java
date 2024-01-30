@@ -68,7 +68,7 @@ public class CalculateAverage_ericxiao {
         void updateStation(int hash, int min, int max, int sum, int count) {
             int idx = hash * 4;
             measurements[idx] = Math.min(measurements[idx], min);
-            measurements[idx + 1] = Math.min(measurements[idx + 1], max);
+            measurements[idx + 1] = Math.max(measurements[idx + 1], max);
             measurements[idx + 2] += sum;
             measurements[idx + 3] += count;
         }
@@ -309,23 +309,25 @@ public class CalculateAverage_ericxiao {
                     Stations currStation = results.get(i);
                     for (int j = 0; j < currStation.stationPointer; j++) {
                         int currStationHash = currStation.stationHashes[j];
-                        if (station1.stationExists(currStationHash)) {
-                            station1.updateStation(currStationHash, currStation.measurements[0], currStation.measurements[1], currStation.measurements[2],
-                                    currStation.measurements[3]);
-                        }
-                        else {
-                            station1.insertStation(currStationHash, currStation.stationNames[j], currStation.measurements[0], currStation.measurements[1],
-                                    currStation.measurements[2], currStation.measurements[3]);
-                        }
+                        int idx = currStationHash * 4;
+                        int min = currStation.measurements[idx];
+                        int max = currStation.measurements[idx + 1];
+                        int sum = currStation.measurements[idx + 2];
+                        int count = currStation.measurements[idx + 3];
+                        if (station1.stationExists(currStationHash))
+                            station1.updateStation(currStationHash, min, max, sum, count);
+                        else
+                            station1.insertStation(currStationHash, currStation.stationNames[j], min, max, sum, count);
                     }
                 }
                 // print key and values
                 System.out.print("{");
                 for (int i = 0; i < station1.stationPointer; i++) {
-                    double mean = (double) station1.measurements[2] / (double) station1.measurements[3];
-                    System.out.print(station1.stationNames[i] + "=" + (station1.measurements[0] / 10.0) + "/"
+                    int idx = station1.stationHashes[i] * 4;
+                    double mean = (double) station1.measurements[idx + 2] / (double) station1.measurements[idx + 3];
+                    System.out.print(station1.stationNames[i] + "=" + (station1.measurements[idx] / 10.0) + "/"
                             + (Math.round(mean) / 10.0) + "/"
-                            + (station1.measurements[1] / 10.0));
+                            + (station1.measurements[idx + 1] / 10.0));
                     if (i < station1.stationPointer - 1)
                         System.out.print(", ");
                 }
