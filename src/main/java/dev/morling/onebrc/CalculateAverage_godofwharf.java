@@ -249,16 +249,16 @@ public class CalculateAverage_godofwharf {
             while (j < loopBound) {
                 Vector<Byte> v1 = ByteVector.fromArray(species, page, j);
                 Vector<Byte> v2 = ByteVector.fromArray(species, page, j + species.length());
-                Vector<Byte> v3 = ByteVector.fromArray(species, page, j + species.length() * 2);
-                Vector<Byte> v4 = ByteVector.fromArray(species, page, j + species.length() * 3);
+//                Vector<Byte> v3 = ByteVector.fromArray(species, page, j + species.length() * 2);
+//                Vector<Byte> v4 = ByteVector.fromArray(species, page, j + species.length() * 3);
                 long l1 = newLineVec.eq(v1).toLong();
                 long l2 = newLineVec.eq(v2).toLong();
-                long l3 = newLineVec.eq(v3).toLong();
-                long l4 = newLineVec.eq(v4).toLong();
+//                long l3 = newLineVec.eq(v3).toLong();
+//                long l4 = newLineVec.eq(v4).toLong();
                 long r1 = l1 & 0xFFFFFFFFL | (l2 << (species.length()));
-                long r2 = l3 & 0xFFFFFFFFL | (l4 << (species.length()));
+//                long r2 = l3 & 0xFFFFFFFFL | (l4 << (species.length()));
                 int b1 = Long.bitCount(r1);
-                int b2 = Long.bitCount(r2);
+//                int b2 = Long.bitCount(r2);
                 int k = i;
                 while (r1 > 0) {
                     int idx = Long.numberOfTrailingZeros(r1);
@@ -282,29 +282,29 @@ public class CalculateAverage_godofwharf {
                 }
                 i += b1;
                 j += species.length() * 2;
-                k = i;
-                while (r2 > 0) {
-                    int idx = Long.numberOfTrailingZeros(r2);
-                    ret.offsets[k++] = j + idx;
-                    r2 &= (r2 - 1);
-                    idx = Long.numberOfTrailingZeros(r2);
-                    ret.offsets[k++] = j + idx;
-                    r2 &= (r2 - 1);
-                    idx = Long.numberOfTrailingZeros(r2);
-                    ret.offsets[k++] = j + idx;
-                    r2 &= (r2 - 1);
-                    idx = Long.numberOfTrailingZeros(r2);
-                    ret.offsets[k++] = j + idx;
-                    r2 &= (r2 - 1);
-                    idx = Long.numberOfTrailingZeros(r2);
-                    ret.offsets[k++] = j + idx;
-                    r2 &= (r2 - 1);
-                    idx = Long.numberOfTrailingZeros(r2);
-                    ret.offsets[k++] = j + idx;
-                    r2 &= (r2 - 1);
-                }
-                i += b2;
-                j += species.length() * 2;
+//                k = i;
+//                while (r2 > 0) {
+//                    int idx = Long.numberOfTrailingZeros(r2);
+//                    ret.offsets[k++] = j + idx;
+//                    r2 &= (r2 - 1);
+//                    idx = Long.numberOfTrailingZeros(r2);
+//                    ret.offsets[k++] = j + idx;
+//                    r2 &= (r2 - 1);
+//                    idx = Long.numberOfTrailingZeros(r2);
+//                    ret.offsets[k++] = j + idx;
+//                    r2 &= (r2 - 1);
+//                    idx = Long.numberOfTrailingZeros(r2);
+//                    ret.offsets[k++] = j + idx;
+//                    r2 &= (r2 - 1);
+//                    idx = Long.numberOfTrailingZeros(r2);
+//                    ret.offsets[k++] = j + idx;
+//                    r2 &= (r2 - 1);
+//                    idx = Long.numberOfTrailingZeros(r2);
+//                    ret.offsets[k++] = j + idx;
+//                    r2 &= (r2 - 1);
+//                }
+//                i += b2;
+//                j += species.length() * 2;
             }
 
             // tail loop
