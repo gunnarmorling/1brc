@@ -255,15 +255,15 @@ public class CalculateAverage_abeobk {
             if (semipos_code != 0) {
                 int semi_pos = Long.numberOfTrailingZeros(semipos_code) >>> 3;
                 addr += semi_pos + 1;
-                long tail = (word & HASH_MASKS[semi_pos]);
-                long hash = xxh32(word0 ^ tail);
+                long tail = word0 ^ (word & HASH_MASKS[semi_pos]);
+                long hash = xxh32(tail);
                 int bucket = (int) (hash & BUCKET_MASK);
                 while (true) {
                     Node node = map[bucket];
                     if (node == null) {
-                        return (map[bucket] = new Node(row_addr, word0, tail, semi_pos + 8, hash));
+                        return (map[bucket] = new Node(row_addr, tail, semi_pos + 8, hash));
                     }
-                    if (node.word0 == word0 && node.tail == tail) {
+                    if (node.tail == tail) {
                         return node;
                     }
                     bucket++;
@@ -283,8 +283,8 @@ public class CalculateAverage_abeobk {
             addr += semi_pos;
             long keylen = addr - row_addr;
             addr++;
-            long tail = (word & HASH_MASKS[semi_pos]);
-            hash = xxh32(hash ^ tail);
+            long tail = hash ^ (word & HASH_MASKS[semi_pos]);
+            hash = xxh32(tail);
             int bucket = (int) (hash & BUCKET_MASK);
 
             while (true) {
