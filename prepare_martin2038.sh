@@ -19,7 +19,8 @@
 source "$HOME/.sdkman/bin/sdkman-init.sh"
 sdk use java 21.0.2-graal 1>&2
 #
-#if [ ! -f target/CalculateAverage_martin2038 ]; then
-#    NATIVE_IMAGE_OPTS="--gc=epsilon -O3 -march=native -R:MaxHeapSize=64m -H:-GenLoopSafepoints --enable-preview --initialize-at-build-time=dev.morling.onebrc.CalculateAverage_martin2038"
-#    native-image $NATIVE_IMAGE_OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o target/CalculateAverage_martin2038_image dev.morling.onebrc.CalculateAverage_martin2038
-#fi
+if [ ! -f target/CalculateAverage_martin2038 ]; then
+    MAIN=dev.morling.onebrc.CalculateAverage_martin2038
+    NATIVE_IMAGE_OPTS="-H:+UnlockExperimentalVMOptions --initialize-at-build-time=$MAIN --gc=epsilon -O3 -march=native -R:MaxHeapSize=515m -H:-GenLoopSafepoints -H:InlineAllBonus=10 -H:-ParseRuntimeOptions"
+    $JAVA_HOME/bin/native-image $NATIVE_IMAGE_OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o target/CalculateAverage_martin2038_image $MAIN
+fi
