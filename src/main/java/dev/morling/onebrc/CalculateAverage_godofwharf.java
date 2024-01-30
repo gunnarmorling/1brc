@@ -285,7 +285,7 @@ public class CalculateAverage_godofwharf {
                     r1 &= (r1 - 1);
                 }
                 i += b1;
-                ret.offsets[i] = j + s2;
+                ret.offsets[i] = j + species.length();
                 j += species.length() * 2;
                 i += s2;
                 k = i;
@@ -310,7 +310,7 @@ public class CalculateAverage_godofwharf {
                     r2 &= (r2 - 1);
                 }
                 i += b2;
-                ret.offsets[i] = j + (s4 & 1);
+                ret.offsets[i] = j + species.length();
                 j += species.length() * 2;
                 i += s4;
             }
