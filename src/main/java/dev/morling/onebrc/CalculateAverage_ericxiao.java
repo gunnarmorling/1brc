@@ -48,7 +48,7 @@ public class CalculateAverage_ericxiao {
         private final int[] measurements = new int[MAP_SIZE * 4];
 
         boolean stationExists(int hash) {
-            return stations[hash] != null;
+            return measurements[hash + 3] != 0;
         }
 
         void insertStation(int idx, String station, int min, int max, int sum, int count) {
@@ -305,8 +305,7 @@ public class CalculateAverage_ericxiao {
                     Stations currStation = results.get(i);
                     for (int j = 0; j < currStation.stationPointer; j++) {
                         int currStationHash = station1.stationHash[j];
-                        if (currStation.measurements[currStationHash + 3] != 0) {
-                            // if count == 0, then station does not exist.
+                        if (station1.stationExists(currStationHash)) {
                             station1.insertStation(currStationHash, currStation.stations[j], currStation.measurements[0], currStation.measurements[1],
                                     currStation.measurements[2], currStation.measurements[3]);
                         }
