@@ -309,14 +309,18 @@ public class CalculateAverage_merykittyunsafe {
         return parseDataPoint(aggrMap, entryOffset, address + keySize + 1);
     }
 
-    private static long findBegin(long begin, long end) {
-        begin--;
-        while (begin < end) {
-            if (UNSAFE.getByte(begin++) == '\n') {
+    private static long findOffset(long base, long offset, long limit) {
+        if (offset == 0) {
+            return offset;
+        }
+
+        offset--;
+        while (offset < limit) {
+            if (UNSAFE.getByte(base + (offset++)) == '\n') {
                 break;
             }
         }
-        return begin;
+        return offset;
     }
 
     // Process all lines that start in [offset, limit)
@@ -325,45 +329,45 @@ public class CalculateAverage_merykittyunsafe {
         if (offset == limit) {
             return aggrMap;
         }
-        int batches = 2;
         long base = data.address();
-        long begin = base + offset;
-        long end = base + limit;
+        int batches = 2;
         long batchSize = Math.ceilDiv(limit - offset, batches);
-        long begin0 = begin;
-        long begin1 = begin + batchSize;
-        long end0 = Math.min(begin1, end);
-        long end1 = end;
-        // Find the start of a new line
-        if (offset != 0) {
-            begin0 = findBegin(begin0, end0);
-        }
-        begin1 = findBegin(begin1, end1);
+        long offset0 = offset;
+        long offset1 = offset + batchSize;
+        long limit0 = Math.min(offset1, limit);
+        long limit1 = limit;
 
+        // Find the start of a new line
+        offset0 = findOffset(base, offset0, limit0);
+        offset1 = findOffset(base, offset1, limit1);
+
+        long begin;
+        long end = base + limit;
         long mainLoopMinWidth = Math.max(BYTE_SPECIES.vectorByteSize(), KEY_MAX_SIZE + 1 + Long.BYTES);
-        if (end1 - begin1 < mainLoopMinWidth) {
-            if (offset != 0) {
-                begin = findBegin(begin, end);
-            }
+        if (limit1 - offset1 < mainLoopMinWidth) {
+            begin = base + findOffset(base, offset, limit);
             while (begin < end - mainLoopMinWidth) {
                 begin = iterate(aggrMap, begin);
             }
         }
         else {
-            // The main loop, optimized for speed
+            long begin0 = base + offset0;
+            long begin1 = base + offset1;
+            long end0 = base + limit0;
+            long end1 = base + limit1;
             while (true) {
-                int finishes = 0;
+                boolean finishes = false;
                 if (begin0 < end0) {
                     begin0 = iterate(aggrMap, begin0);
                 }
                 else {
-                    finishes++;
+                    finishes = true;
                 }
                 if (begin1 < end1 - mainLoopMinWidth) {
                     begin1 = iterate(aggrMap, begin1);
                 }
                 else {
-                    if (finishes == batches - 1) {
+                    if (finishes) {
                         break;
                     }
                 }

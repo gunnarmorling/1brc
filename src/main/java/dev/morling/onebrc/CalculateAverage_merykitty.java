@@ -274,28 +274,63 @@ public class CalculateAverage_merykitty {
         return parseDataPoint(aggrMap, node, data, offset + keySize + 1);
     }
 
+    private static long findOffset(MemorySegment data, long offset, long limit) {
+        if (offset == 0) {
+            return offset;
+        }
+
+        offset--;
+        while (offset < limit) {
+            if (data.get(ValueLayout.JAVA_BYTE, offset++) == '\n') {
+                break;
+            }
+        }
+        return offset;
+    }
+
     // Process all lines that start in [offset, limit)
     private static PoorManMap processFile(MemorySegment data, long offset, long limit) {
         var aggrMap = new PoorManMap();
-        // Find the start of a new line
-        if (offset != 0) {
-            offset--;
-            while (offset < limit) {
-                if (data.get(ValueLayout.JAVA_BYTE, offset++) == '\n') {
-                    break;
-                }
-            }
-        }
-
-        // If there is no line starting in this segment, just return
         if (offset == limit) {
             return aggrMap;
         }
+        int batches = 2;
+        long batchSize = Math.ceilDiv(limit - offset, batches);
+        long offset0 = offset;
+        long offset1 = offset + batchSize;
+        long limit0 = Math.min(offset1, limit);
+        long limit1 = limit;
 
-        // The main loop, optimized for speed
-        while (offset < limit - Math.max(BYTE_SPECIES.vectorByteSize(),
-                Long.BYTES + 1 + KEY_MAX_SIZE)) {
-            offset = iterate(aggrMap, data, offset);
+        // Find the start of a new line
+        offset0 = findOffset(data, offset0, limit0);
+        offset1 = findOffset(data, offset1, limit1);
+
+        long mainLoopMinWidth = Math.max(BYTE_SPECIES.vectorByteSize(), KEY_MAX_SIZE + 1 + Long.BYTES);
+        if (limit1 - offset1 < mainLoopMinWidth) {
+            offset = findOffset(data, offset, limit);
+            while (offset < limit - mainLoopMinWidth) {
+                offset = iterate(aggrMap, data, offset);
+            }
+        }
+        else {
+            while (true) {
+                boolean finish = false;
+                if (offset0 < limit0) {
+                    offset0 = iterate(aggrMap, data, offset0);
+                }
+                else {
+                    finish = true;
+                }
+                if (offset1 < limit1 - mainLoopMinWidth) {
+                    offset1 = iterate(aggrMap, data, offset1);
+                }
+                else {
+                    if (finish) {
+                        break;
+                    }
+                }
+            }
+            offset = offset1;
         }
 
         // Now we are at the tail, just be simple
