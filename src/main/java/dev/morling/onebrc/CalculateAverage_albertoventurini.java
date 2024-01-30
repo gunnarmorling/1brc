@@ -58,31 +58,31 @@ public class CalculateAverage_albertoventurini {
 
     // Process a chunk and write results in a Trie rooted at 'root'.
     private static void processChunk(final TrieNode root, final ChunkReader cr) {
-        while (cr.hasNext()) {
+        while (cr.ensureHasMoreRows()) {
             TrieNode node = root;
 
             // Process the location name navigating through the trie
-            int b = cr.getNext() & 0xFF;
-            while (b != ';') {
+            int b = cr.getNext();
+            do {
+                b &= 0xFF;
                 if (node.children[b] == null) {
                     node.children[b] = new TrieNode();
                 }
                 node = node.children[b];
-                b = cr.getNext() & 0xFF;
-            }
+                b = cr.getNext();
+            } while (b != ';');
 
             // Process the reading value (temperature)
-            int reading;
+            final int reading;
 
-            byte b1 = cr.getNext();
-            byte b2 = cr.getNext();
-            byte b3 = cr.getNext();
-            byte b4 = cr.getNext();
+            final byte b1 = cr.getNext();
+            final byte b2 = cr.getNext();
             if (b2 == '.') { // value is n.n
-                reading = (b1 * 10 + b3 - TWO_BYTE_TO_INT);
-                // b4 == \n
+                reading = (b1 * 10 + cr.getNext() - TWO_BYTE_TO_INT);
             }
             else {
+                final byte b3 = cr.getNext();
+                final byte b4 = cr.getNext();
                 if (b4 == '.') { // value is -nn.n
                     reading = -(b2 * 100 + b3 * 10 + cr.getNext() - THREE_BYTE_TO_INT);
                 }
@@ -92,11 +92,15 @@ public class CalculateAverage_albertoventurini {
                 else { // value is nn.n
                     reading = (b1 * 100 + b2 * 10 + b4 - THREE_BYTE_TO_INT);
                 }
-                cr.getNext(); // new line
             }
+            cr.cursor++; // new line
 
-            node.min = Math.min(node.min, reading);
-            node.max = Math.max(node.max, reading);
+            if (reading < node.min) {
+                node.min = reading;
+            }
+            if (reading > node.max) {
+                node.max = reading;
+            }
             node.sum += reading;
             node.count++;
         }
@@ -165,26 +169,40 @@ public class CalculateAverage_albertoventurini {
                     bytes[index] = (byte) i;
                     printResultsRec(childNodes, bytes, index + 1);
                 }
-
             }
         }
     }
 
     private static final String FILE = "./measurements.txt";
 
+    /**
+     * Read a chunk of a {@link RandomAccessFile} file.
+     * Internally, the chunk is further subdivided into "sub-chunks" (byte arrays).
+     */
     private static final class ChunkReader {
-        // Byte arrays of size 2^22 seem to have the best performance on my machine.
-        private static final int BYTE_ARRAY_SIZE = 1 << 22;
+        // Byte arrays of size 2^20 seem to have the best performance on my machine.
+        private static final int BYTE_ARRAY_SIZE = 1 << 20;
         private final byte[] bytes;
 
         private final RandomAccessFile file;
+
+        // The initial position of this chunk.
         private final long chunkBegin;
+
+        // The length of this chunk.
         private final long chunkLength;
 
-        private int readBytes = 0;
-
-        private int cursor = 0;
+        // The beginning of the current "sub-chunk", relative to the initial position of the chunk.
         private long offset = 0;
+
+        // The size of the current "sub-chunk".
+        private int subChunkSize = 0;
+
+        // The current position within the current "sub-chunk".
+        private int cursor = 0;
+
+        // The maximum size of a row
+        private static final int MAX_ROW_SIZE_BYTES = 107;
 
         ChunkReader(
                     final RandomAccessFile file,
@@ -197,32 +215,43 @@ public class CalculateAverage_albertoventurini {
             int byteArraySize = chunkLength < BYTE_ARRAY_SIZE ? (int) chunkLength : BYTE_ARRAY_SIZE;
             this.bytes = new byte[byteArraySize];
 
-            readNextBytes();
+            readSubChunk();
         }
 
-        boolean hasNext() {
-            return (offset + cursor) < chunkLength;
+        // Return true if this ChunkReader has more bytes available, false otherwise.
+        // If this ChunkReader needs to read a new "sub-chunk", it does so in this method.
+        boolean ensureHasMoreRows() {
+            if (cursor >= subChunkSize) {
+                offset += cursor;
+                if (offset >= chunkLength) {
+                    return false;
+                }
+                readSubChunk();
+            }
+
+            return true;
         }
 
         byte getNext() {
-            if (cursor >= readBytes) {
-                readNextBytes();
-            }
             return bytes[cursor++];
         }
 
-        private void readNextBytes() {
+        private void readSubChunk() {
             try {
-                offset += readBytes;
                 synchronized (file) {
                     file.seek(chunkBegin + offset);
-                    readBytes = file.read(bytes);
+                    subChunkSize = file.read(bytes);
                 }
-                cursor = 0;
             }
             catch (IOException e) {
                 throw new RuntimeException(e);
             }
+
+            // Always "pretend" that we've read a few bytes less,
+            // so that we don't stop in the middle of reading a row
+            subChunkSize -= MAX_ROW_SIZE_BYTES;
+
+            cursor = 0;
         }
     }
 

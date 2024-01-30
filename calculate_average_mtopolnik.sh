@@ -15,5 +15,11 @@
 #  limitations under the License.
 #
 
-java --enable-preview \
-  --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_mtopolnik
+if [ -f target/CalculateAverage_mtopolnik_image ]; then
+    echo "Using native image 'target/CalculateAverage_mtopolnik_image'" 1>&2
+    target/CalculateAverage_mtopolnik_image
+else
+    JAVA_OPTS="--enable-preview"
+    echo "Native image not found, using JVM mode." 1>&2
+    java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_mtopolnik
+fi
