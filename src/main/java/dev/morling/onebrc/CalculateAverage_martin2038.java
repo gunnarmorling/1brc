@@ -17,9 +17,13 @@ package dev.morling.onebrc;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
+import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel.MapMode;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,31 +34,31 @@ public class CalculateAverage_martin2038 {
 
     private static final String FILE = "./measurements.txt";
 
-    private static record Measurement(String station, double value) {
-        private Measurement(String[] parts) {
-            this(parts[0], Double.parseDouble(parts[1]));
-        }
-    }
-
-    private static record ResultRow(double min, double mean, double max) {
-
-        public String toString() {
-            return round(min) + "/" + round(mean) + "/" + round(max);
-        }
-
-        private double round(double value) {
-            return Math.round(value * 10.0) / 10.0;
-        }
-    };
+    //private static record Measurement(String station, double value) {
+    //    private Measurement(String[] parts) {
+    //        this(parts[0], Double.parseDouble(parts[1]));
+    //    }
+    //}
+    //
+    //private static record ResultRow(double min, double mean, double max) {
+    //
+    //    public String toString() {
+    //        return round(min) + "/" + round(mean) + "/" + round(max);
+    //    }
+    //
+    //    private double round(double value) {
+    //        return Math.round(value * 10.0) / 10.0;
+    //    }
+    //};
 
     private static class MeasurementAggregator {
-        private int min = Integer.MAX_VALUE;
-        private int max = Integer.MIN_VALUE;
+        private int  min = Integer.MAX_VALUE;
+        private int  max = Integer.MIN_VALUE;
         private long sum;
-        private int count;
+        private int  count;
 
         void update(int temp) {
-            update(1,temp,temp,temp);
+            update(1, temp, temp, temp);
         }
 
         void update(int cnt, long sm, int min, int max) {
@@ -68,13 +72,12 @@ public class CalculateAverage_martin2038 {
             }
         }
 
-        void merge(MeasurementAggregator it){
-           update(it.count,it.sum,it.min,it.max);
+        void merge(MeasurementAggregator it) {
+            update(it.count, it.sum, it.min, it.max);
         }
 
-
         public String toString() {
-            return (min/ 10f) + "/" + Math.round(sum/(float)count)/10f + "/" + (max/ 10f);
+            return (min / 10f) + "/" + Math.round(sum / (float) count) / 10f + "/" + (max / 10f);
         }
     }
 
@@ -82,18 +85,20 @@ public class CalculateAverage_martin2038 {
 
         var file = new RandomAccessFile(FILE, "r");
         final int maxNameLength = 100;
-            //.parallel().
+        //.parallel().
         var fc = file.getChannel();
         split(file).stream().parallel().map(ck -> {
-            var map = new HashMap<String, MeasurementAggregator>(200);
+            // StrFastHashKey 比string快500ms
+            var map = new HashMap<StrFastHashKey, MeasurementAggregator>(200);
             //var pb = System.currentTimeMillis();
             try {
-                var mb = fc.map(MapMode.READ_ONLY,ck.start, ck.length);
+                var mb = fc.map(MapMode.READ_ONLY, ck.start, ck.length);
                 var buff = new byte[maxNameLength];
-                while (mb.hasRemaining()){
-                    var name = readNextString(buff,mb);//.intern();
+                while (mb.hasRemaining()) {
+                    var name = readNextHashKey(buff, mb);
+                    //var name = readNextString(buff,mb);//.intern();
                     var temp = readNextInt10Times(buff, mb);
-                    add2map(map,name,temp);
+                    add2map(map, name, temp);
                 }
                 //long end = ck.start + ck.length;
                 //do {
@@ -107,14 +112,14 @@ public class CalculateAverage_martin2038 {
             }
             //System.out.println("chunk end , cost : " + (System.currentTimeMillis() - pb));
             return map;
-        }).reduce(CalculateAverage_martin2038::reduceMap).ifPresent(map->{
+        }).reduce(CalculateAverage_martin2038::reduceMap).ifPresent(map -> {
 
             var sb = new StringBuilder(map.size() * 100);
             sb.append('{');
             map.entrySet().stream().sorted(Map.Entry.comparingByKey())
-                    .forEachOrdered(kv->sb.append(kv.getKey()).append('=').append(kv.getValue()).append(", "));
-            sb.deleteCharAt(sb.length()-1);
-            sb.setCharAt(sb.length()-1,'}');
+                    .forEachOrdered(kv -> sb.append(kv.getKey()).append('=').append(kv.getValue()).append(", "));
+            sb.deleteCharAt(sb.length() - 1);
+            sb.setCharAt(sb.length() - 1, '}');
             var resultStr = sb.toString();
             System.out.println(resultStr);
             //System.out.println(resultStr.hashCode());
@@ -122,31 +127,31 @@ public class CalculateAverage_martin2038 {
 
     }
 
-    static HashMap<String, MeasurementAggregator> reduceMap(HashMap<String, MeasurementAggregator> aMap
-            ,HashMap<String, MeasurementAggregator> bMap){
-        aMap.forEach((k,v)->{
-            var b =  bMap.get(k);
-            if(null == b){
-                bMap.put(k,v);
-            }else{
+    static <Key> HashMap<Key, MeasurementAggregator> reduceMap(HashMap<Key, MeasurementAggregator> aMap
+            , HashMap<Key, MeasurementAggregator> bMap) {
+        aMap.forEach((k, v) -> {
+            var b = bMap.get(k);
+            if (null == b) {
+                bMap.put(k, v);
+            } else {
                 b.merge(v);
             }
         });
         return bMap;
     }
 
-    static void add2map(Map<String, MeasurementAggregator> map,String name,int temp){
+    static <Key> void add2map(Map<Key, MeasurementAggregator> map, Key name, int temp) {
         // 比computeIfAbsent 节约1秒
         var agg = map.get(name);
-        if(null == agg){
+        if (null == agg) {
             agg = new MeasurementAggregator();
-            map.put(name,agg);
+            map.put(name, agg);
         }
         //var agg = map.computeIfAbsent(name,it->new MeasurementAggregator());
         agg.update(temp);
     }
 
-    record FileChunk(long start,long length){}
+    record FileChunk(long start, long length) {}
 
     static List<FileChunk> split(RandomAccessFile file) throws IOException {
         var threadNum = Runtime.getRuntime().availableProcessors();
@@ -165,7 +170,7 @@ public class CalculateAverage_martin2038 {
             length++;
             list.add(new FileChunk(lastStart, length));
             lastStart += length;
-            if(lastStart>=total){
+            if (lastStart >= total) {
                 return list;
             }
         }
@@ -173,22 +178,31 @@ public class CalculateAverage_martin2038 {
         return list;
     }
 
-
-    static String readNextString(byte[] buf, MappedByteBuffer mb) {
+    static StrFastHashKey readNextHashKey(byte[] buf, MappedByteBuffer mb) {
         int i = 1;
-        mb.get(buf,0,i);
+        mb.get(buf, 0, i);
         byte b;
         while ((b = mb.get()) != ';') {
             buf[i++] = b;
         }
-        return  new String(buf,0,i);
+        return new StrFastHashKey(buf, i);
+    }
+
+    static String readNextString(byte[] buf, MappedByteBuffer mb) {
+        int i = 1;
+        mb.get(buf, 0, i);
+        byte b;
+        while ((b = mb.get()) != ';') {
+            buf[i++] = b;
+        }
+        return new String(buf, 0, i);
     }
 
     // copy from CalculateAverage_3j5a
     // 替换 Double.parse
     // 时间 38秒 ->  5418 ms
     static int readNextInt10Times(byte[] buf, MappedByteBuffer mb) {
-        final  int min_number_len = 3;
+        final int min_number_len = 3;
         int i = min_number_len;
         mb.get(buf, 0, i);
         byte b;
@@ -212,22 +226,100 @@ public class CalculateAverage_martin2038 {
         return temperature;
     }
 
-     //static String readNext(RandomAccessFile file, char endFlag,int initLength) throws IOException {
-     //    StringBuilder input = new StringBuilder(initLength);
-     //    int c = -1;
-     //    //boolean eol = false;
-     //
-     //    while (true) {
-     //        c = file.read();
-     //        if( c == endFlag || c == -1) {
-     //            break;
-     //        }
-     //        input.append((char)c);
-     //    }
-     //
-     //    //if ((c == -1) && (input.length() == 0)) {
-     //    //    return null;
-     //    //}
-     //    return input.toString();
-     //}
+    //static String readNext(RandomAccessFile file, char endFlag,int initLength) throws IOException {
+    //    StringBuilder input = new StringBuilder(initLength);
+    //    int c = -1;
+    //    //boolean eol = false;
+    //
+    //    while (true) {
+    //        c = file.read();
+    //        if( c == endFlag || c == -1) {
+    //            break;
+    //        }
+    //        input.append((char)c);
+    //    }
+    //
+    //    //if ((c == -1) && (input.length() == 0)) {
+    //    //    return null;
+    //    //}
+    //    return input.toString();
+    //}
+
+    static class StrFastHashKey implements Comparable<StrFastHashKey> {
+        final byte[] name;
+        final int    hash;
+
+        String nameStr;
+
+        StrFastHashKey(byte[] buf, int size) {
+            name = new byte[size];
+            System.arraycopy(buf, 0, name, 0, size);
+            hash = calculateHash(name, 0, size - 1);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            //if (this == o) {return true;}
+            //if (o == null || getClass() != o.getClass()) {return false;}
+            StrFastHashKey that = (StrFastHashKey) o;
+            return hash == that.hash && Arrays.equals(name, that.name);
+        }
+
+        @Override
+        public int hashCode() {
+            return hash;
+        }
+
+        @Override
+        public String toString() {
+            if (null == nameStr) {
+                nameStr = new String(name);
+            }
+            return nameStr;
+        }
+
+        @Override
+        public int compareTo(StrFastHashKey o) {
+            return toString().compareTo(o.toString());
+        }
+    }
+
+    private static final VarHandle LONG_VIEW = MethodHandles.byteArrayViewVarHandle(long[].class, ByteOrder.nativeOrder())
+            .withInvokeExactBehavior();
+    private static final VarHandle INT_VIEW  = MethodHandles.byteArrayViewVarHandle(int[].class, ByteOrder.nativeOrder())
+            .withInvokeExactBehavior();
+
+    /**
+     * This is a prime number that gives pretty
+     * <a href="https://vanilla-java.github.io/2018/08/15/Looking-at-randomness-and-performance-for-hash-codes.html">good hash distributions</a>
+     * on the data in this challenge.
+     */
+    private static final long RANDOM_PRIME = 0x7A646E4D;
+
+    /**
+     * The hash calculation is inspired by
+     * <a href="https://questdb.io/blog/building-faster-hash-table-high-performance-sql-joins/#fastmap-internals">QuestDB FastMap</a>
+     */
+    private static int calculateHash(byte[] buffer, int startPosition, int endPosition) {
+        long hash = 0;
+
+        int position = startPosition;
+        for (; position + Long.BYTES <= endPosition; position += Long.BYTES) {
+            long value = (long) LONG_VIEW.get(buffer, position);
+            hash = hash * RANDOM_PRIME + value;
+        }
+
+        if (position + Integer.BYTES <= endPosition) {
+            int value = (int) INT_VIEW.get(buffer, position);
+            hash = hash * RANDOM_PRIME + value;
+            position += Integer.BYTES;
+        }
+
+        for (; position <= endPosition; position++) {
+            hash = hash * RANDOM_PRIME + buffer[position];
+        }
+        hash = hash * RANDOM_PRIME;
+        return (int) hash ^ (int) (hash >>> 32);
+    }
+
 }
