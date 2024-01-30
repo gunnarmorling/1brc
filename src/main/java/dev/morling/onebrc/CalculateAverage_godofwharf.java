@@ -255,12 +255,8 @@ public class CalculateAverage_godofwharf {
                 long l2 = newLineVec.eq(v2).toLong();
                 long l3 = newLineVec.eq(v3).toLong();
                 long l4 = newLineVec.eq(v4).toLong();
-                int s2 = (int) (l2 & (1 << 31)) >> 31;
-                int s4 = (int) (l4 & (1 << 31)) >> 31;
-                l2 = l2 & 0x7FFFFFFF;
-                l4 = l4 & 0x7FFFFFFF;
-                long r1 = l1 | (l2 << (species.length()));
-                long r2 = l3 | (l4 << (species.length()));
+                long r1 = l1 & 0xFFFFFFFFL | (l2 << (species.length()));
+                long r2 = l3 & 0xFFFFFFFFL | (l4 << (species.length()));
                 int b1 = Long.bitCount(r1);
                 int b2 = Long.bitCount(r2);
                 int k = i;
@@ -285,9 +281,7 @@ public class CalculateAverage_godofwharf {
                     r1 &= (r1 - 1);
                 }
                 i += b1;
-                ret.offsets[i] = j + species.length();
                 j += species.length() * 2;
-                i += s2;
                 k = i;
                 while (r2 > 0) {
                     int idx = Long.numberOfTrailingZeros(r2);
@@ -310,9 +304,7 @@ public class CalculateAverage_godofwharf {
                     r2 &= (r2 - 1);
                 }
                 i += b2;
-                ret.offsets[i] = j + species.length();
                 j += species.length() * 2;
-                i += s4;
             }
 
             // tail loop
