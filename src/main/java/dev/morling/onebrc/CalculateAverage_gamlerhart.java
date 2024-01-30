@@ -241,7 +241,7 @@ public class CalculateAverage_gamlerhart {
         private boolean isSameEntry(MemorySegment file, long slotEntry, long pos, int len) {
             long keyPos = (slotEntry & MASK_POS) >> SHIFT_POS;
             int keyLen = (int) (slotEntry & MASK_LEN);
-            var isSame = isSame(file, keyPos, pos, len);
+            var isSame = len == keyLen && isSame(file, keyPos, pos, len);
             return isSame;
         }
 
