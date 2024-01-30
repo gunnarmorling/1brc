@@ -409,10 +409,9 @@ public class CalculateAverage_godofwharf {
         }
 
         public void update(final Measurement m) {
-            MeasurementAggregator newAgg = new MeasurementAggregator(m.temperature, m.temperature, m.temperature, 1L);
             MeasurementAggregator agg = state.get(m.aggregationKey);
             if (agg == null) {
-                state.put(m.aggregationKey, newAgg);
+                state.put(m.aggregationKey, new MeasurementAggregator(m.temperature, m.temperature, m.temperature, 1L));
                 return;
             }
             agg.count++;
