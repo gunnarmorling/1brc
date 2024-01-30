@@ -286,9 +286,9 @@ public class CalculateAverage_godofwharf {
                     ret.offsets[k++] = j + idx;
                     r1 &= (r1 - 1);
                 }
-                ret.offsets[k++] = j + (s2 & 1);
+                ret.offsets[k++] = j + s2;
                 j += PREFERRED_SPECIES.length() * 2;
-                i += b1;
+                i += b1 + s2;
                 k = i;
                 while (r2 > 0) {
                     int idx = Long.numberOfTrailingZeros(r2);
@@ -312,7 +312,7 @@ public class CalculateAverage_godofwharf {
                 }
                 ret.offsets[k++] = j + (s4 & 1);
                 j += PREFERRED_SPECIES.length() * 2;
-                i += b2;
+                i += b2 + s4;
             }
 
             // tail loop
