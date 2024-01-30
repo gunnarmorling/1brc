@@ -322,15 +322,27 @@ public class CalculateAverage_ericxiao {
                 }
                 // print key and values
                 System.out.print("{");
-                for (int i = 0; i < station1.stationPointer; i++) {
+                for (int i = 0; i < station1.stationPointer - 1; i++) {
                     int idx = station1.stationHashes[i] * 4;
                     double mean = (double) station1.measurements[idx + 2] / (double) station1.measurements[idx + 3];
-                    System.out.print(station1.stationNames[i] + "=" + (station1.measurements[idx] / 10.0) + "/"
+                    System.out.print(
+                            station1.stationNames[i] + "="
+                            + (station1.measurements[idx] / 10.0) + "/"
                             + (Math.round(mean) / 10.0) + "/"
-                            + (station1.measurements[idx + 1] / 10.0));
-                    if (i < station1.stationPointer - 1)
-                        System.out.print(", ");
+                            + (station1.measurements[idx + 1] / 10.0)
+                            + ", "
+                    );
                 }
+
+                int idx = station1.stationHashes[station1.stationPointer - 1] * 4;
+                double mean = (double) station1.measurements[idx + 2] / (double) station1.measurements[idx + 3];
+                System.out.print(
+                        station1.stationNames[station1.stationPointer - 1] + "="
+                        + (station1.measurements[idx] / 10.0) + "/"
+                        + (Math.round(mean) / 10.0) + "/"
+                        + (station1.measurements[idx + 1] / 10.0)
+                );
+
                 System.out.print("}");
             }
         }
