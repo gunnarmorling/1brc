@@ -115,7 +115,7 @@ public class CalculateAverage_martin2038 {
             sb.setCharAt(sb.length()-1,'}');
             var resultStr = sb.toString();
             System.out.println(resultStr);
-            System.out.println(resultStr.hashCode());
+            //System.out.println(resultStr.hashCode());
         });
 
 
