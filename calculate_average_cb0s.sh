@@ -15,15 +15,6 @@
 #  limitations under the License.
 #
 
-# taken from thomaswue
-if [ -f target/CalculateAverage_cb0s_image ]; then
-    echo "Picking up existing native image 'target/CalculateAverage_cb0s_image', delete the file to select JVM mode." 1>&2
-    target/CalculateAverage_cb0s_image
-else
-    JAVA_OPTS="--enable-preview"
-    echo "Chosing to run the app in JVM mode as no native image was found, use prepare_cb0s.sh to generate." 1>&2
-    java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_cb0s
-fi
-
-# JAVA_OPTS=""
-# java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_cb0s
+# Arguments
+JAVA_OPTS="--enable-preview -XX:MaxGCPauseMillis=1 -XX:-AlwaysPreTouch -XX:+UseParallelGC -XX:+TieredCompilation"
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_cb0s
