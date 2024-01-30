@@ -309,31 +309,66 @@ public class CalculateAverage_merykittyunsafe {
         return parseDataPoint(aggrMap, entryOffset, address + keySize + 1);
     }
 
+    private static long findBegin(long begin, long end) {
+        begin--;
+        while (begin < end) {
+            if (UNSAFE.getByte(begin++) == '\n') {
+                break;
+            }
+        }
+        return begin;
+    }
+
     // Process all lines that start in [offset, limit)
     private static PoorManMap processFile(MemorySegment data, long offset, long limit) {
         var aggrMap = new PoorManMap();
+        if (offset == limit) {
+            return aggrMap;
+        }
+        int batches = 2;
         long base = data.address();
         long begin = base + offset;
         long end = base + limit;
+        long batchSize = Math.ceilDiv(limit - offset, batches);
+        long begin0 = begin;
+        long begin1 = begin + batchSize;
+        long end0 = Math.min(begin1, end);
+        long end1 = end;
         // Find the start of a new line
         if (offset != 0) {
-            begin--;
-            while (begin < end) {
-                if (UNSAFE.getByte(begin++) == '\n') {
-                    break;
-                }
+            begin0 = findBegin(begin0, end0);
+        }
+        begin1 = findBegin(begin1, end1);
+
+        long mainLoopMinWidth = Math.max(BYTE_SPECIES.vectorByteSize(), KEY_MAX_SIZE + 1 + Long.BYTES);
+        if (end1 - begin1 < mainLoopMinWidth) {
+            if (offset != 0) {
+                begin = findBegin(begin, end);
+            }
+            while (begin < end - mainLoopMinWidth) {
+                begin = iterate(aggrMap, begin);
             }
         }
-
-        // If there is no line starting in this segment, just return
-        if (begin == end) {
-            return aggrMap;
-        }
-
-        // The main loop, optimized for speed
-        while (begin < end - Math.max(BYTE_SPECIES.vectorByteSize(),
-                Long.BYTES + 1 + KEY_MAX_SIZE)) {
-            begin = iterate(aggrMap, begin);
+        else {
+            // The main loop, optimized for speed
+            while (true) {
+                int finishes = 0;
+                if (begin0 < end0) {
+                    begin0 = iterate(aggrMap, begin0);
+                }
+                else {
+                    finishes++;
+                }
+                if (begin1 < end1 - mainLoopMinWidth) {
+                    begin1 = iterate(aggrMap, begin1);
+                }
+                else {
+                    if (finishes == batches - 1) {
+                        break;
+                    }
+                }
+            }
+            begin = begin1;
         }
 
         // Now we are at the tail, just be simple
