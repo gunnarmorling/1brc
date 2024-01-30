@@ -241,26 +241,27 @@ public class CalculateAverage_godofwharf {
         private static SearchResult findNewLinesVectorized(final byte[] page,
                                                            final int pageLen) {
             SearchResult ret = new SearchResult(new int[pageLen / 5], 0);
-            int loopBound = pageLen - PREFERRED_SPECIES.length() * 4;
+            VectorSpecies<Byte> species = MEDIUM_SPECIES;
+            int loopBound = pageLen - species.length() * 4;
             int i = 0;
             int j = 0;
             while (j < loopBound) {
-                Vector<Byte> v1 = ByteVector.fromArray(PREFERRED_SPECIES, page, j);
-                Vector<Byte> v2 = ByteVector.fromArray(PREFERRED_SPECIES, page, j + PREFERRED_SPECIES.length());
-//                Vector<Byte> v3 = ByteVector.fromArray(PREFERRED_SPECIES, page, j + PREFERRED_SPECIES.length() * 2);
-//                Vector<Byte> v4 = ByteVector.fromArray(PREFERRED_SPECIES, page, j + PREFERRED_SPECIES.length() * 3);
+                Vector<Byte> v1 = ByteVector.fromArray(species, page, j);
+                Vector<Byte> v2 = ByteVector.fromArray(species, page, j + species.length());
+                Vector<Byte> v3 = ByteVector.fromArray(species, page, j + species.length() * 2);
+                Vector<Byte> v4 = ByteVector.fromArray(species, page, j + species.length() * 3);
                 long l1 = NEW_LINE_VEC.eq(v1).toLong();
                 long l2 = NEW_LINE_VEC.eq(v2).toLong();
-//                long l3 = NEW_LINE_VEC.eq(v3).toLong();
-//                long l4 = NEW_LINE_VEC.eq(v4).toLong();
+                long l3 = NEW_LINE_VEC.eq(v3).toLong();
+                long l4 = NEW_LINE_VEC.eq(v4).toLong();
                 int s2 = (int) (l2 & (1 << 31)) >> 31;
-//                int s4 = (int) (l4 & (1 << 31)) >> 31;
+                int s4 = (int) (l4 & (1 << 31)) >> 31;
                 l2 = l2 & 0x7FFFFFFF;
-//                l4 = l4 & 0x7FFFFFFF;
-                long r1 = l1 | (l2 << (PREFERRED_SPECIES.length()));
-//                long r2 = l3 | (l4 << (PREFERRED_SPECIES.length()));
+                l4 = l4 & 0x7FFFFFFF;
+                long r1 = l1 | (l2 << (species.length()));
+                long r2 = l3 | (l4 << (species.length()));
                 int b1 = Long.bitCount(r1);
-//                int b2 = Long.bitCount(r2);
+                int b2 = Long.bitCount(r2);
                 int k = i;
                 while (r1 > 0) {
                     int idx = Long.numberOfTrailingZeros(r1);
@@ -275,40 +276,40 @@ public class CalculateAverage_godofwharf {
                     idx = Long.numberOfTrailingZeros(r1);
                     ret.offsets[k++] = j + idx;
                     r1 &= (r1 - 1);
-//                    idx = Long.numberOfTrailingZeros(r1);
-//                    ret.offsets[k++] = j + idx;
-//                    r1 &= (r1 - 1);
-//                    idx = Long.numberOfTrailingZeros(r1);
-//                    ret.offsets[k++] = j + idx;
-//                    r1 &= (r1 - 1);
+                    idx = Long.numberOfTrailingZeros(r1);
+                    ret.offsets[k++] = j + idx;
+                    r1 &= (r1 - 1);
+                    idx = Long.numberOfTrailingZeros(r1);
+                    ret.offsets[k++] = j + idx;
+                    r1 &= (r1 - 1);
                 }
                 ret.offsets[k++] = j + s2;
-                j += PREFERRED_SPECIES.length() * 2;
+                j += species.length() * 2;
                 i += b1 + s2;
                 k = i;
-//                while (r2 > 0) {
-//                    int idx = Long.numberOfTrailingZeros(r2);
-//                    ret.offsets[k++] = j + idx;
-//                    r2 &= (r2 - 1);
-//                    idx = Long.numberOfTrailingZeros(r2);
-//                    ret.offsets[k++] = j + idx;
-//                    r2 &= (r2 - 1);
-//                    idx = Long.numberOfTrailingZeros(r2);
-//                    ret.offsets[k++] = j + idx;
-//                    r2 &= (r2 - 1);
-//                    idx = Long.numberOfTrailingZeros(r2);
-//                    ret.offsets[k++] = j + idx;
-//                    r2 &= (r2 - 1);
-////                    idx = Long.numberOfTrailingZeros(r2);
-////                    ret.offsets[k++] = j + idx;
-////                    r2 &= (r2 - 1);
-////                    idx = Long.numberOfTrailingZeros(r2);
-////                    ret.offsets[k++] = j + idx;
-////                    r2 &= (r2 - 1);
-//                }
-//                ret.offsets[k++] = j + (s4 & 1);
-//                j += PREFERRED_SPECIES.length() * 2;
-//                i += b2 + s4;
+                while (r2 > 0) {
+                    int idx = Long.numberOfTrailingZeros(r2);
+                    ret.offsets[k++] = j + idx;
+                    r2 &= (r2 - 1);
+                    idx = Long.numberOfTrailingZeros(r2);
+                    ret.offsets[k++] = j + idx;
+                    r2 &= (r2 - 1);
+                    idx = Long.numberOfTrailingZeros(r2);
+                    ret.offsets[k++] = j + idx;
+                    r2 &= (r2 - 1);
+                    idx = Long.numberOfTrailingZeros(r2);
+                    ret.offsets[k++] = j + idx;
+                    r2 &= (r2 - 1);
+                    idx = Long.numberOfTrailingZeros(r2);
+                    ret.offsets[k++] = j + idx;
+                    r2 &= (r2 - 1);
+                    idx = Long.numberOfTrailingZeros(r2);
+                    ret.offsets[k++] = j + idx;
+                    r2 &= (r2 - 1);
+                }
+                ret.offsets[k++] = j + (s4 & 1);
+                j += species.length() * 2;
+                i += b2 + s4;
             }
 
             // tail loop
