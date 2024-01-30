@@ -253,8 +253,16 @@ public class CalculateAverage_godofwharf {
                 VectorMask<Byte> m2 = NEW_LINE_VEC.eq(v2);
                 VectorMask<Byte> m3 = NEW_LINE_VEC.eq(v3);
                 VectorMask<Byte> m4 = NEW_LINE_VEC.eq(v4);
-                long r1 = (m1.toLong() & 0xffffffffL) | (m2.toLong() << PREFERRED_SPECIES.length());
-                long r2 = (m3.toLong() & 0xffffffffL) | (m4.toLong() << PREFERRED_SPECIES.length());
+                long l1 = m1.toLong();
+                long l2 = m2.toLong();
+                long l3 = m3.toLong();
+                long l4 = m4.toLong();
+                int s2 = (int) (l2 & (1 << 31)) >> 31;
+                int s4 = (int) (l4 & (1 << 31)) >> 31;
+                l2 = l2 & 0x7FFFFFFF;
+                l4 = l4 & 0x7FFFFFFF;
+                long r1 = l1 | (l2 << (PREFERRED_SPECIES.length()));
+                long r2 = l3 | (l4 << (PREFERRED_SPECIES.length()));
                 int b1 = Long.bitCount(r1);
                 int b2 = Long.bitCount(r2);
                 int k = i;
@@ -278,6 +286,7 @@ public class CalculateAverage_godofwharf {
                     ret.offsets[k++] = j + idx;
                     r1 &= (r1 - 1);
                 }
+                ret.offsets[k++] = j + (s2 & 1);
                 j += PREFERRED_SPECIES.length() * 2;
                 i += b1;
                 k = i;
@@ -301,6 +310,7 @@ public class CalculateAverage_godofwharf {
                     ret.offsets[k++] = j + idx;
                     r2 &= (r2 - 1);
                 }
+                ret.offsets[k++] = j + (s4 & 1);
                 j += PREFERRED_SPECIES.length() * 2;
                 i += b2;
             }
