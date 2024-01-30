@@ -117,10 +117,10 @@ public class CalculateAverage_anitasv {
         IntSummaryStatistics find(int hash, Shard shard, long stationStart, long stationEnd) {
             int initialIndex = hash & capacityMinusOne;
             int lookupLength = (int) (stationEnd - stationStart);
-            int lookupAligned = ((lookupLength + 7) & (-8)) - 7;
+            int lookupAligned = ((lookupLength + 7) & (-8));
             int i = initialIndex;
 
-            lookupAligned = (int) (shard.truncate(stationStart + lookupAligned) - stationStart);
+            lookupAligned = (int) (shard.truncate(stationStart + lookupAligned) - stationStart) - 7;
 
             do {
                 int keyIndex = i << 7;
