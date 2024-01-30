@@ -324,24 +324,28 @@ public class CalculateAverage_ericxiao {
                 System.out.print("{");
                 for (int i = 0; i < station1.stationPointer - 1; i++) {
                     int idx = station1.stationHashes[i] * 4;
-                    double mean = (double) station1.measurements[idx + 2] / (double) station1.measurements[idx + 3];
+                    int min = station1.measurements[idx];
+                    int max = station1.measurements[idx + 1];
+                    int sum = station1.measurements[idx + 2];
+                    int count = station1.measurements[idx + 3];
                     System.out.print(
                             station1.stationNames[i] + "="
-                            + (station1.measurements[idx] / 10.0) + "/"
-                            + (Math.round(mean) / 10.0) + "/"
-                            + (station1.measurements[idx + 1] / 10.0)
-                            + ", "
-                    );
+                                    + (min / 10.0) + "/"
+                                    + (Math.round((double) sum / (double) count) / 10.0) + "/"
+                                    + (max / 10.0)
+                                    + ", ");
                 }
 
                 int idx = station1.stationHashes[station1.stationPointer - 1] * 4;
-                double mean = (double) station1.measurements[idx + 2] / (double) station1.measurements[idx + 3];
+                int min = station1.measurements[idx];
+                int max = station1.measurements[idx + 1];
+                int sum = station1.measurements[idx + 2];
+                int count = station1.measurements[idx + 3];
                 System.out.print(
                         station1.stationNames[station1.stationPointer - 1] + "="
-                        + (station1.measurements[idx] / 10.0) + "/"
-                        + (Math.round(mean) / 10.0) + "/"
-                        + (station1.measurements[idx + 1] / 10.0)
-                );
+                                + (min / 10.0) + "/"
+                                + (Math.round((double) sum / (double) count) / 10.0) + "/"
+                                + (max / 10.0));
 
                 System.out.print("}");
             }
