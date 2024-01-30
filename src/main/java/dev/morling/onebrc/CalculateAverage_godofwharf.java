@@ -16,9 +16,10 @@
 
 package dev.morling.onebrc;
 
-import jdk.incubator.vector.*;
+import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.Vector;
-import sun.misc.Unsafe;
+import jdk.incubator.vector.VectorShape;
+import jdk.incubator.vector.VectorSpecies;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -37,15 +38,13 @@ import java.util.function.BiConsumer;
 import java.util.stream.IntStream;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static jdk.incubator.vector.VectorOperators.NE;
 
 public class CalculateAverage_godofwharf {
     private static final String FILE = "./measurements.txt";
     private static final boolean DEBUG = Boolean.parseBoolean(System.getProperty("debug", "false"));
+    private static final int NCPU = Runtime.getRuntime().availableProcessors();
 
     private static final VectorSpecies<Byte> PREFERRED_SPECIES = VectorSpecies.ofPreferred(byte.class);
-    private static final VectorSpecies<Byte> SMALL_SPECIES = VectorSpecies.of(byte.class, VectorShape.S_64_BIT);
-    private static final VectorSpecies<Byte> MEDIUM_SPECIES = VectorSpecies.of(byte.class, VectorShape.S_128_BIT);
 
     private static final Vector<Byte> NEW_LINE_VEC = PREFERRED_SPECIES.broadcast('\n');
     // This array is used for quick conversion of fractional part
@@ -76,7 +75,7 @@ public class CalculateAverage_godofwharf {
 
     private static Map<String, MeasurementAggregator> compute() throws Exception {
         int nThreads = Integer.parseInt(
-                System.getProperty("threads", "" + Runtime.getRuntime().availableProcessors()));
+                System.getProperty("threads", STR."\{NCPU}"));
         printDebugMessage("Running program with %d threads %n", nThreads);
         Job job = new Job(nThreads - 1);
         job.compute(FILE);
@@ -161,10 +160,6 @@ public class CalculateAverage_godofwharf {
                                     // segment.unload();
                                 }
                                 mergeInternal(threadLocalStates[tid]);
-                                // printDebugMessage("Spent a total of %d ns on copy contents from memory to byte array %n".formatted(timer));
-                                // printDebugMessage("Spent a total of %d ns on copying byte arrays %n".formatted(timer1));
-                                // printDebugMessage("Spent a total of %d ns on computing hash code %n".formatted(timer2));
-                                // printDebugMessage("Spent a total of %d ns on updating map %n".formatted(timer3));
                             }));
                         });
                 for (Future<?> future : futures) {
@@ -243,7 +238,6 @@ public class CalculateAverage_godofwharf {
                                                            final int pageLen) {
             SearchResult ret = new SearchResult(new int[pageLen / 5], 0);
             VectorSpecies<Byte> species = PREFERRED_SPECIES;
-            Vector<Byte> newLineVec = species.broadcast('\n');
             int loopBound = pageLen - species.length() * 4;
             int i = 0;
             int j = 0;
@@ -252,10 +246,10 @@ public class CalculateAverage_godofwharf {
                 Vector<Byte> v2 = ByteVector.fromArray(species, page, j + species.length());
                 Vector<Byte> v3 = ByteVector.fromArray(species, page, j + species.length() * 2);
                 Vector<Byte> v4 = ByteVector.fromArray(species, page, j + species.length() * 3);
-                long l1 = newLineVec.eq(v1).toLong();
-                long l2 = newLineVec.eq(v2).toLong();
-                long l3 = newLineVec.eq(v3).toLong();
-                long l4 = newLineVec.eq(v4).toLong();
+                long l1 = NEW_LINE_VEC.eq(v1).toLong();
+                long l2 = NEW_LINE_VEC.eq(v2).toLong();
+                long l3 = NEW_LINE_VEC.eq(v3).toLong();
+                long l4 = NEW_LINE_VEC.eq(v4).toLong();
                 long r1 = l1 & 0xFFFFFFFFL | (l2 << species.length());
                 long r2 = l3 & 0xFFFFFFFFL | (l4 << (species.length()));
                 int b1 = Long.bitCount(r1);
@@ -402,81 +396,18 @@ public class CalculateAverage_godofwharf {
             }
             return pages;
         }
-
-        private static int hashCode1(final byte[] b) {
-            int result = -2;
-            for (int i = 0; i < b.length; i++) {
-                result = result * 31 + b[i];
-            }
-            return result;
-        }
-
-        private static int hashCode1Unrolled(final byte[] b) {
-            int result = -2;
-            int i = 0;
-            for (; i + 3 < b.length; i += 4) {
-                result = 31 * 31 * 31 * 31 * result
-                        + 31 * 31 * 31 * b[i]
-                        + 31 * 31 * b[i + 1]
-                        + 31 * b[i + 2]
-                        + b[i + 3];
-            }
-            for (; i < b.length; i++) {
-                result = 31 * result + b[i];
-            }
-            return result;
-        }
-
-        private static int hashCode2(final byte[] b) {
-            int result = 1;
-            int i = 0;
-            for (; i + 7 < b.length; i += 8) {
-                result = 7 * 7 * 7 * 7 * 7 * 7 * 7 * 7 * result
-                        + 7 * 7 * 7 * 7 * 7 * 7 * 7 * b[i]
-                        + 7 * 7 * 7 * 7 * 7 * 7 * b[i + 1]
-                        + 7 * 7 * 7 * 7 * 7 * b[i + 2]
-                        + 7 * 7 * 7 * 7 * b[i + 3]
-                        + 7 * 7 * 7 * b[i + 4]
-                        + 7 * 7 * b[i + 5]
-                        + 7 * b[i + 6]
-                        + b[i + 7];
-            }
-            for (; i < b.length; i++) {
-                result = 7 * result + b[i];
-            }
-            return result;
-        }
     }
 
     public static class State {
-        // private final Map<AggregationKey, MeasurementAggregator> state;
-        private final FastHashMap state;
-        // private final FastHashMap2 state;
+        private final Map<AggregationKey, MeasurementAggregator> state;
 
         public State() {
-//            this.state = new HashMap<>(DEFAULT_HASH_TBL_SIZE);
-//            // insert a DUMMY key to prime the hashmap for usage
-//            AggregationKey dummy = new AggregationKey("DUMMY".getBytes(UTF_8), -1);
-//            this.state.put(dummy, null);
-//            this.state.remove(dummy);
-
-            this.state = new FastHashMap(1 << 14);
-            // this.state = new FastHashMap2(DEFAULT_HASH_TBL_SIZE);
+            this.state = new HashMap<>(DEFAULT_HASH_TBL_SIZE);
+            // insert a DUMMY key to prime the hashmap for usage
+            AggregationKey dummy = new AggregationKey("DUMMY".getBytes(UTF_8), -1);
+            this.state.put(dummy, null);
+            this.state.remove(dummy);
         }
-
-        // Implementing the logic in update method instead of calling HashMap.compute() has reduced the runtime significantly
-        // primarily because it causes update method to be inlined by the compiler into the calling loop
-        // public void update(final Measurement m) {
-        // MeasurementAggregator agg = state.get(m.aggregationKey);
-        // if (agg == null) {
-        // state.put(m.aggregationKey, new MeasurementAggregator(m.value, m.value, m.value, 1L));
-        // return;
-        // }
-        // agg.count++;
-        // agg.min = m.value <= agg.min ? m.value : agg.min;
-        // agg.max = m.value >= agg.max ? m.value : agg.max;
-        // agg.sum += m.value;
-        // }
 
         public void update(final Measurement m) {
             MeasurementAggregator newAgg = new MeasurementAggregator(m.temperature, m.temperature, m.temperature, 1L);
@@ -489,16 +420,6 @@ public class CalculateAverage_godofwharf {
             agg.min = m.temperature <= agg.min ? m.temperature : agg.min;
             agg.max = m.temperature >= agg.max ? m.temperature : agg.max;
             agg.sum += m.temperature;
-            // state.compute(m.aggregationKey, (ignored, agg) -> {
-            // if (agg == null) {
-            // return new MeasurementAggregator(m.value, m.value, m.value, 1L);
-            // }
-            // agg.count++;
-            // agg.min = m.value <= agg.min ? m.value : agg.min;
-            // agg.max = m.value >= agg.max ? m.value : agg.max;
-            // agg.sum += m.value;
-            // return agg;
-            // });
         }
 
         public static class AggregationKey {
@@ -528,50 +449,6 @@ public class CalculateAverage_godofwharf {
                 }
                 AggregationKey sk = (AggregationKey) other;
                 return station.length == sk.station.length && Arrays.mismatch(station, sk.station) < 0;
-//                return station.length == sk.station.length &&
-//                        checkArrayEquals(station, sk.station, station.length);
-            }
-
-            private boolean checkArrayEquals(final byte[] a1,
-                                             final byte[] a2,
-                                             final int len) {
-                if (a1[0] != a2[0]) {
-                    return false;
-                }
-                if (len < 8) {
-                    for (int i = 1; i < len; i++) {
-                        if (a1[i] != a2[i]) {
-                            return false;
-                        }
-                    }
-                    return true;
-                }
-                // use vectorized code for fast equals comparison
-                return !vectorizedMismatch(MEDIUM_SPECIES, len, a1, a2);
-            }
-
-            private static boolean vectorizedMismatch(final VectorSpecies<Byte> species,
-                                                      final int len,
-                                                      final byte[] a1,
-                                                      final byte[] a2) {
-                int i = 0;
-                int loopLength = species.length();
-                int loopBound = species.loopBound(len);
-                for (; i < loopBound; i += loopLength) {
-                    Vector<Byte> b1 = ByteVector.fromArray(species, a1, i);
-                    Vector<Byte> b2 = ByteVector.fromArray(species, a2, i);
-                    VectorMask<Byte> result = b1.compare(NE, b2);
-                    if (result.firstTrue() < species.length()) {
-                        return true;
-                    }
-                }
-                // tail loop
-                for (; i < len; i++) {
-                    if (a1[i] != a2[i]) {
-                        return true;
-                    }
-                }
-                return false;
             }
         }
     }
@@ -747,117 +624,6 @@ public class CalculateAverage_godofwharf {
         record TableEntry(State.AggregationKey key, MeasurementAggregator aggregator) {
         }
     }
-
-    // A simple implementation of HashMap which only supports compute and forEach methods
-    // This implementation is faster than Java's HashMap implementation because it uses open addressing (double hashing to be specific)
-    // to resolve collisions.
-    // public static class FastHashMap2 {
-    // private TableEntry[] tableEntries;
-    // private int size;
-    //
-    // public FastHashMap2(final int size) {
-    // this.size = size;
-    // this.tableEntries = new TableEntry[size + 10];
-    // }
-    //
-    // public void compute(final State.AggregationKey key,
-    // final BiFunction<State.AggregationKey, MeasurementAggregator, MeasurementAggregator> function) {
-    // int idx = mod(key.hashCodes[0], size);
-    // // either find the corresponding entry if it exists (update) or find an empty slot for creating a new entry (insert)
-    // idx = probe(idx, key);
-    // TableEntry entry = tableEntries[idx];
-    // if (entry != null) {
-    // // update
-    // entry.aggregator = function.apply(key, entry.aggregator);
-    // }
-    // else {
-    // // insert
-    // tableEntries[idx] = new TableEntry(key, function.apply(key, null));
-    // }
-    // }
-    //
-    // public void forEach(final BiConsumer<State.AggregationKey, MeasurementAggregator> action) {
-    // for (int i = 0; i < size; i++) {
-    // TableEntry entry = tableEntries[i];
-    // if (entry != null) {
-    // action.accept(entry.key, entry.aggregator);
-    // }
-    // }
-    // }
-    //
-    // private int mod(final long a,
-    // final long b) {
-    // return (int) (a & b);
-    // }
-    //
-    // // This method tries to find the next possible idx in hash table which either contains no entry or contains
-    // // the key we are looking for
-    // // h1 - primary hashcode of key
-    // // h2 - secondary hashcode of key
-    // private int probe(final int idx,
-    // final State.AggregationKey key) {
-    // // if we find an empty slot, return immediately
-    // if (tableEntries[idx] == null) {
-    // return idx;
-    // }
-    // // we found a non-empty slot
-    // // check if we can use it
-    // // to check if a key exists in map, we compare both the hash codes and then check for key equality
-    // // boolean exists = tableEntries[idx].key.hashCodes[0] == key.hashCodes[0] &&
-    // // tableEntries[idx].key.hashCodes[1] == key.hashCodes[1] &&
-    // // tableEntries[idx].key.equals(key);
-    // boolean exists = tableEntries[idx].key.hashCodes[0] == key.hashCodes[0] &&
-    // tableEntries[idx].key.hashCodes[1] == key.hashCodes[1];
-    // if (exists) {
-    // return idx;
-    // }
-    //
-    // // we need to search for other slots (empty/non-empty)
-    // // update curIdx to the next slot
-    // int attempts = 1;
-    // int nextIdx = size - mod(idx + attempts * key.hashCodes[1], size);
-    //
-    // // iterate until we find a slot which meets any of the following criteria
-    // // - slot is empty
-    // // - slot is non-empty but
-    // // - h1 doesn't match with key (or)
-    // // - h1 matches but h2 doesn't match with key (or)
-    // // - h1 and h2 match but station name doesn't match
-    // while (nextIdx != idx &&
-    // tableEntries[nextIdx] != null &&
-    // (tableEntries[nextIdx].key.hashCodes[0] != key.hashCodes[0] ||
-    // tableEntries[nextIdx].key.hashCodes[1] != key.hashCodes[1])) {
-    // // tableEntries[nextIdx].key.hashCodes[0] != key.hashCodes[0] ||
-    // // tableEntries[nextIdx].key.hashCodes[1] != key.hashCodes[1] ||
-    // // !tableEntries[nextIdx].key.equals(key
-    // // System.out.println("Collision between two strings [Existing key = %s, Given key = %s, h1/h1 = %d/%d, h2 = %d/%d]".formatted(
-    // // tableEntries[nextIdx].key.toString(), key.toString(), tableEntries[nextIdx].key.hashCodes[0], key.hashCodes[0],
-    // // tableEntries[nextIdx].key.hashCodes[1], key.hashCodes[1]));
-    // attempts++;
-    // nextIdx = size - mod(idx + (attempts * (long) key.hashCodes[1]), size);
-    // }
-    // // if (attempts > 1) {
-    // // System.out.printf("Probe tries = %d%n", attempts);
-    // // }
-    // // if curIdx matches the idx we started with, then a cycle has occurred
-    // if (nextIdx == idx) {
-    // throw new IllegalStateException("Probe failed because we can't find slot for key");
-    // }
-    // return nextIdx;
-    // }
-    //
-    // public static class TableEntry {
-    // State.AggregationKey key;
-    // MeasurementAggregator aggregator;
-    //
-    // public TableEntry(final State.AggregationKey key,
-    // final MeasurementAggregator aggregator) {
-    // this.key = key;
-    // this.aggregator = aggregator;
-    // }
-    // }
-    //
-    // }
 
     private static void printDebugMessage(final String message,
                                           final Object... args) {
