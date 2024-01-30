@@ -481,7 +481,7 @@ public class CalculateAverage_godofwharf {
         public void update(final Measurement m) {
             MeasurementAggregator agg = state.get(m.aggregationKey);
             if (agg == null) {
-                state.put(m.aggregationKey, new MeasurementAggregator(m.temperature, m.temperature, m.temperature, 1L));
+                state.put(m.aggregationKey.hashCode, new MeasurementAggregator(m.temperature, m.temperature, m.temperature, 1L));
                 return;
             }
             agg.count++;
@@ -717,9 +717,9 @@ public class CalculateAverage_godofwharf {
             return (n < 0) ? 1 : (n >= Integer.MAX_VALUE) ? Integer.MAX_VALUE : n + 1;
         }
 
-        public void put(final State.AggregationKey key,
+        public void put(final int key,
                         final MeasurementAggregator aggregator) {
-            int h1 = key.hashCode;
+            int h1 = key;
             int hash = h1 ^ (h1 >>> 12);
             tableEntries[(size - 1) & hash] = new TableEntry(key, aggregator);
         }
@@ -734,7 +734,7 @@ public class CalculateAverage_godofwharf {
             return null;
         }
 
-        public void forEach(final BiConsumer<State.AggregationKey, MeasurementAggregator> action) {
+        public void forEach(final BiConsumer<Integer, MeasurementAggregator> action) {
             for (int i = 0; i < size; i++) {
                 TableEntry entry = tableEntries[i];
                 if (entry != null) {
@@ -743,7 +743,7 @@ public class CalculateAverage_godofwharf {
             }
         }
 
-        record TableEntry(State.AggregationKey key, MeasurementAggregator aggregator) {
+        record TableEntry(int key, MeasurementAggregator aggregator) {
         }
     }
 
