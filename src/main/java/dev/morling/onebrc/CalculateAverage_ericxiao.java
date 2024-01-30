@@ -37,8 +37,8 @@ public class CalculateAverage_ericxiao {
     private static class Stations {
 
         private int stationPointer = 0;
-        private final int[] stationHash = new int[MAP_SIZE];
-        private final String[] stations = new String[MAP_SIZE];
+        private final int[] stationHashes = new int[MAP_SIZE];
+        private final String[] stationNames = new String[MAP_SIZE];
         /*
          * i + 0, min
          * i + 1, max
@@ -48,21 +48,25 @@ public class CalculateAverage_ericxiao {
         private final int[] measurements = new int[MAP_SIZE * 4];
 
         boolean stationExists(int hash) {
-            return measurements[hash + 3] != 0;
+            // if count != 0, that means we have never seen this before.
+            int idx = hash * 4;
+            return measurements[idx + 3] != 0;
         }
 
-        void insertStation(int idx, String station, int min, int max, int sum, int count) {
+        void insertStation(int hash, String station, int min, int max, int sum, int count) {
+            int idx = hash * 4;
             measurements[idx] = min;
             measurements[idx + 1] = max;
             measurements[idx + 2] = sum;
             measurements[idx + 3] = count;
 
-            stations[stationPointer] = station;
-            stationHash[stationPointer] = idx;
+            stationNames[stationPointer] = station;
+            stationHashes[stationPointer] = hash;
             stationPointer++;
         }
 
-        void updateStation(int idx, int min, int max, int sum, int count) {
+        void updateStation(int hash, int min, int max, int sum, int count) {
+            int idx = hash * 4;
             measurements[idx] = Math.min(measurements[idx], min);
             measurements[idx + 1] = Math.min(measurements[idx + 1], max);
             measurements[idx + 2] += sum;
@@ -130,7 +134,7 @@ public class CalculateAverage_ericxiao {
                 stationHash = 31 * stationHash + (entryBytes[i] & 0xff);
             }
 
-            int hash = Math.abs(stationHash) % (MAP_SIZE - 1);
+            int hash = Math.abs(stationHash) & (MAP_SIZE - 1);
             if (stations.stationExists(hash)) {
                 stations.updateStation(hash, value, value, value, 1);
             }
@@ -259,7 +263,7 @@ public class CalculateAverage_ericxiao {
     }
 
     public static void main(String[] args) throws Exception {
-        int numThreads = Runtime.getRuntime().availableProcessors() - 1; // Use the number of available processors
+        int numThreads = Runtime.getRuntime().availableProcessors();
         ExecutorService executorService = Executors.newFixedThreadPool(numThreads);
         List<Callable<Stations>> callableTasks = new ArrayList<>();
         Path filePath = Path.of(FILE);
@@ -304,14 +308,14 @@ public class CalculateAverage_ericxiao {
                 for (int i = 1; i < numThreads; ++i) {
                     Stations currStation = results.get(i);
                     for (int j = 0; j < currStation.stationPointer; j++) {
-                        int currStationHash = station1.stationHash[j];
+                        int currStationHash = currStation.stationHashes[j];
                         if (station1.stationExists(currStationHash)) {
-                            station1.insertStation(currStationHash, currStation.stations[j], currStation.measurements[0], currStation.measurements[1],
-                                    currStation.measurements[2], currStation.measurements[3]);
-                        }
-                        else {
                             station1.updateStation(currStationHash, currStation.measurements[0], currStation.measurements[1], currStation.measurements[2],
                                     currStation.measurements[3]);
+                        }
+                        else {
+                            station1.insertStation(currStationHash, currStation.stationNames[j], currStation.measurements[0], currStation.measurements[1],
+                                    currStation.measurements[2], currStation.measurements[3]);
                         }
                     }
                 }
@@ -319,7 +323,7 @@ public class CalculateAverage_ericxiao {
                 System.out.print("{");
                 for (int i = 0; i < station1.stationPointer; i++) {
                     double mean = (double) station1.measurements[2] / (double) station1.measurements[3];
-                    System.out.print(station1.stations[i] + "=" + (station1.measurements[0] / 10.0) + "/"
+                    System.out.print(station1.stationNames[i] + "=" + (station1.measurements[0] / 10.0) + "/"
                             + (Math.round(mean) / 10.0) + "/"
                             + (station1.measurements[1] / 10.0));
                     if (i < station1.stationPointer - 1)
