@@ -91,10 +91,12 @@ public class CalculateAverage_merykittyunsafe {
 
         void observe(long entryOffset, long value) {
             long baseOffset = Unsafe.ARRAY_BYTE_BASE_OFFSET + entryOffset;
-            UNSAFE.putShort(this.data, baseOffset + MIN_OFFSET,
-                    (short) Math.min(value, UNSAFE.getShort(this.data, baseOffset + MIN_OFFSET)));
-            UNSAFE.putShort(this.data, baseOffset + MAX_OFFSET,
-                    (short) Math.max(value, UNSAFE.getShort(this.data, baseOffset + MAX_OFFSET)));
+            if (UNSAFE.getShort(this.data, baseOffset + MIN_OFFSET) > value) {
+                UNSAFE.putShort(this.data, baseOffset + MIN_OFFSET, (short) value);
+            }
+            if (UNSAFE.getShort(this.data, baseOffset + MAX_OFFSET) < value) {
+                UNSAFE.putShort(this.data, baseOffset + MAX_OFFSET, (short) value);
+            }
             UNSAFE.putLong(this.data, baseOffset + SUM_OFFSET,
                     value + UNSAFE.getLong(this.data, baseOffset + SUM_OFFSET));
             UNSAFE.putLong(this.data, baseOffset + COUNT_OFFSET,

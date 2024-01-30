@@ -75,8 +75,12 @@ public class CalculateAverage_merykitty {
         }
 
         void observe(Aggregator node, long value) {
-            node.min = Math.min(node.min, value);
-            node.max = Math.max(node.max, value);
+            if (node.min > value) {
+                node.min = value;
+            }
+            if (node.max < value) {
+                node.max = value;
+            }
             node.sum += value;
             node.count++;
         }
@@ -109,7 +113,7 @@ public class CalculateAverage_merykitty {
             var node = new Aggregator();
             node.keySize = size;
             this.nodes[bucket] = node;
-            MemorySegment.copy(data, offset, MemorySegment.ofArray(this.keyData), (long) bucket * KEY_SIZE, size);
+            MemorySegment.copy(data, offset, MemorySegment.ofArray(this.keyData), (long) bucket * KEY_SIZE, size + 1);
             return node;
         }
 
@@ -222,7 +226,8 @@ public class CalculateAverage_merykitty {
         var line = ByteVector.fromMemorySegment(BYTE_SPECIES, data, offset, ByteOrder.nativeOrder());
 
         // Find the delimiter ';'
-        int keySize = line.compare(VectorOperators.EQ, ';').firstTrue();
+        long semicolons = line.compare(VectorOperators.EQ, ';').toLong();
+        int keySize = Long.numberOfTrailingZeros(semicolons);
 
         // If we cannot find the delimiter in the vector, that means the key is
         // longer than the vector, fall back to scalar processing
@@ -260,7 +265,7 @@ public class CalculateAverage_merykitty {
 
             var nodeKey = ByteVector.fromArray(BYTE_SPECIES, aggrMap.keyData, bucket * PoorManMap.KEY_SIZE);
             long eqMask = line.compare(VectorOperators.EQ, nodeKey).toLong();
-            long validMask = -1L >>> -keySize;
+            long validMask = semicolons ^ (semicolons - 1);
             if ((eqMask & validMask) == validMask) {
                 break;
             }
