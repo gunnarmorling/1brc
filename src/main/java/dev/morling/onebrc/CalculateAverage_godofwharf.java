@@ -18,6 +18,7 @@ package dev.morling.onebrc;
 
 import jdk.incubator.vector.*;
 import jdk.incubator.vector.Vector;
+import sun.misc.Unsafe;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -58,7 +59,7 @@ public class CalculateAverage_godofwharf {
             -1, -1, -1, -1, -1, -1, -1, -1, 0, 1,
             2, 3, 4, 5, 6, 7, 8, 9, -1, -1 };
     private static final int MAX_STR_LEN = 108;
-    private static final int DEFAULT_HASH_TBL_SIZE = 2096;
+    private static final int DEFAULT_HASH_TBL_SIZE = 4096;
     private static final int DEFAULT_PAGE_SIZE = 8_388_608; // 8 MB
     private static final int PAGE_SIZE = Integer.parseInt(System.getProperty("pageSize", STR."\{DEFAULT_PAGE_SIZE}"));
 
@@ -525,9 +526,9 @@ public class CalculateAverage_godofwharf {
                     return false;
                 }
                 AggregationKey sk = (AggregationKey) other;
-                return station.length == sk.station.length && Arrays.mismatch(station, sk.station) < 0;
-                // return stationLen == sk.stationLen &&
-                // && checkArrayEquals(station, sk.station, stationLen);
+                // return station.length == sk.station.length && Arrays.mismatch(station, sk.station) < 0;
+                return station.length == sk.station.length &&
+                        checkArrayEquals(station, sk.station, station.length);
             }
 
             private boolean checkArrayEquals(final byte[] a1,
@@ -559,7 +560,7 @@ public class CalculateAverage_godofwharf {
                     Vector<Byte> b1 = ByteVector.fromArray(species, a1, i);
                     Vector<Byte> b2 = ByteVector.fromArray(species, a2, i);
                     VectorMask<Byte> result = b1.compare(NE, b2);
-                    if (result.anyTrue()) {
+                    if (result.firstTrue() < species.length()) {
                         return true;
                     }
                 }
