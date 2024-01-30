@@ -72,9 +72,15 @@ public class CalculateAverage_vaidhy<I, T> {
             if (hashEntry == hash) {
                 HashEntry entry = entries[i];
                 if (lookupLength <= 7) {
+                    // This works because
+                    // hash = suffix , when simpleHash is just xor.
+                    // Since length is not 8, suffix will have a 0 at the end.
+                    // Since utf-8 strings can't have 0 in middle of a string this means
+                    // we can stop here.
                     return entry.value;
                 }
-                boolean found = (entry.suffix == suffix && compareEntryKeys(startAddress, endAddress, entry));
+                boolean found = (entry.suffix == suffix &&
+                        compareEntryKeys(startAddress, endAddress, entry.startAddress));
                 if (found) {
                     return entry.value;
                 }
@@ -105,13 +111,13 @@ public class CalculateAverage_vaidhy<I, T> {
                 hashEntry = hashes[i];
                 if (hashEntry == hash) {
                     HashEntry entry = entries[i];
-                    if (entry.suffix == suffix) {
-                        if (entry.keyLength == lookupLength) {
-                            boolean found = lookupLength <= 8 || compareEntryKeys(startAddress, endAddress, entry);
-                            if (found) {
-                                return entry.value;
-                            }
-                        }
+                    if (lookupLength <= 7) {
+                        return entry.value;
+                    }
+                    boolean found = (entry.suffix == suffix &&
+                            compareEntryKeys(startAddress, endAddress, entry.startAddress));
+                    if (found) {
+                        return entry.value;
                     }
                 }
                 if (hashEntry == 0) {
@@ -134,8 +140,8 @@ public class CalculateAverage_vaidhy<I, T> {
             return null;
         }
 
-        private static boolean compareEntryKeys(long startAddress, long endAddress, HashEntry entry) {
-            long entryIndex = entry.startAddress;
+        private static boolean compareEntryKeys(long startAddress, long endAddress, long entryStartAddress) {
+            long entryIndex = entryStartAddress;
             long lookupIndex = startAddress;
             long endAddressStop = endAddress - 7;
 
