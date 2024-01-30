@@ -29,6 +29,42 @@ import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
 import sun.misc.Unsafe;
 
+/**
+ * This is Chris Bellew's implementation. Here are the key points:
+ * 
+ * - The file is equally split into ranges, one range per thread.
+ *   18 threads was experimentally found to be optimal.
+ * 
+ * - Each thread memory maps the file range it is responsible for and
+ *   then iterates through the range, one smaller buffer at a time.
+ * 
+ * - The contents are parsed by using SIMD vector equality comparisons
+ *   between the source data and the newline character, effectively
+ *   delimiting each line. The measurement of each line is discovered
+ *   by moving back from the end of the line, parsing into an integer
+ *   as it goes. The integer representation is 10x the actual value
+ *   but is used because integer parsing was found to be much faster
+ *   than floating point parsing, and it's also immune to floating
+ *   point arithmetic errors when aggregating the measurements later.
+ * 
+ * - Once the name and the measurement is parsed for a line, the name
+ *   is hashed and used a lookup into a hash table. The value of the
+ *   hash table at the given slot is an index into another array, this
+ *   time an array of SIMD vectors that represent that name as a series
+ *   of vectors. The vectors are used to compare equality of the name of
+ *   the source line with the name in the slot to confirm the slot is
+ *   occupied by the same city name. The indirection of having a hash
+ *   table storing lookups into another array of vectors is to allow
+ *   the hash table slots to have a fixed size, while allowing the city
+ *   names to be arbitrarily long. The hash table can then use open
+ *   addressing to resolve collisions and remain efficient for lookups.
+ * 
+ * - After the range has been processed, the results are collected by
+ *   iterating through the hash table and looking up the corresponding
+ *   integer table for each slot then collecting the min, max, count
+ *   and sum of the measurements for each city. Then the results are
+ *   combined from all threads, using a treemap for sorting, and printed.
+ */
 public final class CalculateAverage_chrisbellew {
     public static final long FILE_SIZE = getFileSize();
 
