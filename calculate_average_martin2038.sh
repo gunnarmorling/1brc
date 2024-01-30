@@ -15,5 +15,6 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="-XX:+UseEpsilonGC"
+# JAVA_OPTS="-XX:-EnableJVMCI -Xms16g -Xmx16g -XX:+AlwaysPreTouch -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC"
+JAVA_OPTS=""
 java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_martin2038

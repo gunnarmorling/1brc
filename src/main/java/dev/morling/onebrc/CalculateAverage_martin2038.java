@@ -26,6 +26,8 @@ import java.util.Map;
 
 public class CalculateAverage_martin2038 {
 
+    //private static final String FILE = "/Users/martin/Garden/blog/1BRC/1brc/./measurements.txt";
+
     private static final String FILE = "./measurements.txt";
 
     private static record Measurement(String station, double value) {
@@ -118,13 +120,6 @@ public class CalculateAverage_martin2038 {
             //System.out.println(resultStr.hashCode());
         });
 
-
-        //System.out.println(Runtime.getRuntime().availableProcessors());
-        //System.out.println();
-        //var resultStr = measurements.toString();
-        //System.out.println("cost : "+(System.currentTimeMillis() -begin) +" ms");
-        //System.out.println(resultStr);
-        //System.out.println(resultStr.hashCode());
     }
 
     static HashMap<String, MeasurementAggregator> reduceMap(HashMap<String, MeasurementAggregator> aMap
@@ -153,31 +148,34 @@ public class CalculateAverage_martin2038 {
 
     record FileChunk(long start,long length){}
 
-     static List<FileChunk> split(RandomAccessFile file) throws IOException {
-         var threadNum = Runtime.getRuntime().availableProcessors();
-         long avgChunkSize =  file.length()/threadNum;
-         long lastStart = 0 ;
-         var list = new ArrayList<FileChunk>(threadNum);
-         for(var i = 0 ; i< threadNum -1; i++){
-             var length =  avgChunkSize;
-             file.seek(lastStart+length);
-             while (file.readByte() != '\n') {
-                 //file.seek(lastStart+ ++length);
-                 ++length;
-             }
-             // include the '\n'
-             length ++ ;
-             list.add(new FileChunk(lastStart,length));
-             lastStart += length;
-         }
-         list.add(new FileChunk(lastStart,file.length() - lastStart));
-         return list;
-     }
+    static List<FileChunk> split(RandomAccessFile file) throws IOException {
+        var threadNum = Runtime.getRuntime().availableProcessors();
+        long total = file.length();
+        long avgChunkSize = total / threadNum;
+        long lastStart = 0;
+        var list = new ArrayList<FileChunk>(threadNum);
+        for (var i = 0; i < threadNum - 1; i++) {
+            var length = avgChunkSize;
+            file.seek(lastStart + length);
+            while (file.readByte() != '\n') {
+                //file.seek(lastStart+ ++length);
+                ++length;
+            }
+            // include the '\n'
+            length++;
+            list.add(new FileChunk(lastStart, length));
+            lastStart += length;
+            if(lastStart>=total){
+                return list;
+            }
+        }
+        list.add(new FileChunk(lastStart, total - lastStart));
+        return list;
+    }
 
-    static final int MIN_NAME = 3;
 
     static String readNextString(byte[] buf, MappedByteBuffer mb) {
-        int i = MIN_NAME;
+        int i = 1;
         mb.get(buf,0,i);
         byte b;
         while ((b = mb.get()) != ';') {
@@ -190,7 +188,8 @@ public class CalculateAverage_martin2038 {
     // 替换 Double.parse
     // 时间 38秒 ->  5418 ms
     static int readNextInt10Times(byte[] buf, MappedByteBuffer mb) {
-        int i = MIN_NAME;
+        final  int min_number_len = 3;
+        int i = min_number_len;
         mb.get(buf, 0, i);
         byte b;
         while ((b = mb.get()) != '\n') {
