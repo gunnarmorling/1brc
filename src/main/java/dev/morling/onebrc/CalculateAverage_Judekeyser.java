@@ -16,6 +16,7 @@
 package dev.morling.onebrc;
 
 import jdk.incubator.vector.ByteVector;
+import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.VectorSpecies;
 
 import java.io.IOException;
@@ -35,18 +36,19 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import static java.lang.foreign.ValueLayout.OfByte.JAVA_BYTE;
+import static java.lang.foreign.ValueLayout.OfByte.JAVA_INT_UNALIGNED;
 
 public class CalculateAverage_Judekeyser {
     private static final String FILE = "./measurements.txt";
-    private static final int chunkSize = (1 << 7) << 13; // This can't go beyond 2^21, because otherwise we might exceed int capacity
+    private static final int chunkSize = (1 << 7) << 12; // This can't go beyond 2^21, because otherwise we might exceed int capacity
 
-    private static final int numberOfIOWorkers = 1 << 11; // We are going to need (numberOfIOWorkers-1) * chunkSize capacity
-    private static final int numberOfParallelWorkers = 2 * Runtime.getRuntime().availableProcessors() - 1;
+    private static final int numberOfIOWorkers = 1 << 10; // We are going to need (numberOfIOWorkers-1) * chunkSize capacity
+    private static final int numberOfParallelWorkers = Runtime.getRuntime().availableProcessors() - 1;
 
     private static final VectorSpecies<Byte> SPECIES = ByteVector.SPECIES_PREFERRED;
+    private static final VectorSpecies<Integer> INT_SPECIES = IntVector.SPECIES_PREFERRED;
 
     public static void main(String[] args) throws Exception {
-        var tic = System.currentTimeMillis();
         class SimpleStatistics {
             int min, max, sum, count;
             SimpleStatistics() {
@@ -93,9 +95,9 @@ public class CalculateAverage_Judekeyser {
             }
         }
         class Name {
-            final byte[] data;
+            final int[] data;
             final int hash;
-            Name(byte[] data) {
+            Name(int[] data) {
                 this.data = data;
                 {
                     var hash = 0;
@@ -115,10 +117,11 @@ public class CalculateAverage_Judekeyser {
             public boolean equals(Object obj) {
                 if(obj == this) return true;
                 else if(obj instanceof Name name && name.data.length == data.length) {
-                    for(int i = 0; i < data.length; i++) {
-                        if(data[i] != name.data[i]) {
+                    int size  = 0;
+                    while(size < data.length) {
+                        if(data[size] != name.data[size]) {
                             return false;
-                        }
+                        } else size++;
                     }
                     return true;
                 } else return false;
@@ -126,7 +129,16 @@ public class CalculateAverage_Judekeyser {
 
             @Override
             public String toString() {
-                return new String(data, StandardCharsets.UTF_8);
+                var bdata = new byte[data.length * 4];
+                int j = 0;
+                for(int i = 0;i < data.length; i++) {
+                    bdata[j++] = (byte)((data[i] >>>  0) & 255);
+                    bdata[j++] = (byte)((data[i] >>>  8) & 255);
+                    bdata[j++] = (byte)((data[i] >>> 16) & 255);
+                    bdata[j++] = (byte)((data[i] >>> 24) & 255);
+                }
+                while(bdata[--j] == 0);
+                return new String(bdata, 0, j+1, StandardCharsets.UTF_8);
             }
         }
 
@@ -264,10 +276,28 @@ public class CalculateAverage_Judekeyser {
                                 }
                             }
                         }
-                        var data = memorySegment.asSlice(offset, cursor-offset).toArray(JAVA_BYTE);
+                        //var data = memorySegment.asSlice(offset, cursor-offset).toArray(JAVA_BYTE);
                         //System.arraycopy(chunk, 0, data, 0, data.length);
-                        assert ';' != data[data.length - 1];
-                        name = new Name(data);
+                        //assert ';' != data[data.length - 1];
+                        //name = new Name(data);
+                        {
+                            var ldata = memorySegment.asSlice(offset, cursor-offset).toArray(JAVA_BYTE);
+                            int mod4StringSize = ((int)(cursor-offset+3))/4 * 4;
+                            var data = memorySegment.asSlice(offset, mod4StringSize).toArray(JAVA_INT_UNALIGNED);
+                            switch(((int)(cursor - offset)) % 4) {
+                                case 0: break;
+                                case 1: {
+                                    data[data.length - 1] &= 255;
+                                } break;
+                                case 2: {
+                                    data[data.length - 1] &= 65535;
+                                } break;
+                                case 3: {
+                                    data[data.length - 1] &= 16777215;
+                                } break;
+                            }
+                            name = new Name(data);
+                        }
                     }
                     offset += size + 1;
                     return new Line(name, value);
@@ -376,7 +406,6 @@ public class CalculateAverage_Judekeyser {
                 joiner.add(STR. "\{ entry.getKey() }=\{ entry.getValue() }" );
             }
             System.out.println(joiner);
-            System.out.println(System.currentTimeMillis() - tic);
         }
     }
 }
