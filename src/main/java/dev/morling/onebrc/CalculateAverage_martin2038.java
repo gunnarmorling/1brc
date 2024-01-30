@@ -1,0 +1,234 @@
+/*
+ *  Copyright 2023 The original authors
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package dev.morling.onebrc;
+
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel.MapMode;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+public class CalculateAverage_martin2038 {
+
+    private static final String FILE = "./measurements.txt";
+
+    private static record Measurement(String station, double value) {
+        private Measurement(String[] parts) {
+            this(parts[0], Double.parseDouble(parts[1]));
+        }
+    }
+
+    private static record ResultRow(double min, double mean, double max) {
+
+        public String toString() {
+            return round(min) + "/" + round(mean) + "/" + round(max);
+        }
+
+        private double round(double value) {
+            return Math.round(value * 10.0) / 10.0;
+        }
+    };
+
+    private static class MeasurementAggregator {
+        private int min = Integer.MAX_VALUE;
+        private int max = Integer.MIN_VALUE;
+        private long sum;
+        private int count;
+
+        void update(int temp) {
+            update(1,temp,temp,temp);
+        }
+
+        void update(int cnt, long sm, int min, int max) {
+            sum += sm;
+            count += cnt;
+            if (this.min > min) {
+                this.min = min;
+            }
+            if (this.max < max) {
+                this.max = max;
+            }
+        }
+
+        void merge(MeasurementAggregator it){
+           update(it.count,it.sum,it.min,it.max);
+        }
+
+
+        public String toString() {
+            return (min/ 10f) + "/" + Math.round(sum/(float)count)/10f + "/" + (max/ 10f);
+        }
+    }
+
+    public static void main(String[] args) throws IOException {
+
+        var file = new RandomAccessFile(FILE, "r");
+        final int maxNameLength = 100;
+            //.parallel().
+        var fc = file.getChannel();
+        split(file).stream().parallel().map(ck -> {
+            var map = new HashMap<String, MeasurementAggregator>(200);
+            //var pb = System.currentTimeMillis();
+            try {
+                var mb = fc.map(MapMode.READ_ONLY,ck.start, ck.length);
+                var buff = new byte[maxNameLength];
+                while (mb.hasRemaining()){
+                    var name = readNextString(buff,mb);//.intern();
+                    var temp = readNextInt10Times(buff, mb);
+                    add2map(map,name,temp);
+                }
+                //long end = ck.start + ck.length;
+                //do {
+                //    var name = readNext(file, ';', 30).intern();
+                //    var temp = Double.parseDouble(readNext(file, '\n', 6));
+                //    var agg = map.computeIfAbsent(name,it->new MeasurementAggregator());
+                //    agg.update(temp);
+                //}while (file.getFilePointer()<end);
+            } catch (IOException | NumberFormatException e) {
+                throw new RuntimeException(e);
+            }
+            //System.out.println("chunk end , cost : " + (System.currentTimeMillis() - pb));
+            return map;
+        }).reduce(CalculateAverage_martin2038::reduceMap).ifPresent(map->{
+
+            var sb = new StringBuilder(map.size() * 100);
+            sb.append('{');
+            map.entrySet().stream().sorted(Map.Entry.comparingByKey())
+                    .forEachOrdered(kv->sb.append(kv.getKey()).append('=').append(kv.getValue()).append(", "));
+            sb.deleteCharAt(sb.length()-1);
+            sb.setCharAt(sb.length()-1,'}');
+            var resultStr = sb.toString();
+            System.out.println(resultStr);
+            System.out.println(resultStr.hashCode());
+        });
+
+
+        //System.out.println(Runtime.getRuntime().availableProcessors());
+        //System.out.println();
+        //var resultStr = measurements.toString();
+        //System.out.println("cost : "+(System.currentTimeMillis() -begin) +" ms");
+        //System.out.println(resultStr);
+        //System.out.println(resultStr.hashCode());
+    }
+
+    static HashMap<String, MeasurementAggregator> reduceMap(HashMap<String, MeasurementAggregator> aMap
+            ,HashMap<String, MeasurementAggregator> bMap){
+        aMap.forEach((k,v)->{
+            var b =  bMap.get(k);
+            if(null == b){
+                bMap.put(k,v);
+            }else{
+                b.merge(v);
+            }
+        });
+        return bMap;
+    }
+
+    static void add2map(Map<String, MeasurementAggregator> map,String name,int temp){
+        // 比computeIfAbsent 节约1秒
+        var agg = map.get(name);
+        if(null == agg){
+            agg = new MeasurementAggregator();
+            map.put(name,agg);
+        }
+        //var agg = map.computeIfAbsent(name,it->new MeasurementAggregator());
+        agg.update(temp);
+    }
+
+    record FileChunk(long start,long length){}
+
+     static List<FileChunk> split(RandomAccessFile file) throws IOException {
+         var threadNum = Runtime.getRuntime().availableProcessors();
+         long avgChunkSize =  file.length()/threadNum;
+         long lastStart = 0 ;
+         var list = new ArrayList<FileChunk>(threadNum);
+         for(var i = 0 ; i< threadNum -1; i++){
+             var length =  avgChunkSize;
+             file.seek(lastStart+length);
+             while (file.readByte() != '\n') {
+                 //file.seek(lastStart+ ++length);
+                 ++length;
+             }
+             // include the '\n'
+             length ++ ;
+             list.add(new FileChunk(lastStart,length));
+             lastStart += length;
+         }
+         list.add(new FileChunk(lastStart,file.length() - lastStart));
+         return list;
+     }
+
+    static final int MIN_NAME = 3;
+
+    static String readNextString(byte[] buf, MappedByteBuffer mb) {
+        int i = MIN_NAME;
+        mb.get(buf,0,i);
+        byte b;
+        while ((b = mb.get()) != ';') {
+            buf[i++] = b;
+        }
+        return  new String(buf,0,i);
+    }
+
+    // copy from CalculateAverage_3j5a
+    // 替换 Double.parse
+    // 时间 38秒 ->  5418 ms
+    static int readNextInt10Times(byte[] buf, MappedByteBuffer mb) {
+        int i = MIN_NAME;
+        mb.get(buf, 0, i);
+        byte b;
+        while ((b = mb.get()) != '\n') {
+            buf[i++] = b;
+        }
+        //-3.2
+        var zeroAscii = '0';
+        int temperature = buf[--i] - zeroAscii;
+        i--; // skipping dot
+        var base = 10;
+        while (i > 0) {
+            b = buf[--i];
+            if (b == '-') {
+                temperature = -temperature;
+            } else {
+                temperature = base * (b - zeroAscii) + temperature;
+                base *= base;
+            }
+        }
+        return temperature;
+    }
+
+     //static String readNext(RandomAccessFile file, char endFlag,int initLength) throws IOException {
+     //    StringBuilder input = new StringBuilder(initLength);
+     //    int c = -1;
+     //    //boolean eol = false;
+     //
+     //    while (true) {
+     //        c = file.read();
+     //        if( c == endFlag || c == -1) {
+     //            break;
+     //        }
+     //        input.append((char)c);
+     //    }
+     //
+     //    //if ((c == -1) && (input.length() == 0)) {
+     //    //    return null;
+     //    //}
+     //    return input.toString();
+     //}
+}
