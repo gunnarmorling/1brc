@@ -18,7 +18,6 @@ package dev.morling.onebrc;
 
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.Vector;
-import jdk.incubator.vector.VectorShape;
 import jdk.incubator.vector.VectorSpecies;
 
 import java.io.IOException;
