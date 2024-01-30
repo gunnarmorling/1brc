@@ -74,6 +74,10 @@ public final class CalculateAverage_chrisbellew {
      * Every buffer ignores the characters before the first newline character
      * and peeks into the next buffer to find the first newline character. This
      * way no data is lost even though the buffers are arbitrarily sliced.
+     * 100 is the maximum length of a city name, 1 is the semicolon character,
+     * 5 is the maximum length of a measurement, and 1 is the newline character.
+     * If we overlap to this length then we will always be able to complete the
+     * last line in the buffer.
      */
     public static final int OVERLAP = 100 + 1 + 5 + 1;
 
