@@ -28,6 +28,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
+import java.util.zip.CRC32;
+import java.util.zip.Checksum;
 
 public class CalculateAverage_jhonesto {
 
@@ -130,7 +132,7 @@ public class CalculateAverage_jhonesto {
 
             ExecutorService es = Executors.newFixedThreadPool(parts.size());
 
-            List<Future<HashMap<Integer, Measurement>>> futures = new ArrayList<>();
+            List<Future<HashMap<Long, Measurement>>> futures = new ArrayList<>();
 
             for (Partition part : parts) {
                 futures.add(es.submit(() -> {
@@ -138,10 +140,10 @@ public class CalculateAverage_jhonesto {
                 }));
             }
 
-            List<HashMap<Integer, Measurement>> lista = new ArrayList<>();
+            List<HashMap<Long, Measurement>> lista = new ArrayList<>();
 
             for (int i = futures.size() - ONE; i >= ZERO; i--) {
-                HashMap<Integer, Measurement> out = futures.get(i).get();
+                HashMap<Long, Measurement> out = futures.get(i).get();
                 lista.add(out);
             }
 
@@ -169,11 +171,6 @@ public class CalculateAverage_jhonesto {
                             .map(Measurement::toString)
                             .collect(Collectors.joining(", "));
 
-            // String r = result.values().stream().parallel()
-            // .sorted((o1, o2) -> o1.compareTo(o2))
-            // .map(Measurement::toString)
-            // .collect(Collectors.joining(", "));
-
             System.out.println("{" + result + "}");
 
         }
@@ -197,7 +194,7 @@ public class CalculateAverage_jhonesto {
 
         int size;
 
-        HashMap<Integer, Measurement> table = new HashMap<>(785, 0.8f);
+        HashMap<Long, Measurement> table = new HashMap<>(785, 0.8f);
 
         public Partition(MappedByteBuffer map, long position, int last, int size) {
             this.map = map;
@@ -206,7 +203,7 @@ public class CalculateAverage_jhonesto {
             this.size = size;
         }
 
-        public HashMap<Integer, Measurement> execute() {
+        public HashMap<Long, Measurement> execute() {
 
             byte[] m = new byte[MAX_PER_LINE];
 
@@ -335,7 +332,7 @@ public class CalculateAverage_jhonesto {
         return b;
     }
 
-    private static void resolveMeasurement(byte[] measurement, HashMap<Integer, Measurement> table) {
+    private static void resolveMeasurement(byte[] measurement, HashMap<Long, Measurement> table) {
 
         short temperature = 0;
 
@@ -361,7 +358,7 @@ public class CalculateAverage_jhonesto {
 
         byte[] station = asByteArrayCopy(measurement, j);
 
-        int hash = getHash(station);
+        long hash = getHash(station);
 
         Measurement m = table.get(hash);
 
@@ -388,8 +385,12 @@ public class CalculateAverage_jhonesto {
 
     }
 
-    public static int getHash(byte[] b) {
-        return Arrays.hashCode(b);
+    public static long getHash(byte[] b) {
+        Checksum crc32 = new CRC32();
+
+        crc32.update(b, ZERO, b.length);
+
+        return crc32.getValue();
     }
 
 }
