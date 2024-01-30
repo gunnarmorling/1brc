@@ -248,15 +248,14 @@ public class CalculateAverage_godofwharf {
             int j = 0;
             while (j < loopBound) {
                 Vector<Byte> v1 = ByteVector.fromArray(species, page, j);
-//                Vector<Byte> v2 = ByteVector.fromArray(species, page, j + species.length());
+                Vector<Byte> v2 = ByteVector.fromArray(species, page, j + species.length());
 //                Vector<Byte> v3 = ByteVector.fromArray(species, page, j + species.length() * 2);
 //                Vector<Byte> v4 = ByteVector.fromArray(species, page, j + species.length() * 3);
                 long l1 = newLineVec.eq(v1).toLong();
-//                long l2 = newLineVec.eq(v2).toLong();
+                long l2 = newLineVec.eq(v2).toLong();
 //                long l3 = newLineVec.eq(v3).toLong();
 //                long l4 = newLineVec.eq(v4).toLong();
-                long r1 = l1;
-//                long r1 = l1 & 0xFFFFFFFFL | (l2 << (species.length()));
+                long r1 = l1 & 0xFFFFFFFFL | (l2 << species.length());
 //                long r2 = l3 & 0xFFFFFFFFL | (l4 << (species.length()));
                 int b1 = Long.bitCount(r1);
 //                int b2 = Long.bitCount(r2);
@@ -282,8 +281,7 @@ public class CalculateAverage_godofwharf {
                     r1 &= (r1 - 1);
                 }
                 i += b1;
-                j += species.length();
-//                j += species.length() * 2;
+                j += species.length() * 2;
 //                k = i;
 //                while (r2 > 0) {
 //                    int idx = Long.numberOfTrailingZeros(r2);
