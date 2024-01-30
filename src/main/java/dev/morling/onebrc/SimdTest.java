@@ -17,6 +17,7 @@ package dev.morling.onebrc;
 
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.Vector;
+import jdk.incubator.vector.VectorShape;
 import jdk.incubator.vector.VectorSpecies;
 
 import java.io.RandomAccessFile;
@@ -28,7 +29,7 @@ import java.util.Arrays;
 import java.util.TreeMap;
 
 public class SimdTest {
-    private static final VectorSpecies<Byte> SPECIES = VectorSpecies.ofPreferred(byte.class);
+    private static final VectorSpecies<Byte> PREFERRED_SPECIES = VectorSpecies.ofPreferred(byte.class);
     private static final double[] DOUBLES = new double[]{ 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9 };
     private static final int[] DIGIT_LOOKUP = new int[]{
             -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
@@ -106,35 +107,85 @@ public class SimdTest {
 
     private static SearchResult findNewLinesVectorized(final byte[] page,
                                                        final int pageLen) {
-        SearchResult ret = new SearchResult(new int[pageLen / 10], 0);
-        int loopLength = SPECIES.length();
-        int loopBound = SPECIES.loopBound(pageLen);
+        SearchResult ret = new SearchResult(new int[pageLen / 5], 0);
+        VectorSpecies<Byte> species = PREFERRED_SPECIES;
+        Vector<Byte> newLineVec = species.broadcast('\n');
+        int loopBound = pageLen - species.length() * 2;
         int i = 0;
         int j = 0;
-        Vector<Byte> newLineVec = SPECIES.broadcast('\n');
-        int[] positions = new int[64];
         while (j < loopBound) {
-            Vector<Byte> vec = ByteVector.fromArray(SPECIES, page, j);
-            long res = vec.eq(newLineVec).toLong();
-            int k = 0;
-            int bitCount = Long.bitCount(res);
-            while (res > 0) {
-                int idx = Long.numberOfTrailingZeros(res);
-                positions[k++] = j + idx;
-                res &= (res - 1);
-                idx = Long.numberOfTrailingZeros(res);
-                positions[k++] = j + idx;
-                res &= (res - 1);
-                idx = Long.numberOfTrailingZeros(res);
-                positions[k++] = j + idx;
-                res &= (res - 1);
-                idx = Long.numberOfTrailingZeros(res);
-                positions[k++] = j + idx;
-                res &= (res - 1);
+            Vector<Byte> v1 = ByteVector.fromArray(species, page, j);
+            Vector<Byte> v2 = ByteVector.fromArray(species, page, j + species.length());
+            Vector<Byte> v3 = ByteVector.fromArray(species, page, j + species.length() * 2);
+            Vector<Byte> v4 = ByteVector.fromArray(species, page, j + species.length() * 3);
+            long l1 = newLineVec.eq(v1).toLong();
+            long l2 = newLineVec.eq(v2).toLong();
+            long l3 = newLineVec.eq(v3).toLong();
+            long l4 = newLineVec.eq(v4).toLong();
+            long r1 = l1 & 0xFFFFFFFFL | (l2 << species.length());
+            long r2 = l3 & 0xFFFFFFFFL | (l4 << (species.length()));
+            int b1 = Long.bitCount(r1);
+            int b2 = Long.bitCount(r2);
+            int k = i;
+            int it = b1;
+            while (it > 0) {
+                int idx = Long.numberOfTrailingZeros(r1);
+                ret.offsets[k++] = j + idx;
+                r1 &= (r1 - 1);
+                it--;
+                idx = Long.numberOfTrailingZeros(r1);
+                ret.offsets[k++] = j + idx;
+                r1 &= (r1 - 1);
+                it--;
+                idx = Long.numberOfTrailingZeros(r1);
+                ret.offsets[k++] = j + idx;
+                r1 &= (r1 - 1);
+                it--;
+                idx = Long.numberOfTrailingZeros(r1);
+                ret.offsets[k++] = j + idx;
+                r1 &= (r1 - 1);
+                it--;
+                idx = Long.numberOfTrailingZeros(r1);
+                ret.offsets[k++] = j + idx;
+                r1 &= (r1 - 1);
+                it--;
+                idx = Long.numberOfTrailingZeros(r1);
+                ret.offsets[k++] = j + idx;
+                r1 &= (r1 - 1);
+                it--;
             }
-            System.arraycopy(positions, 0, ret.offsets, i, bitCount);
-            j += loopLength;
-            i += bitCount;
+            i += b1;
+            j += species.length() * 2;
+            k = i;
+            it = b2;
+            while (it > 0) {
+                int idx = Long.numberOfTrailingZeros(r2);
+                ret.offsets[k++] = j + idx;
+                r2 &= (r2 - 1);
+                it--;
+                idx = Long.numberOfTrailingZeros(r2);
+                ret.offsets[k++] = j + idx;
+                r2 &= (r2 - 1);
+                it--;
+                idx = Long.numberOfTrailingZeros(r2);
+                ret.offsets[k++] = j + idx;
+                r2 &= (r2 - 1);
+                it--;
+                idx = Long.numberOfTrailingZeros(r2);
+                ret.offsets[k++] = j + idx;
+                r2 &= (r2 - 1);
+                it--;
+                idx = Long.numberOfTrailingZeros(r2);
+                ret.offsets[k++] = j + idx;
+                r2 &= (r2 - 1);
+                it--;
+                idx = Long.numberOfTrailingZeros(r2);
+                ret.offsets[k++] = j + idx;
+                r2 &= (r2 - 1);
+                it--;
+            }
+            i += b2;
+            j += species.length() * 2;
         }
 
         // tail loop
