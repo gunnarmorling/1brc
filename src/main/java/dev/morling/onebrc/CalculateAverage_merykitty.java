@@ -227,11 +227,11 @@ public class CalculateAverage_merykitty {
 
         // Find the delimiter ';'
         long semicolons = line.compare(VectorOperators.EQ, ';').toLong();
-        int keySize = Long.numberOfTrailingZeros(semicolons);
 
         // If we cannot find the delimiter in the vector, that means the key is
         // longer than the vector, fall back to scalar processing
-        if (keySize == BYTE_SPECIES.vectorByteSize()) {
+        if (semicolons == 0) {
+            int keySize = BYTE_SPECIES.length();
             while (data.get(ValueLayout.JAVA_BYTE, offset + keySize) != ';') {
                 keySize++;
             }
@@ -240,6 +240,7 @@ public class CalculateAverage_merykitty {
         }
 
         // We inline the searching of the value in the hash map
+        int keySize = Long.numberOfTrailingZeros(semicolons);
         int x;
         int y;
         if (keySize >= Integer.BYTES) {

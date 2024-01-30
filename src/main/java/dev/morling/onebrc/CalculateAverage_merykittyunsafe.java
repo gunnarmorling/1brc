@@ -356,18 +356,18 @@ public class CalculateAverage_merykittyunsafe {
             long end0 = base + limit0;
             long end1 = base + limit1;
             while (true) {
-                boolean finishes = false;
+                boolean finish = false;
                 if (begin0 < end0) {
                     begin0 = iterate(aggrMap, begin0);
                 }
                 else {
-                    finishes = true;
+                    finish = true;
                 }
                 if (begin1 < end1 - mainLoopMinWidth) {
                     begin1 = iterate(aggrMap, begin1);
                 }
                 else {
-                    if (finishes) {
+                    if (finish) {
                         break;
                     }
                 }
