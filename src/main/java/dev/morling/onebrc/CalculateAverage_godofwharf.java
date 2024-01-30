@@ -543,9 +543,9 @@ public class CalculateAverage_godofwharf {
                        int hash,
                        State.AggregationKey aggregationKey) {
 
-        public Measurement(byte[] station,
-                           double temperature,
-                           int hashCode) {
+    public Measurement(byte[] station,
+                       double temperature,
+                       int hashCode) {
             this(station,
                     temperature,
                     hashCode,
