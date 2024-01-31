@@ -45,16 +45,18 @@ public class CalculateAverage_ericxiao {
          * i + 2, sum
          * i + 3, count
          */
-        private final int[] measurements = new int[MAP_SIZE * 4];
+
+        private final int MEASUREMENT_SIZE = 4;
+        private final int[] measurements = new int[MAP_SIZE * MEASUREMENT_SIZE];
 
         boolean stationExists(int hash) {
             // if count != 0, that means we have never seen this before.
-            int idx = hash * 4;
+            int idx = hash * MEASUREMENT_SIZE;
             return measurements[idx + 3] != 0;
         }
 
         void insertStation(int hash, String station, int min, int max, int sum, int count) {
-            int idx = hash * 4;
+            int idx = hash * MEASUREMENT_SIZE;
             measurements[idx] = min;
             measurements[idx + 1] = max;
             measurements[idx + 2] = sum;
@@ -66,7 +68,7 @@ public class CalculateAverage_ericxiao {
         }
 
         void updateStation(int hash, int min, int max, int sum, int count) {
-            int idx = hash * 4;
+            int idx = hash * MEASUREMENT_SIZE;
             measurements[idx] = Math.min(measurements[idx], min);
             measurements[idx + 1] = Math.max(measurements[idx + 1], max);
             measurements[idx + 2] += sum;
@@ -309,7 +311,7 @@ public class CalculateAverage_ericxiao {
                     Stations currStation = results.get(i);
                     for (int j = 0; j < currStation.stationPointer; j++) {
                         int currStationHash = currStation.stationHashes[j];
-                        int idx = currStationHash * 4;
+                        int idx = currStationHash * currStation.MEASUREMENT_SIZE;
                         int min = currStation.measurements[idx];
                         int max = currStation.measurements[idx + 1];
                         int sum = currStation.measurements[idx + 2];
@@ -323,7 +325,7 @@ public class CalculateAverage_ericxiao {
                 // print key and values
                 System.out.print("{");
                 for (int i = 0; i < station1.stationPointer - 1; i++) {
-                    int idx = station1.stationHashes[i] * 4;
+                    int idx = station1.stationHashes[i] * station1.MEASUREMENT_SIZE;
                     int min = station1.measurements[idx];
                     int max = station1.measurements[idx + 1];
                     int sum = station1.measurements[idx + 2];
@@ -336,7 +338,7 @@ public class CalculateAverage_ericxiao {
                                     + ", ");
                 }
 
-                int idx = station1.stationHashes[station1.stationPointer - 1] * 4;
+                int idx = station1.stationHashes[station1.stationPointer - 1] * station1.MEASUREMENT_SIZE;
                 int min = station1.measurements[idx];
                 int max = station1.measurements[idx + 1];
                 int sum = station1.measurements[idx + 2];
