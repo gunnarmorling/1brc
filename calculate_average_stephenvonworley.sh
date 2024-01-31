@@ -16,7 +16,6 @@
 #
 
 if [ -f target/CalculateAverage_stephenvonworley_image ]; then
-    echo "Picking up existing native image 'target/CalculateAverage_stephenvonworley_image', delete the file to select JVM mode." 1>&2
     target/CalculateAverage_stephenvonworley_image
 else
     JAVA_OPTS="--enable-preview"

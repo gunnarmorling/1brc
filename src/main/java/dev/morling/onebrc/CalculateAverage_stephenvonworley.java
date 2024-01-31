@@ -57,6 +57,26 @@ import sun.misc.Unsafe;
 
 public class CalculateAverage_stephenvonworley {
 
+    private static final int NAME_LIMIT = 10000;
+
+    private static final long CHUNK_SIZE = 5000000;
+    private static final long CHUNK_PAD = 200;
+    private static final long CHUNK_PARSE3_LIMIT = 1000;
+
+    private static final long GOLDEN_LONG = 0x9e3779b97f4a7c15L;
+    private static final long TALLY_BITS = 7;
+    private static final long TALLY_SIZE = 1L << TALLY_BITS;
+    private static final long HASH_BITS = 16;
+    private static final long HASH_MASK = ((1L << HASH_BITS) - 1) << TALLY_BITS;
+    private static final long TABLE_SIZE = 1L << (HASH_BITS + TALLY_BITS);
+
+    private static final long OFFSET_MIN = 0;
+    private static final long OFFSET_MAX = 2;
+    private static final long OFFSET_COUNT = 4;
+    private static final long OFFSET_TOTAL = 8;
+    private static final long OFFSET_LEN = 16;
+    private static final long OFFSET_NAME = 17;
+
     private static final Unsafe unsafe;
     static {
         try {
@@ -110,12 +130,11 @@ public class CalculateAverage_stephenvonworley {
 
     private static Queue<Chunk> partition(MemorySegment in) throws IOException {
         Queue<Chunk> chunks = new ConcurrentLinkedDeque<>();
-        long blockSize = 5000000;
         long address = in.address();
         long len = in.byteSize();
         long start = address;
         while (start < address + len) {
-            long end = start + blockSize;
+            long end = start + CHUNK_SIZE;
             if (end >= address + len) {
                 end = address + len;
             }
@@ -123,11 +142,11 @@ public class CalculateAverage_stephenvonworley {
                 end = afterNewline(end);
             }
             Chunk chunk;
-            if (end + 200 < address + len) {
+            if (end + CHUNK_PAD < address + len) {
                 chunk = new Chunk(start, end);
             }
             else {
-                MemorySegment padded = allocate(end - start);
+                MemorySegment padded = allocate(end - start + CHUNK_PAD);
                 MemorySegment.copy(in, start - address, padded, 0, end - start);
                 chunk = new Chunk(padded.address(), padded.address() + (end - start));
             }
@@ -170,7 +189,7 @@ public class CalculateAverage_stephenvonworley {
 
     private static void parse3(long start, long end, Table table) {
 
-        if (end - start < 1000) {
+        if (end - start < CHUNK_PARSE3_LIMIT) {
             parse1(start, end, table);
             return;
         }
@@ -270,33 +289,33 @@ public class CalculateAverage_stephenvonworley {
         long word = getLong(start);
         if (len <= 8) {
             word = trim(word, 8 - len);
-            long hash = word * 0x9e3779b97f4a7c15L;
-            long offset = (hash >>> (64 - 16)) << 7;
+            long hash = word * GOLDEN_LONG;
+            long offset = (hash >>> (64 - HASH_BITS)) << TALLY_BITS;
             while (true) {
                 long tally = tallies + offset;
-                long slen = getByte(tally + 16);
-                long sword = getLong(tally + 17);
-                if (len == slen && word == sword) {
+                long tlen = getByte(tally + OFFSET_LEN);
+                long tword = getLong(tally + OFFSET_NAME);
+                if (len == tlen && word == tword) {
                     return tally;
                 }
-                if (sword == 0) {
+                if (tword == 0) {
                     init(tally, start, len, table);
                     return tally;
                 }
-                offset = (offset + 128) & 0b11111111111111110000000;
+                offset = (offset + TALLY_SIZE) & HASH_MASK;
             }
         }
         else {
             long word2 = getLong(semicolon - 8);
-            long hash = (word + word2) * 0x9e3779b97f4a7c15L;
-            long offset = (hash >>> (64 - 16)) << 7;
+            long hash = (word + word2) * GOLDEN_LONG;
+            long offset = (hash >>> (64 - HASH_BITS)) << TALLY_BITS;
             while (true) {
                 long tally = tallies + offset;
-                long sword = getLong(tally + 17);
+                long tword = getLong(tally + OFFSET_NAME);
                 if (len <= 16) {
-                    long slen = getByte(tally + 16);
-                    long sword2 = getLong(tally + 17 + len - 8);
-                    if (len == slen && word == sword && word2 == sword2) {
+                    long tlen = getByte(tally + OFFSET_LEN);
+                    long tword2 = getLong(tally + OFFSET_NAME + len - 8);
+                    if (len == tlen && word == tword && word2 == tword2) {
                         return tally;
                     }
                 }
@@ -305,29 +324,29 @@ public class CalculateAverage_stephenvonworley {
                         return tally;
                     }
                 }
-                if (sword == 0) {
+                if (tword == 0) {
                     init(tally, start, len, table);
                     return tally;
                 }
-                offset = (offset + 128) & 0b11111111111111110000000;
+                offset = (offset + TALLY_SIZE) & HASH_MASK;
             }
         }
     }
 
     private static void init(long tally, long start, long len, Table t) {
-        setShort(tally, Short.MAX_VALUE);
-        setShort(tally + 2, Short.MIN_VALUE);
-        setByte(tally + 16, (byte) len);
-        copyMemory(start, tally + 17, len);
+        setShort(tally + OFFSET_MIN, Short.MAX_VALUE);
+        setShort(tally + OFFSET_MAX, Short.MIN_VALUE);
+        setByte(tally + OFFSET_LEN, (byte) len);
+        copyMemory(start, tally + OFFSET_NAME, len);
         t.addresses[t.count++] = tally;
     }
 
     private static boolean match(long tally, long name, long len) {
-        if (getByte(tally + 16) != len) {
+        if (getByte(tally + OFFSET_LEN) != len) {
             return false;
         }
         long a = name;
-        long b = tally + 17;
+        long b = tally + OFFSET_NAME;
         while (len > 7) {
             if (getLong(a) != getLong(b)) {
                 return false;
@@ -360,18 +379,18 @@ public class CalculateAverage_stephenvonworley {
     }
 
     private static void tally(long tally, long number) {
-        short min = getShort(tally);
-        short max = getShort(tally + 2);
-        int count = getInt(tally + 4);
-        long total = getLong(tally + 8);
+        short min = getShort(tally + OFFSET_MIN);
+        short max = getShort(tally + OFFSET_MAX);
+        int count = getInt(tally + OFFSET_COUNT);
+        long total = getLong(tally + OFFSET_TOTAL);
         if (number < min) {
-            setShort(tally, (short) number);
+            setShort(tally + OFFSET_MIN, (short) number);
         }
         if (number > max) {
-            setShort(tally + 2, (short) number);
+            setShort(tally + OFFSET_MAX, (short) number);
         }
-        setInt(tally + 4, count + 1);
-        setLong(tally + 8, total + number);
+        setInt(tally + OFFSET_COUNT, count + 1);
+        setLong(tally + OFFSET_TOTAL, total + number);
     }
 
     private static long next(long semicolon) {
@@ -437,24 +456,24 @@ public class CalculateAverage_stephenvonworley {
         public int count;
 
         public Table() {
-            tallies = allocate(128 * (1 << 16)).address();
-            addresses = new long[10000];
+            tallies = allocate(TABLE_SIZE).address();
+            addresses = new long[NAME_LIMIT];
             count = 0;
         }
 
         public void process(Consumer consumer) {
             for (int i = 0; i < count; i++) {
                 long address = addresses[i];
-                int len = getByte(address + 16);
+                int len = getByte(address + OFFSET_LEN);
                 byte[] bytes = new byte[len];
                 for (int j = 0; j < len; j++) {
-                    bytes[j] = getByte(address + 17 + j);
+                    bytes[j] = getByte(address + OFFSET_NAME + j);
                 }
                 String name = new String(bytes, StandardCharsets.UTF_8);
-                long min = getShort(address);
-                long max = getShort(address + 2);
-                long total = getLong(address + 8);
-                long count = getInt(address + 4);
+                long min = getShort(address + OFFSET_MIN);
+                long max = getShort(address + OFFSET_MAX);
+                long total = getLong(address + OFFSET_TOTAL);
+                long count = getInt(address + OFFSET_COUNT);
                 consumer.consume(name, min, max, total, count);
             }
         }
