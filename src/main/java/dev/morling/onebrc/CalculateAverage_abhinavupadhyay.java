@@ -53,28 +53,30 @@ public class CalculateAverage_abhinavupadhyay {
     }
 
     private static class Table {
-        private static final int TABLE_SIZE = 1 << 22; // collisions with table smaller than this. Need a better hash function
+        private static final int TABLE_SIZE = 1 << 21; // 0x8000; // collisions with table smaller than this. Need a better hash function
         private static final int TABLE_MASK = TABLE_SIZE - 1;
         Row[] table = new Row[TABLE_SIZE];
         byte[] array = new byte[256];
 
         public void put(long cityStartOffset, long cityLength, long nameHash, int temperature) {
-            int index = (int) (nameHash ^ (nameHash >> 29)) & TABLE_MASK;
+            final long uhash = nameHash ^ (nameHash >> 29);
+            // final long uhash = nameHash;
+            int index = (int) uhash & TABLE_MASK;
             Row row = table[index];
-            if (row != null) {
-                row.update(temperature);
+            if (row == null) {
+                int i = 0;
+                for (; i < cityLength - 1;) {
+                    array[i++] = UNSAFE.getByte(cityStartOffset++);
+                    array[i++] = UNSAFE.getByte(cityStartOffset++);
+                }
+                for (; i < cityLength; i++) {
+                    array[i] = UNSAFE.getByte(cityStartOffset++);
+                }
+                table[index] = new Row(new String(array, 0, i), temperature, temperature, 1, temperature, (int) uhash);
                 return;
             }
 
-            int i = 0;
-            for (; i < cityLength - 1;) {
-                array[i++] = UNSAFE.getByte(cityStartOffset++);
-                array[i++] = UNSAFE.getByte(cityStartOffset++);
-            }
-            for (; i < cityLength; i++) {
-                array[i] = UNSAFE.getByte(cityStartOffset++);
-            }
-            table[index] = new Row(new String(array, 0, i), temperature, temperature, 1, temperature, (int) (nameHash ^ (nameHash >> 29)));
+            row.update(temperature);
 
         }
 
@@ -86,9 +88,9 @@ public class CalculateAverage_abhinavupadhyay {
         private int maxTemp;
         private int count;
         private int sum;
-        private final int hash;
+        private final long hash;
 
-        public Row(String name, int minTemp, int maxTemp, int count, int sum, int hash) {
+        public Row(String name, int minTemp, int maxTemp, int count, int sum, long hash) {
             this.name = name;
             this.minTemp = minTemp;
             this.maxTemp = maxTemp;
@@ -136,7 +138,7 @@ public class CalculateAverage_abhinavupadhyay {
 
         @Override
         public int hashCode() {
-            return this.hash;
+            return (int) this.hash;
         }
 
         private static int max(int a, int b) {
@@ -163,22 +165,12 @@ public class CalculateAverage_abhinavupadhyay {
             long hasSemi = has0(word ^ HASSEMI);
             while (hasSemi == 0) {
                 currentOffset += 8;
-                short bytes = (short) (word & 0xffff);
-                nameHash += bytes;
-                nameHash += (nameHash << 10);
-                nameHash ^= (nameHash >> 6);
-                bytes = (short) ((word >> 16) & 0xffff);
-                nameHash += bytes;
-                nameHash += (nameHash << 10);
-                nameHash ^= (nameHash >> 6);
-                bytes = (short) ((word >> 32) & 0xffff);
-                nameHash += bytes;
-                nameHash += (nameHash << 10);
-                nameHash ^= (nameHash >> 6);
-                bytes = (short) ((word >> 48) & 0xffff);
-                nameHash += bytes;
-                nameHash += (nameHash << 10);
-                nameHash ^= (nameHash >> 6);
+                for (int i = 0; i < 8; i++) {
+                    byte b = (byte) ((word >> (i * 8)) & 0xff);
+                    nameHash = nameHash * 31 + b;
+                    nameHash += (nameHash << 10);
+                    nameHash ^= (nameHash >> 6);
+                }
                 word = UNSAFE.getLong(currentOffset);
                 hasSemi = has0(word ^ HASSEMI);
             }
@@ -187,6 +179,7 @@ public class CalculateAverage_abhinavupadhyay {
             if (trailingZeros >= 8) {
                 int nonZeroBits = 64 - trailingZeros;
                 nameHash ^= ((word << nonZeroBits) >> nonZeroBits);
+                nameHash += (nameHash << 10);
                 nameHash ^= (nameHash >> 6);
                 currentOffset += semiColonIndex;
             }
