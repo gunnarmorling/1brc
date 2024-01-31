@@ -140,7 +140,7 @@ public class CalculateAverage_JurenIvan {
 
             int i = index;
             while (hashTable[i] != null) {
-                if (keyIsEqual(key, hashTable[index].city, len)) { //handling hash collisions
+                if (keyIsEqual(key, hashTable[index].city, len)) { // handling hash collisions
                     hashTable[i].add(temperature);
                     return;
                 }
