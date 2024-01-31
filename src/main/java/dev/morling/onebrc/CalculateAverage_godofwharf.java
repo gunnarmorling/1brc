@@ -579,50 +579,6 @@ public class CalculateAverage_godofwharf {
         }
     }
 
-    public static class FastHashMap {
-        private TableEntry[] tableEntries;
-        private int size;
-
-        public FastHashMap(final int capacity) {
-            this.size = tableSizeFor(capacity);
-            this.tableEntries = new TableEntry[size];
-        }
-
-        private int tableSizeFor(final int capacity) {
-            int n = -1 >>> Integer.numberOfLeadingZeros(capacity - 1);
-            return (n < 0) ? 1 : (n >= Integer.MAX_VALUE) ? Integer.MAX_VALUE : n + 1;
-        }
-
-        public void put(final State.AggregationKey key,
-                        final MeasurementAggregator aggregator) {
-            int h1 = key.hashCode;
-            int hash = h1 ^ (h1 >>> 12);
-            tableEntries[(size - 1) & hash] = new TableEntry(key, aggregator);
-        }
-
-        public MeasurementAggregator get(final State.AggregationKey key) {
-            int h1 = key.hashCode;
-            int hash = h1 ^ (h1 >>> 12);
-            TableEntry entry = tableEntries[(size - 1) & hash];
-            if (entry != null) {
-                return entry.aggregator;
-            }
-            return null;
-        }
-
-        public void forEach(final BiConsumer<State.AggregationKey, MeasurementAggregator> action) {
-            for (int i = 0; i < size; i++) {
-                TableEntry entry = tableEntries[i];
-                if (entry != null) {
-                    action.accept(entry.key, entry.aggregator);
-                }
-            }
-        }
-
-        record TableEntry(State.AggregationKey key, MeasurementAggregator aggregator) {
-        }
-    }
-
     private static void printDebugMessage(final String message,
                                           final Object... args) {
         if (DEBUG) {
