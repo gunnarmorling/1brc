@@ -77,7 +77,8 @@ public class CalculateAverage_martin2038 {
         }
 
         public String toString() {
-            return (min / 10f) + "/" + Math.round(sum / (float) count) / 10f + "/" + (max / 10f);
+            var mean = this.sum / 10.0 / this.count;
+            return (min / 10f) + "/" + Math.round(mean * 10) / 10f + "/" + (max / 10f);
         }
     }
 
@@ -96,7 +97,7 @@ public class CalculateAverage_martin2038 {
                 var buff = new byte[maxNameLength];
                 while (mb.hasRemaining()) {
                     var name = readNextHashKey(buff, mb);
-                    // var name = readNextString(buff,mb);//.intern();
+                    // var name = readNextString(buff, mb);// .intern();
                     var temp = readNextInt10Times(buff, mb);
                     add2map(map, name, temp);
                 }
