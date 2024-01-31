@@ -274,7 +274,7 @@ public final class CalculateAverage_chrisbellew {
                  */
                 boolean lastRange = end == FILE_SIZE;
                 long length = lastRange ? end - start : end - start + OVERLAP;
-                
+
                 MappedByteBuffer buffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, start, length);
                 processRange(buffer, lastRange);
             }
@@ -317,7 +317,7 @@ public final class CalculateAverage_chrisbellew {
          * Parses and processes each line from a buffer.
          */
         private final void processBuffer(byte[] buffer, int numBytes, boolean lastRange, boolean lastBuffer, long globalPosition) {
-            
+
             /**
              * Skip past any characters before the first newline because the previous
              * segment will have already processed them. That is unless this if the 
