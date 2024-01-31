@@ -68,15 +68,15 @@ public class CalculateAverage_serkan_ozal {
 
     // Get configurations
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    private static final boolean VERBOSE = getBooleanConfig("VERBOSE", false);
-    private static final int THREAD_COUNT = getIntegerConfig("THREAD_COUNT", Runtime.getRuntime().availableProcessors());
-    private static final boolean USE_VTHREADS = getBooleanConfig("USE_VTHREADS", false);
-    private static final int VTHREAD_COUNT = getIntegerConfig("VTHREAD_COUNT", 1024);
-    private static final int REGION_COUNT = getIntegerConfig("REGION_COUNT", -1);
-    private static final boolean USE_SHARED_ARENA = getBooleanConfig("USE_SHARED_ARENA", true);
-    private static final boolean USE_SHARED_REGION = getBooleanConfig("USE_SHARED_REGION", true);
-    private static final int MAP_CAPACITY = getIntegerConfig("MAP_CAPACITY", 1 << 17);
-    private static final boolean CLOSE_STDOUT_ON_RESULT = getBooleanConfig("CLOSE_STDOUT_ON_RESULT", true);
+    private static final boolean VERBOSE = false; // getBooleanConfig("VERBOSE", false);
+    private static final int THREAD_COUNT = Runtime.getRuntime().availableProcessors(); // getIntegerConfig("THREAD_COUNT", Runtime.getRuntime().availableProcessors());
+    private static final boolean USE_VTHREADS = false; // getBooleanConfig("USE_VTHREADS", false);
+    private static final int VTHREAD_COUNT = 1024; // getIntegerConfig("VTHREAD_COUNT", 1024);
+    private static final int REGION_COUNT = 256; // getIntegerConfig("REGION_COUNT", -1);
+    private static final boolean USE_SHARED_ARENA = true; // getBooleanConfig("USE_SHARED_ARENA", true);
+    private static final boolean USE_SHARED_REGION = true; // getBooleanConfig("USE_SHARED_REGION", true);
+    private static final int MAP_CAPACITY = 1 << 17; // getIntegerConfig("MAP_CAPACITY", 1 << 17);
+    private static final boolean CLOSE_STDOUT_ON_RESULT = true; // getBooleanConfig("CLOSE_STDOUT_ON_RESULT", true);
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     // My dear old friend Unsafe
@@ -346,10 +346,16 @@ public class CalculateAverage_serkan_ozal {
         // Credits: merykitty
         private long extractValue(long regionPtr, long word, OpenMap map, int entryOffset) {
             // Parse and extract value
-            int decimalSepPos = Long.numberOfTrailingZeros(~word & 0x10101000);
-            int shift = 28 - decimalSepPos;
+
+            // 1. level instruction set (no dependency between each other so can be run in parallel)
             long signed = (~word << 59) >> 63;
+            int decimalSepPos = Long.numberOfTrailingZeros(~word & 0x10101000);
+
+            // 2. level instruction set (no dependency between each other so can be run in parallel)
+            long nextPtr = regionPtr + (decimalSepPos >>> 3) + 3;
+            int shift = 28 - decimalSepPos;
             long designMask = ~(signed & 0xFF);
+
             long digits = ((word & designMask) << shift) & 0x0F000F0F00L;
             long absValue = ((digits * 0x640a0001) >>> 32) & 0x3FF;
             int value = (int) ((absValue ^ signed) - signed);
@@ -358,12 +364,10 @@ public class CalculateAverage_serkan_ozal {
             map.putValue(entryOffset, value);
 
             // Return new position
-            return regionPtr + (decimalSepPos >>> 3) + 3;
+            return nextPtr;
         }
 
         private void doProcessRegion(long regionStart, long regionEnd) {
-            final int vectorSize = BYTE_SPECIES.vectorByteSize();
-
             final long size = regionEnd - regionStart;
             final long segmentSize = size / 2;
 
@@ -392,26 +396,26 @@ public class CalculateAverage_serkan_ozal {
                 int keyLength1 = keyVector1.compare(VectorOperators.EQ, KEY_VALUE_SEPARATOR).firstTrue();
                 int keyLength2 = keyVector2.compare(VectorOperators.EQ, KEY_VALUE_SEPARATOR).firstTrue();
 
-                if (keyLength1 != vectorSize && keyLength2 != vectorSize) {
+                if (keyLength1 != BYTE_SPECIES_SIZE && keyLength2 != BYTE_SPECIES_SIZE) {
                     regionPtr1 += (keyLength1 + 1);
                     regionPtr2 += (keyLength2 + 1);
                 }
                 else {
-                    if (keyLength1 != vectorSize) {
+                    if (keyLength1 != BYTE_SPECIES_SIZE) {
                         regionPtr1 += (keyLength1 + 1);
                     }
                     else {
-                        regionPtr1 += vectorSize;
+                        regionPtr1 += BYTE_SPECIES_SIZE;
                         for (; U.getByte(regionPtr1) != KEY_VALUE_SEPARATOR; regionPtr1++)
                             ;
                         keyLength1 = (int) (regionPtr1 - keyStartPtr1);
                         regionPtr1++;
                     }
-                    if (keyLength2 != vectorSize) {
+                    if (keyLength2 != BYTE_SPECIES_SIZE) {
                         regionPtr2 += (keyLength2 + 1);
                     }
                     else {
-                        regionPtr2 += vectorSize;
+                        regionPtr2 += BYTE_SPECIES_SIZE;
                         for (; U.getByte(regionPtr2) != KEY_VALUE_SEPARATOR; regionPtr2++)
                             ;
                         keyLength2 = (int) (regionPtr2 - keyStartPtr2);
@@ -431,28 +435,28 @@ public class CalculateAverage_serkan_ozal {
                 // Calculate key hashes and find entry indexes
                 ////////////////////////////////////////////////////////////////////////////////////////////////////////
                 int x1, y1, x2, y2;
-                if (keyLength1 >= Integer.BYTES && keyLength2 >= Integer.BYTES) {
+                if (keyLength1 > 3 && keyLength2 > 3) {
                     x1 = U.getInt(keyStartPtr1);
-                    y1 = U.getInt(keyStartPtr1 + keyLength1 - Integer.BYTES);
+                    y1 = U.getInt(regionPtr1 - 5);
                     x2 = U.getInt(keyStartPtr2);
-                    y2 = U.getInt(keyStartPtr2 + keyLength2 - Integer.BYTES);
+                    y2 = U.getInt(regionPtr2 - 5);
                 }
                 else {
-                    if (keyLength1 >= Integer.BYTES) {
+                    if (keyLength1 > 3) {
                         x1 = U.getInt(keyStartPtr1);
-                        y1 = U.getInt(keyStartPtr1 + keyLength1 - Integer.BYTES);
+                        y1 = U.getInt(regionPtr1 - 5);
                     }
                     else {
                         x1 = U.getByte(keyStartPtr1);
-                        y1 = U.getByte(keyStartPtr1 + keyLength1 - Byte.BYTES);
+                        y1 = U.getByte(regionPtr1 - 2);
                     }
-                    if (keyLength2 >= Integer.BYTES) {
+                    if (keyLength2 > 3) {
                         x2 = U.getInt(keyStartPtr2);
-                        y2 = U.getInt(keyStartPtr2 + keyLength2 - Integer.BYTES);
+                        y2 = U.getInt(regionPtr2 - 5);
                     }
                     else {
                         x2 = U.getByte(keyStartPtr2);
-                        y2 = U.getByte(keyStartPtr2 + keyLength2 - Byte.BYTES);
+                        y2 = U.getByte(regionPtr2 - 2);
                     }
                 }
 
@@ -477,19 +481,19 @@ public class CalculateAverage_serkan_ozal {
             }
 
             // Read and process region - tail
-            doProcessTail(regionPtr1, regionEnd1, regionPtr2, regionEnd2, vectorSize);
+            doProcessTail(regionPtr1, regionEnd1, regionPtr2, regionEnd2);
         }
 
-        private void doProcessTail(long regionPtr1, long regionEnd1, long regionPtr2, long regionEnd2, int vectorSize) {
+        private void doProcessTail(long regionPtr1, long regionEnd1, long regionPtr2, long regionEnd2) {
             while (regionPtr1 < regionEnd1) {
                 long keyStartPtr1 = regionPtr1;
                 ByteVector keyVector1 = ByteVector.fromMemorySegment(BYTE_SPECIES, NULL, regionPtr1, NATIVE_BYTE_ORDER);
                 int keyLength1 = keyVector1.compare(VectorOperators.EQ, KEY_VALUE_SEPARATOR).firstTrue();
-                if (keyLength1 != vectorSize) {
+                if (keyLength1 != BYTE_SPECIES_SIZE) {
                     regionPtr1 += (keyLength1 + 1);
                 }
                 else {
-                    regionPtr1 += vectorSize;
+                    regionPtr1 += BYTE_SPECIES_SIZE;
                     for (; U.getByte(regionPtr1) != KEY_VALUE_SEPARATOR; regionPtr1++)
                         ;
                     keyLength1 = (int) (regionPtr1 - keyStartPtr1);
@@ -507,11 +511,11 @@ public class CalculateAverage_serkan_ozal {
                 long keyStartPtr2 = regionPtr2;
                 ByteVector keyVector2 = ByteVector.fromMemorySegment(BYTE_SPECIES, NULL, regionPtr2, NATIVE_BYTE_ORDER);
                 int keyLength2 = keyVector2.compare(VectorOperators.EQ, KEY_VALUE_SEPARATOR).firstTrue();
-                if (keyLength2 != vectorSize) {
+                if (keyLength2 != BYTE_SPECIES_SIZE) {
                     regionPtr2 += (keyLength2 + 1);
                 }
                 else {
-                    regionPtr2 += vectorSize;
+                    regionPtr2 += BYTE_SPECIES_SIZE;
                     for (; U.getByte(regionPtr2) != KEY_VALUE_SEPARATOR; regionPtr2++)
                         ;
                     keyLength2 = (int) (regionPtr2 - keyStartPtr2);
@@ -804,16 +808,17 @@ public class CalculateAverage_serkan_ozal {
 
         private void putValue(int entryOffset, int value) {
             int countOffset = entryOffset + COUNT_OFFSET;
-            U.putInt(data, countOffset, U.getInt(data, countOffset) + 1);
             int minValueOffset = entryOffset + MIN_VALUE_OFFSET;
+            int maxValueOffset = entryOffset + MAX_VALUE_OFFSET;
+            int sumOffset = entryOffset + VALUE_SUM_OFFSET;
+
+            U.putInt(data, countOffset, U.getInt(data, countOffset) + 1);
             if (value < U.getShort(data, minValueOffset)) {
                 U.putShort(data, minValueOffset, (short) value);
             }
-            int maxValueOffset = entryOffset + MAX_VALUE_OFFSET;
             if (value > U.getShort(data, maxValueOffset)) {
                 U.putShort(data, maxValueOffset, (short) value);
             }
-            int sumOffset = entryOffset + VALUE_SUM_OFFSET;
             U.putLong(data, sumOffset, U.getLong(data, sumOffset) + value);
         }
 
