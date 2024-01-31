@@ -26,6 +26,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -81,8 +82,17 @@ public class CalculateAverage_artsiomkorzun {
     private static void spawn() throws Exception {
         ProcessHandle.Info info = ProcessHandle.current().info();
         ArrayList<String> commands = new ArrayList<>();
-        info.command().ifPresent(commands::add);
-        info.arguments().ifPresent(args -> commands.addAll(Arrays.asList(args)));
+        Optional<String> command = info.command();
+        Optional<String[]> arguments = info.arguments();
+
+        if (command.isPresent()) {
+            commands.add(command.get());
+        }
+
+        if (arguments.isPresent()) {
+            commands.addAll(Arrays.asList(arguments.get()));
+        }
+
         commands.add("--worker");
 
         new ProcessBuilder()
@@ -113,7 +123,7 @@ public class CalculateAverage_artsiomkorzun {
             aggregators[i].join();
         }
 
-        Map<String, Aggregate> aggregates = result.get().aggregate();
+        Map<String, Aggregate> aggregates = result.get().build();
         System.out.println(text(aggregates));
         System.out.close();
     }
@@ -163,14 +173,14 @@ public class CalculateAverage_artsiomkorzun {
         return Math.round(v) / 10.0;
     }
 
-    private record Aggregate(long min, long max, long sum, long cnt) {
+    private record Aggregate(int min, int max, long sum, int cnt) {
     }
 
     private static class Aggregates {
 
         private static final long ENTRIES = 64 * 1024;
-        private static final long SIZE = 256 * ENTRIES;
-        private static final long MASK = (ENTRIES - 1) << 8;
+        private static final long SIZE = 128 * ENTRIES;
+        private static final long MASK = (ENTRIES - 1) << 7;
 
         private final long pointer;
 
@@ -182,25 +192,25 @@ public class CalculateAverage_artsiomkorzun {
 
         public long find(long word, long hash) {
             long address = pointer + offset(hash);
-            long w = word(address + 48);
+            long w = word(address + 24);
             return (w == word) ? address : 0;
         }
 
         public long find(long word1, long word2, long hash) {
             long address = pointer + offset(hash);
-            long w1 = word(address + 48);
-            long w2 = word(address + 56);
+            long w1 = word(address + 24);
+            long w2 = word(address + 32);
             return (word1 == w1) && (word2 == w2) ? address : 0;
         }
 
         public long put(long reference, long word, long length, long hash) {
             for (long offset = offset(hash);; offset = next(offset)) {
                 long address = pointer + offset;
-                if (equal(reference, word, address + 48, length)) {
+                if (equal(reference, word, address + 24, length)) {
                     return address;
                 }
 
-                long len = UNSAFE.getLong(address);
+                int len = UNSAFE.getInt(address);
                 if (len == 0) {
                     alloc(reference, length, hash, address);
                     return address;
@@ -209,76 +219,76 @@ public class CalculateAverage_artsiomkorzun {
         }
 
         public static void update(long address, long value) {
-            long sum = UNSAFE.getLong(address + 16) + value;
-            long cnt = UNSAFE.getLong(address + 24) + 1;
-            long min = UNSAFE.getLong(address + 32);
-            long max = UNSAFE.getLong(address + 40);
+            long sum = UNSAFE.getLong(address + 8) + value;
+            int cnt = UNSAFE.getInt(address + 16) + 1;
+            short min = UNSAFE.getShort(address + 20);
+            short max = UNSAFE.getShort(address + 22);
 
-            UNSAFE.putLong(address + 16, sum);
-            UNSAFE.putLong(address + 24, cnt);
+            UNSAFE.putLong(address + 8, sum);
+            UNSAFE.putInt(address + 16, cnt);
 
             if (value < min) {
-                UNSAFE.putLong(address + 32, value);
+                UNSAFE.putShort(address + 20, (short) value);
             }
 
             if (value > max) {
-                UNSAFE.putLong(address + 40, value);
+                UNSAFE.putShort(address + 22, (short) value);
             }
         }
 
         public void merge(Aggregates rights) {
-            for (int rightOffset = 0; rightOffset < SIZE; rightOffset += 256) {
+            for (long rightOffset = 0; rightOffset < SIZE; rightOffset += 128) {
                 long rightAddress = rights.pointer + rightOffset;
-                long length = UNSAFE.getLong(rightAddress);
+                int length = UNSAFE.getInt(rightAddress);
 
                 if (length == 0) {
                     continue;
                 }
 
-                long hash = UNSAFE.getLong(rightAddress + 8);
+                int hash = UNSAFE.getInt(rightAddress + 4);
 
                 for (long offset = offset(hash);; offset = next(offset)) {
                     long address = pointer + offset;
 
-                    if (equal(address + 48, rightAddress + 48, length)) {
-                        long sum = UNSAFE.getLong(address + 16) + UNSAFE.getLong(rightAddress + 16);
-                        long cnt = UNSAFE.getLong(address + 24) + UNSAFE.getLong(rightAddress + 24);
-                        long min = Math.min(UNSAFE.getLong(address + 32), UNSAFE.getLong(rightAddress + 32));
-                        long max = Math.max(UNSAFE.getLong(address + 40), UNSAFE.getLong(rightAddress + 40));
+                    if (equal(address + 24, rightAddress + 24, length)) {
+                        long sum = UNSAFE.getLong(address + 8) + UNSAFE.getLong(rightAddress + 8);
+                        int cnt = UNSAFE.getInt(address + 16) + UNSAFE.getInt(rightAddress + 16);
+                        short min = (short) Math.min(UNSAFE.getShort(address + 20), UNSAFE.getShort(rightAddress + 20));
+                        short max = (short) Math.max(UNSAFE.getShort(address + 22), UNSAFE.getShort(rightAddress + 22));
 
-                        UNSAFE.putLong(address + 16, sum);
-                        UNSAFE.putLong(address + 24, cnt);
-                        UNSAFE.putLong(address + 32, min);
-                        UNSAFE.putLong(address + 40, max);
+                        UNSAFE.putLong(address + 8, sum);
+                        UNSAFE.putInt(address + 16, cnt);
+                        UNSAFE.putShort(address + 20, min);
+                        UNSAFE.putShort(address + 22, max);
                         break;
                     }
 
-                    long len = UNSAFE.getLong(address);
+                    int len = UNSAFE.getInt(address);
 
                     if (len == 0) {
-                        UNSAFE.copyMemory(rightAddress, address, length + 48);
+                        UNSAFE.copyMemory(rightAddress, address, length + 24);
                         break;
                     }
                 }
             }
         }
 
-        public Map<String, Aggregate> aggregate() {
+        public Map<String, Aggregate> build() {
             TreeMap<String, Aggregate> set = new TreeMap<>();
 
-            for (long offset = 0; offset < SIZE; offset += 256) {
+            for (long offset = 0; offset < SIZE; offset += 128) {
                 long address = pointer + offset;
-                long length = UNSAFE.getLong(address);
+                int length = UNSAFE.getInt(address);
 
                 if (length != 0) {
-                    byte[] array = new byte[(int) length - 1];
-                    UNSAFE.copyMemory(null, address + 48, array, Unsafe.ARRAY_BYTE_BASE_OFFSET, array.length);
+                    byte[] array = new byte[length - 1];
+                    UNSAFE.copyMemory(null, address + 24, array, Unsafe.ARRAY_BYTE_BASE_OFFSET, array.length);
                     String key = new String(array);
 
-                    long sum = UNSAFE.getLong(address + 16);
-                    long cnt = UNSAFE.getLong(address + 24);
-                    long min = UNSAFE.getLong(address + 32);
-                    long max = UNSAFE.getLong(address + 40);
+                    long sum = UNSAFE.getLong(address + 8);
+                    int cnt = UNSAFE.getInt(address + 16);
+                    short min = UNSAFE.getShort(address + 20);
+                    short max = UNSAFE.getShort(address + 22);
 
                     Aggregate aggregate = new Aggregate(min, max, sum, cnt);
                     set.put(key, aggregate);
@@ -289,11 +299,11 @@ public class CalculateAverage_artsiomkorzun {
         }
 
         private static void alloc(long reference, long length, long hash, long address) {
-            UNSAFE.putLong(address, length);
-            UNSAFE.putLong(address + 8, hash);
-            UNSAFE.putLong(address + 32, Long.MAX_VALUE);
-            UNSAFE.putLong(address + 40, Long.MIN_VALUE);
-            UNSAFE.copyMemory(reference, address + 48, length);
+            UNSAFE.putInt(address, (int) length);
+            UNSAFE.putInt(address + 4, (int) hash);
+            UNSAFE.putShort(address + 20, Short.MAX_VALUE);
+            UNSAFE.putShort(address + 22, Short.MIN_VALUE);
+            UNSAFE.copyMemory(reference, address + 24, length);
         }
 
         private static long offset(long hash) {
@@ -301,7 +311,7 @@ public class CalculateAverage_artsiomkorzun {
         }
 
         private static long next(long prev) {
-            return (prev + 256) & (SIZE - 1);
+            return (prev + 128) & (SIZE - 1);
         }
 
         private static boolean equal(long leftAddress, long leftWord, long rightAddress, long length) {
@@ -510,8 +520,9 @@ public class CalculateAverage_artsiomkorzun {
         private static long value(Chunk chunk) {
             long num = word(chunk.position);
             long dot = dot(num);
+            long value = value(num, dot);
             chunk.position += (dot >> 3) + 3;
-            return value(num, dot);
+            return value;
         }
 
         private static long separator(long word) {

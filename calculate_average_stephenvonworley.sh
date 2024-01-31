@@ -15,11 +15,11 @@
 #  limitations under the License.
 #
 
-
-
-if [ -f target/CalculateAverage_JamalMulla_image ]; then
-    target/CalculateAverage_JamalMulla_image
+if [ -f target/CalculateAverage_stephenvonworley_image ]; then
+    target/CalculateAverage_stephenvonworley_image
 else
-    JAVA_OPTS="--enable-preview -XX:+UnlockExperimentalVMOptions -XX:+TrustFinalNonStaticFields -XX:+UseTransparentHugePages -XX:-TieredCompilation"
-    java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_JamalMulla
+    JAVA_OPTS="--enable-preview"
+    echo "Chosing to run the app in JVM mode as no native image was found, use prepare_stephenvonworley.sh to generate." 1>&2
+    java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_stephenvonworley
 fi
+
