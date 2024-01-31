@@ -15,11 +15,5 @@
 #  limitations under the License.
 #
 
-if [ -f target/CalculateAverage_vaidhy_image ]; then
-    echo "Picking up existing native image 'target/CalculateAverage_vaidhy_image', delete the file to select JVM mode." 1>&2
-    target/CalculateAverage_vaidhy_image
-else
-    JAVA_OPTS="--enable-preview"
-    echo "Chosing to run the app in JVM mode as no native image was found, use prepare_vaidhy.sh to generate." 1>&2
-    java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_vaidhy
-fi
+JAVA_OPTS="--enable-preview"
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_vaidhy
