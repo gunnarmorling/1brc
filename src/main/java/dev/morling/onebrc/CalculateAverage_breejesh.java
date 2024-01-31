@@ -17,8 +17,6 @@ package dev.morling.onebrc;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.RandomAccessFile;
-import java.nio.Buffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
@@ -50,7 +48,13 @@ public class CalculateAverage_breejesh {
 
         @Override
         public String toString() {
-            return STR."\{min / 10.0}/\{Math.round(((double) total) / count) / 10.0}/\{max / 10.0}";
+            StringBuilder result = new StringBuilder();
+            result.append(min / 10.0);
+            result.append("/");
+            result.append(Math.round(((double) total) / count) / 10.0);
+            result.append("/");
+            result.append(max / 10.0);
+            return result.toString();
         }
 
         private void append(int min, int max, int total, int count) {
@@ -91,12 +95,14 @@ public class CalculateAverage_breejesh {
                 MappedByteBuffer currentBuffer = null;
                 try {
                     currentBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, sectionStart, sectionEnd - sectionStart);
-                } catch (IOException e) {
+                }
+                catch (IOException e) {
                     throw new RuntimeException(e);
                 }
                 // Skip till new line for unequal segments, not to be done for first section
                 if (sectionStart > 0) {
-                    while (currentBuffer.get() != '\n') ;
+                    while (currentBuffer.get() != '\n')
+                        ;
                 }
                 Map<String, Measurement> map = new HashMap<>();
                 while (currentBuffer.position() < splitSectionSize) {
@@ -106,7 +112,8 @@ public class CalculateAverage_breejesh {
                     int value = getValueFromBuffer(currentBuffer);
                     if (map.containsKey(str)) {
                         map.get(str).append(value);
-                    } else {
+                    }
+                    else {
                         map.put(str, new Measurement(value));
                     }
                 }
@@ -123,11 +130,11 @@ public class CalculateAverage_breejesh {
                     key -> {
                         if (finalMap.containsKey(key)) {
                             finalMap.get(key).merge(map.get(key));
-                        } else {
+                        }
+                        else {
                             finalMap.put(key, map.get(key));
                         }
-                    }
-            );
+                    });
         }
 
         System.out.println(finalMap);
@@ -152,14 +159,17 @@ public class CalculateAverage_breejesh {
         if (nums[1] == '.') {
             // case of n.n
             value = (nums[0] * 10 + nums[2] - TWO_BYTE_TO_INT);
-        } else {
+        }
+        else {
             if (nums[3] == '.') {
                 // case of -nn.n
                 value = -(nums[1] * 100 + nums[2] * 10 + currentBuffer.get() - THREE_BYTE_TO_INT);
-            } else if (nums[0] == '-') {
+            }
+            else if (nums[0] == '-') {
                 // case of -n.n
                 value = -(nums[1] * 10 + nums[3] - TWO_BYTE_TO_INT);
-            } else {
+            }
+            else {
                 // case of nn.n
                 value = (nums[0] * 100 + nums[1] * 10 + nums[3] - THREE_BYTE_TO_INT);
             }
