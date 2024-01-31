@@ -27,11 +27,14 @@ import java.util.concurrent.atomic.AtomicLong;
  * split into 3 parts and cursors for each of those parts are processing the segment simultaneously in the same thread.
  * Results are accumulated into {@link Result} objects and a tree map is used to sequentially accumulate the results in
  * the end.
- * Runs in 0.39s on an Intel i9-13900K.
+ * Runs in 0.37s with profile-guided optimizations (PGO) and 0.39s without on an Intel i9-13900K while the reference
+ * implementation takes 120.23s.
  * Credit:
  *  Quan Anh Mai for branchless number parsing code
  *  Alfonso² Peterssen for suggesting memory mapping with unsafe and the subprocess idea
  *  Artsiom Korzun for showing the benefits of work stealing at 2MB segments instead of equal split between workers
+ *  Jaromir Hamala for showing that avoiding the branch misprediction between <8 and 8-16 cases is a big win even if
+ *  more work is performed
  */
 public class CalculateAverage_thomaswue {
     private static final String FILE = "./measurements.txt";
@@ -176,55 +179,39 @@ public class CalculateAverage_thomaswue {
         long delimiterMask = initialDelimiterMask;
         long hash;
         long nameAddress = scanner.pos();
-
-        // Search for ';', one long at a time. There are two common cases that a specially treated:
-        // (b) the ';' is found in the first 16 bytes
-        if (delimiterMask != 0) {
-            // Special case for when the ';' is found in the first 8 bytes.
+        long word2 = scanner.getLongAt(scanner.pos() + 8);
+        long delimiterMask2 = findDelimiter(word2);
+        if ((delimiterMask | delimiterMask2) != 0) {
             int trailingZeros = Long.numberOfTrailingZeros(delimiterMask);
-            word = (word << (63 - trailingZeros));
-            scanner.add(trailingZeros >>> 3);
-            hash = word;
+            int trailingZeros2 = Long.numberOfTrailingZeros(delimiterMask2);
+            // 0 if no delimiter found in first 8 bytes and 0xFFFFFFFFFFFFFFFF otherwise
+            long mask = (trailingZeros >> 6) - 1;
+            word = (word << ((63 - trailingZeros) & mask));
+            word2 = (word2 << (63 - trailingZeros2)) & (~mask);
+            scanner.add((trailingZeros + (trailingZeros2 & (~mask)) >>> 3));
+            hash = word ^ word2;
             existingResult = results[hashToIndex(hash, results)];
-            if (existingResult != null && existingResult.lastNameLong == word) {
+            if (existingResult != null && existingResult.firstNameWord == word && existingResult.secondNameWord == word2) {
                 return existingResult;
             }
         }
         else {
-            // Special case for when the ';' is found in bytes 9-16.
-            hash = word;
-            long prevWord = word;
-            scanner.add(8);
-            word = scanner.getLong();
-            delimiterMask = findDelimiter(word);
-            if (delimiterMask != 0) {
-                int trailingZeros = Long.numberOfTrailingZeros(delimiterMask);
-                word = (word << (63 - trailingZeros));
-                scanner.add(trailingZeros >>> 3);
-                hash ^= word;
-                existingResult = results[hashToIndex(hash, results)];
-                if (existingResult != null && existingResult.lastNameLong == word && existingResult.secondLastNameLong == prevWord) {
-                    return existingResult;
+            // Slow-path for when the ';' could not be found in the first 16 bytes.
+            hash = word ^ word2;
+            scanner.add(16);
+            while (true) {
+                word = scanner.getLong();
+                delimiterMask = findDelimiter(word);
+                if (delimiterMask != 0) {
+                    int trailingZeros = Long.numberOfTrailingZeros(delimiterMask);
+                    word = (word << (63 - trailingZeros));
+                    scanner.add(trailingZeros >>> 3);
+                    hash ^= word;
+                    break;
                 }
-            }
-            else {
-                // Slow-path for when the ';' could not be found in the first 16 bytes.
-                scanner.add(8);
-                hash ^= word;
-                while (true) {
-                    word = scanner.getLong();
-                    delimiterMask = findDelimiter(word);
-                    if (delimiterMask != 0) {
-                        int trailingZeros = Long.numberOfTrailingZeros(delimiterMask);
-                        word = (word << (63 - trailingZeros));
-                        scanner.add(trailingZeros >>> 3);
-                        hash ^= word;
-                        break;
-                    }
-                    else {
-                        scanner.add(8);
-                        hash ^= word;
-                    }
+                else {
+                    scanner.add(8);
+                    hash ^= word;
                 }
             }
         }
@@ -249,8 +236,8 @@ public class CalculateAverage_thomaswue {
                 }
             }
 
-            int remainingShift = (64 - (nameLength + 1 - i) << 3);
-            if (existingResult.lastNameLong == (scanner.getLongAt(nameAddress + i) << remainingShift)) {
+            int remainingShift = (64 - ((nameLength + 1 - i) << 3));
+            if (((scanner.getLongAt(existingResult.nameAddress + i) ^ (scanner.getLongAt(nameAddress + i))) << remainingShift) == 0) {
                 break;
             }
             else {
@@ -324,21 +311,25 @@ public class CalculateAverage_thomaswue {
     private static Result newEntry(Result[] results, long nameAddress, int hash, int nameLength, Scanner scanner, List<Result> collectedResults) {
         Result r = new Result();
         results[hash] = r;
-        int i = 0;
-        for (; i < nameLength + 1 - Long.BYTES; i += Long.BYTES) {
+        int totalLength = nameLength + 1;
+        r.firstNameWord = scanner.getLongAt(nameAddress);
+        r.secondNameWord = scanner.getLongAt(nameAddress + 8);
+        if (totalLength < 8) {
+            r.firstNameWord = (r.firstNameWord << ((8 - totalLength) << 3));
         }
-        if (nameLength + 1 > 8) {
-            r.secondLastNameLong = scanner.getLongAt(nameAddress + i - 8);
+        if (totalLength <= 8) {
+            r.secondNameWord = 0;
         }
-        int remainingShift = (64 - (nameLength + 1 - i) << 3);
-        r.lastNameLong = (scanner.getLongAt(nameAddress + i) << remainingShift);
+        else if (totalLength < 16) {
+            r.secondNameWord = (r.secondNameWord << ((16 - totalLength) << 3));
+        }
         r.nameAddress = nameAddress;
         collectedResults.add(r);
         return r;
     }
 
     private static final class Result {
-        long lastNameLong, secondLastNameLong;
+        long firstNameWord, secondNameWord;
         short min, max;
         int count;
         long sum;
