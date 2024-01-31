@@ -41,7 +41,7 @@ public class CalculateAverage_Judekeyser {
     private static final String FILE = "./measurements.txt";
     private static final int chunkSize = (1 << 7) << 12; // This can't go beyond 2^21, because otherwise we might exceed int capacity
 
-    private static final int numberOfIOWorkers = 1 << 10; // We are going to need (numberOfIOWorkers-1) * chunkSize capacity
+    private static final int numberOfIOWorkers = 1 << 8; // We are going to need (numberOfIOWorkers-1) * chunkSize capacity
     private static final int numberOfParallelWorkers = Runtime.getRuntime().availableProcessors() - 1;
 
     private static final VectorSpecies<Byte> SPECIES = ByteVector.SPECIES_PREFERRED;
