@@ -27,15 +27,14 @@ public class CalculateAverage_ashikur2146 {
     private static Map<String, TemperatureStats> processFile(String filePath) throws IOException {
         try {
             Path path = Paths.get(filePath);
-            return Files.lines(path).map(line -> line.split(";")).parallel().filter(parts -> parts.length == 2)
-					.collect(Collectors.groupingByConcurrent(parts -> parts[0],
-							Collectors.mapping(parts -> new TemperatureStats(Double.parseDouble(parts[1])),
-									Collectors.reducing(TemperatureStats::merge))))
-					.entrySet().stream()
-					.collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().orElseThrow(),
-							(e1, e2) -> e1,
-							TreeMap::new
-					));
+
+            ConcurrentMap<String, TemperatureStats> stationStats = Files.lines(path).parallel()
+                    .map(line -> line.split(";")).filter(parts -> parts.length == 2)
+                    .collect(Collectors.toConcurrentMap(parts -> parts[0],
+                            parts -> new TemperatureStats(Double.parseDouble(parts[1])), TemperatureStats::merge));
+
+            return new TreeMap<>(stationStats);
+
         }
         catch (IOException e) {
             throw new IOException("Error reading file: " + e.getMessage(), e);
