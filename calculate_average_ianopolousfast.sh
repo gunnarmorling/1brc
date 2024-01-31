@@ -16,4 +16,6 @@
 #
 
 JAVA_OPTS="--enable-preview --add-modules=jdk.incubator.vector"
+#-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0 -XX:-UseTransparentHugePages"
+
 java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_ianopolousfast
