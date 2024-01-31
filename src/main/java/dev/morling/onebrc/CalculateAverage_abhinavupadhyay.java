@@ -100,9 +100,6 @@ public class CalculateAverage_abhinavupadhyay {
         }
 
         void update(int temperature) {
-            this.minTemp = min(this.minTemp, temperature);
-            this.maxTemp = max(this.maxTemp, temperature);
-
             this.count++;
             this.sum += temperature;
             if (temperature < minTemp) {
