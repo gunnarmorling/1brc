@@ -15,5 +15,10 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="--enable-preview"
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_ebarlas
+if [ -f target/CalculateAverage_ebarlas_image ]; then
+    echo "Picking up existing native image 'target/CalculateAverage_ebarlas_image', delete the file to select JVM mode." 1>&2
+    target/CalculateAverage_ebarlas_image
+else
+    echo "Choosing to run the app in JVM mode as no native image was found, use prepare_ebarlas.sh to generate." 1>&2
+    java --enable-preview --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_ebarlas
+fi
