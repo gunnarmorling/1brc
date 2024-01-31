@@ -38,13 +38,13 @@ import java.util.concurrent.atomic.AtomicLong;
  * I stand on shoulders of giants. I wouldn't be able to code this without analyzing and borrowing from solutions of others.
  * People who helped me the most:
  * <ul>
- * <li>Thomas Wuerthinger (thomaswue): The munmap() trick and work-stealing. In both cases, I shameless copy-pasted his code.
+ * <li>Thomas Wuerthinger (thomaswue): The munmap() trick and work-stealing. In both cases, I shameless copy-pasted their code.
  *     Including SWAR for detecting new lines. Thomas also gave me helpful hints on how to detect register spilling issues.</li>
- * <li>Quan Anh Mai (merykitty): I borrowed his phenomenal branch-free parser.</li>
+ * <li>Quan Anh Mai (merykitty): I borrowed their phenomenal branch-free parser.</li>
  * <li>Marko Topolnik (mtopolnik): I use a hashing function I saw in his code. It seems the produce good quality hashes
  *     and it's next-level in speed. Marko joined the challenge before me and our discussions made me to join too!</li>
- * <li>Van Phu DO (abeobk): I saw the idea with simple lookup tables instead of complicated bit-twiddling in his code first.</li>
- * <li>Roy van Rijn (royvanrijn): I borrowed his SWAR code and initially his hash code impl</li>
+ * <li>Van Phu DO (abeobk): I saw the idea with simple lookup tables instead of complicated bit-twiddling in their code first.</li>
+ * <li>Roy van Rijn (royvanrijn): I borrowed their SWAR code and initially their hash code impl</li>
  * <li>Francesco Nigro (franz1981): For our online discussions about performance. Both before and during this challenge.
  *     Francesco gave me the idea to check register spilling.</li>
  * </ul>
