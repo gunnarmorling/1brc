@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 #  Copyright 2023 The original authors
 #
@@ -15,9 +15,6 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="--enable-preview --add-modules=jdk.incubator.vector"
-JAVA_OPTS="$JAVA_OPTS -XX:-TieredCompilation"
-JAVA_OPTS="$JAVA_OPTS -XX:+UnlockExperimentalVMOptions -XX:+TrustFinalNonStaticFields"
-JAVA_OPTS="$JAVA_OPTS -XX:InlineSmallCode=15000 -XX:FreqInlineSize=400 -XX:MaxInlineSize=400"
-#JAVA_OPTS="$JAVA_OPTS -XX:+PrintCompilation -XX:+UnlockDiagnosticVMOptions -XX:+PrintInlining"
-java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_plevart $*
+# Uncomment below to use sdk
+# source "$HOME/.sdkman/bin/sdkman-init.sh"
+# sdk use java 21.0.1-graal 1>&2

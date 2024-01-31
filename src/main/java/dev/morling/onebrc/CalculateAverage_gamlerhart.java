@@ -31,8 +31,7 @@ import java.util.stream.Collectors;
 
 import static java.lang.Double.doubleToRawLongBits;
 import static java.lang.Double.longBitsToDouble;
-import static java.lang.foreign.ValueLayout.JAVA_BYTE;
-import static java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED;
+import static java.lang.foreign.ValueLayout.*;
 
 /**
  * Broad experiments in this implementation:
@@ -242,7 +241,7 @@ public class CalculateAverage_gamlerhart {
         private boolean isSameEntry(MemorySegment file, long slotEntry, long pos, int len) {
             long keyPos = (slotEntry & MASK_POS) >> SHIFT_POS;
             int keyLen = (int) (slotEntry & MASK_LEN);
-            var isSame = isSame(file, keyPos, pos, len);
+            var isSame = len == keyLen && isSame(file, keyPos, pos, len);
             return isSame;
         }
 
@@ -251,8 +250,8 @@ public class CalculateAverage_gamlerhart {
             var i1len = i1 + vecLen;
             var i2len = i2 + vecLen;
             if (len < vecLen && i1len <= file.byteSize() && i2len <= file.byteSize()) {
-                var v1 = byteVec.fromMemorySegment(file, i1, ByteOrder.BIG_ENDIAN);
-                var v2 = byteVec.fromMemorySegment(file, i2, ByteOrder.BIG_ENDIAN);
+                var v1 = byteVec.fromMemorySegment(file, i1, ByteOrder.nativeOrder());
+                var v2 = byteVec.fromMemorySegment(file, i2, ByteOrder.nativeOrder());
                 var isTrue = v1.compare(VectorOperators.EQ, v2, allTrue.indexInRange(0, len));
                 return isTrue.trueCount() == len;
             }

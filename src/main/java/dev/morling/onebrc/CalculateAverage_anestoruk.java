@@ -49,7 +49,7 @@ public class CalculateAverage_anestoruk {
 
         try (FileChannel channel = FileChannel.open(Path.of(path))) {
             final long fileSize = channel.size();
-            final long chunkSize = fileSize > 10_000 ? min(Integer.MAX_VALUE - 256, fileSize / cpus) : fileSize;
+            final long chunkSize = calculateChunkSize(fileSize);
             final int chunks = (int) ceil((double) fileSize / chunkSize);
             segment = channel.map(READ_ONLY, 0, fileSize, Arena.global());
             long startOffset = 0;
@@ -85,6 +85,18 @@ public class CalculateAverage_anestoruk {
         System.out.println(result);
     }
 
+    private static long calculateChunkSize(long fileSize) {
+        int divisor = cpus;
+        long chunkSize;
+        if (fileSize > 10_000) {
+            while ((chunkSize = fileSize / divisor) > Integer.MAX_VALUE - 512) {
+                divisor *= 2;
+            }
+            return chunkSize;
+        }
+        return fileSize;
+    }
+
     private static Record[] process(SegmentRange range, MemorySegment segment) {
         Record[] records = new Record[1024 * 100];
         byte[] cityBuffer = new byte[100];
@@ -113,23 +125,23 @@ public class CalculateAverage_anestoruk {
                 }
             }
             int temperature = negative ? -value : value;
-            byte[] city = new byte[cityLength];
-            System.arraycopy(cityBuffer, 0, city, 0, cityLength);
-            addResult(records, hash, city, temperature);
+            addRecord(records, hash, cityBuffer, cityLength, temperature);
         }
         return records;
     }
 
-    private static void addResult(Record[] records, int hash, byte[] city, int temperature) {
+    private static void addRecord(Record[] records, int hash, byte[] cityBuffer, int cityLength, int temperature) {
         int idx = hash % records.length;
         Record record;
         while ((record = records[idx]) != null) {
-            if (record.hash == hash && Arrays.equals(record.city, city)) {
+            if (record.hash == hash && Arrays.equals(record.city, 0, record.city.length, cityBuffer, 0, cityLength)) {
                 record.add(temperature);
                 return;
             }
             idx = (idx + 1) % records.length;
         }
+        byte[] city = new byte[cityLength];
+        System.arraycopy(cityBuffer, 0, city, 0, cityLength);
         records[idx] = new Record(hash, city, temperature);
     }
 

@@ -56,8 +56,7 @@ public class CalculateAverage_zerninv {
                 tasks[i] = new TaskThread((int) (fileSize / minChunkSize / CORES + 1));
             }
 
-            var results = new HashMap<String, TemperatureAggregation>();
-            var chunks = splitByChunks(segment.address(), segment.address() + fileSize, minChunkSize, results);
+            var chunks = splitByChunks(segment.address(), segment.address() + fileSize, minChunkSize);
             for (int i = 0; i < chunks.size() - 1; i++) {
                 var task = tasks[i % tasks.length];
                 task.addChunk(chunks.get(i), chunks.get(i + 1));
@@ -67,6 +66,7 @@ public class CalculateAverage_zerninv {
                 task.start();
             }
 
+            var results = new HashMap<String, TemperatureAggregation>();
             for (var task : tasks) {
                 task.join();
                 task.collectTo(results);
@@ -79,31 +79,8 @@ public class CalculateAverage_zerninv {
         }
     }
 
-    private static List<Long> splitByChunks(long address, long end, long minChunkSize, Map<String, TemperatureAggregation> results) {
-        // handle last line
-        long offset = end - 1;
-        int temperature = 0;
-        byte b;
-        int multiplier = 1;
-        while ((b = UNSAFE.getByte(offset--)) != ';') {
-            if (b >= '0' && b <= '9') {
-                temperature += (b - '0') * multiplier;
-                multiplier *= 10;
-            }
-            else if (b == '-') {
-                temperature = -temperature;
-            }
-        }
-        long cityNameEnd = offset;
-        while (UNSAFE.getByte(offset - 1) != '\n' && offset > address) {
-            offset--;
-        }
-        var cityName = new byte[(int) (cityNameEnd - offset + 1)];
-        UNSAFE.copyMemory(null, offset, cityName, Unsafe.ARRAY_BYTE_BASE_OFFSET, cityName.length);
-        results.put(new String(cityName, StandardCharsets.UTF_8), new TemperatureAggregation(temperature, 1, (short) temperature, (short) temperature));
-
+    private static List<Long> splitByChunks(long address, long end, long minChunkSize) {
         // split by chunks
-        end = offset;
         List<Long> result = new ArrayList<>((int) ((end - address) / minChunkSize + 1));
         result.add(address);
         while (address < end) {
@@ -278,8 +255,49 @@ public class CalculateAverage_zerninv {
         @Override
         public void run() {
             for (int i = 0; i < begins.size(); i++) {
-                calcForChunk(begins.get(i), ends.get(i));
+                var begin = begins.get(i);
+                var end = ends.get(i) - 1;
+                while (end > begin && UNSAFE.getByte(end - 1) != '\n') {
+                    end--;
+                }
+                calcForChunk(begin, end);
+                calcLastLine(end);
             }
+        }
+
+        private void calcLastLine(long offset) {
+            long cityOffset = offset;
+            long lastBytes = 0;
+            int hashCode = 0;
+            byte cityNameSize = 0;
+
+            byte b;
+            while ((b = UNSAFE.getByte(offset++)) != ';') {
+                lastBytes = (lastBytes << 8) | b;
+                hashCode = hashCode * 31 + b;
+                cityNameSize++;
+            }
+
+            int temperature;
+            int word = UNSAFE.getInt(offset);
+            offset += 4;
+
+            if ((word & TWO_NEGATIVE_DIGITS_MASK) == TWO_NEGATIVE_DIGITS_MASK) {
+                word >>>= 8;
+                temperature = ZERO * 11 - ((word & BYTE_MASK) * 10 + ((word >>> 16) & BYTE_MASK));
+            }
+            else if ((word & THREE_DIGITS_MASK) == THREE_DIGITS_MASK) {
+                temperature = (word & BYTE_MASK) * 100 + ((word >>> 8) & BYTE_MASK) * 10 + ((word >>> 24) & BYTE_MASK) - ZERO * 111;
+            }
+            else if ((word & TWO_DIGITS_MASK) == TWO_DIGITS_MASK) {
+                temperature = (word & BYTE_MASK) * 10 + ((word >>> 16) & BYTE_MASK) - ZERO * 11;
+            }
+            else {
+                // #.##-
+                word = (word >>> 8) | (UNSAFE.getByte(offset) << 24);
+                temperature = ZERO * 111 - ((word & BYTE_MASK) * 100 + ((word >>> 8) & BYTE_MASK) * 10 + ((word >>> 24) & BYTE_MASK));
+            }
+            container.put(cityOffset, cityNameSize, hashCode, lastBytes, (short) temperature);
         }
 
         private void calcForChunk(long offset, long end) {
