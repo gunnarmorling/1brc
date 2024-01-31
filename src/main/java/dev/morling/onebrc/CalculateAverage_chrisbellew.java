@@ -368,8 +368,9 @@ public final class CalculateAverage_chrisbellew {
                     }
 
                     /**
-                     * If were less than one vector length away from the buffer
-                     * then just take the remaining bytes as the final line.
+                     * If we're less than one vector length away from the end
+                     * of the buffer then just take the remaining bytes as the
+                     * final line. If we tried to use a vector it would overflow.
                      */
                     if (index >= numBytes - SPECIES.length()) {
                         slice(buffer, numBytes - 1, nameStart);
