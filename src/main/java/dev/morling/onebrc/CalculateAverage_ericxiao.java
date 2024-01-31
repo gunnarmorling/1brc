@@ -298,8 +298,7 @@ public class CalculateAverage_ericxiao {
     }
 
     public static void main(String[] args) throws Exception {
-        // int numThreads = Runtime.getRuntime().availableProcessors();
-        int numThreads = 1;
+        int numThreads = Runtime.getRuntime().availableProcessors();
         ExecutorService executorService = Executors.newFixedThreadPool(numThreads);
         List<Callable<Stations>> callableTasks = new ArrayList<>();
         Path filePath = Path.of(FILE);
@@ -341,7 +340,7 @@ public class CalculateAverage_ericxiao {
                 executorService.shutdown();
 
                 Stations station1 = results.getFirst();
-                for (int i = 1; i < numThreads; ++i) {
+                for (int i = 1; i < results.size(); ++i) {
                     Stations currStation = results.get(i);
                     for (int j = 0; j < currStation.stationPointer; j++) {
                         int currStationHash = currStation.stationIdx[j];
@@ -360,7 +359,7 @@ public class CalculateAverage_ericxiao {
                 // print key and values
                 System.out.print("{");
                 for (int i = 0; i < station1.stationPointer - 1; i++) {
-                    int idx = station1.stationIdx[i] * station1.MEASUREMENT_SIZE;
+                    int idx = station1.stationIdx[i];
                     int min = station1.measurements[idx];
                     int max = station1.measurements[idx + 1];
                     int sum = station1.measurements[idx + 2];
@@ -373,7 +372,7 @@ public class CalculateAverage_ericxiao {
                                     + ", ");
                 }
 
-                int idx = station1.stationIdx[station1.stationPointer - 1] * station1.MEASUREMENT_SIZE;
+                int idx = station1.stationIdx[station1.stationPointer - 1];
                 int min = station1.measurements[idx];
                 int max = station1.measurements[idx + 1];
                 int sum = station1.measurements[idx + 2];
