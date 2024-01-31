@@ -15,6 +15,7 @@
  */
 package dev.morling.onebrc;
 
+import jdk.crac.Core;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
@@ -50,6 +51,7 @@ public class CalculateAverage_ianopolousfast {
             : ByteVector.SPECIES_64;
 
     public static void main(String[] args) throws Exception {
+        Core.checkpointRestore();
         Arena arena = Arena.global();
         Path input = Path.of("measurements.txt");
         FileChannel channel = (FileChannel) Files.newByteChannel(input, StandardOpenOption.READ);
