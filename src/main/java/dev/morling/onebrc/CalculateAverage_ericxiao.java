@@ -259,7 +259,7 @@ public class CalculateAverage_ericxiao {
     }
 
     public static void main(String[] args) throws Exception {
-        int numThreads = Runtime.getRuntime().availableProcessors() - 1; // Use the number of available processors
+        int numThreads = Runtime.getRuntime().availableProcessors();
         ExecutorService executorService = Executors.newFixedThreadPool(numThreads);
         List<Callable<Map<ProcessFileMap.KeySlice, int[]>>> callableTasks = new ArrayList<>();
         Path filePath = Path.of(FILE);
