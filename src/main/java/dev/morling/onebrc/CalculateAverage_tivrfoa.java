@@ -47,23 +47,24 @@ import java.util.concurrent.atomic.AtomicInteger;
  * the chunks evenly, some threads might finish much faster and
  * stay idle, so:
  *   1) Create more chunks than threads, so the ones that finish first
- * can do something;
- *   2) Decrease chunk sizes as we get closer to the end of the file;
- *   3) Make a cache of long[] name to String, to avoid `ByteBuffer.allocate`
- * and creating new UTF-8 strings. I didn't profile, so it's just a guess
- * that this map will be a bit faster. Although it's outside the main loop, so
- * not a big difference ...;
- *   4) Exit earlier from loop if a new entry was created.
+ * can do something.
+ *   2) Decrease chunk sizes as we get closer to the end of the file.
+ *   3) Exit earlier from loop if a new entry was created.
  */
 public class CalculateAverage_tivrfoa {
     private static final String FILE = "./measurements.txt";
 
     private static final int MAX_CITIES = 10_000;
-    private static final HashMap<Key, String> mapToCityName = new HashMap<>(MAX_CITIES);
+    private static final int BUCKETS_LEN = 1 << 17;
+    private static final int LAST_BUCKET_ENTRY = BUCKETS_LEN - 1;
+    private static final int NUM_CPUS = Runtime.getRuntime().availableProcessors();
+    private static final AtomicInteger chunkIdx = new AtomicInteger();
+    private static long[] chunks;
+    private static int numChunks;
 
     // Holding the current result for a single city.
     private static class Result {
-        long lastNameLong, secondLastNameLong;
+        long lastNameLong;
         long[] name;
         int count;
         short min, max;
@@ -108,50 +109,20 @@ public class CalculateAverage_tivrfoa {
         }
 
         public String calcName() {
-            var key = new Key(name);
-            var cityName = mapToCityName.get(key);
-            if (cityName != null) {
-                return cityName;
-            }
             ByteBuffer bb = ByteBuffer.allocate(name.length * Long.BYTES).order(ByteOrder.nativeOrder());
             bb.asLongBuffer().put(name);
             byte[] array = bb.array();
             int i = 0;
             while (array[i++] != ';')
                 ;
-            cityName = new String(array, 0, i - 1, StandardCharsets.UTF_8);
-            mapToCityName.put(key, cityName);
-            return cityName;
+            return new String(array, 0, i - 1, StandardCharsets.UTF_8);
         }
     }
-
-    private static class Key {
-        private long[] name;
-
-        public Key(long[] name) {
-            this.name = name;
-        }
-
-        @Override
-        public final int hashCode() {
-            return Arrays.hashCode(name);
-        }
-
-        @Override
-        public final boolean equals(Object o) {
-            return Arrays.equals(name, ((Key) o).name);
-        }
-    }
-
-    private static final int NUM_CPUS = Runtime.getRuntime().availableProcessors();
-    private static final AtomicInteger chunkIdx = new AtomicInteger();
-    private static long[] chunks;
-    private static int numChunks;
 
     private static final class SolveChunk extends Thread {
         private long chunkStart, chunkEnd;
         private Result[] results = new Result[MAX_CITIES];
-        private Result[] buckets = new Result[1 << 17];
+        private Result[] buckets = new Result[BUCKETS_LEN];
         private int resIdx = 0;
 
         public SolveChunk(long chunkStart, long chunkEnd) {
@@ -189,7 +160,7 @@ public class CalculateAverage_tivrfoa {
                     long nextWord = scanner.getLong();
                     long nextPos = findDelimiter(nextWord);
 
-                    Result existingResult = buckets[hashToIndex(hash, buckets)];
+                    Result existingResult = buckets[hashToIndex(hash)];
                     if (existingResult != null && existingResult.lastNameLong == word) {
                         existingResult.add(number);
                         word = nextWord;
@@ -211,8 +182,8 @@ public class CalculateAverage_tivrfoa {
                         word = mask(word, pos);
                         hash ^= word;
 
-                        Result existingResult = buckets[hashToIndex(hash, buckets)];
-                        if (existingResult != null && existingResult.lastNameLong == word && existingResult.secondLastNameLong == prevWord) {
+                        Result existingResult = buckets[hashToIndex(hash)];
+                        if (existingResult != null && existingResult.lastNameLong == word && existingResult.name[0] == prevWord) {
                             existingResult.add(scanNumber(scanner));
                             word = scanner.getLong();
                             pos = findDelimiter(word);
@@ -245,7 +216,7 @@ public class CalculateAverage_tivrfoa {
                 short number = scanNumber(scanner);
 
                 // Final calculation for index into hash table.
-                int tableIndex = hashToIndex(hash, buckets);
+                int tableIndex = hashToIndex(hash);
                 outer: while (true) {
                     Result existingResult = buckets[tableIndex];
                     if (existingResult == null) {
@@ -347,10 +318,10 @@ public class CalculateAverage_tivrfoa {
         return (short) number;
     }
 
-    private static int hashToIndex(long hash, Result[] results) {
+    private static int hashToIndex(long hash) {
         int hashAsInt = (int) (hash ^ (hash >>> 28));
         int finalHash = (hashAsInt ^ (hashAsInt >>> 17));
-        return (finalHash & (results.length - 1));
+        return (finalHash & LAST_BUCKET_ENTRY);
     }
 
     private static long mask(long word, long pos) {
@@ -387,10 +358,6 @@ public class CalculateAverage_tivrfoa {
         int i = 0;
         for (; i < nameLength + 1 - Long.BYTES; i += Long.BYTES) {
             name[pos++] = scanner.getLongAt(nameAddress + i);
-        }
-
-        if (pos > 0) {
-            r.secondLastNameLong = name[pos - 1];
         }
 
         int remainingShift = (64 - (nameLength + 1 - i) << 3);
