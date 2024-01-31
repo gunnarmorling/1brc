@@ -84,7 +84,7 @@ public class CalculateAverage_martin2038 {
     public static void main(String[] args) throws IOException {
 
         var file = new RandomAccessFile(FILE, "r");
-        final int maxNameLength = 106;
+        final int maxNameLength = 110;
         // .parallel().
         var fc = file.getChannel();
         split(file).stream().parallel().map(ck -> {
