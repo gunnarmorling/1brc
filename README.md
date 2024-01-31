@@ -1,6 +1,6 @@
 # 1️⃣🐝🏎️ The One Billion Row Challenge
 
-_Status Jan 31: The challenge will close today at midnight CET. No new pull requests will be accepted after that time. Pending PRs will be evaluated over the next few days. Please don't push any changes to pending PRs after today, unless being asked to do so.
+_Status Jan 31: The challenge will close today at midnight UTC. No new pull requests will be accepted after that time. Pending PRs will be evaluated over the next few days. Please don't push any changes to pending PRs after today, unless being asked to do so.
 This will be the case if I spot an issue during evaluation (failing tests, etc.). In this case, I will comment on the PR, and you are allowed to push one update.
 I will re-evaluate the entry, and if there are still remaining issues, you'll get one more and last opportunity to update the PR.
 If it still is not valid at this point, it will be closed.
