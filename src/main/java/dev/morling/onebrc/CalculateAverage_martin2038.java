@@ -30,32 +30,32 @@ import java.util.Map;
 
 public class CalculateAverage_martin2038 {
 
-    //private static final String FILE = "/Users/martin/Garden/blog/1BRC/1brc/./measurements.txt";
+    // private static final String FILE = "/Users/martin/Garden/blog/1BRC/1brc/./measurements.txt";
 
     private static final String FILE = "./measurements.txt";
 
-    //private static record Measurement(String station, double value) {
-    //    private Measurement(String[] parts) {
-    //        this(parts[0], Double.parseDouble(parts[1]));
-    //    }
-    //}
+    // private static record Measurement(String station, double value) {
+    // private Measurement(String[] parts) {
+    // this(parts[0], Double.parseDouble(parts[1]));
+    // }
+    // }
     //
-    //private static record ResultRow(double min, double mean, double max) {
+    // private static record ResultRow(double min, double mean, double max) {
     //
-    //    public String toString() {
-    //        return round(min) + "/" + round(mean) + "/" + round(max);
-    //    }
+    // public String toString() {
+    // return round(min) + "/" + round(mean) + "/" + round(max);
+    // }
     //
-    //    private double round(double value) {
-    //        return Math.round(value * 10.0) / 10.0;
-    //    }
-    //};
+    // private double round(double value) {
+    // return Math.round(value * 10.0) / 10.0;
+    // }
+    // };
 
     private static class MeasurementAggregator {
-        private int  min = Integer.MAX_VALUE;
-        private int  max = Integer.MIN_VALUE;
+        private int min = Integer.MAX_VALUE;
+        private int max = Integer.MIN_VALUE;
         private long sum;
-        private int  count;
+        private int count;
 
         void update(int temp) {
             update(1, temp, temp, temp);
@@ -85,32 +85,33 @@ public class CalculateAverage_martin2038 {
 
         var file = new RandomAccessFile(FILE, "r");
         final int maxNameLength = 100;
-        //.parallel().
+        // .parallel().
         var fc = file.getChannel();
         split(file).stream().parallel().map(ck -> {
             // StrFastHashKey 比string快500ms
             var map = new HashMap<StrFastHashKey, MeasurementAggregator>(200);
-            //var pb = System.currentTimeMillis();
+            // var pb = System.currentTimeMillis();
             try {
                 var mb = fc.map(MapMode.READ_ONLY, ck.start, ck.length);
                 var buff = new byte[maxNameLength];
                 while (mb.hasRemaining()) {
                     var name = readNextHashKey(buff, mb);
-                    //var name = readNextString(buff,mb);//.intern();
+                    // var name = readNextString(buff,mb);//.intern();
                     var temp = readNextInt10Times(buff, mb);
                     add2map(map, name, temp);
                 }
-                //long end = ck.start + ck.length;
-                //do {
-                //    var name = readNext(file, ';', 30).intern();
-                //    var temp = Double.parseDouble(readNext(file, '\n', 6));
-                //    var agg = map.computeIfAbsent(name,it->new MeasurementAggregator());
-                //    agg.update(temp);
-                //}while (file.getFilePointer()<end);
-            } catch (IOException | NumberFormatException e) {
+                // long end = ck.start + ck.length;
+                // do {
+                // var name = readNext(file, ';', 30).intern();
+                // var temp = Double.parseDouble(readNext(file, '\n', 6));
+                // var agg = map.computeIfAbsent(name,it->new MeasurementAggregator());
+                // agg.update(temp);
+                // }while (file.getFilePointer()<end);
+            }
+            catch (IOException | NumberFormatException e) {
                 throw new RuntimeException(e);
             }
-            //System.out.println("chunk end , cost : " + (System.currentTimeMillis() - pb));
+            // System.out.println("chunk end , cost : " + (System.currentTimeMillis() - pb));
             return map;
         }).reduce(CalculateAverage_martin2038::reduceMap).ifPresent(map -> {
 
@@ -122,18 +123,18 @@ public class CalculateAverage_martin2038 {
             sb.setCharAt(sb.length() - 1, '}');
             var resultStr = sb.toString();
             System.out.println(resultStr);
-            //System.out.println(resultStr.hashCode());
+            // System.out.println(resultStr.hashCode());
         });
 
     }
 
-    static <Key> HashMap<Key, MeasurementAggregator> reduceMap(HashMap<Key, MeasurementAggregator> aMap
-            , HashMap<Key, MeasurementAggregator> bMap) {
+    static <Key> HashMap<Key, MeasurementAggregator> reduceMap(HashMap<Key, MeasurementAggregator> aMap, HashMap<Key, MeasurementAggregator> bMap) {
         aMap.forEach((k, v) -> {
             var b = bMap.get(k);
             if (null == b) {
                 bMap.put(k, v);
-            } else {
+            }
+            else {
                 b.merge(v);
             }
         });
@@ -147,11 +148,12 @@ public class CalculateAverage_martin2038 {
             agg = new MeasurementAggregator();
             map.put(name, agg);
         }
-        //var agg = map.computeIfAbsent(name,it->new MeasurementAggregator());
+        // var agg = map.computeIfAbsent(name,it->new MeasurementAggregator());
         agg.update(temp);
     }
 
-    record FileChunk(long start, long length) {}
+    record FileChunk(long start, long length) {
+    }
 
     static List<FileChunk> split(RandomAccessFile file) throws IOException {
         var threadNum = Runtime.getRuntime().availableProcessors();
@@ -163,7 +165,7 @@ public class CalculateAverage_martin2038 {
             var length = avgChunkSize;
             file.seek(lastStart + length);
             while (file.readByte() != '\n') {
-                //file.seek(lastStart+ ++length);
+                // file.seek(lastStart+ ++length);
                 ++length;
             }
             // include the '\n'
@@ -200,7 +202,7 @@ public class CalculateAverage_martin2038 {
 
     // copy from CalculateAverage_3j5a
     // 替换 Double.parse
-    // 时间 38秒 ->  5418 ms
+    // 时间 38秒 -> 5418 ms
     static int readNextInt10Times(byte[] buf, MappedByteBuffer mb) {
         final int min_number_len = 3;
         int i = min_number_len;
@@ -209,7 +211,7 @@ public class CalculateAverage_martin2038 {
         while ((b = mb.get()) != '\n') {
             buf[i++] = b;
         }
-        //-3.2
+        // -3.2
         var zeroAscii = '0';
         int temperature = buf[--i] - zeroAscii;
         i--; // skipping dot
@@ -218,7 +220,8 @@ public class CalculateAverage_martin2038 {
             b = buf[--i];
             if (b == '-') {
                 temperature = -temperature;
-            } else {
+            }
+            else {
                 temperature = base * (b - zeroAscii) + temperature;
                 base *= base;
             }
@@ -226,28 +229,28 @@ public class CalculateAverage_martin2038 {
         return temperature;
     }
 
-    //static String readNext(RandomAccessFile file, char endFlag,int initLength) throws IOException {
-    //    StringBuilder input = new StringBuilder(initLength);
-    //    int c = -1;
-    //    //boolean eol = false;
+    // static String readNext(RandomAccessFile file, char endFlag,int initLength) throws IOException {
+    // StringBuilder input = new StringBuilder(initLength);
+    // int c = -1;
+    // //boolean eol = false;
     //
-    //    while (true) {
-    //        c = file.read();
-    //        if( c == endFlag || c == -1) {
-    //            break;
-    //        }
-    //        input.append((char)c);
-    //    }
+    // while (true) {
+    // c = file.read();
+    // if( c == endFlag || c == -1) {
+    // break;
+    // }
+    // input.append((char)c);
+    // }
     //
-    //    //if ((c == -1) && (input.length() == 0)) {
-    //    //    return null;
-    //    //}
-    //    return input.toString();
-    //}
+    // //if ((c == -1) && (input.length() == 0)) {
+    // // return null;
+    // //}
+    // return input.toString();
+    // }
 
     static class StrFastHashKey implements Comparable<StrFastHashKey> {
         final byte[] name;
-        final int    hash;
+        final int hash;
 
         String nameStr;
 
@@ -259,8 +262,8 @@ public class CalculateAverage_martin2038 {
 
         @Override
         public boolean equals(Object o) {
-            //if (this == o) {return true;}
-            //if (o == null || getClass() != o.getClass()) {return false;}
+            // if (this == o) {return true;}
+            // if (o == null || getClass() != o.getClass()) {return false;}
             StrFastHashKey that = (StrFastHashKey) o;
             return hash == that.hash && Arrays.equals(name, that.name);
         }
@@ -286,7 +289,7 @@ public class CalculateAverage_martin2038 {
 
     private static final VarHandle LONG_VIEW = MethodHandles.byteArrayViewVarHandle(long[].class, ByteOrder.nativeOrder())
             .withInvokeExactBehavior();
-    private static final VarHandle INT_VIEW  = MethodHandles.byteArrayViewVarHandle(int[].class, ByteOrder.nativeOrder())
+    private static final VarHandle INT_VIEW = MethodHandles.byteArrayViewVarHandle(int[].class, ByteOrder.nativeOrder())
             .withInvokeExactBehavior();
 
     /**
