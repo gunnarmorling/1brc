@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * split into 3 parts and cursors for each of those parts are processing the segment simultaneously in the same thread.
  * Results are accumulated into {@link Result} objects and a tree map is used to sequentially accumulate the results in
  * the end.
- * Runs in 0.32 on an Intel i9-13900K while the reference implementation takes 120.37s.
+ * Runs in 0.31 on an Intel i9-13900K while the reference implementation takes 120.37s.
  * Credit:
  *  Quan Anh Mai for branchless number parsing code
  *  Alfonso² Peterssen for suggesting memory mapping with unsafe and the subprocess idea
