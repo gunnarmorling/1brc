@@ -110,15 +110,18 @@ def build_test_data(weather_station_names, num_rows_to_create):
     coldest_temp = -99.9
     hottest_temp = 99.9
     station_names_10k_max = random.choices(weather_station_names, k=10_000)
-    progress_step = max(1, int(num_rows_to_create / 100))
+    batch_size = 10000 # instead of writing line by line to file, process a batch of stations and put it to disk
+    progress_step = max(1, (num_rows_to_create // batch_size) // 100)
     print('Building test data...')
 
     try:
         with open("../../../data/measurements.txt", 'w') as file:
-            for s in range(0,num_rows_to_create):
-                random_station = random.choice(station_names_10k_max)
-                random_temp = round(random.uniform(coldest_temp, hottest_temp), 1)
-                file.write(f"{random_station};{random_temp}\n")
+            for s in range(0,num_rows_to_create // batch_size):
+                
+                batch = random.choices(station_names_10k_max, k=batch_size)
+                prepped_deviated_batch = '\n'.join([f"{station};{random.uniform(coldest_temp, hottest_temp):.1f}" for station in batch]) # :.1f should quicker than round on a large scale, because round utilizes mathematical operation
+                file.write(prepped_deviated_batch + '\n')
+                
                 # Update progress bar every 1%
                 if s % progress_step == 0 or s == num_rows_to_create - 1:
                     sys.stdout.write('\r')

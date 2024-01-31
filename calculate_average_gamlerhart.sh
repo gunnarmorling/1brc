@@ -15,5 +15,5 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="--enable-preview --add-modules=jdk.incubator.vector"
+JAVA_OPTS="--enable-preview --add-modules=jdk.incubator.vector -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -Xmx512m -Xlog:all=error"
 java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_gamlerhart
