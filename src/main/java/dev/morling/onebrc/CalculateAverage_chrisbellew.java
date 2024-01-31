@@ -75,11 +75,12 @@ public final class CalculateAverage_chrisbellew {
      * and peeks into the next buffer to find the first newline character. This
      * way no data is lost even though the buffers are arbitrarily sliced.
      * 100 is the maximum length of a city name, 1 is the semicolon character,
-     * 5 is the maximum length of a measurement, and 1 is the newline character.
+     * 5 is the maximum length of a measurement, 1 is the newline character,
+     * 8 is one extra vector length so that we don't overflow the buffer.
      * If we overlap to this length then we will always be able to complete the
      * last line in the buffer.
      */
-    public static final int OVERLAP = 100 + 1 + 5 + 1;
+    public static final int OVERLAP = 100 + 1 + 5 + 1 + 8;
 
     public static void main(String[] args) throws IOException {
         /**
@@ -274,7 +275,7 @@ public final class CalculateAverage_chrisbellew {
                  */
                 boolean lastRange = end == FILE_SIZE;
                 long length = lastRange ? end - start : end - start + OVERLAP;
-                
+
                 MappedByteBuffer buffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, start, length);
                 processRange(buffer, lastRange);
             }
@@ -317,7 +318,7 @@ public final class CalculateAverage_chrisbellew {
          * Parses and processes each line from a buffer.
          */
         private final void processBuffer(byte[] buffer, int numBytes, boolean lastRange, boolean lastBuffer, long globalPosition) {
-            
+
             /**
              * Skip past any characters before the first newline because the previous
              * segment will have already processed them. That is unless this if the 
@@ -363,6 +364,15 @@ public final class CalculateAverage_chrisbellew {
                  */
                 if (lastRange && lastBuffer) {
                     if (index == numBytes) {
+                        return;
+                    }
+
+                    /**
+                     * If were less than one vector length away from the buffer
+                     * then just take the remaining bytes as the final line.
+                     */
+                    if (index >= numBytes - SPECIES.length()) {
+                        slice(buffer, numBytes - 1, nameStart);
                         return;
                     }
                     continue;
