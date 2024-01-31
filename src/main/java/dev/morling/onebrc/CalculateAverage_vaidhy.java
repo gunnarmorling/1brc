@@ -176,8 +176,6 @@ public class CalculateAverage_vaidhy<I, T> {
 
     private static final String FILE = "./measurements.txt";
 
-    private static final long DEFAULT_SEED = 104729;
-
     private static long simpleHash(long hash, long nextData) {
         return hash ^ nextData;
         // return (hash ^ Long.rotateLeft((nextData * C1), R1)) * C2;
@@ -277,7 +275,7 @@ public class CalculateAverage_vaidhy<I, T> {
         }
 
         public long findSemi() {
-            long h = DEFAULT_SEED;
+            long h = 0;
             buf.rewind();
 
             for (long i = position; i < fileEnd; i++) {
@@ -371,7 +369,7 @@ public class CalculateAverage_vaidhy<I, T> {
 
             long stationStart = position;
             long stationEnd = -1;
-            long hash = DEFAULT_SEED;
+            long hash = 0;
             long suffix = 0;
             do {
                 long data = UNSAFE.getLong(position);
