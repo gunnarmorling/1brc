@@ -60,7 +60,6 @@ public class CalculateAverage_abhinavupadhyay {
 
         public void put(long cityStartOffset, long cityLength, long nameHash, int temperature) {
             final long uhash = nameHash ^ (nameHash >> 29);
-            // final long uhash = nameHash;
             int index = (int) uhash & TABLE_MASK;
             Row row = table[index];
             if (row == null) {
@@ -72,7 +71,21 @@ public class CalculateAverage_abhinavupadhyay {
                 for (; i < cityLength; i++) {
                     array[i] = UNSAFE.getByte(cityStartOffset++);
                 }
-                table[index] = new Row(new String(array, 0, i), temperature, temperature, 1, temperature, (int) uhash);
+                table[index] = new Row(new String(array, 0, i), temperature, temperature, 1, temperature, uhash);
+                return;
+            }
+
+            while (row.hash != uhash) {
+                index = (int) ((index + (uhash)) & TABLE_MASK);
+                int i = 0;
+                for (; i < cityLength - 1;) {
+                    array[i++] = UNSAFE.getByte(cityStartOffset++);
+                    array[i++] = UNSAFE.getByte(cityStartOffset++);
+                }
+                for (; i < cityLength; i++) {
+                    array[i] = UNSAFE.getByte(cityStartOffset++);
+                }
+                table[index] = new Row(new String(array, 0, i), temperature, temperature, 1, temperature, uhash);
                 return;
             }
 
@@ -214,7 +227,7 @@ public class CalculateAverage_abhinavupadhyay {
         final long fileSize = fc.size();
         final long startAddress = fc.map(FileChannel.MapMode.READ_ONLY, 0, fileSize, Arena.global()).address();
         final long endAddress = startAddress + fileSize;
-        final long[][] segments = findSegments(startAddress, endAddress, fileSize, fileSize > 1024 * 1024 * 1024 ? 8 : 1);
+        final long[][] segments = findSegments(startAddress, endAddress, fileSize, fileSize > 1024 * 1024 * 1024 ? 12 : 1);
         final List<Table> collect = Arrays.stream(segments).parallel().map(s -> readFile(s[0], s[1])).toList();
         Map<String, Row> finalMap = new TreeMap<>();
         for (final Table t : collect) {
