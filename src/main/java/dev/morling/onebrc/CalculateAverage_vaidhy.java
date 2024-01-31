@@ -527,7 +527,7 @@ public class CalculateAverage_vaidhy<I, T> {
     private static class ChunkProcessorImpl implements MapReduce<PrimitiveHashMap> {
 
         // 1 << 14 > 10,000 so it works
-        private final PrimitiveHashMap statistics = new PrimitiveHashMap(14);
+        private final PrimitiveHashMap statistics = new PrimitiveHashMap(15);
 
         @Override
         public void process(long keyStartAddress, long keyEndAddress, long hash, long suffix, int temperature) {
@@ -573,7 +573,7 @@ public class CalculateAverage_vaidhy<I, T> {
     private static Map<String, IntSummaryStatistics> combineOutputs(
                                                                     List<PrimitiveHashMap> list) {
 
-        Map<String, IntSummaryStatistics> output = new HashMap<>(10000);
+        Map<String, IntSummaryStatistics> output = HashMap.newHashMap(10000);
         for (PrimitiveHashMap map : list) {
             for (HashEntry entry : map.entrySet()) {
                 if (entry.value != null) {
