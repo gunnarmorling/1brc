@@ -15,5 +15,8 @@
 #  limitations under the License.
 #
 
-JAVA_OPTS="-Xmx8g -Xms8g --enable-preview"
+JAVA_OPTS="${JAVA_OPTS} --enable-preview -XX:+UnlockExperimentalVMOptions -XX:+UnlockDiagnosticVMOptions"
+JAVA_OPTS="${JAVA_OPTS} -Xmx8g -Xms8g"
+JAVA_OPTS="${JAVA_OPTS} -XX:+TrustFinalNonStaticFields -XX:-UseCompressedOops"
+
 java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_slovdahl
