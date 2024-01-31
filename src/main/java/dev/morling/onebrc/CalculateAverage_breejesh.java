@@ -23,14 +23,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 
 public class CalculateAverage_breejesh {
     private static final String FILE = "./measurements.txt";
-    private static final int TWO_BYTE_TO_INT = 480 + 48; // 48 is the ASCII code for '0'
-    private static final int THREE_BYTE_TO_INT = 4800 + 480 + 48;
+    private static final int INT_TWO = 480 + 48; // 48 is the ASCII code for '0'
+    private static final int INT_THREE = 4800 + 480 + 48;
 
     private static final class Measurement {
 
@@ -76,7 +74,7 @@ public class CalculateAverage_breejesh {
     }
 
     public static void main(String[] args) throws Exception {
-        // long start = System.currentTimeMillis();
+        long start = System.currentTimeMillis();
         // Find system details to determine cores and
         var file = new File(args.length > 0 ? args[0] : FILE);
         long fileSize = file.length();
@@ -123,22 +121,21 @@ public class CalculateAverage_breejesh {
         }
 
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-        Map<String, Measurement> finalMap = new TreeMap<>();
-        for (CompletableFuture<Map<String, Measurement>> future : futures) {
-            Map<String, Measurement> map = future.get();
-            map.keySet().stream().forEach(
-                    key -> {
-                        if (finalMap.containsKey(key)) {
-                            finalMap.get(key).merge(map.get(key));
-                        }
-                        else {
-                            finalMap.put(key, map.get(key));
-                        }
-                    });
-        }
-
+        ConcurrentMap<String, Measurement> concurrentMap = new ConcurrentHashMap<>();
+        futures.forEach(future -> future.thenAccept(map -> {
+            map.entrySet().forEach((entry) -> {
+                if (concurrentMap.containsKey(entry.getKey())) {
+                    concurrentMap.get(entry.getKey()).merge(entry.getValue());
+                }
+                else {
+                    concurrentMap.put(entry.getKey(), entry.getValue());
+                }
+            });
+        }));
+        Map<String, Measurement> finalMap = new TreeMap<>(concurrentMap);
         System.out.println(finalMap);
-        // System.out.printf("Time %s", System.currentTimeMillis() - start);
+
+        System.out.printf("Time %s", System.currentTimeMillis() - start);
         System.exit(0);
     }
 
@@ -158,20 +155,20 @@ public class CalculateAverage_breejesh {
         currentBuffer.get(nums);
         if (nums[1] == '.') {
             // case of n.n
-            value = (nums[0] * 10 + nums[2] - TWO_BYTE_TO_INT);
+            value = (nums[0] * 10 + nums[2] - INT_TWO);
         }
         else {
             if (nums[3] == '.') {
                 // case of -nn.n
-                value = -(nums[1] * 100 + nums[2] * 10 + currentBuffer.get() - THREE_BYTE_TO_INT);
+                value = -(nums[1] * 100 + nums[2] * 10 + currentBuffer.get() - INT_THREE);
             }
             else if (nums[0] == '-') {
                 // case of -n.n
-                value = -(nums[1] * 10 + nums[3] - TWO_BYTE_TO_INT);
+                value = -(nums[1] * 10 + nums[3] - INT_TWO);
             }
             else {
                 // case of nn.n
-                value = (nums[0] * 100 + nums[1] * 10 + nums[3] - THREE_BYTE_TO_INT);
+                value = (nums[0] * 100 + nums[1] * 10 + nums[3] - INT_THREE);
             }
             currentBuffer.get(); // new line
         }
