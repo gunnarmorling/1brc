@@ -144,9 +144,15 @@ public class CalculateAverage_thomaswue {
                 long delimiterMask1 = findDelimiter(word1);
                 long delimiterMask2 = findDelimiter(word2);
                 long delimiterMask3 = findDelimiter(word3);
-                Result existingResult1 = findResult(word1, delimiterMask1, scanner1, results, collectedResults);
-                Result existingResult2 = findResult(word2, delimiterMask2, scanner2, results, collectedResults);
-                Result existingResult3 = findResult(word3, delimiterMask3, scanner3, results, collectedResults);
+                long word1b = scanner1.getLongAt(scanner1.pos() + 8);
+                long word2b = scanner2.getLongAt(scanner2.pos() + 8);
+                long word3b = scanner3.getLongAt(scanner3.pos() + 8);
+                long delimiterMask1b = findDelimiter(word1b);
+                long delimiterMask2b = findDelimiter(word2b);
+                long delimiterMask3b = findDelimiter(word3b);
+                Result existingResult1 = findResult(word1, delimiterMask1, word1b, delimiterMask1b, scanner1, results, collectedResults);
+                Result existingResult2 = findResult(word2, delimiterMask2, word2b, delimiterMask2b, scanner2, results, collectedResults);
+                Result existingResult3 = findResult(word3, delimiterMask3, word3b, delimiterMask3b, scanner3, results, collectedResults);
                 long number1 = scanNumber(scanner1);
                 long number2 = scanNumber(scanner2);
                 long number3 = scanNumber(scanner3);
@@ -158,17 +164,23 @@ public class CalculateAverage_thomaswue {
             while (scanner1.hasNext()) {
                 long word = scanner1.getLong();
                 long pos = findDelimiter(word);
-                record(findResult(word, pos, scanner1, results, collectedResults), scanNumber(scanner1));
+                long wordB = scanner1.getLongAt(scanner1.pos() + 8);
+                long posB = findDelimiter(wordB);
+                record(findResult(word, pos, wordB, posB, scanner1, results, collectedResults), scanNumber(scanner1));
             }
             while (scanner2.hasNext()) {
                 long word = scanner2.getLong();
                 long pos = findDelimiter(word);
-                record(findResult(word, pos, scanner2, results, collectedResults), scanNumber(scanner2));
+                long wordB = scanner2.getLongAt(scanner2.pos() + 8);
+                long posB = findDelimiter(wordB);
+                record(findResult(word, pos, wordB, posB, scanner2, results, collectedResults), scanNumber(scanner2));
             }
             while (scanner3.hasNext()) {
                 long word = scanner3.getLong();
                 long pos = findDelimiter(word);
-                record(findResult(word, pos, scanner3, results, collectedResults), scanNumber(scanner3));
+                long wordB = scanner3.getLongAt(scanner3.pos() + 8);
+                long posB = findDelimiter(wordB);
+                record(findResult(word, pos, wordB, posB, scanner3, results, collectedResults), scanNumber(scanner3));
             }
         }
     }
@@ -177,14 +189,15 @@ public class CalculateAverage_thomaswue {
             0xFFFFFFFFFFFFFFFFL };
     private static final long[] MASK2 = new long[]{ 0x00L, 0x00L, 0x00L, 0x00L, 0x00L, 0x00L, 0x00L, 0x00L, 0xFFFFFFFFFFFFFFFFL };
 
-    private static Result findResult(long initialWord, long initialDelimiterMask, Scanner scanner, Result[] results, List<Result> collectedResults) {
+    private static Result findResult(long initialWord, long initialDelimiterMask, long wordB, long delimiterMaskB, Scanner scanner, Result[] results,
+                                     List<Result> collectedResults) {
         Result existingResult;
         long word = initialWord;
         long delimiterMask = initialDelimiterMask;
         long hash;
         long nameAddress = scanner.pos();
-        long word2 = scanner.getLongAt(scanner.pos() + 8);
-        long delimiterMask2 = findDelimiter(word2);
+        long word2 = wordB;
+        long delimiterMask2 = delimiterMaskB;
         if ((delimiterMask | delimiterMask2) != 0) {
             int letterCount1 = Long.numberOfTrailingZeros(delimiterMask) >>> 3; // value between 1 and 8
             int letterCount2 = Long.numberOfTrailingZeros(delimiterMask2) >>> 3; // value between 0 and 8
