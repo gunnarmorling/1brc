@@ -121,7 +121,7 @@ public class CalculateAverage_breejesh {
             Map<String, Measurement> map = future.get();
             map.keySet().stream().forEach(
                     key -> {
-                        if(finalMap.containsKey(key)) {
+                        if (finalMap.containsKey(key)) {
                             finalMap.get(key).merge(map.get(key));
                         } else {
                             finalMap.put(key, map.get(key));
@@ -147,7 +147,7 @@ public class CalculateAverage_breejesh {
 
     private static int getValueFromBuffer(MappedByteBuffer currentBuffer) {
         int value;
-        byte [] nums = new byte[4];
+        byte[] nums = new byte[4];
         currentBuffer.get(nums);
         if (nums[1] == '.') {
             // case of n.n
@@ -165,6 +165,6 @@ public class CalculateAverage_breejesh {
             }
             currentBuffer.get(); // new line
         }
-        return  value;
+        return value;
     }
 }
