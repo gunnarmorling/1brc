@@ -37,33 +37,72 @@ public class CalculateAverage_ericxiao {
     private static class Stations {
 
         private int stationPointer = 0;
-        private final int[] stationHashes = new int[MAP_SIZE];
+        private final int[] stationIdx = new int[MAP_SIZE];
         private final String[] stationNames = new String[MAP_SIZE];
         /*
          * i + 0, min
          * i + 1, max
          * i + 2, sum
          * i + 3, count
+         * i + 4, hash
          */
 
-        private final int MEASUREMENT_SIZE = 4;
+        private final int MEASUREMENT_SIZE = 5;
         private final int[] measurements = new int[MAP_SIZE * MEASUREMENT_SIZE];
 
-        boolean stationExists(int hash) {
-            // if count != 0, that means we have never seen this before.
-            int idx = hash * MEASUREMENT_SIZE;
-            return measurements[idx + 3] != 0;
+        boolean stationExists(int proposedIdx, int hash) {
+            return measurements[proposedIdx * MEASUREMENT_SIZE + 4] == hash;
         }
 
-        void insertStation(int hash, String station, int min, int max, int sum, int count) {
-            int idx = hash * MEASUREMENT_SIZE;
+        boolean stationCollided(int proposedIdx, int hash) {
+            // If hash isn't empty and hashes aren't equal.
+            int idx = proposedIdx * MEASUREMENT_SIZE;
+            return measurements[idx + 4] != 0 && hash != measurements[idx + 4];
+        }
+
+        void insertOrUpdateStation(int proposedIdx, int hash, int value, byte[] entryBytes, int keyLength) {
+            if (this.stationExists(proposedIdx, hash)) {
+                this.updateStation(proposedIdx, value, value, value, 1);
+            }
+            else if (stationCollided(proposedIdx, hash)) {
+                int newProposedIdx = proposedIdx + 1;
+                int idx = newProposedIdx * MEASUREMENT_SIZE;
+                while (true) {
+                    if (measurements[idx + 4] == 0) {
+                        // New location in hashmap found for station.
+                        String station = new String(entryBytes, 0, keyLength, StandardCharsets.UTF_8);
+                        this.insertStation(newProposedIdx, hash, station, value, value, value, 1);
+                        break;
+                    }
+                    else if (measurements[idx + 4] == hash) {
+                        // We found the right station.
+                        this.updateStation(newProposedIdx, value, value, value, 1);
+                        break;
+                    }
+                    else {
+                        // We continue to linear probe.
+                        newProposedIdx++;
+                        idx += MEASUREMENT_SIZE;
+                    }
+                }
+            }
+            else {
+                // The station does not exist - will only happen on the first insert of a station.
+                String station = new String(entryBytes, 0, keyLength, StandardCharsets.UTF_8);
+                this.insertStation(proposedIdx, hash, station, value, value, value, 1);
+            }
+        }
+
+        void insertStation(int proposedIdx, int hash, String station, int min, int max, int sum, int count) {
+            int idx = proposedIdx * MEASUREMENT_SIZE;
             measurements[idx] = min;
             measurements[idx + 1] = max;
             measurements[idx + 2] = sum;
             measurements[idx + 3] = count;
+            measurements[idx + 4] = hash;
 
             stationNames[stationPointer] = station;
-            stationHashes[stationPointer] = hash;
+            stationIdx[stationPointer] = idx;
             stationPointer++;
         }
 
@@ -136,14 +175,8 @@ public class CalculateAverage_ericxiao {
                 stationHash = 31 * stationHash + (entryBytes[i] & 0xff);
             }
 
-            int hash = Math.abs(stationHash) & (MAP_SIZE - 1);
-            if (stations.stationExists(hash)) {
-                stations.updateStation(hash, value, value, value, 1);
-            }
-            else {
-                String station = new String(entryBytes, 0, keyLength, StandardCharsets.UTF_8);
-                stations.insertStation(hash, station, value, value, value, 1);
-            }
+            int idx = Math.abs(stationHash) & (MAP_SIZE - 1);
+            stations.insertOrUpdateStation(idx, stationHash, value, entryBytes, keyLength);
         }
 
         private static long delimiterMask(long word, long delimiter) {
@@ -265,7 +298,8 @@ public class CalculateAverage_ericxiao {
     }
 
     public static void main(String[] args) throws Exception {
-        int numThreads = Runtime.getRuntime().availableProcessors();
+        // int numThreads = Runtime.getRuntime().availableProcessors();
+        int numThreads = 1;
         ExecutorService executorService = Executors.newFixedThreadPool(numThreads);
         List<Callable<Stations>> callableTasks = new ArrayList<>();
         Path filePath = Path.of(FILE);
@@ -280,13 +314,13 @@ public class CalculateAverage_ericxiao {
             callableTasks.add(new ProcessFileMap(readStart, readStart + readLength, true, false));
             readStart += readLength;
 
-            for (int i = 1; i < numThreads - 1; ++i) {
-                ProcessFileMap callableTask = new ProcessFileMap(readStart, readStart + readLength, false, false);
-                readStart += readLength;
-                callableTasks.add(callableTask);
-            }
-
-            callableTasks.add(new ProcessFileMap(readStart, readStart + readLength, false, true));
+            // for (int i = 1; i < numThreads - 1; ++i) {
+            // ProcessFileMap callableTask = new ProcessFileMap(readStart, readStart + readLength, false, false);
+            // readStart += readLength;
+            // callableTasks.add(callableTask);
+            // }
+            //
+            // callableTasks.add(new ProcessFileMap(readStart, readStart + readLength, false, true));
 
             List<Stations> results = new ArrayList<>();
             try {
@@ -310,22 +344,23 @@ public class CalculateAverage_ericxiao {
                 for (int i = 1; i < numThreads; ++i) {
                     Stations currStation = results.get(i);
                     for (int j = 0; j < currStation.stationPointer; j++) {
-                        int currStationHash = currStation.stationHashes[j];
+                        int currStationHash = currStation.stationIdx[j];
                         int idx = currStationHash * currStation.MEASUREMENT_SIZE;
                         int min = currStation.measurements[idx];
                         int max = currStation.measurements[idx + 1];
                         int sum = currStation.measurements[idx + 2];
                         int count = currStation.measurements[idx + 3];
-                        if (station1.stationExists(currStationHash))
+                        int hash = currStation.measurements[idx + 4];
+                        if (station1.stationExists(currStationHash, hash))
                             station1.updateStation(currStationHash, min, max, sum, count);
                         else
-                            station1.insertStation(currStationHash, currStation.stationNames[j], min, max, sum, count);
+                            station1.insertStation(currStationHash, hash, currStation.stationNames[j], min, max, sum, count);
                     }
                 }
                 // print key and values
                 System.out.print("{");
                 for (int i = 0; i < station1.stationPointer - 1; i++) {
-                    int idx = station1.stationHashes[i] * station1.MEASUREMENT_SIZE;
+                    int idx = station1.stationIdx[i] * station1.MEASUREMENT_SIZE;
                     int min = station1.measurements[idx];
                     int max = station1.measurements[idx + 1];
                     int sum = station1.measurements[idx + 2];
@@ -338,7 +373,7 @@ public class CalculateAverage_ericxiao {
                                     + ", ");
                 }
 
-                int idx = station1.stationHashes[station1.stationPointer - 1] * station1.MEASUREMENT_SIZE;
+                int idx = station1.stationIdx[station1.stationPointer - 1] * station1.MEASUREMENT_SIZE;
                 int min = station1.measurements[idx];
                 int max = station1.measurements[idx + 1];
                 int sum = station1.measurements[idx + 2];
