@@ -27,14 +27,14 @@ import java.util.concurrent.atomic.AtomicLong;
  * split into 3 parts and cursors for each of those parts are processing the segment simultaneously in the same thread.
  * Results are accumulated into {@link Result} objects and a tree map is used to sequentially accumulate the results in
  * the end.
- * Runs in 0.37s with profile-guided optimizations (PGO) and 0.39s without on an Intel i9-13900K while the reference
- * implementation takes 120.23s.
+ * Runs in 0.32 on an Intel i9-13900K while the reference implementation takes 120.37s.
  * Credit:
  *  Quan Anh Mai for branchless number parsing code
  *  Alfonso² Peterssen for suggesting memory mapping with unsafe and the subprocess idea
  *  Artsiom Korzun for showing the benefits of work stealing at 2MB segments instead of equal split between workers
  *  Jaromir Hamala for showing that avoiding the branch misprediction between <8 and 8-16 cases is a big win even if
  *  more work is performed
+ *  Van Phu DO for demonstrating the lookup tables based on masks instead of bit shifting
  */
 public class CalculateAverage_thomaswue {
     private static final String FILE = "./measurements.txt";
@@ -173,6 +173,10 @@ public class CalculateAverage_thomaswue {
         }
     }
 
+    private static final long[] MASK1 = new long[]{ 0xFFL, 0xFFFFL, 0xFFFFFFL, 0xFFFFFFFFL, 0xFFFFFFFFFFL, 0xFFFFFFFFFFFFL, 0xFFFFFFFFFFFFFFL, 0xFFFFFFFFFFFFFFFFL,
+            0xFFFFFFFFFFFFFFFFL };
+    private static final long[] MASK2 = new long[]{ 0x00L, 0x00L, 0x00L, 0x00L, 0x00L, 0x00L, 0x00L, 0x00L, 0xFFFFFFFFFFFFFFFFL };
+
     private static Result findResult(long initialWord, long initialDelimiterMask, Scanner scanner, Result[] results, List<Result> collectedResults) {
         Result existingResult;
         long word = initialWord;
@@ -182,15 +186,14 @@ public class CalculateAverage_thomaswue {
         long word2 = scanner.getLongAt(scanner.pos() + 8);
         long delimiterMask2 = findDelimiter(word2);
         if ((delimiterMask | delimiterMask2) != 0) {
-            int trailingZeros = Long.numberOfTrailingZeros(delimiterMask);
-            int trailingZeros2 = Long.numberOfTrailingZeros(delimiterMask2);
-            // 0 if no delimiter found in first 8 bytes and 0xFFFFFFFFFFFFFFFF otherwise
-            long mask = (trailingZeros >> 6) - 1;
-            word = (word << ((63 - trailingZeros) & mask));
-            word2 = (word2 << (63 - trailingZeros2)) & (~mask);
-            scanner.add((trailingZeros + (trailingZeros2 & (~mask)) >>> 3));
+            int letterCount1 = Long.numberOfTrailingZeros(delimiterMask) >>> 3; // value between 1 and 8
+            int letterCount2 = Long.numberOfTrailingZeros(delimiterMask2) >>> 3; // value between 0 and 8
+            long mask = MASK2[letterCount1];
+            word = word & MASK1[letterCount1];
+            word2 = mask & word2 & MASK1[letterCount2];
             hash = word ^ word2;
             existingResult = results[hashToIndex(hash, results)];
+            scanner.add(letterCount1 + (letterCount2 & mask));
             if (existingResult != null && existingResult.firstNameWord == word && existingResult.secondNameWord == word2) {
                 return existingResult;
             }
@@ -284,7 +287,7 @@ public class CalculateAverage_thomaswue {
     }
 
     private static int hashToIndex(long hash, Result[] results) {
-        long hashAsInt = hash ^ (hash >>> 37) ^ (hash >>> 17);
+        long hashAsInt = hash ^ (hash >>> 33) ^ (hash >>> 15);
         return (int) (hashAsInt & (results.length - 1));
     }
 
@@ -314,14 +317,12 @@ public class CalculateAverage_thomaswue {
         int totalLength = nameLength + 1;
         r.firstNameWord = scanner.getLongAt(nameAddress);
         r.secondNameWord = scanner.getLongAt(nameAddress + 8);
-        if (totalLength < 8) {
-            r.firstNameWord = (r.firstNameWord << ((8 - totalLength) << 3));
-        }
         if (totalLength <= 8) {
+            r.firstNameWord = r.firstNameWord & MASK1[totalLength - 1];
             r.secondNameWord = 0;
         }
         else if (totalLength < 16) {
-            r.secondNameWord = (r.secondNameWord << ((16 - totalLength) << 3));
+            r.secondNameWord = r.secondNameWord & MASK1[totalLength - 9];
         }
         r.nameAddress = nameAddress;
         collectedResults.add(r);
