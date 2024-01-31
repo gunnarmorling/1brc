@@ -77,6 +77,11 @@ public class CalculateAverage_dpsoft {
             return segments;
         }
 
+        while (segmentSize >= Integer.MAX_VALUE) {
+            numberOfSegments += 1;
+            segmentSize = fileSize / numberOfSegments;
+        }
+
         try (RandomAccessFile randomAccessFile = new RandomAccessFile(file, "r")) {
             for (int i = 0; i < numberOfSegments; i++) {
                 long segStart = i * segmentSize;
