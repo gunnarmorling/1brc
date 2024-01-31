@@ -31,11 +31,12 @@ import static java.lang.Math.round;
 import static java.nio.channels.FileChannel.MapMode.READ_ONLY;
 import static java.nio.file.StandardOpenOption.READ;
 
-public class CalculateAverage_ijuren {
+public class CalculateAverage_JurenIvan {
 
     private static final String FILE_NAME = "./measurements.txt";
 
     public static void main(String[] args) throws IOException {
+        long start = System.currentTimeMillis();
         long[] segments = getSegments(Runtime.getRuntime().availableProcessors());
 
         var result = IntStream.range(0, segments.length - 1)
@@ -45,10 +46,13 @@ public class CalculateAverage_ijuren {
                 .collect(Collectors.toMap(m -> new String(m.city), m -> m, Measurement::merge, TreeMap::new));
 
         System.out.println(result);
+        long end = System.currentTimeMillis();
+
+        System.out.println(end - start);
     }
 
     private static LinearProbingHashMap processSegment(long start, long end) {
-        var results = new LinearProbingHashMap(1 << 22);
+        var results = new LinearProbingHashMap(1 << 19);
 
         try (var fileChannel = (FileChannel) Files.newByteChannel(Path.of(FILE_NAME), READ)) {
             var bb = fileChannel.map(READ_ONLY, start, end - start);
@@ -132,11 +136,11 @@ public class CalculateAverage_ijuren {
 
         void put(int hash, byte[] key, int len, int temperature) {
             hash = Math.abs(hash);
-            int index = hash % slots;
+            int index = hash & (slots - 1);
 
             int i = index;
             while (hashTable[i] != null) {
-                if (keyIsEqual(key, hashTable[index].city, len)) {
+                if (keyIsEqual(key, hashTable[index].city, len)) { //handling hash collisions
                     hashTable[i].add(temperature);
                     return;
                 }
