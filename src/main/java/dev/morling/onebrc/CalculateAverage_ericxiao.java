@@ -313,13 +313,13 @@ public class CalculateAverage_ericxiao {
             callableTasks.add(new ProcessFileMap(readStart, readStart + readLength, true, false));
             readStart += readLength;
 
-            // for (int i = 1; i < numThreads - 1; ++i) {
-            // ProcessFileMap callableTask = new ProcessFileMap(readStart, readStart + readLength, false, false);
-            // readStart += readLength;
-            // callableTasks.add(callableTask);
-            // }
-            //
-            // callableTasks.add(new ProcessFileMap(readStart, readStart + readLength, false, true));
+            for (int i = 1; i < numThreads - 1; ++i) {
+                ProcessFileMap callableTask = new ProcessFileMap(readStart, readStart + readLength, false, false);
+                readStart += readLength;
+                callableTasks.add(callableTask);
+            }
+
+            callableTasks.add(new ProcessFileMap(readStart, readStart + readLength, false, true));
 
             List<Stations> results = new ArrayList<>();
             try {
@@ -343,17 +343,16 @@ public class CalculateAverage_ericxiao {
                 for (int i = 1; i < results.size(); ++i) {
                     Stations currStation = results.get(i);
                     for (int j = 0; j < currStation.stationPointer; j++) {
-                        int currStationHash = currStation.stationIdx[j];
-                        int idx = currStationHash * currStation.MEASUREMENT_SIZE;
+                        int idx = currStation.stationIdx[j];
                         int min = currStation.measurements[idx];
                         int max = currStation.measurements[idx + 1];
                         int sum = currStation.measurements[idx + 2];
                         int count = currStation.measurements[idx + 3];
                         int hash = currStation.measurements[idx + 4];
-                        if (station1.stationExists(currStationHash, hash))
-                            station1.updateStation(currStationHash, min, max, sum, count);
+                        if (station1.stationExists(idx / currStation.MEASUREMENT_SIZE, hash))
+                            station1.updateStation(idx / currStation.MEASUREMENT_SIZE, min, max, sum, count);
                         else
-                            station1.insertStation(currStationHash, hash, currStation.stationNames[j], min, max, sum, count);
+                            station1.insertStation(idx / currStation.MEASUREMENT_SIZE, hash, currStation.stationNames[j], min, max, sum, count);
                     }
                 }
                 // print key and values
