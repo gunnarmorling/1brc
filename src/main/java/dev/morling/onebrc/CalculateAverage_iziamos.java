@@ -15,12 +15,9 @@
  */
 package dev.morling.onebrc;
 
-import sun.misc.Unsafe;
-
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
-import java.lang.reflect.Field;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
@@ -34,45 +31,42 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.nio.file.StandardOpenOption.READ;
 
 public class CalculateAverage_iziamos {
-    private static final Unsafe UNSAFE;
+    private static final sun.misc.Unsafe UNSAFE = initUnsafe();
+
+    private static sun.misc.Unsafe initUnsafe() {
+        try {
+            java.lang.reflect.Field theUnsafe = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+            theUnsafe.setAccessible(true);
+            return (sun.misc.Unsafe) theUnsafe.get(sun.misc.Unsafe.class);
+        }
+        catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     private static final String FILE = "./measurements.txt";
     private static final Arena GLOBAL_ARENA = Arena.global();
-    private final static MemorySegment WHOLE_FILE_SEGMENT;
-    private final static long FILE_SIZE;
-    private final static long BASE_POINTER;
-    private final static long END_POINTER;
-
-    static {
-        try {
-            final Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
-            theUnsafe.setAccessible(true);
-            UNSAFE = (Unsafe) theUnsafe.get(Unsafe.class);
-
-            final var fileChannel = (FileChannel) Files.newByteChannel(Path.of(FILE), READ);
-            WHOLE_FILE_SEGMENT = fileChannel.map(READ_ONLY, 0, fileChannel.size(), GLOBAL_ARENA);
-
-        }
-        catch (final NoSuchFieldException | IllegalAccessException | IOException e) {
-            throw new RuntimeException(e);
-        }
-
-        FILE_SIZE = WHOLE_FILE_SEGMENT.byteSize();
-        BASE_POINTER = WHOLE_FILE_SEGMENT.address();
-        END_POINTER = BASE_POINTER + FILE_SIZE;
-    }
-
-    private static final long CHUNK_SIZE = 64 * 1024 * 1024;
-    // private static final long CHUNK_SIZE = Long.MAX_VALUE;
 
     public static void main(String[] args) throws Exception {
-        // Thread.sleep(10_000);
+        // final long chunkSize = Long.MAX_VALUE;
+        final long chunkSize = 64 * 1024 * 1024;
 
-        final long threadCount = 1 + FILE_SIZE / CHUNK_SIZE;
+        final FileChannel fileChannel;
+        try {
+            fileChannel = (FileChannel) Files.newByteChannel(Path.of(FILE), READ);
+        }
+        catch (final IOException e) {
+            throw new UncheckedIOException(e);
+        }
+
+        final var seg = fileChannel.map(READ_ONLY, 0, fileChannel.size(), GLOBAL_ARENA);
+
+        final long fileSize = seg.byteSize();
+        final long threadCount = 1 + fileSize / chunkSize;
 
         final var processingFutures = new CompletableFuture[(int) threadCount];
         for (int i = 0; i < threadCount; ++i) {
-            processingFutures[i] = processSegment(i, CHUNK_SIZE);
+            processingFutures[i] = processSegment(seg.address(), seg.address() + fileSize, i, chunkSize);
         }
 
         final long aggregate = (long) processingFutures[0].get();
@@ -102,15 +96,18 @@ public class CalculateAverage_iziamos {
         }
     }
 
-    private static CompletableFuture<Long> processSegment(final long chunkNumber, final long chunkSize) {
+    private static CompletableFuture<Long> processSegment(final long basePointer,
+                                                          final long endPointer,
+                                                          final long chunkNumber,
+                                                          final long chunkSize) {
         final var ret = new CompletableFuture<Long>();
 
         Thread.ofVirtual().start(() -> {
             final long relativeStart = chunkNumber * chunkSize;
-            final long absoluteStart = BASE_POINTER + relativeStart;
+            final long absoluteStart = basePointer + relativeStart;
 
-            final long absoluteEnd = computeAbsoluteEndWithSlack(absoluteStart + chunkSize);
-            final long startOffsetAfterSkipping = skipIncomplete(WHOLE_FILE_SEGMENT.address(), absoluteStart);
+            final long absoluteEnd = computeAbsoluteEndWithSlack(absoluteStart + chunkSize, endPointer);
+            final long startOffsetAfterSkipping = skipIncomplete(basePointer, absoluteStart);
 
             final long result = processEvents(startOffsetAfterSkipping, absoluteEnd);
             ret.complete(result);
@@ -119,8 +116,8 @@ public class CalculateAverage_iziamos {
         return ret;
     }
 
-    private static long computeAbsoluteEndWithSlack(final long chunk) {
-        return Long.compareUnsigned(END_POINTER, chunk) > 0 ? chunk : END_POINTER;
+    private static long computeAbsoluteEndWithSlack(final long chunk, final long endPointer) {
+        return Long.compareUnsigned(endPointer, chunk) > 0 ? chunk : endPointer;
     }
 
     private static long skipIncomplete(final long basePointer, final long start) {
@@ -142,7 +139,7 @@ public class CalculateAverage_iziamos {
     }
 
     private static void scalarLoop(final long start, final long limit, final long result) {
-        final LoopCursor cursor = new ScalarLoopCursor(start, limit);
+        final LoopCursor cursor = new LoopCursor(start, limit);
         while (cursor.hasMore()) {
             final long address = cursor.getCurrentAddress();
             final int length = cursor.getStringLength();
@@ -152,25 +149,13 @@ public class CalculateAverage_iziamos {
         }
     }
 
-    public interface LoopCursor {
-        long getCurrentAddress();
-
-        int getStringLength();
-
-        int getHash();
-
-        int getCurrentValue();
-
-        boolean hasMore();
-    }
-
-    public static class ScalarLoopCursor implements LoopCursor {
+    public static class LoopCursor {
         private long pointer;
         private final long limit;
 
         private int hash = 0;
 
-        public ScalarLoopCursor(final long pointer, final long limit) {
+        public LoopCursor(final long pointer, final long limit) {
             this.pointer = pointer;
             this.limit = limit;
         }
