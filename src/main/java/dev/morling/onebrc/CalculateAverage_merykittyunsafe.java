@@ -91,10 +91,12 @@ public class CalculateAverage_merykittyunsafe {
 
         void observe(long entryOffset, long value) {
             long baseOffset = Unsafe.ARRAY_BYTE_BASE_OFFSET + entryOffset;
-            UNSAFE.putShort(this.data, baseOffset + MIN_OFFSET,
-                    (short) Math.min(value, UNSAFE.getShort(this.data, baseOffset + MIN_OFFSET)));
-            UNSAFE.putShort(this.data, baseOffset + MAX_OFFSET,
-                    (short) Math.max(value, UNSAFE.getShort(this.data, baseOffset + MAX_OFFSET)));
+            if (UNSAFE.getShort(this.data, baseOffset + MIN_OFFSET) > value) {
+                UNSAFE.putShort(this.data, baseOffset + MIN_OFFSET, (short) value);
+            }
+            if (UNSAFE.getShort(this.data, baseOffset + MAX_OFFSET) < value) {
+                UNSAFE.putShort(this.data, baseOffset + MAX_OFFSET, (short) value);
+            }
             UNSAFE.putLong(this.data, baseOffset + SUM_OFFSET,
                     value + UNSAFE.getLong(this.data, baseOffset + SUM_OFFSET));
             UNSAFE.putLong(this.data, baseOffset + COUNT_OFFSET,
@@ -307,31 +309,70 @@ public class CalculateAverage_merykittyunsafe {
         return parseDataPoint(aggrMap, entryOffset, address + keySize + 1);
     }
 
+    private static long findOffset(long base, long offset, long limit) {
+        if (offset == 0) {
+            return offset;
+        }
+
+        offset--;
+        while (offset < limit) {
+            if (UNSAFE.getByte(base + (offset++)) == '\n') {
+                break;
+            }
+        }
+        return offset;
+    }
+
     // Process all lines that start in [offset, limit)
     private static PoorManMap processFile(MemorySegment data, long offset, long limit) {
         var aggrMap = new PoorManMap();
-        long base = data.address();
-        long begin = base + offset;
-        long end = base + limit;
-        // Find the start of a new line
-        if (offset != 0) {
-            begin--;
-            while (begin < end) {
-                if (UNSAFE.getByte(begin++) == '\n') {
-                    break;
-                }
-            }
-        }
-
-        // If there is no line starting in this segment, just return
-        if (begin == end) {
+        if (offset == limit) {
             return aggrMap;
         }
+        long base = data.address();
+        int batches = 2;
+        long batchSize = Math.ceilDiv(limit - offset, batches);
+        long offset0 = offset;
+        long offset1 = offset + batchSize;
+        long limit0 = Math.min(offset1, limit);
+        long limit1 = limit;
 
-        // The main loop, optimized for speed
-        while (begin < end - Math.max(BYTE_SPECIES.vectorByteSize(),
-                Long.BYTES + 1 + KEY_MAX_SIZE)) {
-            begin = iterate(aggrMap, begin);
+        // Find the start of a new line
+        offset0 = findOffset(base, offset0, limit0);
+        offset1 = findOffset(base, offset1, limit1);
+
+        long begin;
+        long end = base + limit;
+        long mainLoopMinWidth = Math.max(BYTE_SPECIES.vectorByteSize(), KEY_MAX_SIZE + 1 + Long.BYTES);
+        if (limit1 - offset1 < mainLoopMinWidth) {
+            begin = base + findOffset(base, offset, limit);
+            while (begin < end - mainLoopMinWidth) {
+                begin = iterate(aggrMap, begin);
+            }
+        }
+        else {
+            long begin0 = base + offset0;
+            long begin1 = base + offset1;
+            long end0 = base + limit0;
+            long end1 = base + limit1;
+            while (true) {
+                boolean finish = false;
+                if (begin0 < end0) {
+                    begin0 = iterate(aggrMap, begin0);
+                }
+                else {
+                    finish = true;
+                }
+                if (begin1 < end1 - mainLoopMinWidth) {
+                    begin1 = iterate(aggrMap, begin1);
+                }
+                else {
+                    if (finish) {
+                        break;
+                    }
+                }
+            }
+            begin = begin1;
         }
 
         // Now we are at the tail, just be simple
