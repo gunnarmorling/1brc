@@ -55,11 +55,11 @@ public class CalculateAverage_Smoofie {
 
         private CountResult(
 
-                // cityId|cityLength|cityNameAddress|nextElementAddress|cityCountsAddress
-                long cityHashTableAddress,
-                long countsAddress,
-                int cityIdCounter,
-                long nextCollisionAddress) {
+                            // cityId|cityLength|cityNameAddress|nextElementAddress|cityCountsAddress
+                            long cityHashTableAddress,
+                            long countsAddress,
+                            int cityIdCounter,
+                            long nextCollisionAddress) {
             this.cityHashTableAddress = cityHashTableAddress;
             this.countsAddress = countsAddress;
             this.cityIdCounter = cityIdCounter;
@@ -81,7 +81,8 @@ public class CalculateAverage_Smoofie {
             var field = Unsafe.class.getDeclaredField("theUnsafe");
             field.setAccessible(true);
             return (Unsafe) field.get(null);
-        } catch (NoSuchFieldException | IllegalAccessException e) {
+        }
+        catch (NoSuchFieldException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }
     }
@@ -96,7 +97,6 @@ public class CalculateAverage_Smoofie {
         return (decimalXor - 0x0101010101010101L) & ~decimalXor & 0xf0f0f0f0f0f0f0f0L;
     }
 
-
     public static void main(String[] args) throws IOException, InterruptedException {
         var numberOfThreads = Runtime.getRuntime().availableProcessors();
         var executorService = Executors.newFixedThreadPool(numberOfThreads);
@@ -104,7 +104,7 @@ public class CalculateAverage_Smoofie {
         var subCountResults = new CountResult[numberOfThreads];
 
         try (RandomAccessFile randomAccessFile = new RandomAccessFile(FILE, "r");
-             FileChannel fileChannel = randomAccessFile.getChannel()) {
+                FileChannel fileChannel = randomAccessFile.getChannel()) {
 
             long fileSize = randomAccessFile.length();
             if (fileSize < numberOfThreads * 1024) {
@@ -117,7 +117,8 @@ public class CalculateAverage_Smoofie {
             inputFileMemoryOffsets[0] = inputFileAddress;
             inputFileMemoryOffsets[numberOfThreads] = inputFileAddress + fileSize;
             for (long i = inputFileAddress + chunkSize, index = 1; index < numberOfThreads; i += chunkSize, index++) {
-                while (unsafe.getByte(i++) != '\n');
+                while (unsafe.getByte(i++) != '\n')
+                    ;
                 inputFileMemoryOffsets[(int) index] = i;
             }
 
@@ -169,8 +170,7 @@ public class CalculateAverage_Smoofie {
                         cityHash = hash(cityStart, cityLength);
                         hashAddress = cityHashTableAddress + ((long) cityHash << 5);
                         cityId = -1;
-                        outer:
-                        for ( ; ;) {
+                        outer: for (;;) {
                             if (cityLength != unsafe.getShort(hashAddress + 4)) {
                                 if (unsafe.getShort(hashAddress + 4) == 0) {
                                     // new hash slot init
@@ -190,7 +190,7 @@ public class CalculateAverage_Smoofie {
                             }
                             long cityNameAddress = unsafe.getLong(hashAddress + 6);
                             int j;
-                            for (j = 0; j < cityLength >> 3 << 3; j+=8) {
+                            for (j = 0; j < cityLength >> 3 << 3; j += 8) {
                                 if (unsafe.getLong(cityStart + j) != unsafe.getLong(cityNameAddress + j)) {
                                     if (unsafe.getLong(hashAddress + 14) != 0) {
                                         hashAddress = unsafe.getLong(hashAddress + 14);
@@ -200,7 +200,8 @@ public class CalculateAverage_Smoofie {
                                 }
                             }
                             if (j < cityLength) {
-                                if ((unsafe.getLong(cityStart + j) << ((0x8 - cityLength & 0x7) << 3)) != (unsafe.getLong(cityNameAddress + j) << ((0x8 - cityLength & 0x7) << 3))) {
+                                if ((unsafe.getLong(cityStart + j) << ((0x8 - cityLength & 0x7) << 3)) != (unsafe
+                                        .getLong(cityNameAddress + j) << ((0x8 - cityLength & 0x7) << 3))) {
                                     if (unsafe.getLong(hashAddress + 14) != 0) {
                                         hashAddress = unsafe.getLong(hashAddress + 14);
                                         continue;
@@ -227,9 +228,8 @@ public class CalculateAverage_Smoofie {
 
                         position++; // skip semicolon
 
-
-//                        long inputDecimalPoint = locateDecimalPoint(unsafe.getLong(position));
-//                        position += (Long.numberOfTrailingZeros(inputDecimalPoint) >> 3) + 3;
+                        // long inputDecimalPoint = locateDecimalPoint(unsafe.getLong(position));
+                        // position += (Long.numberOfTrailingZeros(inputDecimalPoint) >> 3) + 3;
 
                         temperature = 0;
                         c = unsafe.getByte(position++);
@@ -241,7 +241,8 @@ public class CalculateAverage_Smoofie {
                             }
                             temperatureAddress = unsafe.getLong(hashAddress + 22) + (1000 + temperature) * 4;
                             unsafe.putInt(temperatureAddress, unsafe.getInt(temperatureAddress) + 1);
-                        } else {
+                        }
+                        else {
                             temperature = c - '0';
                             while ((c = unsafe.getByte(position++)) != '\n') {
                                 if (c != '.') {
@@ -260,7 +261,6 @@ public class CalculateAverage_Smoofie {
             executorService.shutdown();
             executorService.awaitTermination(120, java.util.concurrent.TimeUnit.SECONDS);
 
-
             // aggregate results 1..n to 0
             var subCountA = subCountResults[0];
             for (int r = 1; r < numberOfThreads; r++) {
@@ -274,7 +274,7 @@ public class CalculateAverage_Smoofie {
                     // check if a initialized
                     if (unsafe.getShort(aHashAddress + 4) == 0) {
                         // new hash slot init
-                        for (long addressA = aHashAddress, addressB = bHashAddress; addressB != 0; ) {
+                        for (long addressA = aHashAddress, addressB = bHashAddress; addressB != 0;) {
                             unsafe.putInt(addressA, subCountA.cityIdCounter++);
                             unsafe.putShort(addressA + 4, unsafe.getShort(addressB + 4));
                             unsafe.putLong(addressA + 6, unsafe.getLong(addressB + 6));
@@ -285,26 +285,26 @@ public class CalculateAverage_Smoofie {
                                 subCountA.nextCollisionAddress += 32;
                             }
                         }
-                    } else {
+                    }
+                    else {
                         // check to copy collision list too
-                        outerB:
-                        for (long addressB = bHashAddress; addressB != 0; addressB = unsafe.getLong(addressB + 14)) {
+                        outerB: for (long addressB = bHashAddress; addressB != 0; addressB = unsafe.getLong(addressB + 14)) {
                             short cityLength = unsafe.getShort(addressB + 4);
                             long cityNameAddress = unsafe.getLong(addressB + 6);
                             // compare to each city in A slot
-                            outerA:
-                            for (long aAddress = aHashAddress; aAddress != 0; aAddress = unsafe.getLong(aAddress + 14)) {
+                            outerA: for (long aAddress = aHashAddress; aAddress != 0; aAddress = unsafe.getLong(aAddress + 14)) {
                                 if (unsafe.getShort(aAddress + 4) == cityLength) {
                                     long aCityNameAddress = unsafe.getLong(aAddress + 6);
                                     int j;
-                                    for (j = 0; j < cityLength >> 3 << 3; j+=8) {
+                                    for (j = 0; j < cityLength >> 3 << 3; j += 8) {
                                         if (unsafe.getLong(cityNameAddress + j) != unsafe.getLong(aCityNameAddress + j)) {
                                             // nope, not the same, try next
                                             continue outerA;
                                         }
                                     }
                                     if (j == cityLength ||
-                                            (unsafe.getLong(cityNameAddress + j) << ((0x8 - cityLength & 0x7) << 3)) == (unsafe.getLong(aCityNameAddress + j) << ((0x8 - cityLength & 0x7) << 3))) {
+                                            (unsafe.getLong(cityNameAddress + j) << ((0x8 - cityLength & 0x7) << 3)) == (unsafe
+                                                    .getLong(aCityNameAddress + j) << ((0x8 - cityLength & 0x7) << 3))) {
                                         // found the same city, continue with next city in B slot
                                         continue outerB;
                                     }
@@ -338,25 +338,24 @@ public class CalculateAverage_Smoofie {
                         continue;
                     }
                     // for each city in A slot
-                    outerA:
-                    for (long aAddress = aHashAddress; aAddress != 0; aAddress = unsafe.getLong(aAddress + 14)) {
+                    outerA: for (long aAddress = aHashAddress; aAddress != 0; aAddress = unsafe.getLong(aAddress + 14)) {
                         short cityLength = unsafe.getShort(aAddress + 4);
                         long cityNameAddress = unsafe.getLong(aAddress + 6);
                         int cityIdA = unsafe.getInt(aAddress);
                         // compare to each city in B slot
-                        outer:
-                        for (long bAddress = bHashAddress; bAddress != 0; bAddress = unsafe.getLong(bAddress + 14)) {
+                        outer: for (long bAddress = bHashAddress; bAddress != 0; bAddress = unsafe.getLong(bAddress + 14)) {
                             if (unsafe.getShort(bAddress + 4) == cityLength) {
                                 long bCityNameAddress = unsafe.getLong(bAddress + 6);
                                 int j;
-                                for (j = 0; j < cityLength >> 3 << 3; j+=8) {
+                                for (j = 0; j < cityLength >> 3 << 3; j += 8) {
                                     if (unsafe.getLong(cityNameAddress + j) != unsafe.getLong(bCityNameAddress + j)) {
                                         // nope, not the same, try next
                                         continue outer;
                                     }
                                 }
                                 if (j == cityLength ||
-                                        (unsafe.getLong(cityNameAddress + j) << ((0x8 - cityLength & 0x7) << 3)) == (unsafe.getLong(bCityNameAddress + j) << ((0x8 - cityLength & 0x7) << 3))) {
+                                        (unsafe.getLong(cityNameAddress + j) << ((0x8 - cityLength & 0x7) << 3)) == (unsafe
+                                                .getLong(bCityNameAddress + j) << ((0x8 - cityLength & 0x7) << 3))) {
                                     cityIdMap[cityIdA] = unsafe.getInt(bAddress);
                                     // found the same city, continue with next city in A slot
                                     continue outerA;
@@ -379,7 +378,6 @@ public class CalculateAverage_Smoofie {
                     }
                 }
             }
-
 
             var countResult = subCountResults[0];
             var reverseCityIds = new String[10000];
