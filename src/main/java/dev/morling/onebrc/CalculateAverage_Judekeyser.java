@@ -16,7 +16,6 @@
 package dev.morling.onebrc;
 
 import jdk.incubator.vector.ByteVector;
-import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.VectorSpecies;
 
 import java.io.IOException;
@@ -46,7 +45,6 @@ public class CalculateAverage_Judekeyser {
     private static final int numberOfParallelWorkers = Runtime.getRuntime().availableProcessors() - 1;
 
     private static final VectorSpecies<Byte> SPECIES = ByteVector.SPECIES_PREFERRED;
-    private static final VectorSpecies<Integer> INT_SPECIES = IntVector.SPECIES_PREFERRED;
 
     public static void main(String[] args) throws Exception {
         class SimpleStatistics {
@@ -68,11 +66,11 @@ public class CalculateAverage_Judekeyser {
         class Statistics {
             double min, max, avg;
             long count;
-            Statistics() {
-                min = Double.MAX_VALUE;
-                max = Double.MIN_VALUE;
-                avg = 0.;
-                count = 0L;
+            Statistics(SimpleStatistics simple) {
+                min = simple.min/10.;
+                max = simple.max/10.;
+                avg = simple.sum/10./simple.count;
+                count = simple.count;
             }
 
             void accept(SimpleStatistics simple) {
@@ -91,7 +89,11 @@ public class CalculateAverage_Judekeyser {
             }
             @Override
             public String toString() {
-                return STR."\{format.format(min)}/\{format.format(avg)}/\{format.format(max)}";
+                return STR."\{format.format(round(min))}/\{format.format(round(avg))}/\{format.format(round(max))}";
+            }
+
+            static double round(double d) {
+                return Math.round(d*10.)/10.;
             }
         }
         class Name {
@@ -226,9 +228,10 @@ public class CalculateAverage_Judekeyser {
                          * Vectorization does not seem to bring anything interesting.
                          * This is a bit disappointing. What am I doing wrong?
                          */
+
                         size = 0;
 
-                        while (offset+SPECIES.length() <= length) {
+                        while (offset+size+SPECIES.length() <= length) {
                             var vector = ByteVector.fromMemorySegment(
                                     SPECIES, memorySegment,
                                     offset+size, endian
@@ -281,7 +284,6 @@ public class CalculateAverage_Judekeyser {
                         //assert ';' != data[data.length - 1];
                         //name = new Name(data);
                         {
-                            var ldata = memorySegment.asSlice(offset, cursor-offset).toArray(JAVA_BYTE);
                             int mod4StringSize = ((int)(cursor-offset+3))/4 * 4;
                             var data = memorySegment.asSlice(offset, mod4StringSize).toArray(JAVA_INT_UNALIGNED);
                             switch(((int)(cursor - offset)) % 4) {
@@ -376,10 +378,11 @@ public class CalculateAverage_Judekeyser {
 
                                     var statistics = results.get(name);
                                     if (statistics == null) {
-                                        statistics = new Statistics();
+                                        statistics = new Statistics(entry.getValue());
                                         results.put(name, statistics);
+                                    } else {
+                                        statistics.accept(entry.getValue());
                                     }
-                                    statistics.accept(entry.getValue());
                                 }
                             } else copy.add(worker);
                         }
