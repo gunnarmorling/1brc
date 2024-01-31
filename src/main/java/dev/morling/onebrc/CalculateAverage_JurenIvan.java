@@ -36,7 +36,6 @@ public class CalculateAverage_JurenIvan {
     private static final String FILE_NAME = "./measurements.txt";
 
     public static void main(String[] args) throws IOException {
-        long start = System.currentTimeMillis();
         long[] segments = getSegments(Runtime.getRuntime().availableProcessors());
 
         var result = IntStream.range(0, segments.length - 1)
@@ -46,9 +45,6 @@ public class CalculateAverage_JurenIvan {
                 .collect(Collectors.toMap(m -> new String(m.city), m -> m, Measurement::merge, TreeMap::new));
 
         System.out.println(result);
-        long end = System.currentTimeMillis();
-
-        System.out.println(end - start);
     }
 
     private static LinearProbingHashMap processSegment(long start, long end) {
