@@ -41,7 +41,7 @@ public class CalculateAverage_abeobk {
     private static final long BUCKET_MASK = BUCKET_SIZE - 1;
     private static final int MAX_STR_LEN = 100;
     private static final int MAX_STATIONS = 10000;
-    private static final long CHUNK_SZ = 1 << 22; // 4MB chunk
+    private static final long CHUNK_SZ = 1 << 22;
     private static final Unsafe UNSAFE = initUnsafe();
     private static final long[] HASH_MASKS = new long[]{
             0x0L,
@@ -58,10 +58,6 @@ public class CalculateAverage_abeobk {
     private static AtomicReference<Node[]> mapref = new AtomicReference<>(null);
     private static int chunk_cnt;
     private static long start_addr, end_addr;
-
-    private static final void debug(String s, Object... args) {
-        System.out.println(String.format(s, args));
-    }
 
     private static Unsafe initUnsafe() {
         try {
@@ -185,7 +181,6 @@ public class CalculateAverage_abeobk {
         long addr;
         long hash;
         long word0;
-        long tail;
         long sum;
         long min, max;
         int keylen;
@@ -203,40 +198,36 @@ public class CalculateAverage_abeobk {
             return new String(sbuf, 0, (int) keylen, StandardCharsets.UTF_8);
         }
 
-        Node(long a, long t, int kl, long h, long v) {
+        Node(long a, long h, int kl, long v) {
             addr = a;
-            tail = t;
             min = max = v;
             keylen = kl;
             hash = h;
         }
 
-        Node(long a, long t, int kl, long h) {
+        Node(long a, long h, int kl) {
             addr = a;
-            tail = t;
+            hash = h;
             min = 999;
             max = -999;
             keylen = kl;
-            hash = h;
         }
 
-        Node(long a, long w0, long t, int kl, long h, long v) {
+        Node(long a, long w0, long h, int kl, long v) {
             addr = a;
             word0 = w0;
+            hash = h;
             min = max = v;
-            tail = t;
             keylen = kl;
-            hash = h;
         }
 
-        Node(long a, long w0, long t, int kl, long h) {
+        Node(long a, long w0, long h, int kl) {
             addr = a;
             word0 = w0;
+            hash = h;
             min = 999;
             max = -999;
-            tail = t;
             keylen = kl;
-            hash = h;
         }
 
         final void add(long val) {
@@ -261,8 +252,8 @@ public class CalculateAverage_abeobk {
             }
         }
 
-        final boolean contentEquals(long other_addr, long other_word0, long other_tail, long kl) {
-            if (word0 != other_word0 || tail != other_tail)
+        final boolean contentEquals(long other_addr, long other_word0, long other_hash, long kl) {
+            if (word0 != other_word0 || hash != other_hash)
                 return false;
             // this is faster than comparision if key is short
             long xsum = 0;
@@ -274,7 +265,7 @@ public class CalculateAverage_abeobk {
         }
 
         final boolean contentEquals(Node other) {
-            if (tail != other.tail)
+            if (hash != other.hash)
                 return false;
             long n = keylen & 0xF8;
             for (long i = 0; i < n; i += 8) {
@@ -291,6 +282,7 @@ public class CalculateAverage_abeobk {
 
         Worker(int i) {
             thread_id = i;
+            this.setPriority(Thread.MAX_PRIORITY);
             this.start();
         }
 
@@ -443,9 +435,9 @@ public class CalculateAverage_abeobk {
                 while (true) {
                     Node node = map[bucket];
                     if (node == null) {
-                        return (map[bucket] = new Node(row_addr, tail, semi_pos, hash, val0()));
+                        return (map[bucket] = new Node(row_addr, hash, semi_pos));
                     }
-                    if (node.tail == tail) {
+                    if (node.hash == hash) {
                         return node;
                     }
                     bucket++;
@@ -465,9 +457,9 @@ public class CalculateAverage_abeobk {
                 while (true) {
                     Node node = map[bucket];
                     if (node == null) {
-                        return (map[bucket] = new Node(row_addr, word0, tail, semi_pos + 8, hash, val0()));
+                        return (map[bucket] = new Node(row_addr, word0, hash, semi_pos + 8));
                     }
-                    if (node.word0 == word0 && node.tail == tail) {
+                    if (node.word0 == word0 && node.hash == hash) {
                         return node;
                     }
                     bucket++;
@@ -494,9 +486,9 @@ public class CalculateAverage_abeobk {
             while (true) {
                 Node node = map[bucket];
                 if (node == null) {
-                    return (map[bucket] = new Node(row_addr, word0, tail, (int) keylen, hash, val0()));
+                    return (map[bucket] = new Node(row_addr, word0, hash, (int) keylen));
                 }
-                if (node.contentEquals(row_addr, word0, tail, keylen)) {
+                if (node.contentEquals(row_addr, word0, hash, keylen)) {
                     return node;
                 }
                 bucket++;
