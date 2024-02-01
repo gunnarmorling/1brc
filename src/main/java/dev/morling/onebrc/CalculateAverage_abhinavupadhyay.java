@@ -56,10 +56,10 @@ public class CalculateAverage_abhinavupadhyay {
         private static final int TABLE_SIZE = 1 << 21; // 0x8000; // collisions with table smaller than this. Need a better hash function
         private static final int TABLE_MASK = TABLE_SIZE - 1;
         Row[] table = new Row[TABLE_SIZE];
-        byte[] array = new byte[256];
+        byte[] array = new byte[512];
 
         public void put(long cityStartOffset, long cityLength, long nameHash, int temperature) {
-            final long uhash = nameHash ^ (nameHash >> 29);
+            final long uhash = nameHash;
             int index = (int) uhash & TABLE_MASK;
             Row row = table[index];
             if (row == null) {
@@ -76,19 +76,21 @@ public class CalculateAverage_abhinavupadhyay {
             }
 
             while (row.hash != uhash) {
-                index = (int) ((index + (uhash)) & TABLE_MASK);
-                int i = 0;
-                for (; i < cityLength - 1;) {
-                    array[i++] = UNSAFE.getByte(cityStartOffset++);
-                    array[i++] = UNSAFE.getByte(cityStartOffset++);
+                index = (int) ((index + (uhash | 1)) & TABLE_MASK);
+                row = table[index];
+                if (row == null) {
+                    int i = 0;
+                    for (; i < cityLength - 1;) {
+                        array[i++] = UNSAFE.getByte(cityStartOffset++);
+                        array[i++] = UNSAFE.getByte(cityStartOffset++);
+                    }
+                    for (; i < cityLength; i++) {
+                        array[i] = UNSAFE.getByte(cityStartOffset++);
+                    }
+                    table[index] = new Row(new String(array, 0, i), temperature, temperature, 1, temperature, uhash);
+                    return;
                 }
-                for (; i < cityLength; i++) {
-                    array[i] = UNSAFE.getByte(cityStartOffset++);
-                }
-                table[index] = new Row(new String(array, 0, i), temperature, temperature, 1, temperature, uhash);
-                return;
             }
-
             row.update(temperature);
 
         }
@@ -124,9 +126,13 @@ public class CalculateAverage_abhinavupadhyay {
             }
         }
 
+        private static double round(double value) {
+            return Math.round(value * 10.0) / 10.0;
+        }
+
         @Override
         public String toString() {
-            return String.format("%.1f/%.1f/%.1f", this.minTemp / 10.0, this.sum / (count * 10.0), maxTemp / 10.0);
+            return String.format("%.1f/%.1f/%.1f", this.minTemp / 10.0, round((((double) sum) / 10.0) / count), maxTemp / 10.0);
         }
 
         public Row update(Row value) {
@@ -186,13 +192,13 @@ public class CalculateAverage_abhinavupadhyay {
             }
             int trailingZeros = Long.numberOfTrailingZeros(hasSemi);
             int semiColonIndex = trailingZeros >> 3;
-            if (trailingZeros >= 8) {
-                int nonZeroBits = 64 - trailingZeros;
-                nameHash ^= ((word << nonZeroBits) >> nonZeroBits);
+            for (int i = 0; i < semiColonIndex; i++) {
+                byte b = (byte) ((word >> (i * 8)) & 0xff);
+                nameHash = nameHash * 31 + b;
                 nameHash += (nameHash << 10);
                 nameHash ^= (nameHash >> 6);
-                currentOffset += semiColonIndex;
             }
+            currentOffset += semiColonIndex;
             long cityLength = currentOffset - cityStart;
             currentOffset++; // skip ;
             int temperature = 0;
