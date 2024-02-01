@@ -15,11 +15,5 @@
 #  limitations under the License.
 #
 
-
-
-if [ -f target/CalculateAverage_JamalMulla_image ]; then
-    target/CalculateAverage_JamalMulla_image
-else
-    JAVA_OPTS="--enable-preview -XX:+UnlockExperimentalVMOptions -XX:+TrustFinalNonStaticFields -XX:+UseTransparentHugePages -XX:-TieredCompilation"
-    java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_JamalMulla
-fi
+JAVA_OPTS="--enable-preview --add-modules jdk.incubator.vector -DpageSize=262144 -XX:+UseParallelGC -Xms2600m -XX:ParallelGCThreads=8 -XX:Tier4CompileThreshold=1000 -XX:Tier3CompileThreshold=500 -XX:Tier3CompileThreshold=250 -Dthreads=9 -Djava.util.concurrent.ForkJoinPool.common.parallelism=9"
+java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_godofwharf 2>/dev/null

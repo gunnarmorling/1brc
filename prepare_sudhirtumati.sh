@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 #  Copyright 2023 The original authors
 #
@@ -15,11 +15,6 @@
 #  limitations under the License.
 #
 
-
-
-if [ -f target/CalculateAverage_JamalMulla_image ]; then
-    target/CalculateAverage_JamalMulla_image
-else
-    JAVA_OPTS="--enable-preview -XX:+UnlockExperimentalVMOptions -XX:+TrustFinalNonStaticFields -XX:+UseTransparentHugePages -XX:-TieredCompilation"
-    java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_JamalMulla
-fi
+# Uncomment below to use sdk
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+sdk use java 21.0.2-open 1>&2

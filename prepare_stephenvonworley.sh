@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 #  Copyright 2023 The original authors
 #
@@ -15,11 +15,11 @@
 #  limitations under the License.
 #
 
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+sdk use java 21.0.2-graal 1>&2
 
-
-if [ -f target/CalculateAverage_JamalMulla_image ]; then
-    target/CalculateAverage_JamalMulla_image
-else
-    JAVA_OPTS="--enable-preview -XX:+UnlockExperimentalVMOptions -XX:+TrustFinalNonStaticFields -XX:+UseTransparentHugePages -XX:-TieredCompilation"
-    java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_JamalMulla
+# ./mvnw clean verify removes target/ and will re-trigger native image creation.
+if [ ! -f target/CalculateAverage_stephenvonworley_image ]; then
+    NATIVE_IMAGE_OPTS="--gc=epsilon -O3 -H:TuneInlinerExploration=1 -march=native --enable-preview --initialize-at-build-time=dev.morling.onebrc.CalculateAverage_stephenvonworley"
+    native-image $NATIVE_IMAGE_OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o target/CalculateAverage_stephenvonworley_image dev.morling.onebrc.CalculateAverage_stephenvonworley
 fi

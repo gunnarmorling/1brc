@@ -344,7 +344,7 @@ public class CalculateAverage_jerrinot {
             }
         }
 
-        private void doOne(long cursor, long end) {
+        private void doOne(long cursor, long end, long fastMap) {
             while (cursor < end) {
                 // it seems that when pulling just from a single chunk
                 // then bit-twiddling is faster than lookup tables
@@ -361,6 +361,7 @@ public class CalculateAverage_jerrinot {
 
                 long maskedFirstWord = currentWord & firstWordMask;
                 int hash = hash(maskedFirstWord);
+                int mapIndex = hash & MAP_MASK;
                 while (mask == 0) {
                     cursor += 8;
                     currentWord = UNSAFE.getLong(cursor);
@@ -371,9 +372,16 @@ public class CalculateAverage_jerrinot {
                 final long maskedWord = currentWord & ((mask - 1) ^ mask) >>> 8;
 
                 int len = (int) (semicolon - start);
-                long baseEntryPtr = getOrCreateEntryBaseOffsetSlow(len, start, hash, maskedWord);
-                long temperatureWord = UNSAFE.getLong(semicolon + 1);
-                cursor = parseAndStoreTemperature(semicolon + 1, baseEntryPtr, temperatureWord);
+                if (len > 15) {
+                    long baseEntryPtr = getOrCreateEntryBaseOffsetSlow(len, start, hash, maskedWord);
+                    long temperatureWord = UNSAFE.getLong(semicolon + 1);
+                    cursor = parseAndStoreTemperature(semicolon + 1, baseEntryPtr, temperatureWord);
+                }
+                else {
+                    long baseEntryPtr = getOrCreateEntryBaseOffsetFast(mapIndex, len, maskedWord, maskedFirstWord, fastMap);
+                    long temperatureWord = UNSAFE.getLong(semicolon + 1);
+                    cursor = parseAndStoreTemperature(semicolon + 1, baseEntryPtr, temperatureWord);
+                }
             }
         }
 
@@ -415,8 +423,8 @@ public class CalculateAverage_jerrinot {
                 }
                 setCursors(startingPtr);
                 mainLoop(fastMap);
-                doOne(cursorA, endA);
-                doOne(cursorB, endB);
+                doOne(cursorA, endA, fastMap);
+                doOne(cursorB, endB, fastMap);
             }
             transferToHeap(fastMap);
         }
@@ -454,20 +462,25 @@ public class CalculateAverage_jerrinot {
                 long wordMaskA = HASH_MASKS[trailingZerosA];
                 long wordMaskB = HASH_MASKS[trailingZerosB];
 
+                long maskedMaskA = advanceMaskA & 8;
+                long maskedMaskB = advanceMaskB & 8;
+
                 long negAdvanceMaskA = ~advanceMaskA;
                 long negAdvanceMaskB = ~advanceMaskB;
 
-                cursorA += advanceMaskA & 8;
-                cursorB += advanceMaskB & 8;
+                cursorA += maskedMaskA;
+                cursorB += maskedMaskB;
 
                 long nextWordA = (advanceMaskA & candidateWordA) | (negAdvanceMaskA & currentWordA);
                 long nextWordB = (advanceMaskB & candidateWordB) | (negAdvanceMaskB & currentWordB);
 
-                long nextDelimiterMaskA = getDelimiterMask(nextWordA);
-                long nextDelimiterMaskB = getDelimiterMask(nextWordB);
+                delimiterMaskA = getDelimiterMask(nextWordA);
+                delimiterMaskB = getDelimiterMask(nextWordB);
 
-                boolean slowA = nextDelimiterMaskA == 0;
-                boolean slowB = nextDelimiterMaskB == 0;
+                boolean slowA = delimiterMaskA == 0;
+                boolean slowB = delimiterMaskB == 0;
+                trailingZerosA = Long.numberOfTrailingZeros(delimiterMaskA) >> 3;
+                trailingZerosB = Long.numberOfTrailingZeros(delimiterMaskB) >> 3;
                 boolean slowSome = (slowA || slowB);
 
                 long maskedFirstWordA = wordMaskA & currentWordA;
@@ -479,73 +492,101 @@ public class CalculateAverage_jerrinot {
                 currentWordA = nextWordA;
                 currentWordB = nextWordB;
 
-                delimiterMaskA = nextDelimiterMaskA;
-                delimiterMaskB = nextDelimiterMaskB;
                 if (slowSome) {
-                    while (delimiterMaskA == 0) {
-                        cursorA += 8;
-                        currentWordA = UNSAFE.getLong(cursorA);
-                        delimiterMaskA = getDelimiterMask(currentWordA);
-                    }
-
-                    while (delimiterMaskB == 0) {
-                        cursorB += 8;
-                        currentWordB = UNSAFE.getLong(cursorB);
-                        delimiterMaskB = getDelimiterMask(currentWordB);
-                    }
-                }
-
-                trailingZerosA = Long.numberOfTrailingZeros(delimiterMaskA) >> 3;
-                trailingZerosB = Long.numberOfTrailingZeros(delimiterMaskB) >> 3;
-
-                final long semicolonA = cursorA + trailingZerosA;
-                final long semicolonB = cursorB + trailingZerosB;
-
-                long digitStartA = semicolonA + 1;
-                long digitStartB = semicolonB + 1;
-
-                long lastWordMaskA = HASH_MASKS[trailingZerosA];
-                long lastWordMaskB = HASH_MASKS[trailingZerosB];
-
-                long temperatureWordA = UNSAFE.getLong(digitStartA);
-                long temperatureWordB = UNSAFE.getLong(digitStartB);
-
-                final long maskedLastWordA = currentWordA & lastWordMaskA;
-                final long maskedLastWordB = currentWordB & lastWordMaskB;
-
-                int lenA = (int) (semicolonA - startA);
-                int lenB = (int) (semicolonB - startB);
-
-                int mapIndexA = hashA & MAP_MASK;
-                int mapIndexB = hashB & MAP_MASK;
-
-                long baseEntryPtrA;
-                long baseEntryPtrB;
-
-                if (slowSome) {
-                    if (slowA) {
-                        baseEntryPtrA = getOrCreateEntryBaseOffsetSlow(lenA, startA, hashA, maskedLastWordA);
-                    }
-                    else {
-                        baseEntryPtrA = getOrCreateEntryBaseOffsetFast(mapIndexA, lenA, maskedLastWordA, maskedFirstWordA, fastMap);
-                    }
-
-                    if (slowB) {
-                        baseEntryPtrB = getOrCreateEntryBaseOffsetSlow(lenB, startB, hashB, maskedLastWordB);
-                    }
-                    else {
-                        baseEntryPtrB = getOrCreateEntryBaseOffsetFast(mapIndexB, lenB, maskedLastWordB, maskedFirstWordB, fastMap);
-                    }
-
+                    doSlow(fastMap, delimiterMaskA, currentWordA, delimiterMaskB, currentWordB, startA, startB, hashA, hashB, slowA, maskedFirstWordA, slowB,
+                            maskedFirstWordB);
                 }
                 else {
+                    final long semicolonA = cursorA + trailingZerosA;
+                    final long semicolonB = cursorB + trailingZerosB;
+
+                    long digitStartA = semicolonA + 1;
+                    long digitStartB = semicolonB + 1;
+
+                    long lastWordMaskA = HASH_MASKS[trailingZerosA];
+                    long lastWordMaskB = HASH_MASKS[trailingZerosB];
+
+                    long temperatureWordA = UNSAFE.getLong(digitStartA);
+                    long temperatureWordB = UNSAFE.getLong(digitStartB);
+
+                    final long maskedLastWordA = currentWordA & lastWordMaskA;
+                    final long maskedLastWordB = currentWordB & lastWordMaskB;
+
+                    int lenA = (int) (semicolonA - startA);
+                    int lenB = (int) (semicolonB - startB);
+
+                    int mapIndexA = hashA & MAP_MASK;
+                    int mapIndexB = hashB & MAP_MASK;
+
+                    long baseEntryPtrA;
+                    long baseEntryPtrB;
+
                     baseEntryPtrA = getOrCreateEntryBaseOffsetFast(mapIndexA, lenA, maskedLastWordA, maskedFirstWordA, fastMap);
                     baseEntryPtrB = getOrCreateEntryBaseOffsetFast(mapIndexB, lenB, maskedLastWordB, maskedFirstWordB, fastMap);
-                }
 
-                cursorA = parseAndStoreTemperature(digitStartA, baseEntryPtrA, temperatureWordA);
-                cursorB = parseAndStoreTemperature(digitStartB, baseEntryPtrB, temperatureWordB);
+                    cursorA = parseAndStoreTemperature(digitStartA, baseEntryPtrA, temperatureWordA);
+                    cursorB = parseAndStoreTemperature(digitStartB, baseEntryPtrB, temperatureWordB);
+                }
             }
+        }
+
+        private void doSlow(long fastMap, long delimiterMaskA, long currentWordA, long delimiterMaskB, long currentWordB, long startA, long startB, int hashA, int hashB,
+                            boolean slowA, long maskedFirstWordA, boolean slowB, long maskedFirstWordB) {
+            int trailingZerosB;
+            int trailingZerosA;
+            while (delimiterMaskA == 0) {
+                cursorA += 8;
+                currentWordA = UNSAFE.getLong(cursorA);
+                delimiterMaskA = getDelimiterMask(currentWordA);
+            }
+
+            while (delimiterMaskB == 0) {
+                cursorB += 8;
+                currentWordB = UNSAFE.getLong(cursorB);
+                delimiterMaskB = getDelimiterMask(currentWordB);
+            }
+            trailingZerosA = Long.numberOfTrailingZeros(delimiterMaskA) >> 3;
+            trailingZerosB = Long.numberOfTrailingZeros(delimiterMaskB) >> 3;
+
+            final long semicolonA = cursorA + trailingZerosA;
+            final long semicolonB = cursorB + trailingZerosB;
+
+            long digitStartA = semicolonA + 1;
+            long digitStartB = semicolonB + 1;
+
+            long lastWordMaskA = HASH_MASKS[trailingZerosA];
+            long lastWordMaskB = HASH_MASKS[trailingZerosB];
+
+            long temperatureWordA = UNSAFE.getLong(digitStartA);
+            long temperatureWordB = UNSAFE.getLong(digitStartB);
+
+            final long maskedLastWordA = currentWordA & lastWordMaskA;
+            final long maskedLastWordB = currentWordB & lastWordMaskB;
+
+            int lenA = (int) (semicolonA - startA);
+            int lenB = (int) (semicolonB - startB);
+
+            int mapIndexA = hashA & MAP_MASK;
+            int mapIndexB = hashB & MAP_MASK;
+
+            long baseEntryPtrA;
+            long baseEntryPtrB;
+
+            if (slowA) {
+                baseEntryPtrA = getOrCreateEntryBaseOffsetSlow(lenA, startA, hashA, maskedLastWordA);
+            }
+            else {
+                baseEntryPtrA = getOrCreateEntryBaseOffsetFast(mapIndexA, lenA, maskedLastWordA, maskedFirstWordA, fastMap);
+            }
+
+            if (slowB) {
+                baseEntryPtrB = getOrCreateEntryBaseOffsetSlow(lenB, startB, hashB, maskedLastWordB);
+            }
+            else {
+                baseEntryPtrB = getOrCreateEntryBaseOffsetFast(mapIndexB, lenB, maskedLastWordB, maskedFirstWordB, fastMap);
+            }
+            cursorA = parseAndStoreTemperature(digitStartA, baseEntryPtrA, temperatureWordA);
+            cursorB = parseAndStoreTemperature(digitStartB, baseEntryPtrB, temperatureWordB);
         }
 
         private void setCursors(long current) {
