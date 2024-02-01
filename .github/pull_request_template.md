@@ -1,4 +1,4 @@
-**NOTE:** This challenge closes for submissions on Jan 31 23:59:59 UTC. No new pull requests for adding submissions will be accepted after that time.
+**NOTE:** The challenge has been closed for new submissions. No new pull requests for adding submissions are accepted at this time.
 Any pending pull requests will be reviewed over the next few days, as described [here](https://github.com/gunnarmorling/1brc/discussions/687).
 The final leader board will be published by Feb 5.
 
