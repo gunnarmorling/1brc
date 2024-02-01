@@ -113,6 +113,7 @@ These are the results from running all entries into the challenge on eight cores
 |   | 00:07.730 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_jotschi.java)| 21.0.1-open | [Johannes Schüth](https://github.com/jotschi) |  |
 |   | 00:07.894 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_tonivade.java)| 21.0.2-tem | [Antonio Muñoz](https://github.com/tonivade) |  |
 |   | 00:07.925 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_ricardopieper.java)| 21.0.1-graal | [Ricardo Pieper](https://github.com/ricardopieper) |  |
+|   | 00:08.157 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_JurenIvan.java)| 21.0.1-open | [JurenIvan](https://github.com/JurenIvan) |  |
 |   | 00:08.167 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_ddimtirov.java)| 21.0.1-tem | [Dimitar Dimitrov](https://github.com/ddimtirov) |  |
 |   | 00:08.214 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_deemkeen.java)| 21.0.1-open | [deemkeen](https://github.com/deemkeen) |  |
 |   | 00:08.255 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_mattiz.java)| 21.0.1-open | [Mathias Bjerke](https://github.com/mattiz) |  |
