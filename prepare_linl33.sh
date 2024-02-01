@@ -17,8 +17,7 @@
 
 
 source "$HOME/.sdkman/bin/sdkman-init.sh"
-# TODO: bump to ea 32 when available
-sdk use java 22.ea.31-open 1>&2
+sdk use java 22.ea.32-open 1>&2
 
 CLASS_NAME="CalculateAverage_linl33"
 

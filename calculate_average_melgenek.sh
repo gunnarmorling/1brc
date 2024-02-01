@@ -29,8 +29,8 @@ logicalCpuCount=$([ $(uname) = 'Darwin' ] &&
                        sysctl -n hw.logicalcpu_max ||
                        lscpu -p | egrep -v '^#' | wc -l)
 # The required heap is proportional to the number of cores.
-# There's roughly 3.5MB heap per thread required for the 10k problem.
-requiredMemory=$(echo "(l(15 + 3.5 * $logicalCpuCount)/l(2))" | bc -l)
+# There's roughly 6MB heap per thread required for the 10k problem.
+requiredMemory=$(echo "(l(15 + 6 * $logicalCpuCount)/l(2))" | bc -l)
 heapSize=$(echo "scale=0; 2^(($requiredMemory+1)/1)" | bc)
 
 JAVA_OPTS="$JAVA_OPTS -Xms${heapSize}m -Xmx${heapSize}m"
