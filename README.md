@@ -15,6 +15,10 @@ _Status Jan 12: As there has been such a large number of entries to this challen
 
 _Status Jan 1: This challenge is [open for submissions](https://www.morling.dev/blog/one-billion-row-challenge/)!_
 
+> **Sponsorship**
+>
+> A big thank you to my employer [Decodable](https://www.decodable.co/) for funding the evaluation environment and supporting this challenge!
+
 The One Billion Row Challenge (1BRC) is a fun exploration of how far modern Java can be pushed for aggregating one billion rows from a text file.
 Grab all your (virtual) threads, reach out to SIMD, optimize your GC, or pull any other trick, and create the fastest implementation for solving this task!
 
@@ -479,10 +483,6 @@ A list of external resources such as blog posts and videos, discussing 1BRC and 
 * [One Billion Row Challenge & Azure Data Explorer](https://nielsberglund.com/post/2024-01-28-one-billion-row-challenge--azure-data-explorer/), by Niels Berglund (blog post)
 * [One Billion Row Challenge - view from sidelines](https://www.chashnikov.dev/post/one-billion-row-challenge-view-from-sidelines), by Leo Chashnikov (blog post)
 
-## Sponsorship
-
-A big thank you to my employer [Decodable](https://www.decodable.co/) for funding the evaluation environment and supporting this challenge!
- 
 ## License
 
 This code base is available under the Apache License, version 2.
