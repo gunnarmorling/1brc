@@ -53,8 +53,13 @@ jobs:
         id: sdkman
 
       - name: 'Build project'
+        shell: bash
         run: |
           source "$HOME/.sdkman/bin/sdkman-init.sh"
+          if [ -f ${{ format('src/main/java-22/dev/morling/onebrc/CalculateAverage_{0}.java', github.event.pull_request.user.login || '') }} ]; then
+            sdk install java 22.ea.32-open || true
+            sdk use java 22.ea.32-open
+          fi
           ./mvnw --version
           ./mvnw -B clean verify -Pci
 
@@ -63,5 +68,3 @@ jobs:
         run: |
           ./test_ci.sh ${{ github.event.pull_request.user.login }}
         if: github.event_name == 'pull_request'
-
-
