@@ -69,11 +69,25 @@ public class CalculateAverage_Smoofie {
     }
 
     private static int hash(long cityNameAddress, short cityLength) {
-        long[] city = new long[2];
-        unsafe.copyMemory(null, cityNameAddress, city, Unsafe.ARRAY_LONG_BASE_OFFSET, cityLength);
-        long hash = city[0];
-        int foldedHash = (int) (hash ^ (hash >>> 30));
-        return (foldedHash & foldedHash >>> 15) & 0xffff;
+        if (cityLength < 17) {
+            long[] city = new long[2];
+            unsafe.copyMemory(null, cityNameAddress, city, Unsafe.ARRAY_LONG_BASE_OFFSET, cityLength);
+            long hash = city[0] ^ (city[1] >> 1);
+            int foldedHash = (int) (hash ^ (hash >>> 31));
+            return (foldedHash & foldedHash >>> 15) & 0xffff;
+        }
+        else {
+            long[] city = new long[cityLength >> 3 + 1];
+            unsafe.copyMemory(null, cityNameAddress, city, Unsafe.ARRAY_LONG_BASE_OFFSET, cityLength);
+
+            long hash = city[0];
+            for (int i = 1; i < city.length; i++) {
+                hash ^= city[i];
+            }
+
+            int foldedHash = (int) (hash ^ (hash >>> 30));
+            return (foldedHash & foldedHash >>> 15) & 0xffff;
+        }
     }
 
     private static Unsafe getUnsafe() {
@@ -89,12 +103,7 @@ public class CalculateAverage_Smoofie {
 
     private static long locateSemicolon(long input) {
         long semiXor = input ^ 0x3B3B3B3B3B3B3B3BL;
-        return (semiXor - 0x0101010101010101L) & ~semiXor & 0xf0f0f0f0f0f0f0f0L;
-    }
-
-    private static long locateDecimalPoint(long input) {
-        long decimalXor = input ^ 0x2E2E2E2E2E2E2E2EL;
-        return (decimalXor - 0x0101010101010101L) & ~decimalXor & 0xf0f0f0f0f0f0f0f0L;
+        return (semiXor - 0x0101010101010101L) & ~semiXor & 0x8080808080808080L;
     }
 
     public static void main(String[] args) throws IOException, InterruptedException {
