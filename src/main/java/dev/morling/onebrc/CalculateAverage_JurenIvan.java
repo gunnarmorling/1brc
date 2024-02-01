@@ -113,7 +113,8 @@ public class CalculateAverage_JurenIvan {
             for (int i = 1; i < segmentCount; i++) {
                 long chunkOffset = chunks[i - 1] + segmentSize;
                 raf.seek(chunkOffset);
-                raf.readLine();
+                while (raf.readByte() != '\n') {
+                }
                 chunks[i] = raf.getFilePointer();
             }
             chunks[segmentCount] = fileSize;
@@ -136,7 +137,7 @@ public class CalculateAverage_JurenIvan {
 
             int i = index;
             while (hashTable[i] != null) {
-                if (keyIsEqual(key, hashTable[index].city, len)) { // handling hash collisions
+                if (keyIsEqual(key, hashTable[i].city, len)) { // handling hash collisions
                     hashTable[i].add(temperature);
                     return;
                 }
@@ -148,10 +149,12 @@ public class CalculateAverage_JurenIvan {
 
             var cityArr = new byte[len];
             System.arraycopy(key, 0, cityArr, 0, len);
-            hashTable[index] = new Measurement(cityArr, hash, temperature, temperature, 1, temperature);
+            hashTable[i] = new Measurement(cityArr, hash, temperature, temperature, 1, temperature);
         }
 
         private boolean keyIsEqual(byte[] one, byte[] other, int len) {
+            if (len != other.length)
+                return false;
             for (int i = 0; i < len; i++) {
                 if (one[i] != other[i]) {
                     return false;
