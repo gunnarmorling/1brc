@@ -105,6 +105,10 @@ public class CalculateAverage_JurenIvan {
                 return chunks;
             }
 
+            while (fileSize / segmentCount >= (Integer.MAX_VALUE - 150)) {
+                segmentCount *= 2;
+            }
+
             long[] chunks = new long[segmentCount + 1];
 
             chunks[0] = 0;
