@@ -54,7 +54,6 @@ public class CalculateAverage_naushad97 {
             dataStreams.forEach(line -> {
                 // Expected data format => Monterrey;34.0
                 String[] parts = line.split(REGEX_LINE_SPLIT);
-                // String name = parts[0].codePoints().mapToObj(Character::toString).toString();
                 concurrentStations.computeIfAbsent(parts[0],
                         k -> getDoubleSummaryStatistics()).accept(Double.parseDouble(parts[1]));
             });
@@ -74,7 +73,6 @@ public class CalculateAverage_naushad97 {
             // should only get called when printing
             public String toString() {
                 return String.format("%.1f/%.1f/%.1f", getMin(), getAverage(), getMax());
-                // return round(getMin()) + "/" + round(getAverage()) + "/" + round(getMax());
             }
         };
     }
@@ -83,7 +81,6 @@ public class CalculateAverage_naushad97 {
     static void parallelProcessing() throws IOException {
         try (FileChannel fileChannel = FileChannel.open(Path.of(FILE))) {
             long fileSize = fileChannel.size();
-            System.out.println("File-size=" + fileSize);
         }
     }
 }
