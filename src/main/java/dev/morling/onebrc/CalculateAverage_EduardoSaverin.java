@@ -26,6 +26,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static java.nio.file.StandardOpenOption.READ;
 
@@ -35,7 +37,8 @@ public class CalculateAverage_EduardoSaverin {
     private static final Unsafe UNSAFE = initUnsafe();
     private static final int FNV_32_OFFSET = 0x811c9dc5;
     private static final int FNV_32_PRIME = 0x01000193;
-    private static final Map<String, ResultRow> resultRowMap = new ConcurrentHashMap<>();
+    private static final Map<String, ResultRow> resultRowMap = new HashMap<>();
+    private static final Lock lock = new ReentrantLock();
 
     private static Unsafe initUnsafe() {
         try {
@@ -55,12 +58,12 @@ public class CalculateAverage_EduardoSaverin {
     }
 
     private static final class ResultRow {
-        private int min;
-        private int max;
-        private long sum;
+        private double min;
+        private double max;
+        private double sum;
         private int count;
 
-        private ResultRow(int v) {
+        private ResultRow(double v) {
             this.min = v;
             this.max = v;
             this.sum = v;
@@ -68,7 +71,7 @@ public class CalculateAverage_EduardoSaverin {
         }
 
         public String toString() {
-            return round(min) + "/" + round((double) (sum) / count) + "/" + round(max);
+            return round(min) + "/" + round(sum / count) + "/" + round(max);
         }
 
         private double round(double value) {
@@ -144,6 +147,13 @@ public class CalculateAverage_EduardoSaverin {
             final int baseOffset = Unsafe.ARRAY_BYTE_BASE_OFFSET;
 
             short i = 0;
+            // Double
+            for (; i < (length & -8); i += 8) {
+                if (UNSAFE.getDouble(a, i + baseOffset) != UNSAFE.getDouble(b, i + baseOffset)) {
+                    return false;
+                }
+            }
+
             // Long
             for (; i < (length & -8); i += 8) {
                 if (UNSAFE.getLong(a, i + baseOffset) != UNSAFE.getLong(b, i + baseOffset)) {
@@ -266,6 +276,7 @@ public class CalculateAverage_EduardoSaverin {
                 hash = FNV_32_OFFSET;
             }
             List<MapEntry> all = results.getAll();
+            lock.lock();
             try {
                 for (MapEntry me : all) {
                     ResultRow rr;
@@ -283,6 +294,9 @@ public class CalculateAverage_EduardoSaverin {
             }
             catch (Exception e) {
                 e.printStackTrace();
+            }
+            finally {
+                lock.unlock();
             }
         }
     }
