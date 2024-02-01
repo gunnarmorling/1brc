@@ -226,12 +226,18 @@ public final class CalculateAverage_chrisbellew {
         private final long numbersAddress;
 
         /**
+         * The main memory address at the beginning of the name length table slots.
+         */
+        private final long lengthsAddress;
+
+        /**
          * The SIMD vectors associated with each slot in the hash table. The
          * content of a given slot in a hash table is a lookup into this array.
          * The intent of having this array as an extra lookup is to allow N
          * vectors per slot while having fixed size slots.
          */
         private ByteVector[] vectors = new ByteVector[200000];
+        private String[] cityNames = new String[NUM_SLOTS];
 
         /**
          * The next available index in the vectors array.
@@ -261,6 +267,7 @@ public final class CalculateAverage_chrisbellew {
                 unsafe.putShort(slotsAddress + i * 2, (short) 0);
             }
             numbersAddress = unsafe.allocateMemory(NUM_SLOTS * 16);
+            lengthsAddress = unsafe.allocateMemory(NUM_SLOTS);
         }
 
         public final void run() {
@@ -479,9 +486,22 @@ public final class CalculateAverage_chrisbellew {
              */
             var vectorOffset = unsafe.getShort(slotsAddress + slotIndex * 2);
             while (vectorOffset != 0) {
-                if (slotEquals(buffer, nameStart, vectorOffset, numVectors, MASKS[remainder], slotIndex)) {
-                    updateSlot(slotIndex, measurement);
-                    break;
+
+                /**
+                 * Check the set of vectors in the slot match the city name
+                 */
+                if (slotEquals(buffer, nameStart, vectorOffset, numVectors, remainder, slotIndex)) {
+
+                    /**
+                     * Check the length of the slot name and city name match. This
+                     * check is needed because the vector equality check can give
+                     * false positives if one city name starts with another.
+                     */
+                    byte slotNameLength = unsafe.getByte(lengthsAddress + slotIndex);
+                    if (slotNameLength == nameLength) {
+                        updateSlot(slotIndex, measurement);
+                        break;
+                    }
                 }
 
                 /**
@@ -497,7 +517,19 @@ public final class CalculateAverage_chrisbellew {
              * city name and measurement.
              */
             if (vectorOffset == 0) {
+                /**
+                 * Record where the city name length is recorded for this slot.
+                 */
+                unsafe.putByte(lengthsAddress + slotIndex, (byte) nameLength);
+
+                /**
+                 * Record where the start of the set of vectors are recorded for
+                 */
                 unsafe.putShort(slotsAddress + slotIndex * 2, nextVectorIndex);
+
+                /**
+                 * Records the vectors for the city name.
+                 */
                 for (int v = 0; v < numVectors; v++) {
                     vectors[nextVectorIndex] = ByteVector.fromArray(SPECIES, buffer, nameStart + v * SPECIES.length());
                     nextVectorIndex++;
@@ -505,12 +537,16 @@ public final class CalculateAverage_chrisbellew {
 
                 cityVectorLookup.put(new String(buffer, nameStart, nameLength), slotIndex);
 
-                // Min, max, count, sum
+                /**
+                 * Min, max, count, sum
+                 */
                 var numbersIndex = getNumbersIndex(slotIndex);
                 unsafe.putInt(numbersIndex, measurement);
                 unsafe.putInt(numbersIndex + 4, measurement);
                 unsafe.putInt(numbersIndex + 8, 1);
                 unsafe.putInt(numbersIndex + 12, measurement);
+
+                cityNames[slotIndex] = new String(buffer, nameStart, nameLength);
             }
         }
 
@@ -587,13 +623,21 @@ public final class CalculateAverage_chrisbellew {
          * length, so the last vector in the slot will be a partial vector. The
          * masks are used to ignore the unused bytes in the last vector.
          */
-        private final boolean slotEquals(byte[] buffer, int nameStart, int vectorOffset, int numVectors, VectorMask<Byte> lastVectorMask, int slotIndex) {
+        private final boolean slotEquals(byte[] buffer, int nameStart, int vectorOffset, int numVectors, int remainder, int slotIndex) {
             for (int v = 0; v < numVectors; v++) {
                 var nameVector = ByteVector.fromArray(SPECIES, buffer, nameStart + v * SPECIES.length());
                 var slotVector = vectors[vectorOffset + v];
                 if (v == numVectors - 1) {
-                    if (!slotVector.compare(VectorOperators.EQ, nameVector, lastVectorMask).equals(lastVectorMask)) {
-                        return false;
+                    if (remainder == 0) {
+                        if (!slotVector.eq(nameVector).allTrue()) {
+                            return false;
+                        }
+                    }
+                    else {
+                        var mask = MASKS[remainder - 1];
+                        if (!slotVector.compare(VectorOperators.EQ, nameVector, mask).equals(mask)) {
+                            return false;
+                        }
                     }
                     break;
                 }
@@ -644,14 +688,14 @@ public final class CalculateAverage_chrisbellew {
          * the last vector of the source line and a given slot in the hash table.
          */
         private static final VectorMask<Byte>[] generateMasks(VectorSpecies<Byte> species) {
-            VectorMask<Byte>[] masks = new VectorMask[species.length() + 1];
-            for (int i = 0; i < species.length() + 1; i++) {
-                boolean[] maskBooleans = new boolean[species.length()];
-                for (int j = 0; j < species.length(); j++) {
-                    maskBooleans[j] = j < i;
-                }
-                masks[i] = VectorMask.fromArray(species, maskBooleans, 0);
-            }
+            VectorMask<Byte>[] masks = new VectorMask[species.length() - 1];
+            masks[0] = VectorMask.fromArray(species, new boolean[]{ true, false, false, false, false, false, false, false }, 0);
+            masks[1] = VectorMask.fromArray(species, new boolean[]{ true, true, false, false, false, false, false, false }, 0);
+            masks[2] = VectorMask.fromArray(species, new boolean[]{ true, true, true, false, false, false, false, false }, 0);
+            masks[3] = VectorMask.fromArray(species, new boolean[]{ true, true, true, true, false, false, false, false }, 0);
+            masks[4] = VectorMask.fromArray(species, new boolean[]{ true, true, true, true, true, false, false, false }, 0);
+            masks[5] = VectorMask.fromArray(species, new boolean[]{ true, true, true, true, true, true, false, false }, 0);
+            masks[6] = VectorMask.fromArray(species, new boolean[]{ true, true, true, true, true, true, true, false }, 0);
             return masks;
         }
 
