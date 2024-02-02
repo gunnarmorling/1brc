@@ -1,3 +1,4 @@
+giovannicuccu;Giovanni Cuccu
 Ujjwalbharti;Ujjwal Bharti
 abfrmblr;Abhilash
 ags313;ags
@@ -50,3 +51,7 @@ yehwankim23;김예환 Ye-Hwan Kim (Sam)
 hundredwatt;Jason Nochlin
 gnmathur;Gaurav Mathur
 vemana;Subrahmanyam
+jincongho;Jin Cong Ho
+yonatang;Yonatan Graber
+adriacabeza;Adrià Cabeza
+AlexanderYastrebov;Alexander Yastrebov

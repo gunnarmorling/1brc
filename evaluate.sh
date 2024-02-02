@@ -19,7 +19,7 @@ set -eo pipefail
 
 if [ -z "$1" ]
   then
-    echo "Usage: evaluate2.sh <fork name> (<fork name 2> ...)"
+    echo "Usage: evaluate.sh <fork name> (<fork name 2> ...)"
     echo " for each fork, there must be a 'calculate_average_<fork name>.sh' script and an optional 'prepare_<fork name>.sh'."
     exit 1
 fi
@@ -34,8 +34,9 @@ BOLD_YELLOW='\033[1;33m'
 RESET='\033[0m' # No Color
 
 MEASUREMENTS_FILE="measurements_1B.txt"
-RUNS=5
+RUNS=10
 DEFAULT_JAVA_VERSION="21.0.1-open"
+: "${BUILD_JAVA_VERSION:=21.0.1-open}"
 RUN_TIME_LIMIT=300 # seconds
 
 TIMEOUT=""
@@ -115,6 +116,7 @@ if [ -f "/sys/devices/system/cpu/cpufreq/boost" ]; then
   fi
 fi
 
+print_and_execute sdk use java $BUILD_JAVA_VERSION
 print_and_execute java --version
 print_and_execute ./mvnw --quiet clean verify
 
@@ -267,6 +269,12 @@ for fork in "$@"; do
     if grep -F "native-image" -q ./prepare_$fork.sh ; then
       notes="GraalVM native binary"
     fi
+  fi
+
+  # check if Java source file uses Unsafe
+  if grep -F "theUnsafe" -q ./src/main/java*/dev/morling/onebrc/CalculateAverage_$fork.java ; then
+    # if notes is not empty, append a comma and space before the unsafe note
+    notes="${notes:+$notes, }uses Unsafe"
   fi
 
   echo -n "$trimmed_mean;" >> $leaderboard_temp_file # for sorting

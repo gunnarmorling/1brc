@@ -1,8 +1,16 @@
+**NOTE:** The challenge has been closed for new submissions. No new pull requests for adding submissions are accepted at this time.
+Any pending pull requests will be reviewed over the next few days, as described [here](https://github.com/gunnarmorling/1brc/discussions/687).
+The final leader board will be published by Feb 5.
+
 #### Check List:
+
+- [ ] You have run `./mvnw verify` and the project builds successfully
 - [ ] Tests pass (`./test.sh <username>` shows no differences between expected and actual outputs)
 - [ ] All formatting changes by the build are committed
 - [ ] Your launch script is named `calculate_average_<username>.sh` (make sure to match casing of your GH user name) and is executable
 - [ ] Output matches that of `calculate_average_baseline.sh`
+- [ ] For new entries, or after substantial changes: When implementing custom hash structures, please point to where you deal with hash collisions (line number)
+
 * Execution time:
 * Execution time of reference implementation:
 

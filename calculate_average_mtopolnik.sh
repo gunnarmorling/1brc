@@ -15,7 +15,11 @@
 #  limitations under the License.
 #
 
-# -XX:+UnlockDiagnosticVMOptions -XX:PrintAssemblyOptions=intel -XX:CompileCommand=print,*.CalculateAverage_mtopolnik::recordMeasurementAndAdvanceCursor"
-# -XX:InlineSmallCode=10000 -XX:-TieredCompilation -XX:CICompilerCount=2 -XX:CompileThreshold=1000\
-java --enable-preview \
-  --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_mtopolnik
+if [ -f target/CalculateAverage_mtopolnik_image ]; then
+    echo "Using native image 'target/CalculateAverage_mtopolnik_image'" 1>&2
+    target/CalculateAverage_mtopolnik_image
+else
+    JAVA_OPTS="--enable-preview"
+    echo "Native image not found, using JVM mode." 1>&2
+    java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_mtopolnik
+fi

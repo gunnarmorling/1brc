@@ -15,12 +15,10 @@
  */
 package dev.morling.onebrc;
 
-import sun.misc.Unsafe;
-
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
-import java.lang.reflect.Field;
+import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,50 +26,47 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 
-import static dev.morling.onebrc.CalculateAverage_iziamos.ByteBackedResultSet.mask;
 import static java.nio.channels.FileChannel.MapMode.READ_ONLY;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.nio.file.StandardOpenOption.READ;
 
 public class CalculateAverage_iziamos {
-    private static final Unsafe UNSAFE;
+    private static final sun.misc.Unsafe UNSAFE = initUnsafe();
+
+    private static sun.misc.Unsafe initUnsafe() {
+        try {
+            java.lang.reflect.Field theUnsafe = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+            theUnsafe.setAccessible(true);
+            return (sun.misc.Unsafe) theUnsafe.get(sun.misc.Unsafe.class);
+        }
+        catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     private static final String FILE = "./measurements.txt";
     private static final Arena GLOBAL_ARENA = Arena.global();
-    private final static MemorySegment WHOLE_FILE_SEGMENT;
-    private final static long FILE_SIZE;
-    private final static long BASE_POINTER;
-    private final static long END_POINTER;
-
-    static {
-        try {
-            final Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
-            theUnsafe.setAccessible(true);
-            UNSAFE = (Unsafe) theUnsafe.get(Unsafe.class);
-
-            final var fileChannel = (FileChannel) Files.newByteChannel(Path.of(FILE), READ);
-            WHOLE_FILE_SEGMENT = fileChannel.map(READ_ONLY, 0, fileChannel.size(), GLOBAL_ARENA);
-
-        }
-        catch (final NoSuchFieldException | IllegalAccessException | IOException e) {
-            throw new RuntimeException(e);
-        }
-
-        FILE_SIZE = WHOLE_FILE_SEGMENT.byteSize();
-        BASE_POINTER = WHOLE_FILE_SEGMENT.address();
-        END_POINTER = BASE_POINTER + FILE_SIZE;
-    }
-    private static final long CHUNK_SIZE = 64 * 1024 * 1024;
-    // private static final long CHUNK_SIZE = Long.MAX_VALUE;
 
     public static void main(String[] args) throws Exception {
-        // Thread.sleep(10_000);
+        // final long chunkSize = Long.MAX_VALUE;
+        final long chunkSize = 64 * 1024 * 1024;
 
-        final long threadCount = 1 + FILE_SIZE / CHUNK_SIZE;
+        final FileChannel fileChannel;
+        try {
+            fileChannel = (FileChannel) Files.newByteChannel(Path.of(FILE), READ);
+        }
+        catch (final IOException e) {
+            throw new UncheckedIOException(e);
+        }
+
+        final var seg = fileChannel.map(READ_ONLY, 0, fileChannel.size(), GLOBAL_ARENA);
+
+        final long fileSize = seg.byteSize();
+        final long threadCount = 1 + fileSize / chunkSize;
 
         final var processingFutures = new CompletableFuture[(int) threadCount];
         for (int i = 0; i < threadCount; ++i) {
-            processingFutures[i] = processSegment(i, CHUNK_SIZE);
+            processingFutures[i] = processSegment(seg.address(), seg.address() + fileSize, i, chunkSize);
         }
 
         final long aggregate = (long) processingFutures[0].get();
@@ -101,15 +96,18 @@ public class CalculateAverage_iziamos {
         }
     }
 
-    private static CompletableFuture<Long> processSegment(final long chunkNumber, final long chunkSize) {
+    private static CompletableFuture<Long> processSegment(final long basePointer,
+                                                          final long endPointer,
+                                                          final long chunkNumber,
+                                                          final long chunkSize) {
         final var ret = new CompletableFuture<Long>();
 
         Thread.ofVirtual().start(() -> {
             final long relativeStart = chunkNumber * chunkSize;
-            final long absoluteStart = BASE_POINTER + relativeStart;
+            final long absoluteStart = basePointer + relativeStart;
 
-            final long absoluteEnd = computeAbsoluteEndWithSlack(absoluteStart + chunkSize);
-            final long startOffsetAfterSkipping = skipIncomplete(WHOLE_FILE_SEGMENT.address(), absoluteStart);
+            final long absoluteEnd = computeAbsoluteEndWithSlack(absoluteStart + chunkSize, endPointer);
+            final long startOffsetAfterSkipping = skipIncomplete(basePointer, absoluteStart);
 
             final long result = processEvents(startOffsetAfterSkipping, absoluteEnd);
             ret.complete(result);
@@ -118,8 +116,8 @@ public class CalculateAverage_iziamos {
         return ret;
     }
 
-    private static long computeAbsoluteEndWithSlack(final long chunk) {
-        return Long.compareUnsigned(END_POINTER, chunk) > 0 ? chunk : END_POINTER;
+    private static long computeAbsoluteEndWithSlack(final long chunk, final long endPointer) {
+        return Long.compareUnsigned(endPointer, chunk) > 0 ? chunk : endPointer;
     }
 
     private static long skipIncomplete(final long basePointer, final long start) {
@@ -141,7 +139,7 @@ public class CalculateAverage_iziamos {
     }
 
     private static void scalarLoop(final long start, final long limit, final long result) {
-        final var cursor = new ScalarLoopCursor(start, limit);
+        final LoopCursor cursor = new LoopCursor(start, limit);
         while (cursor.hasMore()) {
             final long address = cursor.getCurrentAddress();
             final int length = cursor.getStringLength();
@@ -151,13 +149,13 @@ public class CalculateAverage_iziamos {
         }
     }
 
-    public static class ScalarLoopCursor {
+    public static class LoopCursor {
         private long pointer;
         private final long limit;
 
         private int hash = 0;
 
-        public ScalarLoopCursor(final long pointer, final long limit) {
+        public LoopCursor(final long pointer, final long limit) {
             this.pointer = pointer;
             this.limit = limit;
         }
@@ -172,7 +170,7 @@ public class CalculateAverage_iziamos {
 
             byte b = UNSAFE.getByte(pointer);
             for (; b != ';'; ++strLen, b = UNSAFE.getByte(pointer + strLen)) {
-                hash += b << strLen;
+                hash = 31 * hash + b;
             }
             pointer += strLen + 1;
 
@@ -180,41 +178,35 @@ public class CalculateAverage_iziamos {
         }
 
         public int getHash() {
-            return mask(hash);
+            return hash;
         }
 
         public int getCurrentValue() {
-            final byte first = UNSAFE.getByte(pointer++);
-            final byte second = UNSAFE.getByte(pointer++);
-            final byte third = UNSAFE.getByte(pointer++);
-            final byte fourth = UNSAFE.getByte(pointer++);
-            final byte fifth = UNSAFE.getByte(pointer++);
+            return getCurrentValueMeryKitty();
+        }
 
-            int value;
-            if (second == '.') {
-                // D.D\n
-                value = appendDigit(digitCharToInt(first), third);
-                pointer--;
-                return value;
+        /**
+         * No point rewriting what would essentially be the same code <3.
+         */
+        public int getCurrentValueMeryKitty() {
+            long word = UNSAFE.getLong(pointer);
+            if (ByteOrder.nativeOrder() == ByteOrder.BIG_ENDIAN) {
+                word = Long.reverseBytes(word);
             }
-            else if (fourth == '.') {
-                // -DD.D\n
-                value = digitCharToInt(second);
-                value = appendDigit(value, third);
-                value = -appendDigit(value, fifth);
-                pointer++;
-                return value;
-            }
-            else if (first == '-') {
-                // -D.D\n
-                return -appendDigit(digitCharToInt(second), fourth);
-            }
-            else {
-                // DD.D\n
-                value = digitCharToInt(first);
-                value = appendDigit(value, second);
-                return appendDigit(value, fourth);
-            }
+
+            int decimalSepPos = Long.numberOfTrailingZeros(~word & 0x10101000);
+            int shift = 28 - decimalSepPos;
+
+            long signed = (~word << 59) >> 63;
+            long designMask = ~(signed & 0xFF);
+
+            long digits = ((word & designMask) << shift) & 0x0F000F0F00L;
+
+            long absValue = ((digits * 0x640a0001) >>> 32) & 0x3FF;
+            int increment = (decimalSepPos >>> 3) + 3;
+
+            pointer += increment;
+            return (int) ((absValue ^ signed) - signed);
         }
 
         public boolean hasMore() {
@@ -222,22 +214,12 @@ public class CalculateAverage_iziamos {
         }
     }
 
-    private static int appendDigit(int value, final byte b) {
-        value *= 10;
-        value += digitCharToInt(b);
-        return value;
-    }
-
-    private static int digitCharToInt(final byte b) {
-        return b - '0';
-    }
-
     public interface ResultConsumer {
         void consume(final String name, final int min, final int max, final long sum, final long count);
     }
 
     static class ByteBackedResultSet {
-        private static final int MAP_SIZE = 16384;
+        private static final int MAP_SIZE = 16384 * 4;
         private static final int MASK = MAP_SIZE - 1;
         private static final long STRUCT_SIZE = 64;
         private static final long BYTE_SIZE = MAP_SIZE * STRUCT_SIZE;
@@ -338,7 +320,7 @@ public class CalculateAverage_iziamos {
                                     final long otherStringAddress,
                                     final int otherStringLength) {
 
-            for (int slot = hash;; slot = mask(++slot)) {
+            for (int slot = mask(hash);; slot = mask(++slot)) {
                 final long structBase = baseAddress + ((long) slot * STRUCT_SIZE);
                 final long nameStart = UNSAFE.getLong(structBase);
                 if (nameStart == 0) {
@@ -354,22 +336,25 @@ public class CalculateAverage_iziamos {
             }
         }
 
-        private static boolean stringEquals(final long thisNameAddress, final int thisStringLength, final long otherNameAddress, final long otherNameLength) {
+        private static boolean stringEquals(final long thisNameAddress,
+                                            final int thisStringLength,
+                                            final long otherNameAddress,
+                                            final long otherNameLength) {
             if (thisStringLength != otherNameLength) {
                 return false;
             }
 
             int i = 0;
-            for (; i < thisStringLength - 3; i += 4) {
-                if (UNSAFE.getInt(thisNameAddress + i) != UNSAFE.getInt(otherNameAddress + i)) {
+            for (; i < thisStringLength - 7; i += 8) {
+                if (UNSAFE.getLong(thisNameAddress + i) != UNSAFE.getLong(otherNameAddress + i)) {
                     return false;
                 }
             }
 
-            final int remainingToCheck = thisStringLength - i;
-            final int finalBytesMask = ((1 << remainingToCheck * 8)) - 1;
-            final int thisLastWord = UNSAFE.getInt(thisNameAddress + i);
-            final int otherLastWord = UNSAFE.getInt(otherNameAddress + i);
+            final long remainingToCheck = thisStringLength - i;
+            final long finalBytesMask = ((1L << remainingToCheck * 8)) - 1;
+            final long thisLastWord = UNSAFE.getLong(thisNameAddress + i);
+            final long otherLastWord = UNSAFE.getLong(otherNameAddress + i);
 
             return 0 == ((thisLastWord ^ otherLastWord) & finalBytesMask);
         }
