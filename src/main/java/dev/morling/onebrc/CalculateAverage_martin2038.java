@@ -34,23 +34,6 @@ public class CalculateAverage_martin2038 {
 
     private static final String FILE = "./measurements.txt";
 
-    // private static record Measurement(String station, double value) {
-    // private Measurement(String[] parts) {
-    // this(parts[0], Double.parseDouble(parts[1]));
-    // }
-    // }
-    //
-    // private static record ResultRow(double min, double mean, double max) {
-    //
-    // public String toString() {
-    // return round(min) + "/" + round(mean) + "/" + round(max);
-    // }
-    //
-    // private double round(double value) {
-    // return Math.round(value * 10.0) / 10.0;
-    // }
-    // };
-
     private static class MeasurementAggregator {
         private int min = Integer.MAX_VALUE;
         private int max = Integer.MIN_VALUE;
@@ -86,7 +69,6 @@ public class CalculateAverage_martin2038 {
 
         var file = new RandomAccessFile(FILE, "r");
         final int maxNameLength = 110;
-        // .parallel().
         var fc = file.getChannel();
         split(file).stream().parallel().map(ck -> {
             // StrFastHashKey 比string快500ms
@@ -157,9 +139,12 @@ public class CalculateAverage_martin2038 {
     }
 
     static List<FileChunk> split(RandomAccessFile file) throws IOException {
-        var threadNum = Runtime.getRuntime().availableProcessors();
         long total = file.length();
+        var threadNum = Math.max((int) (total / Integer.MAX_VALUE + 1), Runtime.getRuntime().availableProcessors());
         long avgChunkSize = total / threadNum;
+        // System.out.println(avgChunkSize +" \t avgChunkSize : INT/MAX \t"+Integer.MAX_VALUE);
+        // Exception in thread "main" java.lang.IllegalArgumentException: Size exceeds Integer.MAX_VALUE
+        // at java.base/sun.nio.ch.FileChannelImpl.map(FileChannelImpl.java:1183)
         long lastStart = 0;
         var list = new ArrayList<FileChunk>(threadNum);
         for (var i = 0; i < threadNum - 1; i++) {
@@ -258,7 +243,9 @@ public class CalculateAverage_martin2038 {
         StrFastHashKey(byte[] buf, int size) {
             name = new byte[size];
             System.arraycopy(buf, 0, name, 0, size);
-            hash = calculateHash(name, 0, size - 1);
+            // hash = calculateHash(name, 0, size - 1);
+            // FNV1a save 100+ms than calculateHash
+            hash = hashFNV1a(name, size);
         }
 
         @Override
@@ -326,4 +313,25 @@ public class CalculateAverage_martin2038 {
         return (int) hash ^ (int) (hash >>> 32);
     }
 
+    private static final int FNV1_32_INIT = 0x811c9dc5;
+    private static final int FNV1_PRIME_32 = 16777619;
+
+    /**
+     * https://github.com/prasanthj/hasher/blob/master/src/main/java/hasher/FNV1a.java
+     *
+     * FNV1a 32 bit variant.
+     *
+     * @param data   - input byte array
+     * @param length - length of array
+     * @return - hashcode
+     */
+    public static int hashFNV1a(byte[] data, int length) {
+        int hash = FNV1_32_INIT;
+        for (int i = 0; i < length; i++) {
+            hash ^= (data[i] & 0xff);
+            hash *= FNV1_PRIME_32;
+        }
+
+        return hash;
+    }
 }
