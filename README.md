@@ -242,7 +242,7 @@ For the 1BRC challenge, only the results in the previous section are of importan
 #### 32 Cores / 64 Threads
 
 For officially evaluating entries into the challenge, each contender is run on eight cores of the evaluation machine (AMD EPYC™ 7502P).
-Here are the results from running the top 50 entries (as of commit [e1fb378a](https://github.com/gunnarmorling/1brc/commit/e1fb378acce53d8c3035ee4813ae377aaf51aa3c), Feb 1) on all 32 cores / 64 threads (i.e. SMT is enabled) of the machine:
+Here are the results from running the top 50 entries (as of commit [e1fb378a](https://github.com/gunnarmorling/1brc/commit/e1fb378acce53d8c3035ee4813ae377aaf51aa3c), Feb 2) on all 32 cores / 64 threads (i.e. SMT is enabled) of the machine:
 
 | # | Result (m:s.ms) | Implementation     | JDK | Submitter     | Notes     |
 |---|-----------------|--------------------|-----|---------------|-----------|
@@ -300,7 +300,7 @@ Here are the results from running the top 50 entries (as of commit [e1fb378a](ht
 #### 10K Key Set
 
 The 1BRC challenge data set contains 413 distinct weather stations, whereas the rules allow for 10,000 different station names to occur.
-Here are the results from running the top 40 entries (as of commit [e1fb378a](https://github.com/gunnarmorling/1brc/commit/e1fb378acce53d8c3035ee4813ae377aaf51aa3c), Feb 1) against 1,000,000,000 measurement values across 10K stations (created via _./create_measurements3.sh 1000000000_),
+Here are the results from running the top 40 entries (as of commit [e1fb378a](https://github.com/gunnarmorling/1brc/commit/e1fb378acce53d8c3035ee4813ae377aaf51aa3c), Feb 2) against 1,000,000,000 measurement values across 10K stations (created via _./create_measurements3.sh 1000000000_),
 using eight cores on the evaluation machine:
 
 | # | Result (m:s.ms) | Implementation     | JDK | Submitter     | Notes     |
