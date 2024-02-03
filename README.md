@@ -1,13 +1,9 @@
 # 1️⃣🐝🏎️ The One Billion Row Challenge
 
+_Status Feb 3: All entries have been evaluated and I am in the process of finalizing the leaderboards. The final leader board will be published by Monday Feb 5._
+
 _Status Feb 1: The challenge has been closed for new submissions. No new pull requests for adding submissions are accepted at this time.
-Pending PRs will be evaluated over the next few days. Please don't push any changes to pending PRs after today, unless being asked to do so.
-This will be the case if I spot an issue during evaluation (failing tests, etc.). In this case, I will comment on the PR, and you are allowed to push one update.
-Only changes strictly needed to fix the bug at hand may be pushed at this point.
-No force-pushes are allowed, so as to make sure I can see which changes have been made.
-I will re-evaluate the entry, and if there are still remaining issues, you'll get one more and last opportunity to update the PR.
-If it still is not valid at this point, it will be closed.
-The final leader board will be published by Monday Feb 5._
+Pending PRs will be evaluated over the next few days._
 
 _Status Jan 31: The challenge will close today at midnight UTC._
 
