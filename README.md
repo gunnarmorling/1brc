@@ -1,6 +1,8 @@
 # 1️⃣🐝🏎️ The One Billion Row Challenge
 
-_Status Feb 3: All entries have been evaluated and I am in the process of finalizing the leaderboards. The final leader board will be published by Monday Feb 5._
+_Status Feb 4: The final leaderboards [have been published](https://www.morling.dev/blog/1brc-results-are-in/). Congrats to all the winners, and a big thank you to everyone participating in this challenge as well as to everyone helping to organize it!_
+
+_Status Feb 3: All entries have been evaluated and I am in the process of finalizing the leaderboards._
 
 _Status Feb 1: The challenge has been closed for new submissions. No new pull requests for adding submissions are accepted at this time.
 Pending PRs will be evaluated over the next few days._
@@ -526,6 +528,7 @@ A list of external resources such as blog posts and videos, discussing 1BRC and 
 * [The 1 Billion row challenge with Singlestore](https://medium.com/@testily/the-1-billion-row-challenge-with-singlestore-224ce97e451f), by Anna Semjen (blog post)
 * [1BRC in .NET among fastest on Linux: My Optimization Journey](https://hotforknowledge.com/2024/01/13/1brc-in-dotnet-among-fastest-on-linux-my-optimization-journey/), by Victor Baybekov (blog post)
 * [One Billion Rows – Gerald’s Challenge](https://connor-mcdonald.com/2024/02/03/one-billion-rows-geralds-challenge/), by Connor McDonald (blog post)
+* [https://rmannibucau.metawerx.net/reading-a-file-insanely-fast-in-java.html](Reading a file insanely fast in Java), by Romain Manni-Bucau (blog post)
 
 ## License
 
