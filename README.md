@@ -528,7 +528,9 @@ A list of external resources such as blog posts and videos, discussing 1BRC and 
 * [The 1 Billion row challenge with Singlestore](https://medium.com/@testily/the-1-billion-row-challenge-with-singlestore-224ce97e451f), by Anna Semjen (blog post)
 * [1BRC in .NET among fastest on Linux: My Optimization Journey](https://hotforknowledge.com/2024/01/13/1brc-in-dotnet-among-fastest-on-linux-my-optimization-journey/), by Victor Baybekov (blog post)
 * [One Billion Rows – Gerald’s Challenge](https://connor-mcdonald.com/2024/02/03/one-billion-rows-geralds-challenge/), by Connor McDonald (blog post)
-* [https://rmannibucau.metawerx.net/reading-a-file-insanely-fast-in-java.html](Reading a file insanely fast in Java), by Romain Manni-Bucau (blog post)
+* [Reading a file insanely fast in Java](https://rmannibucau.metawerx.net/reading-a-file-insanely-fast-in-java.html), by Romain Manni-Bucau (blog post)
+* [#1BRC Timeline](https://tivrfoa.github.io/java/benchmark/performance/2024/02/05/1BRC-Timeline.html), by tivrfoa (blog post)
+* [1BRC - What a Journey](https://www.esolutions.tech/1brc-what-a-journey), by Marius Staicu (blog post)
 
 ## License
 
