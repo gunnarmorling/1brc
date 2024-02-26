@@ -107,21 +107,23 @@ def build_test_data(weather_station_names, num_rows_to_create):
     hottest_temp = 99.9
     station_names_10k_max = random.choices(weather_station_names, k=10_000)
     batch_size = 10000 # instead of writing line by line to file, process a batch of stations and put it to disk
-    progress_step = max(1, (num_rows_to_create // batch_size) // 100)
+    chunks = num_rows_to_create // batch_size
     print('Building test data...')
 
     try:
         with open("../../../data/measurements.txt", 'w') as file:
-            for s in range(0,num_rows_to_create // batch_size):
+            progress = 0
+            for chunk in range(chunks):
                 
                 batch = random.choices(station_names_10k_max, k=batch_size)
                 prepped_deviated_batch = '\n'.join([f"{station};{random.uniform(coldest_temp, hottest_temp):.1f}" for station in batch]) # :.1f should quicker than round on a large scale, because round utilizes mathematical operation
                 file.write(prepped_deviated_batch + '\n')
                 
                 # Update progress bar every 1%
-                if s % progress_step == 0 or s == num_rows_to_create - 1:
-                    sys.stdout.write('\r')
-                    sys.stdout.write("[%-50s] %d%%" % ('=' * int((s + 1) / num_rows_to_create * 50), (s + 1) / num_rows_to_create * 100))
+                if (chunk + 1) * 100 // chunks != progress:
+                    progress = (chunk + 1) * 100 // chunks
+                    bars = '=' * (progress // 2)
+                    sys.stdout.write(f"\r[{bars:<50}] {progress}%")
                     sys.stdout.flush()
         sys.stdout.write('\n')
     except Exception as e:
