@@ -15,7 +15,7 @@ class NaiveBillionRowChallenge
       city, temp = line.split(";")
       temp = temp.to_f
 
-      @results[city] ||= { min: nil, mean: nil, max: nil, sum: 0, count: 0 }
+      @results[city] ||= { min: nil, max: nil, sum: 0, count: 0 }
       data = @results[city]
 
       data[:min] = temp if data[:min].nil? || temp < data[:min]

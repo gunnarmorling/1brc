@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -22,24 +21,22 @@ func main() {
 	fmt.Println("Let's process a billion rows!")
 
 	cities := map[string]CityData{}
-	fmt.Println(cities)
 
-	file, err := os.Open(filename)
-	if err != nil {
-		log.Fatal(err)
-	}
+	file, _ := os.Open(filename)
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
 
+	var line string
+	var parts []string
+	var city string
+	var temp float64
+
 	for scanner.Scan() {
-		line := scanner.Text()
-		parts := strings.Split(line, ";")
-		city := parts[0]
-		temp, err := strconv.ParseFloat(parts[1], 64)
-		if err != nil {
-			log.Fatal(err)
-		}
+		line = scanner.Text()
+		parts = strings.Split(line, ";")
+		city = parts[0]
+		temp, _ = strconv.ParseFloat(parts[1], 64)
 
 		data, present := cities[city]
 
@@ -63,9 +60,5 @@ func main() {
 	for city, data := range cities {
 		mean := data.sum / float64(data.count)
 		fmt.Printf("%s=%.1f/%.1f/%.1f\n", city, data.min, mean, data.max)
-	}
-
-	if err := scanner.Err(); err != nil {
-		log.Fatal(err)
 	}
 }
