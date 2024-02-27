@@ -6,7 +6,7 @@ class NaiveBillionRowChallenge
   end
 
   def initialize
-    @filename = "measurements.txt"
+    @filename = "measurements-100.txt"
     @results = {}
   end
 
@@ -25,7 +25,7 @@ class NaiveBillionRowChallenge
         data[:max] = temp if data[:max].nil? || temp > data[:max]
         data[:count] += 1
         data[:sum] += temp
-        data[:mean] = data[:sum] / data[:count]
+        data[:mean] = (data[:sum] / data[:count]).round(1)
       rescue
         # require 'pry'
         # binding.pry
