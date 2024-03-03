@@ -87,7 +87,7 @@ def estimate_file_size(weather_station_names, num_rows_to_create):
     total_name_bytes = sum(len(s.encode("utf-8")) for s in weather_station_names)
     avg_name_bytes = total_name_bytes / float(len(weather_station_names))
 
-    # avg_temp_bytes = sum(len(str(n / 10)) for n in range(-999, 1000)) / 1999
+    # avg_temp_bytes = sum(len(str(n / 10.0)) for n in range(-999, 1000)) / 1999
     avg_temp_bytes = 4.400200100050025
 
     # add 2 for separator and newline
