@@ -23,9 +23,13 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -35,11 +39,22 @@ public class CalculateAverage_adriacabeza {
 
     private static final Path FILE_PATH = Paths.get("./measurements.txt");
     public static final int CITY_NAME_MAX_CHARACTERS = 128;
+    private static final int N_PROCESSORS = Runtime.getRuntime().availableProcessors();
+    private static final int DJB2_INIT = 5381;
+    private static final Map<Integer, String> cityMap = new ConcurrentHashMap<>(10_000, 1, N_PROCESSORS);
 
     /**
      * Represents result containing a HashMap with city as key and ResultRow as value.
      */
     private static class Result {
+        public void addStation(int hash, int value) {
+            resultMap.put(hash, new StationData(value));
+        }
+
+        public StationData getData(int hash) {
+            return resultMap.get(hash);
+        }
+
         private static class StationData {
             private int min, sum, count, max;
 
@@ -63,26 +78,14 @@ public class CalculateAverage_adriacabeza {
 
         }
 
-        private final Map<String, StationData> resultMap;
+        private final Map<Integer, StationData> resultMap;
 
         public Result() {
-            this.resultMap = new HashMap<>();
+            this.resultMap = new HashMap<>(10_000, 1);
         }
 
-        public Map<String, StationData> getResultMap() {
+        public Map<Integer, StationData> getResultMap() {
             return resultMap;
-        }
-
-        public void addMeasurement(String city, int value) {
-            resultMap.compute(city, (_, resultRow) -> {
-                if (resultRow == null) {
-                    return new StationData(value);
-                }
-                else {
-                    resultRow.update(value);
-                    return resultRow;
-                }
-            });
         }
 
         public void merge(Result other) {
@@ -96,9 +99,9 @@ public class CalculateAverage_adriacabeza {
         }
 
         public String toString() {
-            return this.resultMap.entrySet().stream()
-                    .sorted(Map.Entry.comparingByKey())
-                    .map(entry -> "%s=%s".formatted(entry.getKey(), entry.getValue()))
+            return this.resultMap.entrySet().parallelStream()
+                    .map(entry -> "%s=%s".formatted(cityMap.get(entry.getKey()), entry.getValue()))
+                    .sorted(Comparator.comparing(s -> s.split("=")[0]))
                     .collect(Collectors.joining(", ", "{", "}"));
         }
     }
@@ -155,6 +158,21 @@ public class CalculateAverage_adriacabeza {
         }
     }
 
+    private static int readNumberFromBuffer(ByteBuffer buffer, int limit) {
+        var number = 0;
+        var sign = 1;
+        while (buffer.position() < limit) {
+            var numberByte = buffer.get();
+            if (numberByte == '-')
+                sign = -1;
+            else if (numberByte == '\n')
+                break;
+            else if (numberByte != '.')
+                number = number * 10 + (numberByte - '0');
+        }
+        return sign * number;
+    }
+
     /**
      * Calculates average measurements from the file.
      *
@@ -167,28 +185,31 @@ public class CalculateAverage_adriacabeza {
                     Result partialResult = new Result();
                     var limit = buffer.limit();
                     var field = new byte[CITY_NAME_MAX_CHARACTERS];
+                    Set<Integer> seenHashes = new HashSet<>(10_000, 1);
                     while (buffer.position() < limit) {
                         var fieldCurrentIndex = 0;
-                        field[fieldCurrentIndex++] = buffer.get();
+                        var fieldByte = buffer.get();
+                        field[fieldCurrentIndex++] = fieldByte;
+                        // implement djb2 hash: https://theartincode.stanis.me/008-djb2/
+                        int hash = DJB2_INIT;
                         while (buffer.position() < limit) {
-                            var fieldByte = buffer.get();
+                            // hash = hash * 33 + fieldByte
+                            hash = (((hash << 5) + hash) + fieldByte);
+                            fieldByte = buffer.get();
                             if (fieldByte == ';')
                                 break;
                             field[fieldCurrentIndex++] = fieldByte;
                         }
-                        var fieldStr = new String(field, 0, fieldCurrentIndex);
-                        var number = 0;
-                        var sign = 1;
-                        while (buffer.position() < limit) {
-                            var numberByte = buffer.get();
-                            if (numberByte == '-')
-                                sign = -1;
-                            else if (numberByte == '\n')
-                                break;
-                            else if (numberByte != '.')
-                                number = number * 10 + (numberByte - '0');
+
+                        var number = readNumberFromBuffer(buffer, limit);
+                        if (!seenHashes.contains(hash)) {
+                            seenHashes.add(hash);
+                            cityMap.put(hash, new String(field, 0, fieldCurrentIndex));
+                            partialResult.addStation(hash, number);
                         }
-                        partialResult.addMeasurement(fieldStr, sign * number);
+                        else {
+                            partialResult.getData(hash).update(number);
+                        }
                     }
                     return partialResult;
                 }).reduce(new Result(), (partialResult1, partialResult2) -> {

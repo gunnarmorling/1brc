@@ -84,22 +84,18 @@ def estimate_file_size(weather_station_names, num_rows_to_create):
     """
     Tries to estimate how large a file the test data will be
     """
-    max_string = float('-inf')
-    min_string = float('inf')
-    per_record_size = 0
-    record_size_unit = "bytes"
+    total_name_bytes = sum(len(s.encode("utf-8")) for s in weather_station_names)
+    avg_name_bytes = total_name_bytes / float(len(weather_station_names))
 
-    for station in weather_station_names:
-        if len(station) > max_string:
-            max_string = len(station)
-        if len(station) < min_string:
-            min_string = len(station)
-        per_record_size = ((max_string + min_string * 2) + len(",-123.4")) / 2
+    # avg_temp_bytes = sum(len(str(n / 10.0)) for n in range(-999, 1000)) / 1999
+    avg_temp_bytes = 4.400200100050025
 
-    total_file_size = num_rows_to_create * per_record_size
-    human_file_size = convert_bytes(total_file_size)
+    # add 2 for separator and newline
+    avg_line_length = avg_name_bytes + avg_temp_bytes + 2
 
-    return f"Estimated max file size is:  {human_file_size}.\nTrue size is probably much smaller (around half)."
+    human_file_size = convert_bytes(num_rows_to_create * avg_line_length)
+
+    return f"Estimated max file size is:  {human_file_size}."
 
 
 def build_test_data(weather_station_names, num_rows_to_create):
@@ -110,19 +106,24 @@ def build_test_data(weather_station_names, num_rows_to_create):
     coldest_temp = -99.9
     hottest_temp = 99.9
     station_names_10k_max = random.choices(weather_station_names, k=10_000)
-    progress_step = max(1, int(num_rows_to_create / 100))
+    batch_size = 10000 # instead of writing line by line to file, process a batch of stations and put it to disk
+    chunks = num_rows_to_create // batch_size
     print('Building test data...')
 
     try:
         with open("../../../data/measurements.txt", 'w') as file:
-            for s in range(0,num_rows_to_create):
-                random_station = random.choice(station_names_10k_max)
-                random_temp = round(random.uniform(coldest_temp, hottest_temp), 1)
-                file.write(f"{random_station};{random_temp}\n")
+            progress = 0
+            for chunk in range(chunks):
+                
+                batch = random.choices(station_names_10k_max, k=batch_size)
+                prepped_deviated_batch = '\n'.join([f"{station};{random.uniform(coldest_temp, hottest_temp):.1f}" for station in batch]) # :.1f should quicker than round on a large scale, because round utilizes mathematical operation
+                file.write(prepped_deviated_batch + '\n')
+                
                 # Update progress bar every 1%
-                if s % progress_step == 0 or s == num_rows_to_create - 1:
-                    sys.stdout.write('\r')
-                    sys.stdout.write("[%-50s] %d%%" % ('=' * int((s + 1) / num_rows_to_create * 50), (s + 1) / num_rows_to_create * 100))
+                if (chunk + 1) * 100 // chunks != progress:
+                    progress = (chunk + 1) * 100 // chunks
+                    bars = '=' * (progress // 2)
+                    sys.stdout.write(f"\r[{bars:<50}] {progress}%")
                     sys.stdout.flush()
         sys.stdout.write('\n')
     except Exception as e:

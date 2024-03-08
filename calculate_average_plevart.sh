@@ -17,6 +17,7 @@
 
 JAVA_OPTS="--enable-preview --add-modules=jdk.incubator.vector"
 JAVA_OPTS="$JAVA_OPTS -XX:-TieredCompilation"
+JAVA_OPTS="$JAVA_OPTS -XX:+UnlockExperimentalVMOptions -XX:+TrustFinalNonStaticFields"
 JAVA_OPTS="$JAVA_OPTS -XX:InlineSmallCode=15000 -XX:FreqInlineSize=400 -XX:MaxInlineSize=400"
 #JAVA_OPTS="$JAVA_OPTS -XX:+PrintCompilation -XX:+UnlockDiagnosticVMOptions -XX:+PrintInlining"
 java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_plevart $*

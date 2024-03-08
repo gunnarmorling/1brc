@@ -23,7 +23,10 @@ import java.lang.reflect.Field;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -31,11 +34,13 @@ import java.util.concurrent.atomic.AtomicReference;
 public class CalculateAverage_artsiomkorzun {
 
     private static final Path FILE = Path.of("./measurements.txt");
-    private static final long SEGMENT_SIZE = 32 * 1024 * 1024;
-    private static final long SEGMENT_OVERLAP = 1024;
+    private static final long SEGMENT_SIZE = 2 * 1024 * 1024;
     private static final long COMMA_PATTERN = 0x3B3B3B3B3B3B3B3BL;
+    private static final long LINE_PATTERN = 0x0A0A0A0A0A0A0A0AL;
     private static final long DOT_BITS = 0x10101000;
     private static final long MAGIC_MULTIPLIER = (100 * 0x1000000 + 10 * 0x10000 + 1);
+    private static final long[] WORD_MASK = { 0, 0, 0, 0, 0, 0, 0, 0, -1 };
+    private static final int[] LENGTH_MASK = { 0, 0, 0, 0, 0, 0, 0, 0, -1 };
 
     private static final Unsafe UNSAFE;
 
@@ -58,7 +63,45 @@ public class CalculateAverage_artsiomkorzun {
         // System.err.println("Time: " + (end - start));
         // }
 
+        if (isSpawn(args)) {
+            spawn();
+            return;
+        }
+
         execute();
+    }
+
+    private static boolean isSpawn(String[] args) {
+        for (String arg : args) {
+            if ("--worker".equals(arg)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static void spawn() throws Exception {
+        ProcessHandle.Info info = ProcessHandle.current().info();
+        ArrayList<String> commands = new ArrayList<>();
+        Optional<String> command = info.command();
+        Optional<String[]> arguments = info.arguments();
+
+        if (command.isPresent()) {
+            commands.add(command.get());
+        }
+
+        if (arguments.isPresent()) {
+            commands.addAll(Arrays.asList(arguments.get()));
+        }
+
+        commands.add("--worker");
+
+        new ProcessBuilder()
+                .command(commands)
+                .start()
+                .getInputStream()
+                .transferTo(System.out);
     }
 
     private static void execute() throws Exception {
@@ -82,8 +125,9 @@ public class CalculateAverage_artsiomkorzun {
             aggregators[i].join();
         }
 
-        Map<String, Aggregate> aggregates = result.get().aggregate();
+        Map<String, Aggregate> aggregates = result.get().build();
         System.out.println(text(aggregates));
+        System.out.close();
     }
 
     private static MemorySegment map(Path file) {
@@ -136,32 +180,27 @@ public class CalculateAverage_artsiomkorzun {
 
     private static class Aggregates {
 
-        private static final int ENTRIES = 64 * 1024;
-        private static final int SIZE = 128 * ENTRIES;
+        private static final long ENTRIES = 64 * 1024;
+        private static final long SIZE = 128 * ENTRIES;
+        private static final long MASK = (ENTRIES - 1) << 7;
 
         private final long pointer;
 
         public Aggregates() {
-            long address = UNSAFE.allocateMemory(SIZE + 8096);
+            long address = UNSAFE.allocateMemory(SIZE + 4096);
             pointer = (address + 4095) & (~4095);
             UNSAFE.setMemory(pointer, SIZE, (byte) 0);
         }
 
-        public long find(long word, int hash) {
-            long address = pointer + offset(hash);
-            long w = word(address + 24);
-            return (w == word) ? address : 0;
-        }
-
-        public long find(long word1, long word2, int hash) {
+        public long find(long word1, long word2, long hash) {
             long address = pointer + offset(hash);
             long w1 = word(address + 24);
             long w2 = word(address + 32);
             return (word1 == w1) && (word2 == w2) ? address : 0;
         }
 
-        public long put(long reference, long word, int length, int hash) {
-            for (int offset = offset(hash);; offset = next(offset)) {
+        public long put(long reference, long word, long length, long hash) {
+            for (long offset = offset(hash);; offset = next(offset)) {
                 long address = pointer + offset;
                 if (equal(reference, word, address + 24, length)) {
                     return address;
@@ -175,7 +214,7 @@ public class CalculateAverage_artsiomkorzun {
             }
         }
 
-        public static void update(long address, int value) {
+        public static void update(long address, long value) {
             long sum = UNSAFE.getLong(address + 8) + value;
             int cnt = UNSAFE.getInt(address + 16) + 1;
             short min = UNSAFE.getShort(address + 20);
@@ -194,7 +233,7 @@ public class CalculateAverage_artsiomkorzun {
         }
 
         public void merge(Aggregates rights) {
-            for (int rightOffset = 0; rightOffset < SIZE; rightOffset += 128) {
+            for (long rightOffset = 0; rightOffset < SIZE; rightOffset += 128) {
                 long rightAddress = rights.pointer + rightOffset;
                 int length = UNSAFE.getInt(rightAddress);
 
@@ -204,16 +243,10 @@ public class CalculateAverage_artsiomkorzun {
 
                 int hash = UNSAFE.getInt(rightAddress + 4);
 
-                for (int offset = offset(hash);; offset = next(offset)) {
+                for (long offset = offset(hash);; offset = next(offset)) {
                     long address = pointer + offset;
-                    int len = UNSAFE.getInt(address);
 
-                    if (len == 0) {
-                        UNSAFE.copyMemory(rightAddress, address, 24 + length);
-                        break;
-                    }
-
-                    if (len == length && equal(address + 24, rightAddress + 24, length)) {
+                    if (equal(address + 24, rightAddress + 24, length)) {
                         long sum = UNSAFE.getLong(address + 8) + UNSAFE.getLong(rightAddress + 8);
                         int cnt = UNSAFE.getInt(address + 16) + UNSAFE.getInt(rightAddress + 16);
                         short min = (short) Math.min(UNSAFE.getShort(address + 20), UNSAFE.getShort(rightAddress + 20));
@@ -225,20 +258,27 @@ public class CalculateAverage_artsiomkorzun {
                         UNSAFE.putShort(address + 22, max);
                         break;
                     }
+
+                    int len = UNSAFE.getInt(address);
+
+                    if (len == 0) {
+                        UNSAFE.copyMemory(rightAddress, address, length + 24);
+                        break;
+                    }
                 }
             }
         }
 
-        public Map<String, Aggregate> aggregate() {
+        public Map<String, Aggregate> build() {
             TreeMap<String, Aggregate> set = new TreeMap<>();
 
-            for (int offset = 0; offset < SIZE; offset += 128) {
+            for (long offset = 0; offset < SIZE; offset += 128) {
                 long address = pointer + offset;
                 int length = UNSAFE.getInt(address);
 
                 if (length != 0) {
-                    byte[] array = new byte[length];
-                    UNSAFE.copyMemory(null, address + 24, array, Unsafe.ARRAY_BYTE_BASE_OFFSET, length);
+                    byte[] array = new byte[length - 1];
+                    UNSAFE.copyMemory(null, address + 24, array, Unsafe.ARRAY_BYTE_BASE_OFFSET, array.length);
                     String key = new String(array);
 
                     long sum = UNSAFE.getLong(address + 8);
@@ -254,24 +294,24 @@ public class CalculateAverage_artsiomkorzun {
             return set;
         }
 
-        private static void alloc(long reference, int length, int hash, long address) {
-            UNSAFE.putInt(address, length);
-            UNSAFE.putInt(address + 4, hash);
+        private static void alloc(long reference, long length, long hash, long address) {
+            UNSAFE.putInt(address, (int) length);
+            UNSAFE.putInt(address + 4, (int) hash);
             UNSAFE.putShort(address + 20, Short.MAX_VALUE);
             UNSAFE.putShort(address + 22, Short.MIN_VALUE);
             UNSAFE.copyMemory(reference, address + 24, length);
         }
 
-        private static int offset(int hash) {
-            return ((hash) & (ENTRIES - 1)) << 7;
+        private static long offset(long hash) {
+            return hash & MASK;
         }
 
-        private static int next(int prev) {
+        private static long next(long prev) {
             return (prev + 128) & (SIZE - 1);
         }
 
-        private static boolean equal(long leftAddress, long leftWord, long rightAddress, int length) {
-            while (length >= 8) {
+        private static boolean equal(long leftAddress, long leftWord, long rightAddress, long length) {
+            while (length > 8) {
                 long left = UNSAFE.getLong(leftAddress);
                 long right = UNSAFE.getLong(rightAddress);
 
@@ -287,7 +327,7 @@ public class CalculateAverage_artsiomkorzun {
             return leftWord == word(rightAddress);
         }
 
-        private static boolean equal(long leftAddress, long rightAddress, int length) {
+        private static boolean equal(long leftAddress, long rightAddress, long length) {
             do {
                 long left = UNSAFE.getLong(leftAddress);
                 long right = UNSAFE.getLong(rightAddress);
@@ -329,15 +369,88 @@ public class CalculateAverage_artsiomkorzun {
 
             for (int segment; (segment = counter.getAndIncrement()) < segmentCount;) {
                 long position = SEGMENT_SIZE * segment;
-                long size = Math.min(SEGMENT_SIZE + SEGMENT_OVERLAP, fileSize - position);
-                long address = fileAddress + position;
-                long limit = address + Math.min(SEGMENT_SIZE, size - 1);
+                long size = Math.min(SEGMENT_SIZE + 1, fileSize - position);
+                long start = fileAddress + position;
+                long end = start + size;
 
                 if (segment > 0) {
-                    address = next(address);
+                    start = next(start);
                 }
 
-                aggregate(aggregates, address, limit);
+                long chunk = (end - start) / 3;
+                long left = next(start + chunk);
+                long right = next(start + chunk + chunk);
+
+                Chunk chunk1 = new Chunk(start, left);
+                Chunk chunk2 = new Chunk(left, right);
+                Chunk chunk3 = new Chunk(right, end);
+
+                while (chunk1.has() && chunk2.has() && chunk3.has()) {
+                    long word1 = word(chunk1.position);
+                    long word2 = word(chunk2.position);
+                    long word3 = word(chunk3.position);
+                    long word4 = word(chunk1.position + 8);
+                    long word5 = word(chunk2.position + 8);
+                    long word6 = word(chunk3.position + 8);
+
+                    long separator1 = separator(word1);
+                    long separator2 = separator(word2);
+                    long separator3 = separator(word3);
+                    long separator4 = separator(word4);
+                    long separator5 = separator(word5);
+                    long separator6 = separator(word6);
+
+                    long pointer1 = find(aggregates, chunk1, word1, word4, separator1, separator4);
+                    long pointer2 = find(aggregates, chunk2, word2, word5, separator2, separator5);
+                    long pointer3 = find(aggregates, chunk3, word3, word6, separator3, separator6);
+
+                    long value1 = value(chunk1);
+                    long value2 = value(chunk2);
+                    long value3 = value(chunk3);
+
+                    Aggregates.update(pointer1, value1);
+                    Aggregates.update(pointer2, value2);
+                    Aggregates.update(pointer3, value3);
+                }
+
+                while (chunk1.has()) {
+                    long word1 = word(chunk1.position);
+                    long word2 = word(chunk1.position + 8);
+
+                    long separator1 = separator(word1);
+                    long separator2 = separator(word2);
+
+                    long pointer = find(aggregates, chunk1, word1, word2, separator1, separator2);
+                    long value = value(chunk1);
+
+                    Aggregates.update(pointer, value);
+                }
+
+                while (chunk2.has()) {
+                    long word1 = word(chunk2.position);
+                    long word2 = word(chunk2.position + 8);
+
+                    long separator1 = separator(word1);
+                    long separator2 = separator(word2);
+
+                    long pointer = find(aggregates, chunk2, word1, word2, separator1, separator2);
+                    long value = value(chunk2);
+
+                    Aggregates.update(pointer, value);
+                }
+
+                while (chunk3.has()) {
+                    long word1 = word(chunk3.position);
+                    long word2 = word(chunk3.position + 8);
+
+                    long separator1 = separator(word1);
+                    long separator2 = separator(word2);
+
+                    long pointer = find(aggregates, chunk3, word1, word2, separator1, separator2);
+                    long value = value(chunk3);
+
+                    Aggregates.update(pointer, value);
+                }
             }
 
             while (!result.compareAndSet(null, aggregates)) {
@@ -349,80 +462,74 @@ public class CalculateAverage_artsiomkorzun {
             }
         }
 
-        private static void aggregate(Aggregates aggregates, long position, long limit) {
-            // this parsing can produce seg fault at page boundaries
-            // e.g. file size is 4096 and the last entry is X=0.0, which is less than 8 bytes
-            // as a result a read will be split across pages, where one of them is not mapped
-            // but for some reason it works on my machine, leaving to investigate
-
-            while (position <= limit) { // branchy version, credit: thomaswue
-                int length;
-                int hash;
-
-                long ptr = 0;
+        private static long next(long position) {
+            while (true) {
                 long word = word(position);
-                long separator = separator(word);
+                long match = word ^ LINE_PATTERN;
+                long line = (match - 0x0101010101010101L) & (~match & 0x8080808080808080L);
 
-                if (separator != 0) {
-                    length = length(separator);
-                    word = mask(word, separator);
-                    hash = mix(word);
-                    ptr = aggregates.find(word, hash);
-                }
-                else {
-                    long word0 = word;
-                    word = word(position + 8);
-                    separator = separator(word);
-
-                    if (separator != 0) {
-                        length = length(separator) + 8;
-                        word = mask(word, separator);
-                        hash = mix(word ^ word0);
-                        ptr = aggregates.find(word0, word, hash);
-                    }
-                    else {
-                        length = 16;
-                        long h = word ^ word0;
-
-                        while (true) {
-                            word = word(position + length);
-                            separator = separator(word);
-
-                            if (separator == 0) {
-                                length += 8;
-                                h ^= word;
-                                continue;
-                            }
-
-                            length += length(separator);
-                            word = mask(word, separator);
-                            hash = mix(h ^ word);
-                            break;
-                        }
-                    }
+                if (line == 0) {
+                    position += 8;
+                    continue;
                 }
 
-                if (ptr == 0) {
-                    ptr = aggregates.put(position, word, length, hash);
-                }
-
-                position = update(ptr, position + length + 1);
+                return position + length(line) + 1;
             }
         }
 
-        private static long update(long ptr, long position) {
-            // idea: merykitty
-            long word = word(position);
-            long inverted = ~word;
-            int dot = Long.numberOfTrailingZeros(inverted & DOT_BITS);
-            long signed = (inverted << 59) >> 63;
-            long mask = ~(signed & 0xFF);
-            long digits = ((word & mask) << (28 - dot)) & 0x0F000F0F00L;
-            long abs = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
-            int value = (int) ((abs ^ signed) - signed);
+        private static long find(Aggregates aggregates, Chunk chunk, long word1, long word2, long separator1, long separator2) {
+            boolean small = (separator1 | separator2) != 0;
+            long start = chunk.position;
+            long hash;
+            long word;
 
-            Aggregates.update(ptr, value);
-            return position + (dot >> 3) + 3;
+            if (small) {
+                int length1 = length(separator1);
+                int length2 = length(separator2);
+                word1 = mask(word1, separator1);
+                word2 = mask(word2 & WORD_MASK[length1], separator2);
+                hash = mix(word1 ^ word2);
+
+                chunk.position += length1 + (length2 & LENGTH_MASK[length1]) + 1;
+                long pointer = aggregates.find(word1, word2, hash);
+
+                if (pointer != 0) {
+                    return pointer;
+                }
+
+                word = (separator1 == 0) ? word2 : word1;
+            }
+            else {
+                chunk.position += 16;
+                hash = word1 ^ word2;
+
+                while (true) {
+                    word = word(chunk.position);
+                    long separator = separator(word);
+
+                    if (separator == 0) {
+                        chunk.position += 8;
+                        hash ^= word;
+                        continue;
+                    }
+
+                    word = mask(word, separator);
+                    hash = mix(hash ^ word);
+                    chunk.position += length(separator) + 1;
+                    break;
+                }
+            }
+
+            long length = chunk.position - start;
+            return aggregates.put(start, word, length, hash);
+        }
+
+        private static long value(Chunk chunk) {
+            long num = word(chunk.position);
+            long dot = dot(num);
+            long value = value(num, dot);
+            chunk.position += (dot >> 3) + 3;
+            return value;
         }
 
         private static long separator(long word) {
@@ -431,7 +538,7 @@ public class CalculateAverage_artsiomkorzun {
         }
 
         private static long mask(long word, long separator) {
-            long mask = ((separator - 1) ^ separator) >>> 8;
+            long mask = separator ^ (separator - 1);
             return word & mask;
         }
 
@@ -439,17 +546,38 @@ public class CalculateAverage_artsiomkorzun {
             return Long.numberOfTrailingZeros(separator) >>> 3;
         }
 
-        private static long next(long position) {
-            while (UNSAFE.getByte(position++) != '\n') {
-                // continue
-            }
-            return position;
+        private static long mix(long x) {
+            long h = x * -7046029254386353131L;
+            h ^= h >>> 35;
+            return h;
+            // h ^= h >>> 32;
+            // return (int) (h ^ h >>> 16);
         }
 
-        private static int mix(long x) {
-            long h = x * -7046029254386353131L;
-            h ^= h >>> 32;
-            return (int) (h ^ h >>> 16);
+        private static long dot(long num) {
+            return Long.numberOfTrailingZeros(~num & DOT_BITS);
+        }
+
+        private static long value(long w, long dot) {
+            long signed = (~w << 59) >> 63;
+            long mask = ~(signed & 0xFF);
+            long digits = ((w & mask) << (28 - dot)) & 0x0F000F0F00L;
+            long abs = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
+            return (abs ^ signed) - signed;
+        }
+    }
+
+    private static class Chunk {
+        final long limit;
+        long position;
+
+        public Chunk(long position, long limit) {
+            this.position = position;
+            this.limit = limit;
+        }
+
+        boolean has() {
+            return position < limit;
         }
     }
 }

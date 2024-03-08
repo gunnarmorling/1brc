@@ -15,45 +15,58 @@
  */
 package dev.morling.onebrc;
 
-import java.io.*;
-import java.nio.*;
+import jdk.incubator.vector.ByteVector;
+import jdk.incubator.vector.VectorOperators;
+import jdk.incubator.vector.VectorSpecies;
+
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.nio.ByteOrder;
 import java.nio.channels.*;
-import java.util.concurrent.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.stream.*;
 import java.util.*;
 
+import static java.lang.foreign.ValueLayout.*;
+
 /* A fast implementation with no unsafe.
  * Features:
- * * memory mapped file
+ * * memory mapped file using preview Arena FFI
+ * * semicolon finding and name comparison using incubator vector api
  * * read chunks in parallel
  * * minimise allocation
  * * no unsafe
- *
- * Timings on 4 core i7-7500U CPU @ 2.70GHz:
- * average_baseline: 4m48s
- * ianopolous:         19s
+ * * process multiple lines in each thread for better ILP
 */
 public class CalculateAverage_ianopolousfast {
 
     public static final int MAX_LINE_LENGTH = 107;
-    public static final int MAX_STATIONS = 10_000;
+    public static final int MAX_STATIONS = 1 << 14;
+    private static final OfLong LONG_LAYOUT = JAVA_LONG_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
+    private static final VectorSpecies<Byte> BYTE_SPECIES = ByteVector.SPECIES_PREFERRED.length() >= 16
+            ? ByteVector.SPECIES_128
+            : ByteVector.SPECIES_64;
 
     public static void main(String[] args) throws Exception {
-        File input = new File("./measurements.txt");
-        long filesize = input.length();
-        // keep chunk size between 256 MB and 1G (1 chunk for files < 256MB)
-        long chunkSize = Math.min(Math.max((filesize + 31) / 32, 256 * 1024 * 1024), 1024 * 1024 * 1024L);
-        int nChunks = (int) ((filesize + chunkSize - 1) / chunkSize);
-        ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor();
-        List<Future<List<List<Stat>>>> allResults = IntStream.range(0, nChunks)
-                .mapToObj(i -> pool.submit(() -> parseStats(i * chunkSize, Math.min((i + 1) * chunkSize, filesize))))
+        Arena arena = Arena.global();
+        Path input = Path.of("measurements.txt");
+        FileChannel channel = (FileChannel) Files.newByteChannel(input, StandardOpenOption.READ);
+        long filesize = Files.size(input);
+        MemorySegment mmap = channel.map(FileChannel.MapMode.READ_ONLY, 0, filesize, arena);
+        int nChunks = filesize < 4 * 1024 * 1024 ? 1 : Runtime.getRuntime().availableProcessors();
+        long chunkSize = (filesize + nChunks - 1) / nChunks;
+        List<Stat[]> allResults = IntStream.range(0, nChunks)
+                .parallel()
+                .mapToObj(i -> parseStats(i * chunkSize, Math.min((i + 1) * chunkSize, filesize), mmap))
                 .toList();
 
         TreeMap<String, Stat> merged = allResults.stream()
                 .parallel()
                 .flatMap(f -> {
                     try {
-                        return f.get().stream().filter(Objects::nonNull).flatMap(Collection::stream);
+                        return Arrays.stream(f).filter(Objects::nonNull);
                     }
                     catch (Exception e) {
                         e.printStackTrace();
@@ -64,172 +77,164 @@ public class CalculateAverage_ianopolousfast {
         System.out.println(merged);
     }
 
-    public static boolean matchingStationBytes(int start, int end, ByteBuffer buffer, Stat existing) {
-        if (end - start != existing.name.length)
-            return false;
-        for (int i = start; i < end; i++) {
-            if (existing.name[i - start] != buffer.get(i))
+    public static boolean matchingStationBytes(long start, long end, MemorySegment buffer, Stat existing) {
+        for (int index = 0; index < end - start; index += BYTE_SPECIES.vectorByteSize()) {
+            ByteVector line = ByteVector.fromMemorySegment(BYTE_SPECIES, buffer, start + index, ByteOrder.nativeOrder(), BYTE_SPECIES.indexInRange(start + index, end));
+            ByteVector found = ByteVector.fromArray(BYTE_SPECIES, existing.name, index);
+            if (!found.eq(line).allTrue())
                 return false;
         }
         return true;
     }
 
-    public static Stat dedupeStation(int start, int end, long hash, ByteBuffer buffer, List<List<Stat>> stations) {
-        int index = Math.floorMod(hash ^ (hash >> 32), MAX_STATIONS);
-        List<Stat> matches = stations.get(index);
-        if (matches == null) {
-            List<Stat> value = new ArrayList<>();
-            byte[] stationBuffer = new byte[end - start];
-            buffer.position(start);
-            buffer.get(stationBuffer);
-            Stat res = new Stat(stationBuffer);
-            value.add(res);
-            stations.set(index, value);
-            return res;
+    private static final int GOLDEN_RATIO = 0x9E3779B9;
+    private static final int HASH_LROTATE = 5;
+
+    // hash from giovannicuccu
+    private static int hash(MemorySegment memorySegment, long start, int len) {
+        int x;
+        int y;
+        if (len >= Integer.BYTES) {
+            x = memorySegment.get(JAVA_INT_UNALIGNED, start);
+            y = memorySegment.get(JAVA_INT_UNALIGNED, start + len - Integer.BYTES);
         }
         else {
-            for (int i = 0; i < matches.size(); i++) {
-                Stat s = matches.get(i);
-                if (matchingStationBytes(start, end, buffer, s))
-                    return s;
-            }
-            byte[] stationBuffer = new byte[end - start];
-            buffer.position(start);
-            buffer.get(stationBuffer);
-            Stat res = new Stat(stationBuffer);
-            matches.add(res);
-            return res;
+            x = memorySegment.get(JAVA_BYTE, start);
+            y = memorySegment.get(JAVA_BYTE, start + len - Byte.BYTES);
         }
+        return (Integer.rotateLeft(x * GOLDEN_RATIO, HASH_LROTATE) ^ y) * GOLDEN_RATIO;
     }
 
-    public static int getSemicolon(long d) {
-        // from Hacker's Delight page 92
-        d = d ^ 0x3b3b3b3b3b3b3b3bL;
-        long y = (d & 0x7f7f7f7f7f7f7f7fL) + 0x7f7f7f7f7f7f7f7fL;
-        y = ~(y | d | 0x7f7f7f7f7f7f7f7fL);
-        return Long.numberOfLeadingZeros(y) >> 3;
+    public static Stat createStation(long start, long end, MemorySegment buffer) {
+        byte[] stationBuffer = new byte[(int) (end - start)];
+        for (long off = start; off < end; off++)
+            stationBuffer[(int) (off - start)] = buffer.get(JAVA_BYTE, off);
+        return new Stat(stationBuffer);
     }
 
-    public static long updateHash(long hash, long x) {
-        return ((hash << 5) ^ x) * 0x517cc1b727220a95L; // fxHash
+    public static Stat dedupeStation(long start, long end, MemorySegment buffer, Stat[] stations) {
+        int hash = hash(buffer, start, (int) (end - start));
+        int index = hash & (MAX_STATIONS - 1);
+        Stat match = stations[index];
+        while (match != null) {
+            if (matchingStationBytes(start, end, buffer, match))
+                return match;
+            index = (index + 1) % stations.length;
+            match = stations[index];
+        }
+        Stat res = createStation(start, end, buffer);
+        stations[index] = res;
+        return res;
     }
 
-    public static Stat parseStation(int lineStart, ByteBuffer buffer, List<List<Stat>> stations) {
-        // find semicolon and update hash as we go, reading a long at a time
-        long d = buffer.getLong(lineStart);
-
-        int semiIndex = getSemicolon(d);
-        int index = 0;
-        long hash = 0;
-        while (semiIndex == 8) {
-            hash = updateHash(hash, d);
-            index += 8;
-            d = buffer.getLong(lineStart + index);
-            semiIndex = getSemicolon(d);
-        }
-        // mask extra bytes off last long
-        d = d & (-1L << ((8 - semiIndex) * 8));
-        if (semiIndex > 0) {
-            hash = updateHash(hash, d);
-        }
-        return dedupeStation(lineStart, lineStart + index + semiIndex, hash, buffer, stations);
+    public static short getMinus(long d) {
+        return ((d & 0xff00000000000000L) ^ 0x2d00000000000000L) != 0 ? 0 : (short) -1;
     }
 
-    public static int processTemperature(int lineSplit, MappedByteBuffer buffer, Stat station) {
-        short temperature;
-        boolean negative = false;
-        byte b = buffer.get(lineSplit++);
-        if (b == '-') {
-            negative = true;
-            b = buffer.get(lineSplit++);
-        }
-        temperature = (short) (b - 0x30);
-        b = buffer.get(lineSplit++);
-        if (b == '.') {
-            b = buffer.get(lineSplit++);
-            temperature = (short) (temperature * 10 + (b - 0x30));
-        }
-        else {
-            temperature = (short) (temperature * 10 + (b - 0x30));
-            lineSplit++;
-            b = buffer.get(lineSplit++);
-            temperature = (short) (temperature * 10 + (b - 0x30));
-        }
-        temperature = negative ? (short) -temperature : temperature;
+    public static void processTemperature(long lineSplit, int size, MemorySegment buffer, Stat station) {
+        long d = buffer.get(LONG_LAYOUT, lineSplit);
+        // negative is either 0 or -1
+        short negative = getMinus(d);
+        d = d << (negative * -8);
+        int dotIndex = size - 2 + negative;
+        d = (d >> 8) | 0x30000000_00000000L; // add a leading 0 digit
+        d = d >> 8 * (5 - dotIndex);
+        short temperature = (short) ((byte) d - '0' +
+                10 * (((byte) (d >> 16)) - '0') +
+                100 * (((byte) (d >> 24)) - '0'));
+        temperature = (short) ((temperature ^ negative) - negative); // negative treatment inspired by merkitty
         station.add(temperature);
-        return lineSplit + 1;
     }
 
-    public static List<List<Stat>> parseStats(long startByte, long endByte) {
-        try {
-            RandomAccessFile file = new RandomAccessFile("./measurements.txt", "r");
-            long maxEnd = Math.min(file.length(), endByte + MAX_LINE_LENGTH);
-            long len = maxEnd - startByte;
-            if (len > Integer.MAX_VALUE)
-                throw new RuntimeException("Segment size must fit into an int");
-            int maxDone = (int) (endByte - startByte);
-            MappedByteBuffer buffer = file.getChannel().map(FileChannel.MapMode.READ_ONLY, startByte, len);
-            int done = 0;
-            // read first partial line
-            if (startByte > 0) {
-                for (int i = 0; i < MAX_LINE_LENGTH; i++) {
-                    byte b = buffer.get(i);
-                    if (b == '\n') {
-                        done = i + 1;
-                        break;
-                    }
+    private static int lineSize(long lineStart, MemorySegment buffer) {
+        ByteVector line = ByteVector.fromMemorySegment(BYTE_SPECIES, buffer, lineStart, ByteOrder.nativeOrder());
+        int lineSize = line.compare(VectorOperators.EQ, '\n').firstTrue();
+        int index = lineSize;
+        while (index == BYTE_SPECIES.vectorByteSize()) {
+            index = ByteVector.fromMemorySegment(BYTE_SPECIES, buffer, lineStart + lineSize,
+                    ByteOrder.nativeOrder()).compare(VectorOperators.EQ, '\n').firstTrue();
+            lineSize += index;
+        }
+        return lineSize;
+    }
+
+    private static int keySize(int lineSize, long lineStart, MemorySegment buffer) {
+        return lineSize - 6 + ByteVector.fromMemorySegment(BYTE_SPECIES, buffer, lineStart + lineSize - 6,
+                ByteOrder.nativeOrder()).compare(VectorOperators.EQ, ';').firstTrue();
+    }
+
+    public static Stat[] parseStats(long start1, long end2, MemorySegment buffer) {
+        // read first partial line
+        if (start1 > 0) {
+            for (int i = 0; i < MAX_LINE_LENGTH; i++) {
+                byte b = buffer.get(JAVA_BYTE, start1++);
+                if (b == '\n') {
+                    break;
                 }
             }
-
-            List<List<Stat>> stations = new ArrayList<>(MAX_STATIONS);
-            for (int i = 0; i < MAX_STATIONS; i++)
-                stations.add(null);
-
-            // Handle reading the very last line in the file
-            // this allows us to not worry about reading a long beyond the end
-            // in the inner loop (reducing branches)
-            // We only need to read one because the min record size is 6 bytes
-            // so 2nd last record must be > 8 from end
-            if (endByte == file.length()) {
-                int offset = (int) (file.length() - startByte - 1);
-                while (buffer.get(offset) != '\n') // final new line
-                    offset--;
-                offset--;
-                while (offset > 0 && buffer.get(offset) != '\n') // end of second last line
-                    offset--;
-                maxDone = offset;
-                if (offset > 0)
-                    offset++;
-                // copy into a 8n sized buffer to avoid reading off end
-                int roundedSize = (int) (file.length() - startByte) - offset;
-                roundedSize = (roundedSize + 7) / 8 * 8;
-                byte[] end = new byte[roundedSize];
-                for (int i = offset; i < (int) (file.length() - startByte); i++)
-                    end[i - offset] = buffer.get(i);
-                Stat station = parseStation(0, ByteBuffer.wrap(end), stations);
-                processTemperature(offset + station.name.length + 1, buffer, station);
-            }
-
-            int lineStart = done;
-            while (lineStart < maxDone) {
-                Stat station = parseStation(lineStart, buffer, stations);
-                lineStart = processTemperature(lineStart + station.name.length + 1, buffer, station);
-            }
-            return stations;
         }
-        catch (IOException e) {
-            throw new RuntimeException(e);
+
+        Stat[] stations = new Stat[MAX_STATIONS];
+
+        // Handle reading the very last few lines in the file
+        // this allows us to not worry about reading beyond the end
+        // in the inner loop (reducing branches)
+        // We need at least the vector lane size bytes back
+        if (end2 == buffer.byteSize()) {
+            // reverse at least vector lane width
+            end2 = Math.max(buffer.byteSize() - 2 * BYTE_SPECIES.vectorByteSize(), 0);
+            while (end2 > 0 && buffer.get(JAVA_BYTE, end2) != '\n')
+                end2--;
+
+            if (end2 > 0)
+                end2++;
+            // copy into a larger buffer to avoid reading off end
+            MemorySegment end = Arena.global().allocate(MAX_LINE_LENGTH + 2 * BYTE_SPECIES.vectorByteSize());
+            for (long i = end2; i < buffer.byteSize(); i++)
+                end.set(JAVA_BYTE, i - end2, buffer.get(JAVA_BYTE, i));
+            int index = 0;
+            while (end2 + index < buffer.byteSize()) {
+                int lineSize1 = lineSize(index, end);
+                int semiSearchStart = index + Math.max(0, lineSize1 - 6);
+                int keySize1 = semiSearchStart - index + ByteVector.fromMemorySegment(BYTE_SPECIES, end, semiSearchStart,
+                        ByteOrder.nativeOrder()).compare(VectorOperators.EQ, ';').firstTrue();
+                Stat station1 = dedupeStation(index, index + keySize1, end, stations);
+                processTemperature(index + keySize1 + 1, lineSize1 - keySize1 - 1, end, station1);
+                index += lineSize1 + 1;
+            }
         }
+
+        while (start1 < end2) {
+            int lineSize1 = lineSize(start1, buffer);
+            long start2 = start1 + lineSize1 + 1;
+            int lineSize2 = start2 < end2 ? lineSize(start2, buffer) : 0;
+            int keySize1 = keySize(lineSize1, start1, buffer);
+            int keySize2 = keySize(lineSize2, start2, buffer);
+            Stat station1 = dedupeStation(start1, start1 + keySize1, buffer, stations);
+            processTemperature(start1 + keySize1 + 1, lineSize1 - keySize1 - 1, buffer, station1);
+            if (start2 < end2) {
+                Stat station2 = dedupeStation(start2, start2 + keySize2, buffer, stations);
+                processTemperature(start2 + keySize2 + 1, lineSize2 - keySize2 - 1, buffer, station2);
+                start1 = start2 + lineSize2 + 1;
+            }
+            else
+                start1 += lineSize1 + 1;
+        }
+        return stations;
     }
 
     public static class Stat {
         final byte[] name;
+        final int namelen;
         int count = 0;
         short min = Short.MAX_VALUE, max = Short.MIN_VALUE;
         long total = 0;
 
         public Stat(byte[] name) {
-            this.name = name;
+            int vecSize = BYTE_SPECIES.vectorByteSize();
+            int arrayLen = (name.length + vecSize - 1) / vecSize * vecSize;
+            this.name = Arrays.copyOfRange(name, 0, arrayLen);
+            this.namelen = name.length;
         }
 
         public void add(short value) {
@@ -256,7 +261,7 @@ public class CalculateAverage_ianopolousfast {
         }
 
         public String name() {
-            return new String(name);
+            return new String(Arrays.copyOfRange(name, 0, namelen));
         }
 
         public String toString() {

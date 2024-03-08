@@ -83,7 +83,11 @@
           <artifactId>formatter-maven-plugin</artifactId>
           <version>2.16.0</version>
           <configuration>
-              <configFile>etc/eclipse-formatter-config.xml</configFile>
+            <configFile>etc/eclipse-formatter-config.xml</configFile>
+            <directories>
+              <directory>${project.build.sourceDirectory}</directory>
+              <directory>${project.basedir}/src/main/java-22</directory>
+            </directories>
           </configuration>
         </plugin>
         <plugin>
@@ -211,6 +215,7 @@
                 <exclude>github_users.txt</exclude>
                 <!-- Cliff asked to be named as the copyright holder for his entry; -->
                 <exclude>src/main/java/dev/morling/onebrc/CalculateAverage_cliffclick.java</exclude>
+                <exclude>.sdkmanrc</exclude>
               </excludes>
             </configuration>
             <executions>
@@ -285,6 +290,34 @@
       <properties>
         <skipTests>true</skipTests>
       </properties>
+    </profile>
+    <profile>
+      <id>jdk22</id>
+      <activation>
+        <jdk>22</jdk>
+      </activation>
+      <properties>
+      </properties>
+      <build>
+        <pluginManagement>
+          <plugins>
+            <plugin>
+              <artifactId>maven-compiler-plugin</artifactId>
+              <configuration>
+                <release>22</release>
+                <compileSourceRoots>
+                  <compileSourceRoot>${project.basedir}/src/main/java-22</compileSourceRoot>
+                  <!--
+                    Uncomment the next line to build the entire project with jdk22.
+                    Currently, some classes fail to compile under jdk22.
+                  -->
+                  <!-- <compileSourceRoot>${project.build.sourceDirectory}</compileSourceRoot> -->
+                </compileSourceRoots>
+              </configuration>
+            </plugin>
+          </plugins>
+        </pluginManagement>
+      </build>
     </profile>
   </profiles>
 </project>

@@ -16,4 +16,10 @@
 #
 
 source "$HOME/.sdkman/bin/sdkman-init.sh"
-sdk use java 21.0.1-graal 1>&2
+sdk use java 21.0.2-graal 1>&2
+
+# ./mvnw clean verify removes target/ and will re-trigger native image creation.
+if [ ! -f target/CalculateAverage_JamalMulla_image ]; then
+    NATIVE_IMAGE_OPTS="--gc=epsilon -O3 -march=native --enable-preview --strict-image-heap --link-at-build-time -R:MaxHeapSize=64m -da -dsa --no-fallback --initialize-at-build-time=dev.morling.onebrc.CalculateAverage_JamalMulla"
+    native-image $NATIVE_IMAGE_OPTS -cp target/average-1.0.0-SNAPSHOT.jar -o target/CalculateAverage_JamalMulla_image dev.morling.onebrc.CalculateAverage_JamalMulla
+fi
