@@ -47,3 +47,5 @@ out/
 /*.out
 out_expected.txt
 /*-timing.json
+
+/1brc
