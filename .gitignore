@@ -39,6 +39,9 @@ nbactions.xml
 # Local environment
 .env
 
+# Direnv
+.envrc
+
 #JReleaser
 out/
 
@@ -47,3 +50,7 @@ out/
 /*.out
 out_expected.txt
 /*-timing.json
+
+# 1BRC test-unique output
+/logs
+/results
