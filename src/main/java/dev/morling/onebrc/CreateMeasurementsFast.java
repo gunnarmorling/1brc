@@ -509,7 +509,7 @@ public class CreateMeasurementsFast {
             numberOfFutures = 1;
         }
         CompletableFuture<?>[] futures = new CompletableFuture[numberOfFutures];
-
+        final Object FILE_LOCK = new Object();
         for (int n = 0; n < numberOfFutures; n++) {
             int finalN = n;
             futures[n] = CompletableFuture.runAsync(() -> {
@@ -522,7 +522,9 @@ public class CreateMeasurementsFast {
                             .append('\n');
                 }
                 try (BufferedWriter bw = Files.newBufferedWriter(MEASUREMENT_FILE, StandardOpenOption.APPEND)) {
-                    bw.write(builder.toString());
+                    synchronized (FILE_LOCK) {
+                        bw.write(builder.toString());
+                    }
                 }
                 catch (IOException e) {
                     throw new RuntimeException(e);
