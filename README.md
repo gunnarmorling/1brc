@@ -1,22 +1,5 @@
 # 1️⃣🐝🏎️ The One Billion Row Challenge
 
-_Status Feb 4: The final leaderboards [have been published](https://www.morling.dev/blog/1brc-results-are-in/). Congrats to all the winners, and a big thank you to everyone participating in this challenge as well as to everyone helping to organize it!_
-
-_Status Feb 3: All entries have been evaluated and I am in the process of finalizing the leaderboards._
-
-_Status Feb 1: The challenge has been closed for new submissions. No new pull requests for adding submissions are accepted at this time.
-Pending PRs will be evaluated over the next few days._
-
-_Status Jan 31: The challenge will close today at midnight UTC._
-
-_Status Jan 12: As there has been such a large number of entries to this challenge so far (100+), and this is becoming hard to manage, please only create new submissions if you expect them to run in 10 seconds or less on the evaluation machine._
-
-_Status Jan 1: This challenge is [open for submissions](https://www.morling.dev/blog/one-billion-row-challenge/)!_
-
-> **Sponsorship**
->
-> A big thank you to my employer [Decodable](https://www.decodable.co/) for funding the evaluation environment and supporting this challenge!
-
 The One Billion Row Challenge (1BRC) is a fun exploration of how far modern Java can be pushed for aggregating one billion rows from a text file.
 Grab all your (virtual) threads, reach out to SIMD, optimize your GC, or pull any other trick, and create the fastest implementation for solving this task!
 
