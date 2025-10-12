@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 #  Copyright 2023 The original authors
 #
@@ -15,22 +15,12 @@
 #  limitations under the License.
 #
 
-set -x
+# Remove symlinks if present
+rm -f measurements.txt
+rm -f measurements_1B.txt
+rm -f measurements_1B.out
 
-if [ -z "$1" ]
-  then
-    echo "Usage: checkout.sh <fork name>:<branch name>"
-    exit 1
-fi
-
-parts=(${1//:/ })
-echo "  User: ${parts[0]}"
-echo "Branch: ${parts[1]}"
-
-git branch -D ${parts[0]} &>/dev/null
-
-git checkout -b ${parts[0]}
-git fetch https://github.com/${parts[0]}/1brc.git ${parts[1]}
-# git fetch git@github.com:${parts[0]}/1brc.git ${parts[1]}
-git reset --hard FETCH_HEAD
-git rebase main
+# Create symlinks
+ln -s measurements_10M.txt measurements_1B.txt
+ln -s measurements_10M.txt measurements.txt
+ln -s measurements_10M.out measurements_1B.out

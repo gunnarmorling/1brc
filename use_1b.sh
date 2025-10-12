@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 #  Copyright 2023 The original authors
 #
@@ -15,13 +15,13 @@
 #  limitations under the License.
 #
 
-if [ -z "$1" ]
-  then
-    echo "Usage: cleanup.sh <fork name>"
-    exit 1
-fi
 
-git checkout .
-git checkout main
-git branch -D $1
-git pull upstream main
+# Remove symlinks if present
+rm -f measurements.txt
+rm -f measurements_1B.txt
+rm -f measurements_1B.out
+
+# Create symlinks
+ln -s measurements_1000M.txt measurements_1B.txt
+ln -s measurements_1000M.txt measurements.txt
+ln -s measurements_1000M.out measurements_1B.out

@@ -16,4 +16,21 @@
 #
 
 
-java --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CreateMeasurements $1
+#!/bin/bash
+
+java --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CreateMeasurements 10000000
+./calculate_average_baseline.sh > measurements_10M.out
+mv measurements.txt measurements_10M.txt
+
+java --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CreateMeasurements 100000000
+./calculate_average_baseline.sh > measurements_100M.out
+mv measurements.txt measurements_100M.txt
+
+java --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CreateMeasurements 1000000000
+./calculate_average_baseline.sh > measurements_1000M.out
+mv measurements.txt measurements_1000M.txt
+
+ln -s measurements_1000M.txt measurements_1B.txt
+ln -s measurements_1B.txt measurements.txt
+ln -s measurements_1000M.out measurements_1B.out
+

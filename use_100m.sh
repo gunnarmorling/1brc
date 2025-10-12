@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 #  Copyright 2023 The original authors
 #
@@ -16,4 +16,12 @@
 #
 
 
-java --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CreateMeasurementsFast $1
+# Remove symlinks if present
+rm -f measurements.txt
+rm -f measurements_1B.txt
+rm -f measurements_1B.out
+
+# Create symlinks
+ln -s measurements_100M.txt measurements_1B.txt
+ln -s measurements_100M.txt measurements.txt
+ln -s measurements_100M.out measurements_1B.out
