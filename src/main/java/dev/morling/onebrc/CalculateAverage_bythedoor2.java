@@ -1,191 +1,147 @@
 package dev.morling.onebrc;
 
-import static java.util.stream.Collectors.*;
-
-import java.io.BufferedReader;
-import java.io.FileInputStream;
-import java.io.FileReader;
 import java.io.IOException;
-import java.nio.MappedByteBuffer;
+import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.FileSystems;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.List;
+import java.nio.file.StandardOpenOption;
 import java.util.Map;
 import java.util.TreeMap;
-import java.util.stream.Collector;
 
 public class CalculateAverage_bythedoor2 {
 
     private static final String FILE = "./measurements.txt";
 
-    private static long parseLong(CharSequence cs) {
-        long r = 0;
-        boolean is_minus = cs.charAt(0) == '-';
-
-        for (int i = is_minus ? 1 : 0; i < cs.length(); i++) {
-            r = r * 10 + (cs.charAt(i) - '0') * (is_minus ? -1 : 1);
-        }
-
-        return r;
-    }
-
-    // 1 decimal
-    private static short parseShort(CharSequence cs) {
-        return (short) (cs.charAt(0) - '0');
-    }
-
-    private static record Measurement(String station, long v, short d) {
-        private Measurement(
-                CharSequence station,
-                CharSequence temperature
-        ) {
-            this(
-                    station.toString(),
-                    parseLong(temperature.subSequence(0,temperature.length()-2)),
-                    parseShort(temperature.subSequence(temperature.length()-1,temperature.length()))
-            );
-        }
-    }
-
-    private record ResultRow(
-            long minV, short minD,
-            long maxV, short maxD,
-            long sumV, long sumD, long count
-    ) {
-
+    private static record ResultRow(double min, double mean, double max) {
         public String toString() {
-            double sum = (double) sumD + sumV / 10.0;
-            double mean = (round(sum * 10.0) / 10.0) / count;
-
-            return minD + "." + minV + "/" + mean + "/" + maxD + "." + maxV;
+            return round(min) + "/" + round(mean) + "/" + round(max);
         }
-
         private double round(double value) {
             return Math.round(value * 10.0) / 10.0;
         }
     }
 
     private static class MeasurementAggregator {
-        private long minV = Long.MAX_VALUE;
-        private short minD = Short.MAX_VALUE;
-        private long maxV = Long.MIN_VALUE;
-        private short maxD = Short.MIN_VALUE;
-        private long sumV = 0;
-        private long sumD = 0;
-        private long count = 0;
-
-        public MeasurementAggregator aggregateMin(Measurement m) {
-            if (this.minV > m.v) {
-                this.minV = m.v;
-                this.minD = m.d;
-            }
-            else if (this.minV == m.v && this.minD > m.d) {
-                this.minD = m.d;
-            }
-
-            return this;
-        }
-
-        public MeasurementAggregator aggregateMin(MeasurementAggregator a) {
-            if (this.minV > a.minV) {
-                this.minV = a.minV;
-                this.minD = a.minD;
-            }
-            else if (this.minV == a.minV && this.minD > a.minD) {
-                this.minD = a.minD;
-            }
-
-            return this;
-        }
-
-        public MeasurementAggregator aggregateMax(Measurement m) {
-            if (this.maxV < m.v) {
-                this.maxV = m.v;
-                this.maxD = m.d;
-            }
-            else if (this.maxV == m.v && this.maxD < m.d) {
-                this.maxD = m.d;
-            }
-
-            return this;
-        }
-
-        public MeasurementAggregator aggregateMax(MeasurementAggregator a) {
-            if (this.maxV < a.maxV) {
-                this.maxV = a.maxV;
-                this.maxD = a.maxD;
-            }
-            else if (this.maxV == a.maxV && this.maxD < a.maxD) {
-                this.maxD = a.maxD;
-            }
-
-            return this;
-        }
-
-        public MeasurementAggregator aggregateSum(Measurement m) {
-            this.sumV += m.v;
-            this.sumD += m.d;
-
-            this.count++;
-
-            return this;
-        }
-
-        public MeasurementAggregator aggregateSum(MeasurementAggregator a) {
-            this.sumV += a.sumV;
-            this.sumD += a.sumD;
-
-            this.count += a.count;
-
-            return this;
-        }
+        private double min = Double.POSITIVE_INFINITY;
+        private double max = Double.NEGATIVE_INFINITY;
+        private double sum;
+        private long count;
     }
 
+    // public static void main(String[] args) throws IOException {
+    // Map<String, MeasurementAggregator> aggs = new java.util.HashMap<>();
+    //
+    // try (FileChannel channel = FileChannel.open(Paths.get(FILE), StandardOpenOption.READ)) {
+    //
+    // ByteBuffer buf = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size());
+    //
+    // byte[] lineBytes = new byte[128];
+    // int lineLen = 0;
+    //
+    // while (buf.hasRemaining()) {
+    // byte b = buf.get();
+    // if (b == '\n') {
+    // if (lineLen > 0) {
+    // parseLine(lineBytes, lineLen, aggs);
+    // lineLen = 0;
+    // }
+    // }
+    // else {
+    // lineBytes[lineLen++] = b;
+    // }
+    // }
+    // if (lineLen > 0) {
+    // parseLine(lineBytes, lineLen, aggs);
+    // }
+    // }
+    //
+    // Map<String, ResultRow> measurements = new TreeMap<>();
+    // aggs.forEach((station, agg) -> measurements.put(station, new ResultRow(
+    // agg.min,
+    // (Math.round(agg.sum * 10.0) / 10.0) / agg.count,
+    // agg.max)));
+    //
+    // System.out.println(measurements);
+    // }
+
     public static void main(String[] args) throws IOException {
-        // Map<String, Double> measurements1 = Files.lines(Paths.get(FILE))
-        // .map(l -> l.split(";"))
-        // .collect(groupingBy(m -> m[0], averagingDouble(m -> Double.parseDouble(m[1]))));
-        //
-        // measurements1 = new TreeMap<>(measurements1.entrySet()
-        // .stream()
-        // .collect(toMap(e -> e.getKey(), e -> Math.round(e.getValue() * 10.0) / 10.0)));
-        // System.out.println(measurements1);
+        Map<String, MeasurementAggregator> aggs = new java.util.HashMap<>();
 
-        Collector<Measurement, MeasurementAggregator, ResultRow> collector = Collector.of(
-                MeasurementAggregator::new,
-                (a, m) -> a.aggregateMin(m)
-                        .aggregateMax(m)
-                        .aggregateSum(m),
-                (agg1, agg2) -> {
-                    var res = new MeasurementAggregator();
+        try (FileChannel channel = FileChannel.open(Paths.get(FILE), StandardOpenOption.READ)) {
+            long fileSize = channel.size();
+            long CHUNK_SIZE = 1L * 1024 * 1024 * 1024; // 1GB씩 청크
+            long position = 0;
 
-                    return res
-                            .aggregateMin(agg1).aggregateMin(agg2)
-                            .aggregateMax(agg1).aggregateMax(agg2)
-                            .aggregateSum(agg1).aggregateSum(agg2);
-                },
-                agg -> new ResultRow(agg.minV, agg.minD, agg.maxV, agg.maxD, agg.sumV, agg.sumD, agg.count));
+            byte[] lineBytes = new byte[128];
+            int lineLen = 0;
 
-        // 8MB
-        int bufferSize = 8 * 1024 * 1024;
+            while (position < fileSize) {
+                long remaining = fileSize - position;
+                long mapSize = Math.min(CHUNK_SIZE, remaining);
 
-        try (
-                FileReader fr = new FileReader(FILE, StandardCharsets.UTF_8);
-                BufferedReader br = new BufferedReader(fr, bufferSize)) {
-            Map<String, ResultRow> measurements = new TreeMap<>(br.lines()
-                    .map(l -> {
-                        int splitIndex = l.indexOf(';');
+                ByteBuffer buf = channel.map(FileChannel.MapMode.READ_ONLY, position, mapSize);
 
-                        return new Measurement(
-                                l.subSequence(0, splitIndex), l.subSequence(splitIndex + 1, l.length()));
-                    })
-                    .collect(groupingBy(m -> m.station(), collector)));
+                while (buf.hasRemaining()) {
+                    byte b = buf.get();
+                    if (b == '\n') {
+                        if (lineLen > 0) {
+                            parseLine(lineBytes, lineLen, aggs);
+                            lineLen = 0;
+                        }
+                    }
+                    else {
+                        lineBytes[lineLen++] = b;
+                    }
+                }
 
-            System.out.println(measurements);
+                position += mapSize;
+
+                // 청크 경계에서 줄이 잘렸는지 확인
+                // lineLen > 0 이면 다음 청크에서 이어서 처리 (lineLen 초기화 안 함)
+            }
+
+            // 마지막 줄 처리
+            if (lineLen > 0) {
+                parseLine(lineBytes, lineLen, aggs);
+            }
         }
+
+        // 결과 출력
+        Map<String, ResultRow> measurements = new TreeMap<>();
+        aggs.forEach((station, agg) -> measurements.put(station, new ResultRow(
+                agg.min,
+                (Math.round(agg.sum * 10.0) / 10.0) / agg.count,
+                agg.max)));
+        System.out.println(measurements);
+    }
+
+    private static void parseLine(byte[] line, int len, Map<String, MeasurementAggregator> aggs) {
+        // ';' 위치 탐색 — split() 대신 byte 직접 탐색
+        // split()이 제거되는 건 2순위이지만, byte 파싱 구조상 여기서 같이 제거됨
+        int sep = -1;
+        for (int i = 0; i < len; i++) {
+            if (line[i] == ';') {
+                sep = i;
+                break;
+            }
+        }
+        if (sep == -1)
+            return;
+
+        // station: 여전히 String 필요 (Map 키) — 불가피한 변환
+        String station = new String(line, 0, sep);
+
+        // value: 아직 Double.parseDouble 사용 (2순위에서 제거 예정)
+        double value = Double.parseDouble(new String(line, sep + 1, len - sep - 1));
+
+        MeasurementAggregator agg = aggs.get(station);
+        if (agg == null) {
+            agg = new MeasurementAggregator();
+            aggs.put(station, agg);
+        }
+        agg.min = Math.min(agg.min, value);
+        agg.max = Math.max(agg.max, value);
+        agg.sum += value;
+        agg.count++;
     }
 }
