@@ -39,11 +39,14 @@ public class CalculateAverage_bythedoor2 {
     }
 
     private static record Measurement(String station, long v, short d) {
-        private Measurement(String[] parts) {
+        private Measurement(
+                CharSequence station,
+                CharSequence temperature
+        ) {
             this(
-                    parts[0],
-                    parseLong(parts[1].subSequence(0,parts[1].length()-2)),
-                    parseShort(parts[1].subSequence(parts[1].length()-1,parts[1].length()))
+                    station.toString(),
+                    parseLong(temperature.subSequence(0,temperature.length()-2)),
+                    parseShort(temperature.subSequence(temperature.length()-1,temperature.length()))
             );
         }
     }
@@ -174,7 +177,12 @@ public class CalculateAverage_bythedoor2 {
                 FileReader fr = new FileReader(FILE, StandardCharsets.UTF_8);
                 BufferedReader br = new BufferedReader(fr, bufferSize)) {
             Map<String, ResultRow> measurements = new TreeMap<>(br.lines()
-                    .map(l -> new Measurement(l.split(";")))
+                    .map(l -> {
+                        int splitIndex = l.indexOf(';');
+
+                        return new Measurement(
+                                l.subSequence(0, splitIndex), l.subSequence(splitIndex + 1, l.length()));
+                    })
                     .collect(groupingBy(m -> m.station(), collector)));
 
             System.out.println(measurements);
