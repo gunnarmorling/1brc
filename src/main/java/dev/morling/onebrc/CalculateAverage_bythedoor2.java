@@ -112,7 +112,6 @@ public class CalculateAverage_bythedoor2 {
             }
         }
 
-        // 최종 출력 시에만 String 변환 — 약 400번
         Map<String, ResultRow> measurements = new TreeMap<>();
         aggs.forEach((key, agg) -> measurements.put(key.toStation(), new ResultRow(
                 agg.min,
