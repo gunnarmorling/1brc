@@ -6,7 +6,6 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -23,61 +22,75 @@ public class CalculateAverage_bythedoor2 {
         }
     }
 
-    private static class MeasurementAggregator {
-        private double min = Double.POSITIVE_INFINITY;
-        private double max = Double.NEGATIVE_INFINITY;
-        private double sum;
-        private long count;
-    }
+    private static final class StationMap {
+        private static final int CAPACITY = 1 << 14; // 16384
+        private static final int MASK = CAPACITY - 1;
 
-    private static final class ByteKey {
-        final byte[] data;
-        final int len;
-        final int hash;
+        // 슬롯별 데이터를 배열로 직접 관리 — 객체 없음
+        private final byte[][] keys = new byte[CAPACITY][];
+        private final int[] hashes = new int[CAPACITY];
+        private final double[] mins = new double[CAPACITY];
+        private final double[] maxs = new double[CAPACITY];
+        private final double[] sums = new double[CAPACITY];
+        private final long[] counts = new long[CAPACITY];
 
-        // For Write (call about count of unqiue station name)
-        ByteKey(byte[] src, int len) {
-            this.data = Arrays.copyOf(src, len);
-            this.len = len;
-            this.hash = computeHash(src, len);
+        StationMap() {
+            Arrays.fill(mins, Double.POSITIVE_INFINITY);
+            Arrays.fill(maxs, Double.NEGATIVE_INFINITY);
         }
 
-        // Read (call about 1 billion) <- use original byte array
-        ByteKey(byte[] src, int len, int precomputedHash) {
-            this.data = src;
-            this.len = len;
-            this.hash = precomputedHash;
-        }
+        void update(byte[] line, int sep, int hash, double value) {
+            int slot = hash & MASK;
 
-        static int computeHash(byte[] data, int len) {
-            int h = 1;
-            for (int i = 0; i < len; i++) {
-                h = 31 * h + data[i];
+            // open addressing — 빈 슬롯 또는 같은 key 찾을 때까지 선형 탐색
+            while (true) {
+                if (keys[slot] == null) {
+                    // 빈 슬롯 → 신규 station 등록 (~400번만)
+                    keys[slot] = Arrays.copyOf(line, sep);
+                    hashes[slot] = hash;
+                    mins[slot] = value;
+                    maxs[slot] = value;
+                    sums[slot] = value;
+                    counts[slot] = 1;
+                    return;
+                }
+
+                // 해시 먼저 비교 (빠름) → 같으면 byte 비교
+                if (hashes[slot] == hash
+                        && keys[slot].length == sep
+                        && Arrays.equals(keys[slot], 0, sep, line, 0, sep)) {
+                    // 기존 station 업데이트
+                    if (value < mins[slot])
+                        mins[slot] = value;
+                    if (value > maxs[slot])
+                        maxs[slot] = value;
+                    sums[slot] += value;
+                    counts[slot]++;
+                    return;
+                }
+
+                // 충돌 → 다음 슬롯 (linear probing)
+                slot = (slot + 1) & MASK;
             }
-            return h;
         }
 
-        @Override
-        public int hashCode() {
-            return hash;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            ByteKey other = (ByteKey) o;
-            if (len != other.len)
-                return false;
-            return Arrays.equals(data, 0, len, other.data, 0, other.len);
-        }
-
-        String toStation() {
-            return new String(data, 0, len);
+        // 결과 수집 (~400번)
+        void forEach(java.util.function.BiConsumer<String, ResultRow> consumer) {
+            for (int i = 0; i < CAPACITY; i++) {
+                if (keys[i] != null) {
+                    String station = new String(keys[i]);
+                    ResultRow row = new ResultRow(
+                            mins[i],
+                            (Math.round(sums[i] * 10.0) / 10.0) / counts[i],
+                            maxs[i]);
+                    consumer.accept(station, row);
+                }
+            }
         }
     }
 
     public static void main(String[] args) throws IOException {
-        // the type of key is String → ByteKey
-        Map<ByteKey, MeasurementAggregator> aggs = new HashMap<>();
+        StationMap stationMap = new StationMap();
 
         try (FileChannel channel = FileChannel.open(Paths.get(FILE), StandardOpenOption.READ)) {
             long fileSize = channel.size();
@@ -96,7 +109,7 @@ public class CalculateAverage_bythedoor2 {
                     byte b = buf.get();
                     if (b == '\n') {
                         if (lineLen > 0) {
-                            parseLine(lineBytes, lineLen, aggs);
+                            parseLine(lineBytes, lineLen, stationMap);
                             lineLen = 0;
                         }
                     }
@@ -108,19 +121,17 @@ public class CalculateAverage_bythedoor2 {
             }
 
             if (lineLen > 0) {
-                parseLine(lineBytes, lineLen, aggs);
+                parseLine(lineBytes, lineLen, stationMap);
             }
         }
 
         Map<String, ResultRow> measurements = new TreeMap<>();
-        aggs.forEach((key, agg) -> measurements.put(key.toStation(), new ResultRow(
-                agg.min,
-                (Math.round(agg.sum * 10.0) / 10.0) / agg.count,
-                agg.max)));
+        stationMap.forEach(measurements::put);
         System.out.println(measurements);
     }
 
-    private static void parseLine(byte[] line, int len, Map<ByteKey, MeasurementAggregator> aggs) {
+    private static void parseLine(byte[] line, int len, StationMap stationMap) {
+        // ';' 탐색 + hash 계산 한 루프 (3순위에서 유지)
         int sep = -1;
         int hash = 1;
         for (int i = 0; i < len; i++) {
@@ -133,19 +144,10 @@ public class CalculateAverage_bythedoor2 {
         if (sep == -1)
             return;
 
-        ByteKey lookupKey = new ByteKey(line, sep, hash);
-
-        MeasurementAggregator agg = aggs.get(lookupKey);
-        if (agg == null) {
-            agg = new MeasurementAggregator();
-            aggs.put(new ByteKey(line, sep), agg);
-        }
-
         double value = parseTemperature(line, sep + 1, len);
-        agg.min = Math.min(agg.min, value);
-        agg.max = Math.max(agg.max, value);
-        agg.sum += value;
-        agg.count++;
+
+        // ByteKey 객체 생성 없이 직접 전달
+        stationMap.update(line, sep, hash, value);
     }
 
     private static double parseTemperature(byte[] buf, int start, int end) {
@@ -164,7 +166,6 @@ public class CalculateAverage_bythedoor2 {
         i++; // '.' skip
 
         int fracPart = buf[i] - '0';
-
         double value = (intPart * 10 + fracPart) / 10.0;
         return negative ? -value : value;
     }
